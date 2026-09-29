@@ -343,3 +343,78 @@ body > div, main {
 .dark #content-area a.view-features-btn.button-white {
   color: #ffffff !important;
 }
+
+/* Footer: production has Mintlify branding removed (plan entitlement), which also drops
+   the divider + "Powered by Mintlify" / theme-switcher row. Mirror that here. */
+#footer div:has(> div > a[href*="utm_campaign=poweredBy"]),
+#footer div:has(+ div > div > a[href*="utm_campaign=poweredBy"]) {
+  display: none !important;
+}
+
+/* Accordion parity: production runs a newer Mintlify Accordion (solid triangle caret,
+   py-3.5 summary padding, 24px title leading). These rules only restyle the older
+   markup (caret wrapper has .mr-0.5) so they are inert on the newer component. */
+summary[data-component-part="accordion-button"]:has(> [data-component-part="accordion-caret-right"].mr-0\.5) {
+  padding-top: 0.875rem;
+  padding-bottom: 0.875rem;
+}
+summary[data-component-part="accordion-button"]:has(> [data-component-part="accordion-caret-right"].mr-0\.5) [data-component-part="accordion-title"] {
+  line-height: 1.5rem;
+}
+[data-component-part="accordion-caret-right"].mr-0\.5 > svg {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2018%2018%22%3E%3Cpath%20transform%3D%22rotate%28-90%209%209%29%22%20d%3D%22M14.0238%204.00002H3.97576C3.33776%204.00002%202.74976%204.34702%202.44276%204.90602C2.13576%205.46502%202.15576%206.14802%202.49776%206.68702L7.52176%2014.61C7.84476%2015.119%208.39676%2015.422%208.99976%2015.422C9.60276%2015.422%2010.1548%2015.118%2010.4778%2014.61L15.5028%206.68602C15.8438%206.14702%2015.8648%205.46402%2015.5578%204.90502C15.2508%204.34602%2014.6628%203.99902%2014.0248%203.99902L14.0238%204.00002Z%22%20fill%3D%22black%22/%3E%3C/svg%3E") !important;
+  mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2018%2018%22%3E%3Cpath%20transform%3D%22rotate%28-90%209%209%29%22%20d%3D%22M14.0238%204.00002H3.97576C3.33776%204.00002%202.74976%204.34702%202.44276%204.90602C2.13576%205.46502%202.15576%206.14802%202.49776%206.68702L7.52176%2014.61C7.84476%2015.119%208.39676%2015.422%208.99976%2015.422C9.60276%2015.422%2010.1548%2015.118%2010.4778%2014.61L15.5028%206.68602C15.8438%206.14702%2015.8648%205.46402%2015.5578%204.90502C15.2508%204.34602%2014.6628%203.99902%2014.0248%203.99902L14.0238%204.00002Z%22%20fill%3D%22black%22/%3E%3C/svg%3E") !important;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+summary[data-component-part="accordion-button"]:has(> [data-component-part="accordion-caret-right"].mr-0\.5) {
+  gap: 0.75rem;
+}
+summary[data-component-part="accordion-button"]:has(> [data-component-part="accordion-caret-right"].mr-0\.5) > div {
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+[data-component-part="accordion-caret-right"].mr-0\.5 {
+  display: flex;
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+}
+[data-component-part="accordion-caret-right"].mr-0\.5 > svg {
+  margin-top: 0 !important;
+}
+details:has(> summary > [data-component-part="accordion-caret-right"].mr-0\.5) > [data-component-part="accordion-content"] {
+  margin: 0 !important;
+  padding: 0 1.25rem 0.875rem;
+}
+html:not(.dark) [data-component-part="accordion-caret-right"].mr-0\.5 > svg {
+  background-color: rgb(79 79 87);
+}
+
+/* Blockquote paragraphs: prod's (newer) Mintlify renderer ships these rules; the local CLI build lacks them. */
+#content-area div.mdx-content.prose blockquote > span[data-as="p"],
+#content-area div.mdx-content .prose blockquote > span[data-as="p"] {
+  display: block;
+  margin-top: 1.25em;
+  margin-bottom: 1.25em;
+}
+#content-area div.mdx-content.prose-sm blockquote > span[data-as="p"],
+#content-area div.mdx-content .prose-sm blockquote > span[data-as="p"] {
+  display: block;
+  margin-top: var(--spacing-16-14);
+  margin-bottom: var(--spacing-16-14);
+}
+
+/* Cards: prod renders the external-link arrow hidden unless `arrow` is set (no page sets it). */
+a.card > div.absolute.top-5.right-5,
+a[data-client-link] > div.absolute.top-5.right-5,
+.card [data-component-part="card-content-container"] > div.absolute.top-5.right-5 {
+  display: none !important;
+}
+
+/* Code-snippet feedback button (injected by code-snippet-feedback.js to mirror prod). */
+#code-snippet-feedback-button { width: 1.625rem; height: 1.625rem; border-radius: 0.375rem; }
+.code-block:not(:has([data-fade-overlay])) [data-floating-buttons] #code-snippet-feedback-button { background-color: rgb(243 244 246); }
+.dark .code-block:not(:has([data-fade-overlay])) [data-floating-buttons] #code-snippet-feedback-button { background-color: rgb(31 41 55); }

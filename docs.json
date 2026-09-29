@@ -8,6 +8,9 @@
     "dark": "#0000ff"
   },
   "favicon": "/logo/favicon.png",
+  "styling": {
+    "latex": true
+  },
   "contextual": {
     "options": [
       "copy",
