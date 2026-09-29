@@ -1,0 +1,83 @@
+---
+title: "Authorize a Payment"
+keywords: ["Commerce Payments authorize", "USDC escrow Base", "PaymentAuthorized", "authorize and capture"]
+description: "Move payer funds into escrow for later capture on Base."
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+Authorize a payment when fulfillment happens after checkout. A successful protocol authorization moves tokens into the operator's escrow store immediately, so later capture does not depend on the payer keeping funds in their wallet.
+
+<Info>
+This guide's payment flow is based on the [Commerce Payments Protocol](https://github.com/base/commerce-payments).
+</Info>
+
+## Demo
+
+<PaymentsDemo flow="authorize" />
+
+<Tip>
+The demo above is mock only. If you want to see onchain demos on Vibenet, head to [Base chain demos](https://chain.base.org/demos).
+</Tip>
+
+<Warning>
+The collector signature is only permission to collect. Treat funds as reserved only after `authorize` succeeds and emits `PaymentAuthorized`.
+</Warning>
+
+## Authorize and Store the Payment
+
+Build one immutable `PaymentInfo` with the operator, payer, receiver, token, maximum amount, three ordered expiry timestamps, fee bounds, fee receiver, and a unique salt. Store the exact struct because every later operation recomputes its hash.
+
+The fixture prepares an ERC-3009 collector signature and submits the authorization from `paymentInfo.operator`.
+
+{/* sample: usdc-authorize-ts */}
+```typescript TypeScript lines wrap expandable highlight={6,11,15-16}
+export async function authorizePayment(
+  merchant: Address,
+  orderId: string,
+  amount: string,
+) {
+  const payment = await prepareErc3009Payment(merchant, orderId, amount);
+  const simulation = await publicClient.simulateContract({
+    account,
+    address: AUTH_CAPTURE_ESCROW,
+    abi: authCaptureEscrowAbi,
+    functionName: "authorize",
+    args: [
+      payment.paymentInfo,
+      payment.paymentInfo.maxAmount,
+      ERC3009_PAYMENT_COLLECTOR,
+      payment.collectorData,
+    ],
+  });
+  const hash = await walletClient.writeContract(simulation.request);
+  const receipt = await publicClient.waitForTransactionReceipt({ hash, confirmations: 2 });
+  if (receipt.status !== "success") throw new Error("Payment authorization reverted");
+  return { ...payment, authorizationHash: hash };
+}
+```
+
+| State field | Value after authorization |
+|---|---|
+| `hasCollectedPayment` | `true` permanently |
+| `capturableAmount` | Authorized amount held in escrow |
+| `refundableAmount` | `0` until capture |
+
+<Check>
+Persist `paymentInfoHash`, the full terms, collector, authorization transaction, and `PaymentAuthorized.amount` against the order.
+</Check>
+
+<Warning>
+The payment can be collected only once. Use a new cryptographically random salt for every checkout attempt, including retries after a void or reclaim.
+</Warning>
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="Capture an Authorization" icon="check" href="/build-on-base/accept-payments/capture-an-authorization">
+    Settle the escrowed amount before authorization expiry.
+  </Card>
+  <Card title="Void an Authorization" icon="ban" href="/build-on-base/accept-payments/void-an-authorization">
+    Return funds now, or let the payer reclaim after expiry.
+  </Card>
+</CardGroup>

@@ -1,0 +1,3517 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "aspen",
+  "name": "Base Documentation",
+  "colors": {
+    "primary": "#0000ff",
+    "light": "#578BFA",
+    "dark": "#0000ff"
+  },
+  "favicon": "/logo/favicon.png",
+  "contextual": {
+    "options": [
+      "copy",
+      "view",
+      "claude",
+      "chatgpt"
+    ]
+  },
+  "api": {
+    "playground": {
+      "display": "simple"
+    },
+    "examples": {
+      "languages": [
+        "javascript"
+      ]
+    }
+  },
+  "seo": {
+    "metatags": {
+      "og:type": "website",
+      "og:site_name": "Base documentation"
+    }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Get Started",
+        "groups": [
+          {
+            "group": "Quickstart",
+            "pages": [
+              "get-started/base",
+              "get-started/connect-to-base",
+              "get-started/get-funds",
+              "get-started/make-a-transaction",
+              "base-chain/network-information/ecosystem-bridges"
+            ]
+          },
+          {
+            "group": "Solutions",
+            "pages": [
+              "get-started/integrate-defi",
+              "get-started/issue-rwa",
+              "get-started/issue-stablecoins",
+              "get-started/accept-payments",
+              "get-started/private-transactions"
+            ]
+          },
+          {
+            "group": "Coding Agents",
+            "pages": [
+              "get-started/resources-for-ai-agents",
+              "get-started/docs-mcp",
+              "get-started/docs-llms"
+            ]
+          },
+          {
+            "group": "Get Funding",
+            "pages": [
+              "get-started/base-batches",
+              "get-started/base-ecosystem-fund",
+              "get-started/base-services-hub"
+            ]
+          },
+          {
+            "group": "Resources",
+            "pages": [
+              "get-started/builders",
+              "get-started/creators"
+            ]
+          },
+          {
+            "group": "References",
+            "pages": [
+              "get-started/base-chain",
+              "get-started/sdks-and-apis"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Build on Base",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "build-on-base/overview",
+              "build-on-base/test-on-vibenet",
+              "build-on-base/assign-user-attributes"
+            ]
+          },
+          {
+            "group": "Integrate DeFi",
+            "pages": [
+              "build-on-base/integrate-defi/integrate-trading",
+              "build-on-base/integrate-defi/integrate-lending",
+              "build-on-base/integrate-defi/integrate-borrowing",
+              "build-on-base/integrate-defi/integrate-earn-product",
+              "build-on-base/integrate-defi/list-tokenized-stocks"
+            ]
+          },
+          {
+            "group": "Tokenize Assets",
+            "pages": [
+              "build-on-base/issue-rwa/create-an-asset-token",
+              "build-on-base/issue-rwa/issue-units",
+              "build-on-base/issue-rwa/restrict-eligible-holders",
+              "build-on-base/issue-rwa/restrict-transfer-initiators",
+              "build-on-base/issue-rwa/seize-and-cancel-units",
+              "build-on-base/issue-rwa/announce-a-distribution",
+              "build-on-base/issue-rwa/apply-a-multiplier",
+              "build-on-base/issue-rwa/pause-transfers"
+            ]
+          },
+          {
+            "group": "Issue Stablecoins",
+            "pages": [
+              "build-on-base/issue-stablecoins/issue-your-stablecoin",
+              "build-on-base/issue-stablecoins/mint-supply",
+              "build-on-base/issue-stablecoins/burn-supply",
+              "build-on-base/issue-stablecoins/restrict-who-can-hold",
+              "build-on-base/issue-stablecoins/block-an-account",
+              "build-on-base/issue-stablecoins/recover-funds",
+              "build-on-base/issue-stablecoins/pause-activity",
+              "build-on-base/issue-stablecoins/reconcile-with-memos"
+            ]
+          },
+          {
+            "group": "Accept Payments",
+            "pages": [
+              {
+                "group": "Process a Payment",
+                "pages": [
+                  "build-on-base/accept-payments/make-a-simple-payment",
+                  "build-on-base/accept-payments/request-a-payment",
+                  "build-on-base/accept-payments/authorize-a-payment",
+                  "build-on-base/accept-payments/capture-an-authorization",
+                  "build-on-base/accept-payments/charge-on-a-schedule"
+                ]
+              },
+              {
+                "group": "Confirm and Reconcile",
+                "pages": [
+                  "build-on-base/accept-payments/verify-a-payment",
+                  "build-on-base/accept-payments/watch-for-payments",
+                  "build-on-base/accept-payments/reconcile-payments"
+                ]
+              },
+              {
+                "group": "Refund and Pay Out",
+                "pages": [
+                  "build-on-base/accept-payments/refund-a-payment",
+                  "build-on-base/accept-payments/void-an-authorization",
+                  "build-on-base/accept-payments/send-a-payout",
+                  "build-on-base/accept-payments/split-a-payment"
+                ]
+              },
+              {
+                "group": "Accept Agentic Payments",
+                "pages": [
+                  "build-on-base/accept-payments/charge-for-an-api",
+                  "build-on-base/accept-payments/settle-usage-based-payments",
+                  "build-on-base/accept-payments/batch-high-frequency-payments",
+                  "build-on-base/accept-payments/call-a-paid-service"
+                ]
+              }
+            ]
+          },
+          {
+            "group": "Private Transactions",
+            "pages": [
+              "build-on-base/ledgers/deposit",
+              "build-on-base/ledgers/transfer",
+              "build-on-base/ledgers/withdraw"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Specifications",
+        "groups": [
+          {
+            "group": "Specifications",
+            "pages": [
+              "specifications/overview",
+              {
+                "group": "Base Protocol",
+                "pages": [
+                  "specifications/base-protocol/overview",
+                  {
+                    "group": "Consensus",
+                    "pages": [
+                      "specifications/base-protocol/consensus/specification",
+                      "specifications/base-protocol/consensus/derivation",
+                      "specifications/base-protocol/consensus/p2p",
+                      "specifications/base-protocol/consensus/rpc"
+                    ]
+                  },
+                  {
+                    "group": "Execution",
+                    "pages": [
+                      "specifications/base-protocol/execution/l2-execution-engine",
+                      "specifications/base-protocol/execution/precompiles",
+                      "specifications/base-protocol/execution/predeploys",
+                      "specifications/base-protocol/execution/preinstalls"
+                    ]
+                  },
+                  {
+                    "group": "Bridging",
+                    "pages": [
+                      "specifications/base-protocol/bridging/standard-bridges",
+                      "specifications/base-protocol/bridging/deposits",
+                      "specifications/base-protocol/bridging/withdrawals",
+                      "specifications/base-protocol/bridging/cross-domain-messengers",
+                      "specifications/base-protocol/bridging/base-solana-bridge"
+                    ]
+                  },
+                  "specifications/base-protocol/batcher",
+                  {
+                    "group": "Proofs",
+                    "pages": [
+                      "specifications/base-protocol/proofs/overview",
+                      "specifications/base-protocol/proofs/challenger",
+                      "specifications/base-protocol/proofs/proposer",
+                      "specifications/base-protocol/proofs/registrar",
+                      "specifications/base-protocol/proofs/tee-prover",
+                      "specifications/base-protocol/proofs/zk-prover",
+                      "specifications/base-protocol/proofs/proof-contracts"
+                    ]
+                  },
+                  "specifications/base-protocol/design-goals"
+                ]
+              },
+              {
+                "group": "B20",
+                "pages": [
+                  "specifications/b20/index",
+                  {
+                    "group": "Concepts",
+                    "pages": [
+                      "specifications/b20/concepts/token-types",
+                      "specifications/b20/concepts/policies",
+                      "specifications/b20/concepts/roles-and-pause",
+                      "specifications/b20/concepts/multipliers"
+                    ]
+                  },
+                  {
+                    "group": "Reference",
+                    "pages": [
+                      "specifications/b20/reference/interfaces",
+                      "specifications/b20/reference/constants",
+                      "specifications/b20/reference/errors",
+                      "specifications/b20/reference/events"
+                    ]
+                  },
+                  "specifications/b20/changelog"
+                ]
+              },
+              "specifications/native-account-abstraction",
+              {
+                "group": "Transactions",
+                "pages": [
+                  "specifications/transactions/transaction-ordering",
+                  "specifications/transactions/transaction-finality",
+                  "specifications/transactions/network-fees",
+                  "specifications/transactions/throughput-and-limits",
+                  "specifications/transactions/troubleshooting-transactions"
+                ]
+              },
+              "specifications/flashblocks",
+              {
+                "group": "Builder Codes",
+                "pages": [
+                  "specifications/builder-codes/overview",
+                  "specifications/builder-codes/for-app-developers",
+                  "specifications/builder-codes/for-wallet-developers",
+                  "specifications/builder-codes/for-agent-developers"
+                ]
+              },
+              {
+                "group": "Validity Transactions",
+                "pages": [
+                  "specifications/build-transaction/validity-transactions",
+                  "specifications/build-transaction/build-a-validity-transaction",
+                  "specifications/build-transaction/base_sendRawTransactionValidity",
+                  "specifications/build-transaction/fees-ordering-and-lifecycle",
+                  "specifications/build-transaction/predicates-and-safety",
+                  "specifications/build-transaction/troubleshooting"
+                ]
+              }
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "specifications/reference/base-contracts",
+              "specifications/reference/smart-contracts",
+              "specifications/reference/configuration",
+              "specifications/reference/glossary"
+            ]
+          },
+          {
+            "group": "Node Operators",
+            "pages": [
+              "specifications/node-operators/run-a-node",
+              "specifications/node-operators/performance-tuning",
+              "specifications/node-operators/snapshots",
+              "specifications/node-operators/troubleshooting"
+            ]
+          },
+          {
+            "group": "Security",
+            "pages": [
+              "specifications/security/security-council-for-base",
+              "specifications/security/avoid-malicious-flags",
+              "specifications/security/report-a-vulnerability"
+            ]
+          }
+        ],
+        "global": {
+          "anchors": [
+            {
+              "anchor": "Status",
+              "href": "https://status.base.org/",
+              "icon": "signal-bars"
+            },
+            {
+              "anchor": "Explorer",
+              "href": "https://basescan.org/",
+              "icon": "magnifying-glass"
+            },
+            {
+              "anchor": "Stats",
+              "href": "https://www.base.org/stats",
+              "icon": "chart-line"
+            },
+            {
+              "anchor": "Vibenet",
+              "href": "https://chain.base.org/vibenet",
+              "icon": "flask"
+            }
+          ]
+        }
+      },
+      {
+        "tab": "SDKs & APIs",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "sdks/overview"
+            ]
+          },
+          {
+            "group": "CLIs",
+            "pages": [
+              "sdks/base-anvil"
+            ]
+          },
+          {
+            "group": "Base Chain API",
+            "pages": [
+              "base-chain/api-reference/rpc-overview",
+              {
+                "group": "Ethereum JSON-RPC API",
+                "pages": [
+                  "base-chain/api-reference/ethereum-json-rpc-api/eth_blockNumber",
+                  "base-chain/api-reference/ethereum-json-rpc-api/eth_call",
+                  "base-chain/api-reference/ethereum-json-rpc-api/eth_chainId",
+                  "base-chain/api-reference/ethereum-json-rpc-api/eth_estimateGas",
+                  "base-chain/api-reference/ethereum-json-rpc-api/eth_feeHistory",
+                  "base-chain/api-reference/ethereum-json-rpc-api/eth_gasPrice",
+                  "base-chain/api-reference/ethereum-json-rpc-api/eth_getBalance",
+                  "base-chain/api-reference/ethereum-json-rpc-api/eth_getBlockByHash",
+                  "base-chain/api-reference/ethereum-json-rpc-api/eth_getBlockByNumber",
+                  "base-chain/api-reference/ethereum-json-rpc-api/eth_getBlockReceipts",
+                  "base-chain/api-reference/ethereum-json-rpc-api/eth_getBlockTransactionCountByHash",
+                  "base-chain/api-reference/ethereum-json-rpc-api/eth_getBlockTransactionCountByNumber",
+                  "base-chain/api-reference/ethereum-json-rpc-api/eth_getCode",
+                  "base-chain/api-reference/ethereum-json-rpc-api/eth_getLogs",
+                  "base-chain/api-reference/ethereum-json-rpc-api/eth_getStorageAt",
+                  "base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionByBlockHashAndIndex",
+                  "base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionByBlockNumberAndIndex",
+                  "base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionByHash",
+                  "base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionCount",
+                  "base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionReceipt",
+                  "base-chain/api-reference/ethereum-json-rpc-api/eth_maxPriorityFeePerGas",
+                  "base-chain/api-reference/ethereum-json-rpc-api/eth_sendRawTransaction",
+                  "base-chain/api-reference/ethereum-json-rpc-api/eth_subscribe",
+                  "base-chain/api-reference/ethereum-json-rpc-api/eth_syncing",
+                  "base-chain/api-reference/ethereum-json-rpc-api/eth_unsubscribe",
+                  "base-chain/api-reference/ethereum-json-rpc-api/net_version",
+                  "base-chain/api-reference/ethereum-json-rpc-api/web3_clientVersion"
+                ]
+              },
+              {
+                "group": "Flashblocks API",
+                "pages": [
+                  "base-chain/api-reference/flashblocks-api/flashblocks-api-overview",
+                  "base-chain/api-reference/flashblocks-api/base_transactionStatus",
+                  "base-chain/api-reference/flashblocks-api/eth_simulateV1",
+                  "base-chain/api-reference/flashblocks-api/newFlashblockTransactions",
+                  "base-chain/api-reference/flashblocks-api/newFlashblocks",
+                  "base-chain/api-reference/flashblocks-api/pendingLogs"
+                ]
+              },
+              {
+                "group": "Debug API",
+                "pages": [
+                  "base-chain/api-reference/debug-api/debug_traceTransaction",
+                  "base-chain/api-reference/debug-api/debug_traceBlockByHash",
+                  "base-chain/api-reference/debug-api/debug_traceBlockByNumber"
+                ]
+              }
+            ]
+          },
+          {
+            "group": "Tokenized Stocks API",
+            "pages": [
+              "sdks/tokenized-stocks/overview",
+              "sdks/tokenized-stocks/api-reference/list-tokenized-stocks",
+              "sdks/tokenized-stocks/api-reference/list-protocol-contract-addresses",
+              "sdks/tokenized-stocks/api-reference/get-token-total-supply"
+            ]
+          },
+          {
+            "group": "Base Verify API",
+            "pages": [
+              "sdks/base-verify/overview",
+              "sdks/base-verify/verify-social-accounts",
+              "sdks/base-verify/verify-users-onchain"
+            ]
+          },
+          {
+            "group": "Migrated Documentation",
+            "pages": [
+              "sdks/migrated-products"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Upgrades",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "upgrades/overview",
+              "base-chain/network-information/configuration-changelog"
+            ]
+          },
+          {
+            "group": "Denim",
+            "pages": [
+              "upgrades/denim/overview",
+              "upgrades/denim/200ms-blocks",
+              "upgrades/denim/migrate-from-flashblocks"
+            ]
+          },
+          {
+            "group": "Cobalt",
+            "pages": [
+              "upgrades/cobalt/overview",
+              "upgrades/cobalt/dynamic-upgrades",
+              "base-chain/specs/reference/b20/changelog/02-cobalt-b20asset-multiplier",
+              "base-chain/specs/reference/b20/changelog/02-cobalt-b20-seize",
+              "base-chain/specs/reference/b20/changelog/02-cobalt-policyregistry-composite-policy",
+              "upgrades/cobalt/validity-transactions"
+            ]
+          },
+          {
+            "group": "Beryl",
+            "pages": [
+              "upgrades/beryl/overview",
+              "upgrades/beryl/reth-v2",
+              "upgrades/beryl/reducing-canonical-withdrawal-delay",
+              "upgrades/beryl/b20"
+            ]
+          },
+          {
+            "group": "Azul",
+            "pages": [
+              "upgrades/azul/overview",
+              "upgrades/azul/node-upgrade",
+              "upgrades/azul/exec-engine",
+              "upgrades/azul/proofs"
+            ]
+          },
+          {
+            "group": "Optimism",
+            "pages": [
+              {
+                "group": "Jovian",
+                "pages": [
+                  "upgrades/jovian/overview",
+                  "upgrades/jovian/exec-engine",
+                  "upgrades/jovian/derivation",
+                  "upgrades/jovian/l1-attributes",
+                  "upgrades/jovian/system-config"
+                ]
+              },
+              {
+                "group": "Isthmus",
+                "pages": [
+                  "upgrades/isthmus/overview",
+                  "upgrades/isthmus/exec-engine",
+                  "upgrades/isthmus/derivation",
+                  "upgrades/isthmus/l1-attributes",
+                  "upgrades/isthmus/predeploys",
+                  "upgrades/isthmus/system-config"
+                ]
+              },
+              {
+                "group": "Holocene",
+                "pages": [
+                  "upgrades/holocene/overview",
+                  "upgrades/holocene/exec-engine",
+                  "upgrades/holocene/derivation",
+                  "upgrades/holocene/system-config"
+                ]
+              },
+              {
+                "group": "Granite",
+                "pages": [
+                  "upgrades/granite/overview",
+                  "upgrades/granite/exec-engine",
+                  "upgrades/granite/derivation"
+                ]
+              },
+              {
+                "group": "Fjord",
+                "pages": [
+                  "upgrades/fjord/overview",
+                  "upgrades/fjord/exec-engine",
+                  "upgrades/fjord/derivation",
+                  "upgrades/fjord/predeploys"
+                ]
+              },
+              {
+                "group": "Ecotone",
+                "pages": [
+                  "upgrades/ecotone/overview",
+                  "upgrades/ecotone/derivation",
+                  "upgrades/ecotone/l1-attributes"
+                ]
+              },
+              {
+                "group": "Delta",
+                "pages": [
+                  "upgrades/delta/overview",
+                  "upgrades/delta/span-batches"
+                ]
+              },
+              "upgrades/canyon/overview"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "logo": {
+    "light": "/logo/logo_light.svg",
+    "dark": "/logo/logo_dark.svg"
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "GitHub",
+        "href": "https://github.com/base",
+        "icon": "github"
+      },
+      {
+        "label": "Support",
+        "href": "https://discord.com/invite/buildonbase",
+        "icon": "discord"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Dashboard",
+      "href": "https://dashboard.base.org/"
+    }
+  },
+  "footer": {
+    "socials": {
+      "x": "https://x.com/base",
+      "github": "https://github.com/base",
+      "reddit": "https://www.reddit.com/r/BASE/",
+      "linkedin": "https://linkedin.com/company/coinbase"
+    },
+    "links": [
+      {
+        "header": "Base",
+        "items": [
+          {
+            "label": "Base.org",
+            "href": "https://base.org"
+          },
+          {
+            "label": "Blog",
+            "href": "https://blog.base.dev/"
+          },
+          {
+            "label": "Privacy Policy",
+            "href": "https://docs.base.org/privacy-policy"
+          },
+          {
+            "label": "Terms of Service",
+            "href": "https://docs.base.org/terms-of-service"
+          },
+          {
+            "label": "Cookie Policy",
+            "href": "https://docs.base.org/cookie-policy"
+          }
+        ]
+      }
+    ]
+  },
+  "redirects": [
+    {
+      "source": "/specifications/b20/specification-overview",
+      "destination": "/specifications/b20"
+    },
+    {
+      "source": "/specifications/b20/architecture",
+      "destination": "/specifications/b20"
+    },
+    {
+      "source": "/build-on-base/accept-payments/capture-a-partial-amount",
+      "destination": "/build-on-base/accept-payments/capture-an-authorization#capture-a-partial-amount"
+    },
+    {
+      "source": "/upgrades/cobalt/validity-transactions",
+      "destination": "/specifications/build-transaction/validity-transactions"
+    },
+    {
+      "source": "/sdks/base-account",
+      "destination": "/sdks/migrated-products"
+    },
+    {
+      "source": "/sdks/base-account/:slug*",
+      "destination": "/sdks/migrated-products"
+    },
+    {
+      "source": "/base-account",
+      "destination": "/sdks/migrated-products"
+    },
+    {
+      "source": "/base-account/:slug*",
+      "destination": "/sdks/migrated-products"
+    },
+    {
+      "source": "/agents",
+      "destination": "/sdks/migrated-products"
+    },
+    {
+      "source": "/agents/:slug*",
+      "destination": "/sdks/migrated-products"
+    },
+    {
+      "source": "/ai-agents",
+      "destination": "/sdks/migrated-products"
+    },
+    {
+      "source": "/ai-agents/:slug*",
+      "destination": "/sdks/migrated-products"
+    },
+    {
+      "source": "/smart-wallet",
+      "destination": "/sdks/migrated-products"
+    },
+    {
+      "source": "/smart-wallet/:slug*",
+      "destination": "/sdks/migrated-products"
+    },
+    {
+      "source": "/identity/smart-wallet",
+      "destination": "/sdks/migrated-products"
+    },
+    {
+      "source": "/identity/smart-wallet/:slug*",
+      "destination": "/sdks/migrated-products"
+    },
+    {
+      "source": "/onchainkit/identity/:slug*",
+      "destination": "/sdks/migrated-products"
+    },
+    {
+      "source": "/onchainkit/latest/components/identity/:slug*",
+      "destination": "/sdks/migrated-products"
+    },
+    {
+      "source": "/onchainkit/latest/utilities/identity/:slug*",
+      "destination": "/sdks/migrated-products"
+    },
+    {
+      "source": "/onchainkit/latest/hooks/identity/:slug*",
+      "destination": "/sdks/migrated-products"
+    },
+    {
+      "source": "/use-cases/ai-instructions/:slug*",
+      "destination": "/sdks/migrated-products"
+    },
+    {
+      "source": "/sdks/coinbase-wallet",
+      "destination": "/sdks/migrated-products"
+    },
+    {
+      "source": "/base-chain/tools/account-abstraction",
+      "destination": "/sdks/migrated-products"
+    },
+    {
+      "source": "/basenames/basenames-onchainkit-tutorial",
+      "destination": "/sdks/migrated-products"
+    },
+    {
+      "source": "/identity/basenames/basenames-onchainkit-tutorial",
+      "destination": "/sdks/migrated-products"
+    },
+    {
+      "source": "/builderkits/onchainkit/use-coinbase-smart-wallet-and-eoas",
+      "destination": "/sdks/migrated-products"
+    },
+    {
+      "source": "/chain/account-abstraction",
+      "destination": "/sdks/migrated-products"
+    },
+    {
+      "source": "/use-cases/go-gasless",
+      "destination": "/sdks/migrated-products"
+    },
+    {
+      "source": "/use-cases/launch-ai-agents",
+      "destination": "/sdks/migrated-products"
+    },
+    {
+      "source": "/wallet-app/chat-agents",
+      "destination": "/sdks/migrated-products"
+    },
+    {
+      "source": "/cookbook/spend-permissions-ai-agent",
+      "destination": "/sdks/migrated-products"
+    },
+    {
+      "source": "/cookbook/launch-ai-agents",
+      "destination": "/sdks/migrated-products"
+    },
+    {
+      "source": "/cookbook/go-gasless",
+      "destination": "/sdks/migrated-products"
+    },
+    {
+      "source": "/base-chain/network-information/bridging-and-withdrawals",
+      "destination": "/specifications/base-protocol/bridging/withdrawals"
+    },
+    {
+      "source": "/base-chain/network-information/network-faucets",
+      "destination": "/get-started/get-funds"
+    },
+    {
+      "source": "/base-chain/quickstart/connecting-to-base",
+      "destination": "/get-started/connect-to-base"
+    },
+    {
+      "source": "/base-chain/specs/protocol/overview",
+      "destination": "/specifications/base-protocol/overview"
+    },
+    {
+      "source": "/base-chain/flashblocks",
+      "destination": "/specifications/transactions/transaction-ordering#flashblocks"
+    },
+    {
+      "source": "/ledgers/overview",
+      "destination": "/get-started/private-transactions"
+    },
+    {
+      "source": "/ledgers/how-it-works",
+      "destination": "/get-started/private-transactions"
+    },
+    {
+      "source": "/ledgers/deposit-flow",
+      "destination": "/build-on-base/ledgers/deposit"
+    },
+    {
+      "source": "/ledgers/withdraw-flow",
+      "destination": "/build-on-base/ledgers/withdraw"
+    },
+    {
+      "source": "/ledger/overview",
+      "destination": "/get-started/private-transactions"
+    },
+    {
+      "source": "/ledger/how-it-works",
+      "destination": "/get-started/private-transactions"
+    },
+    {
+      "source": "/ledger/deposit-flow",
+      "destination": "/build-on-base/ledgers/deposit"
+    },
+    {
+      "source": "/ledger/withdraw-flow",
+      "destination": "/build-on-base/ledgers/withdraw"
+    },
+    {
+      "source": "/build-on-base/private-transactions",
+      "destination": "/get-started/private-transactions"
+    },
+    {
+      "source": "/base-chain/network-information/native-account-abstraction",
+      "destination": "/specifications/native-account-abstraction"
+    },
+    {
+      "source": "/base-chain/specs/reference/native-account-abstraction",
+      "destination": "/specifications/native-account-abstraction"
+    },
+    {
+      "source": "/sdks/builder-codes",
+      "destination": "/specifications/builder-codes/overview"
+    },
+    {
+      "source": "/sdks/builder-codes/overview",
+      "destination": "/specifications/builder-codes/overview"
+    },
+    {
+      "source": "/sdks/builder-codes/app-developers",
+      "destination": "/specifications/builder-codes/for-app-developers"
+    },
+    {
+      "source": "/sdks/builder-codes/wallet-developers",
+      "destination": "/specifications/builder-codes/for-wallet-developers"
+    },
+    {
+      "source": "/sdks/builder-codes/agent-developers",
+      "destination": "/specifications/builder-codes/for-agent-developers"
+    },
+    {
+      "source": "/base-chain/specs/reference/builder-codes",
+      "destination": "/specifications/builder-codes/overview"
+    },
+    {
+      "source": "/get-started/launch-b20-token",
+      "destination": "/build-on-base/issue-rwa/create-an-asset-token"
+    },
+    {
+      "source": "/specifications/b20/launch-a-b20-token",
+      "destination": "/build-on-base/issue-rwa/create-an-asset-token"
+    },
+    {
+      "source": "/build-on-base/issue-stablecoins",
+      "destination": "/get-started/issue-stablecoins"
+    },
+    {
+      "source": "/build-on-base/agentic-payments",
+      "destination": "/get-started/accept-payments"
+    },
+    {
+      "source": "/build-on-base/lending-and-borrowing",
+      "destination": "/get-started/integrate-defi"
+    },
+    {
+      "source": "/get-started/lending-and-borrowing",
+      "destination": "/get-started/integrate-defi"
+    },
+    {
+      "source": "/build-on-base/tokenize-stocks",
+      "destination": "/get-started/issue-rwa"
+    },
+    {
+      "source": "/base-chain/reference/json-rpc-api",
+      "destination": "/base-chain/api-reference/rpc-overview"
+    },
+    {
+      "source": "/base-chain/reference/rpc-overview",
+      "destination": "/base-chain/api-reference/rpc-overview"
+    },
+    {
+      "source": "/base-chain/reference/flashblocks-stream",
+      "destination": "/base-chain/api-reference/flashblocks-api/flashblocks-api-overview"
+    },
+    {
+      "source": "/base-chain/reference/rpc-methods/:method",
+      "destination": "/base-chain/api-reference/ethereum-json-rpc-api/:method"
+    },
+    {
+      "source": "/base-chain/flashblocks/api-reference",
+      "destination": "/base-chain/api-reference/flashblocks-api/flashblocks-api-overview"
+    },
+    {
+      "source": "/base-chain/flashblocks/overview",
+      "destination": "/specifications/transactions/transaction-ordering#flashblocks"
+    },
+    {
+      "source": "/base-chain/flashblocks/app-integration",
+      "destination": "/base-chain/api-reference/rpc-overview#flashblocks"
+    },
+    {
+      "source": "/base-chain/flashblocks/architecture",
+      "destination": "/specifications/transactions/transaction-ordering#flashblocks"
+    },
+    {
+      "source": "/base-chain/network-information/block-building",
+      "destination": "/specifications/transactions/transaction-ordering"
+    },
+    {
+      "source": "/block-building",
+      "destination": "/specifications/transactions/transaction-ordering"
+    },
+    {
+      "source": "/base-chain/network-information/sequencing-policy",
+      "destination": "/specifications/transactions/transaction-ordering"
+    },
+    {
+      "source": "/base-chain/network-information/transaction-lifecycle",
+      "destination": "/specifications/transactions/transaction-ordering"
+    },
+    {
+      "source": "/base-chain/network-information/flashblocks",
+      "destination": "/specifications/transactions/transaction-ordering#flashblocks"
+    },
+    {
+      "source": "/base-chain/network-information/bridges",
+      "destination": "/base-chain/network-information/ecosystem-bridges"
+    },
+    {
+      "source": "/base-chain/network-information/bridge-options",
+      "destination": "/base-chain/network-information/ecosystem-bridges"
+    },
+    {
+      "source": "/base-chain/network-information/diffs-ethereum-base",
+      "destination": "/specifications/overview"
+    },
+    {
+      "source": "/base-chain/network-information/base-execution-differences",
+      "destination": "/specifications/overview"
+    },
+    {
+      "source": "/base-chain/quickstart/base-solana-bridge",
+      "destination": "/specifications/base-protocol/bridging/base-solana-bridge"
+    },
+    {
+      "source": "/base-chain/quickstart/deploy-on-base",
+      "destination": "/get-started/make-a-transaction"
+    },
+    {
+      "source": "/base-chain/quickstart/why-base",
+      "destination": "/specifications/overview"
+    },
+    {
+      "source": "/get-started/migrate-from-onchainkit",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/mini-apps/core-concepts/*",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/resources/*",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/featured-guidelines/*",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/troubleshooting/*",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/introduction/*",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/growth/optimize-onboarding",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/technical-guides/dynamic-embeds",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/getting-started",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/latest/getting-started/overview",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/latest/getting-started/quickstart-guide",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/latest/getting-started/manual-installation",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/latest/getting-started/troubleshooting",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/installation/nextjs",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/installation/vite",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/installation/remix",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/installation/astro",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/config/onchainkit-provider",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/config/supplemental-providers",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/config/is-base",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/config/is-ethereum",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/config/types",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/latest/configuration/onchainkit-provider",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/latest/configuration/wagmi-viem-integration",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/ai-agents/setup/agent-builder-codes",
+      "destination": "/specifications/builder-codes/for-agent-developers"
+    },
+    {
+      "source": "/ai-agents/guides/agent-builder-codes",
+      "destination": "/specifications/builder-codes/for-agent-developers"
+    },
+    {
+      "source": "/onchainkit/latest/configuration/themes",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/guides/telemetry",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/guides/troubleshooting",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/guides/lifecycle-status",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/guides/tailwind",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/guides/themes",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/guides/use-basename-in-onchain-app",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/guides/using-ai-powered-ides",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/guides/ai-prompting-guide",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/guides/contribution",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/guides/reporting-bug",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/latest/guides/ai-prompting-guide",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/latest/guides/contributing",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/templates/onchain-nft-app",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/templates/onchain-commerce-app",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/templates/onchain-social-profile",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/paymaster/welcome",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/paymaster/quickstart-guide",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/paymaster/quickstart-headless",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/paymaster/erc20-paymaster",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/paymaster/gasless-transactions-with-paymaster",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/paymaster/security",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/paymaster/troubleshooting",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/paymaster/errors",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/paymaster/how-to-contribute",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/minikit/overview",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/minikit/provider-and-initialization",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/minikit/hooks/useMiniKit",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/minikit/hooks/useOpenUrl",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/minikit/hooks/useClose",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/minikit/hooks/usePrimaryButton",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/minikit/hooks/useViewProfile",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/minikit/hooks/useComposeCast",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/minikit/hooks/useViewCast",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/minikit/hooks/useAuthenticate",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/minikit/hooks/useAddFrame",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/minikit/hooks/useNotification",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/checkout/checkout",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/checkout/types",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/checkout/checkout",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/onchainkit/wallet/wallet",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/wallet/wallet-dropdown-basename",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/wallet/wallet-dropdown-disconnect",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/wallet/wallet-dropdown-fund-link",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/wallet/wallet-dropdown-link",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/wallet/wallet-island",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/wallet/wallet-modal",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/wallet/is-valid-aa-entrypoint",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/wallet/is-wallet-a-coinbase-smart-wallet",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/wallet/types",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/wallet/wallet",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/wallet/wallet-dropdown-basename",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/wallet/wallet-dropdown-disconnect",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/wallet/wallet-dropdown-fund-link",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/wallet/wallet-dropdown-link",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/wallet/wallet-island",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/wallet/wallet-modal",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/utilities/wallet/is-valid-aa-entrypoint",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/utilities/wallet/is-wallet-a-coinbase-smart-wallet",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/connected/connected",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/transaction/transaction",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/transaction/types",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/transaction/transaction",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/swap/swap",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/swap/swap-settings",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/swap/types",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/swap/swap",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/swap/swap-settings",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/buy/buy",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/buy/buy",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/fund/fund-button",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/fund/fund-card",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/fund/get-onramp-buy-url",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/fund/fetch-onramp-config",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/fund/fetch-onramp-quote",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/fund/fetch-onramp-options",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/fund/fetch-onramp-transaction-status",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/fund/setup-onramp-event-listeners",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/fund/types",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/fund/fund-button",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/fund/fund-card",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/utilities/fund/get-onramp-buy-url",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/utilities/fund/fetch-onramp-config",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/utilities/fund/fetch-onramp-quote",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/utilities/fund/fetch-onramp-options",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/utilities/fund/fetch-onramp-transaction-status",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/utilities/fund/setup-onramp-event-listeners",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/earn/earn",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/earn/types",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/earn/earn",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/utilities/earn/build-deposit-to-morpho-tx",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/utilities/earn/build-withdraw-from-morpho-tx",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/hooks/earn/use-earn-context",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/hooks/earn/use-build-deposit-to-morpho-tx",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/hooks/earn/use-build-withdraw-from-morpho-tx",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/hooks/earn/use-morpho-vault",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/api/build-deposit-to-morpho-tx",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/api/build-withdraw-from-morpho-tx",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/hooks/use-build-deposit-to-morpho-tx",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/hooks/use-build-withdraw-from-morpho-tx",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/hooks/use-earn-context",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/mint/nft-card",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/mint/nft-mint-card",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/mint/types",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/mint/nft-card",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/mint/nft-mint-card",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/hooks/mint/use-token-details",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/hooks/mint/use-mint-details",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/api/get-mint-details",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/api/build-mint-transaction",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/hooks/use-mint-details",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/hooks/use-token-details",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/token/token-chip",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/token/token-image",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/token/token-row",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/token/token-search",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/token/token-select-dropdown",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/token/format-amount",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/token/types",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/token/token-chip",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/token/token-image",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/token/token-row",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/token/token-search",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/token/token-select-dropdown",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/utilities/token/format-amount",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/signature/signature",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/signature/types",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/latest/components/signature/signature",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/api/get-token-details",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/api/build-swap-transaction",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/api/get-swap-quote",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/api/get-tokens",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/api/get-portfolios",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/onchainkit/api/types",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/base-chain/tools/base-products",
+      "destination": "/get-started/base"
+    },
+    {
+      "source": "/base-chain/tools/onchain-registry-api",
+      "destination": "/specifications/reference/base-contracts"
+    },
+    {
+      "source": "/base-chain/tools/oracles",
+      "destination": "/specifications/reference/base-contracts"
+    },
+    {
+      "source": "/base-chain/tools/onboarding",
+      "destination": "/get-started/base"
+    },
+    {
+      "source": "/base-chain/tools/cross-chain",
+      "destination": "/base-chain/network-information/ecosystem-bridges"
+    },
+    {
+      "source": "/base-chain/tools/onramps",
+      "destination": "/get-started/base"
+    },
+    {
+      "source": "/base-chain/tools/tokens-in-wallet",
+      "destination": "/get-started/base"
+    },
+    {
+      "source": "/base-chain/tools/block-explorers",
+      "destination": "/get-started/base-services-hub"
+    },
+    {
+      "source": "/base-chain/tools/data-indexers",
+      "destination": "/get-started/base-services-hub"
+    },
+    {
+      "source": "/base-chain/tools/network-faucets",
+      "destination": "/get-started/get-funds"
+    },
+    {
+      "source": "/base-chain/tools/node-providers",
+      "destination": "/get-started/base-services-hub"
+    },
+    {
+      "source": "/base-chain/node-operators/node-providers",
+      "destination": "/get-started/base-services-hub"
+    },
+    {
+      "source": "/get-started/block-explorers",
+      "destination": "/get-started/base-services-hub"
+    },
+    {
+      "source": "/get-started/data-indexers",
+      "destination": "/get-started/base-services-hub"
+    },
+    {
+      "source": "/base-chain/flashblocks/node-providers",
+      "destination": "/specifications/node-operators/run-a-node"
+    },
+    {
+      "source": "/base-chain/flashblocks/run-a-flashblocks-node",
+      "destination": "/specifications/node-operators/run-a-node"
+    },
+    {
+      "source": "/base-chain/flashblocks/websocket-reference",
+      "destination": "/base-chain/api-reference/flashblocks-api/flashblocks-api-overview"
+    },
+    {
+      "source": "/base-chain/quickstart/bridge-token",
+      "destination": "/base-chain/network-information/ecosystem-bridges"
+    },
+    {
+      "source": "/apps/builder-codes/builder-codes-faq",
+      "destination": "/specifications/builder-codes/overview"
+    },
+    {
+      "source": "/base-chain/quickstart/builder-codes",
+      "destination": "/specifications/builder-codes/overview"
+    },
+    {
+      "source": "/apps/builder-codes/builder-codes-app-developers",
+      "destination": "/specifications/builder-codes/for-app-developers"
+    },
+    {
+      "source": "/apps/builder-codes/builder-codes-wallet-developers",
+      "destination": "/specifications/builder-codes/for-wallet-developers"
+    },
+    {
+      "source": "/apps/builder-codes/builder-codes-bridge-developers",
+      "destination": "/specifications/builder-codes/overview"
+    },
+    {
+      "source": "/apps/builder-codes/bridge-developers",
+      "destination": "/specifications/builder-codes/overview"
+    },
+    {
+      "source": "/get-started/ai-prompting",
+      "destination": "/get-started/docs-mcp"
+    },
+    {
+      "source": "/base-chain/network-information/bridges-mainnet",
+      "destination": "/base-chain/network-information/ecosystem-bridges"
+    },
+    {
+      "source": "/base-app/introduction/beta-faq",
+      "destination": "https://help.coinbase.com/en/base"
+    },
+    {
+      "source": "/base-app/agents/chat-agents",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/base-app/agents/getting-started",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/base-app/agents/building-quality-agents",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/base-app/agents/getting-featured",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/base-app/agents/quick-actions",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/base-app/agents/transaction-trays",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/base-app/agents/deeplinks",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/base-app/agents/x402-agents",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/base-app/agents/mini-apps-and-agents",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/technical-guides/search-discovery",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/overview",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/features/wallet",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/growth/data-driven-growth",
+      "destination": "https://base.dev"
+    },
+    {
+      "source": "/mini-apps/technical-guides/data-driven-growth",
+      "destination": "https://base.dev"
+    },
+    {
+      "source": "/mini-apps/features/links",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/technical-guides/links",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/features/search-and-discovery",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/features/sharing-and-social-graph",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/features/sign-manifest",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/features/manifest",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/features/authentication",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/features/context",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/features/notifications",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/features/embeds-and-previews",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/privacy-policy-2025",
+      "destination": "/privacy-policy"
+    },
+    {
+      "source": "/",
+      "destination": "/get-started/base"
+    },
+    {
+      "source": "/base-services-hub",
+      "destination": "/get-started/base-services-hub"
+    },
+    {
+      "source": "/buildathons/2025-02-flash",
+      "destination": "/get-started/base"
+    },
+    {
+      "source": "/builderkits",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/builderkits/minikit/debugging",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/builderkits/minikit/existing-app-integration",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/builderkits/minikit/overview",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/builderkits/minikit/quickstart",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/builderkits/minikit/thinking-social",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/builderkits/onchainkit/:slug*",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/builderkits/onchainkit/buy/buy",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/builderkits/onchainkit/checkout/checkout",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/builderkits/onchainkit/config/onchainkit-provider",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/builderkits/onchainkit/config/supplemental-providers",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/builderkits/onchainkit/create-a-basename-profile-component",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/builderkits/onchainkit/earn/earn",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/builderkits/onchainkit/fund/fund-button",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/builderkits/onchainkit/fund/fund-card",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/builderkits/onchainkit/getting-started",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/builderkits/onchainkit/guides/ai-prompting-guide",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/builderkits/onchainkit/guides/contribution",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/builderkits/onchainkit/guides/lifecycle-status",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/builderkits/onchainkit/guides/reporting-bug",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/builderkits/onchainkit/guides/tailwind",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/builderkits/onchainkit/guides/telemetry",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/builderkits/onchainkit/guides/themes",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/builderkits/onchainkit/guides/troubleshooting",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/builderkits/onchainkit/guides/use-basename-in-onchain-app",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/builderkits/onchainkit/guides/using-ai-powered-ides",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/builderkits/onchainkit/installation",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/builderkits/onchainkit/installation/astro",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/builderkits/onchainkit/installation/nextjs",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/builderkits/onchainkit/installation/remix",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/builderkits/onchainkit/installation/vite",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/builderkits/onchainkit/restricted",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/builderkits/onchainkit/signature/signature",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/builderkits/onchainkit/transaction/transaction",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/chain/app-blocklist",
+      "destination": "/specifications/security/avoid-malicious-flags"
+    },
+    {
+      "source": "/chain/base-contracts",
+      "destination": "/specifications/reference/base-contracts"
+    },
+    {
+      "source": "/chain/block-explorers",
+      "destination": "/get-started/base-services-hub"
+    },
+    {
+      "source": "/chain/bridge-an-l1-token-to-base",
+      "destination": "/base-chain/network-information/ecosystem-bridges"
+    },
+    {
+      "source": "/chain/bridges-mainnet",
+      "destination": "/base-chain/network-information/ecosystem-bridges"
+    },
+    {
+      "source": "/chain/builder-anniversary-nft",
+      "destination": "/specifications/overview"
+    },
+    {
+      "source": "/chain/connecting-to-base",
+      "destination": "/get-started/connect-to-base"
+    },
+    {
+      "source": "/chain/cross-chain",
+      "destination": "/base-chain/network-information/ecosystem-bridges"
+    },
+    {
+      "source": "/chain/data-indexers",
+      "destination": "/get-started/base-services-hub"
+    },
+    {
+      "source": "/chain/decentralizing-base-with-optimism",
+      "destination": "/specifications/overview"
+    },
+    {
+      "source": "/chain/deploy-on-base-quickstart",
+      "destination": "/get-started/make-a-transaction"
+    },
+    {
+      "source": "/chain/differences-between-ethereum-and-base",
+      "destination": "/specifications/overview"
+    },
+    {
+      "source": "/chain/fees",
+      "destination": "/specifications/transactions/network-fees"
+    },
+    {
+      "source": "/chain/flashblocks",
+      "destination": "/specifications/transactions/transaction-ordering#flashblocks"
+    },
+    {
+      "source": "/chain/flashblocks/apps",
+      "destination": "/base-chain/api-reference/rpc-overview#flashblocks"
+    },
+    {
+      "source": "/base-chain/flashblocks/apps",
+      "destination": "/base-chain/api-reference/rpc-overview#flashblocks"
+    },
+    {
+      "source": "/chain/flashblocks/node-providers",
+      "destination": "/specifications/node-operators/run-a-node"
+    },
+    {
+      "source": "/chain/network-faucets",
+      "destination": "/get-started/get-funds"
+    },
+    {
+      "source": "/chain/network-information",
+      "destination": "/get-started/connect-to-base"
+    },
+    {
+      "source": "/chain/node-performance",
+      "destination": "/specifications/node-operators/performance-tuning"
+    },
+    {
+      "source": "/chain/node-providers",
+      "destination": "/get-started/base-services-hub"
+    },
+    {
+      "source": "/chain/node-snapshots",
+      "destination": "/specifications/node-operators/snapshots"
+    },
+    {
+      "source": "/chain/node-troubleshooting",
+      "destination": "/specifications/node-operators/troubleshooting"
+    },
+    {
+      "source": "/chain/onramps",
+      "destination": "/get-started/base"
+    },
+    {
+      "source": "/chain/oracles",
+      "destination": "/specifications/reference/base-contracts"
+    },
+    {
+      "source": "/chain/registry-api",
+      "destination": "/specifications/reference/base-contracts"
+    },
+    {
+      "source": "/chain/registry-faq",
+      "destination": "/specifications/reference/base-contracts"
+    },
+    {
+      "source": "/chain/report",
+      "destination": "/specifications/security/report-a-vulnerability"
+    },
+    {
+      "source": "/chain/run-a-base-node",
+      "destination": "/specifications/node-operators/run-a-node"
+    },
+    {
+      "source": "/chain/security-council",
+      "destination": "/specifications/security/security-council-for-base"
+    },
+    {
+      "source": "/chain/security/app-blocklist",
+      "destination": "/specifications/security/avoid-malicious-flags"
+    },
+    {
+      "source": "/chain/security/bounty",
+      "destination": "/specifications/security/report-a-vulnerability"
+    },
+    {
+      "source": "/chain/security/report",
+      "destination": "/specifications/security/report-a-vulnerability"
+    },
+    {
+      "source": "/chain/using-base",
+      "destination": "/get-started/connect-to-base"
+    },
+    {
+      "source": "/chain/wallet",
+      "destination": "/get-started/base"
+    },
+    {
+      "source": "/chain/why-base",
+      "destination": "/specifications/overview"
+    },
+    {
+      "source": "/cookbook/growth/cast-actions",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/growth/deploy-to-vercel",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/growth/email-campaigns",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/growth/gating-and-redirects",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/growth/hyperframes",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/growth/retaining-users",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/payments/build-ecommerce-app",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/cookbook/payments/transaction-guide",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/cookbook/social/convert-farcaster-frame",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/social/farcaster-nft-minting-guide",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/social/farcaster-no-code-nft-minting",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/use-case-guides/cast-actions",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/use-case-guides/commerce/build-an-ecommerce-app",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/cookbook/use-case-guides/create-email-campaigns",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/use-case-guides/creator/convert-farcaster-frame-to-open-frame",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/use-case-guides/deploy-to-vercel",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/use-case-guides/gating-and-redirects",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/use-case-guides/hyperframes",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/use-case-guides/nft-minting",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/use-case-guides/no-code-minting",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/use-case-guides/retaining-users",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/use-case-guides/transactions",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/docs",
+      "destination": "/get-started/base"
+    },
+    {
+      "source": "/docs/arbitration",
+      "destination": "/terms-of-service#dispute-resolution-arbitration-agreement-class-action-waiver-and-jury-trial-waiver"
+    },
+    {
+      "source": "/docs/network-information",
+      "destination": "/get-started/connect-to-base"
+    },
+    {
+      "source": "/docs/tools/network-faucets",
+      "destination": "/get-started/get-funds"
+    },
+    {
+      "source": "/feedback",
+      "destination": "/get-started/base"
+    },
+    {
+      "source": "/guides/run-a-base-node",
+      "destination": "/specifications/node-operators/run-a-node"
+    },
+    {
+      "source": "/identity/basenames/:slug*",
+      "destination": "/smart-wallet/basenames/:slug*"
+    },
+    {
+      "source": "/identity/smart-wallet/usage-details/:slug*",
+      "destination": "/smart-wallet/concepts/usage-details/:slug*"
+    },
+    {
+      "source": "/network-information",
+      "destination": "/get-started/connect-to-base"
+    },
+    {
+      "source": "/quickstart",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/get-started/build-app",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/apps/quickstart/migrate-to-standard-web-app",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/tools/network-faucets",
+      "destination": "/get-started/get-funds"
+    },
+    {
+      "source": "/tutorials/deploy-with-foundry",
+      "destination": "/get-started/make-a-transaction"
+    },
+    {
+      "source": "/tutorials/deploy-with-remix",
+      "destination": "/get-started/make-a-transaction"
+    },
+    {
+      "source": "/use-cases/accept-crypto-payments",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/use-cases/decentralize-social-app",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/use-cases/defi-your-app",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/use-cases/onboard-any-user",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/wallet-app/beta-faq",
+      "destination": "https://help.coinbase.com/en/base"
+    },
+    {
+      "source": "/wallet-app/getting-started",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/wallet-app/mini-apps",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/wallet-app/:slug*",
+      "destination": "/base-app/:slug*"
+    },
+    {
+      "source": "/base-app/introduction/what-are-mini-apps",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/base-app/introduction/why-mini-apps",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/base-app/miniapps/overview",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/base-app/build-with-minikit/overview",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/base-app/miniapps/existing-app-integration",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/base-app/build-with-minikit/existing-app-integration",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/base-app/miniapps/quickstart",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/base-app/build-with-minikit/quickstart",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/quickstart/existing-apps/:slug*",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/quickstart/migrate-existing-apps",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/quickstart/new-apps/:slug*",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/base-app/miniapps/mini-apps",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/base-app/build-with-minikit/mini-apps",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/base-app/miniapps/search-and-discovery",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/base-app/build-with-minikit/search-and-discovery",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/base-app/miniapps/sharing-your-miniapp",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/base-app/build-with-minikit/sharing-your-miniapp",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/base-app/miniapps/how-manifest-work",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/base-app/build-with-minikit/how-manifest-work",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/base-app/miniapps/thinking-social",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/base-app/build-with-minikit/thinking-social",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/base-app/miniapps/debugging",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/base-app/build-with-minikit/debugging",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/design-ux/best-practices",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/design-ux/design-patterns",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/design-ux/onchainkit",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/quickstart/new-apps/features",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/quickstart/new-apps/install",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/quickstart/new-apps/deploy",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/quickstart/new-apps/create-manifest",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/design-ux/:slug*",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/get-featured/requirements",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/quickstart/launch-checklist",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/technical-reference/minikit/overview",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/mini-apps/technical-reference/minikit/provider-and-initialization",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/mini-apps/technical-reference/minikit/hooks/useMiniKit",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/mini-apps/technical-reference/minikit/hooks/useOpenUrl",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/mini-apps/technical-reference/minikit/hooks/useClose",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/mini-apps/technical-reference/minikit/hooks/usePrimaryButton",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/mini-apps/technical-reference/minikit/hooks/useViewProfile",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/mini-apps/technical-reference/minikit/hooks/useComposeCast",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/mini-apps/technical-reference/minikit/hooks/useViewCast",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/mini-apps/technical-reference/minikit/hooks/useAuthenticate",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/mini-apps/technical-reference/minikit/hooks/useAddFrame",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/mini-apps/technical-reference/minikit/hooks/useNotification",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/learn/:slug*",
+      "destination": "/get-started/resources-for-ai-agents"
+    },
+    {
+      "source": "/showcase",
+      "destination": "/get-started/base"
+    },
+    {
+      "source": "/cookbook/onboard-any-user",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/cookbook/accept-crypto-payments",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/cookbook/launch-tokens",
+      "destination": "/build-on-base/issue-rwa/create-an-asset-token"
+    },
+    {
+      "source": "/cookbook/onchain-social",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/defi-your-app",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/cookbook/base-app-coins",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/testing-onchain-apps",
+      "destination": "/get-started/make-a-transaction"
+    },
+    {
+      "source": "/cookbook/ai-prompting",
+      "destination": "/get-started/resources-for-ai-agents"
+    },
+    {
+      "source": "/cookbook/base-builder-mcp",
+      "destination": "/get-started/docs-mcp"
+    },
+    {
+      "source": "/cookbook/introduction-to-mini-apps",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/ai-powered-development-fundamentals",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/mastering-ai-prompt-engineering",
+      "destination": "/get-started/resources-for-ai-agents"
+    },
+    {
+      "source": "/cookbook/essential-documentation-resources",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/ai-assisted-documentation-reading",
+      "destination": "/get-started/docs-mcp"
+    },
+    {
+      "source": "/cookbook/successful-miniapps-in-tba",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/minikit/build-your-mini-app-with-prompt",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/converting-customizing-mini-apps",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/minikit/fork-and-customize",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/minikit/install",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/minikit/add-minikit",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/minikit/configure-environment",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/minikit/manifest-cli",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/minikit/create-manifest",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/minikit/add-frame-metadata",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/cookbook/minikit/test-and-deploy",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/mini-apps/quickstart/migrate-to-standard-web-app",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/quickstart/create-new-miniapp",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/growth/build-viral-mini-apps",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/mini-apps/:slug*",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/base-chain/builder-codes/builder-codes",
+      "destination": "/specifications/builder-codes/overview"
+    },
+    {
+      "source": "/base-chain/builder-codes/app-developers",
+      "destination": "/specifications/builder-codes/for-app-developers"
+    },
+    {
+      "source": "/base-chain/builder-codes/wallet-developers",
+      "destination": "/specifications/builder-codes/for-wallet-developers"
+    },
+    {
+      "source": "/base-chain/builder-codes/agent-developers",
+      "destination": "/specifications/builder-codes/for-agent-developers"
+    },
+    {
+      "source": "/base-chain/builder-codes",
+      "destination": "/specifications/builder-codes/overview"
+    },
+    {
+      "source": "/base-account/guides/verify-social-accounts",
+      "destination": "/sdks/base-verify/verify-social-accounts"
+    },
+    {
+      "source": "/apps/builder-codes/agent-developers",
+      "destination": "/specifications/builder-codes/for-agent-developers"
+    },
+    {
+      "source": "/apps/builder-codes/app-developers",
+      "destination": "/specifications/builder-codes/for-app-developers"
+    },
+    {
+      "source": "/apps/builder-codes/builder-codes",
+      "destination": "/specifications/builder-codes/overview"
+    },
+    {
+      "source": "/apps/builder-codes/wallet-developers",
+      "destination": "/specifications/builder-codes/for-wallet-developers"
+    },
+    {
+      "source": "/apps/growth/rewards",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/apps/guides/accept-b20-payments",
+      "destination": "/build-on-base/accept-payments/request-a-payment#accept-b20-with-a-memo"
+    },
+    {
+      "source": "/apps/guides/migrate-to-standard-web-app",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/apps/guides/verify-onchain",
+      "destination": "/sdks/base-verify/verify-users-onchain"
+    },
+    {
+      "source": "/apps",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/apps/quickstart/build-app",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/apps/quickstart/deploy-on-base",
+      "destination": "/get-started/make-a-transaction"
+    },
+    {
+      "source": "/apps/resources/design-resources",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/apps/resources/templates",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/apps/technical-guides/base-notifications",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/get-started/use-base-with-ai",
+      "destination": "/get-started/resources-for-ai-agents"
+    },
+    {
+      "source": "/build-on-base/perps",
+      "destination": "/build-on-base/overview"
+    },
+    {
+      "source": "/get-started/agentic-payments",
+      "destination": "/get-started/accept-payments"
+    },
+    {
+      "source": "/build-on-base/agentic-payments/accept-a-payment",
+      "destination": "/build-on-base/accept-payments/request-a-payment"
+    },
+    {
+      "source": "/build-on-base/accept-b20-payment",
+      "destination": "/build-on-base/accept-payments/request-a-payment#accept-b20-with-a-memo"
+    },
+    {
+      "source": "/build-on-base/agentic-payments/pay-for-apis-with-x402",
+      "destination": "/build-on-base/accept-payments/call-a-paid-service"
+    },
+    {
+      "source": "/build-on-base/agentic-payments/verify-a-payment",
+      "destination": "/build-on-base/accept-payments/verify-a-payment"
+    },
+    {
+      "source": "/build-on-base/agentic-payments/collect-payer-info",
+      "destination": "/build-on-base/accept-payments/request-a-payment"
+    },
+    {
+      "source": "/build-on-base/agentic-payments/accept-subscriptions",
+      "destination": "/build-on-base/accept-payments/charge-on-a-schedule"
+    },
+    {
+      "source": "/base-chain/specs/b20/overview",
+      "destination": "/specifications/b20"
+    },
+    {
+      "source": "/base-chain/specs/b20/changelog",
+      "destination": "/specifications/b20/changelog"
+    },
+    {
+      "source": "/build-on-base/tokenize-stocks/create-a-stock-token",
+      "destination": "/build-on-base/issue-rwa/create-an-asset-token"
+    },
+    {
+      "source": "/build-on-base/tokenize-stocks/issue-shares",
+      "destination": "/build-on-base/issue-rwa/issue-units"
+    },
+    {
+      "source": "/build-on-base/tokenize-stocks/restrict-eligible-holders",
+      "destination": "/build-on-base/issue-rwa/restrict-eligible-holders"
+    },
+    {
+      "source": "/build-on-base/tokenize-stocks/cancel-blocked-shares",
+      "destination": "/build-on-base/issue-rwa/seize-and-cancel-units"
+    },
+    {
+      "source": "/build-on-base/tokenize-stocks/announce-a-stock-dividend",
+      "destination": "/build-on-base/issue-rwa/announce-a-distribution"
+    },
+    {
+      "source": "/build-on-base/issue-rwa/cancel-blocked-units",
+      "destination": "/build-on-base/issue-rwa/seize-and-cancel-units"
+    },
+    {
+      "source": "/build-on-base/tokenize-stocks/run-a-stock-split",
+      "destination": "/build-on-base/issue-rwa/apply-a-multiplier"
+    },
+    {
+      "source": "/build-on-base/tokenize-stocks/pause-transfers",
+      "destination": "/build-on-base/issue-rwa/pause-transfers"
+    },
+    {
+      "source": "/get-started/tokenize-stocks",
+      "destination": "/get-started/issue-rwa"
+    },
+    {
+      "source": "/get-started/deploy-smart-contracts",
+      "destination": "/specifications/reference/smart-contracts"
+    },
+    {
+      "source": "/build-on-base/accept-payments/collect-payer-info",
+      "destination": "/build-on-base/accept-payments/request-a-payment"
+    },
+    {
+      "source": "/build-on-base/accept-payments/accept-subscriptions",
+      "destination": "/build-on-base/accept-payments/charge-on-a-schedule"
+    },
+    {
+      "source": "/get-started/apis",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/get-started/sdks",
+      "destination": "/sdks/overview"
+    },
+    {
+      "source": "/get-started/apply-for-funding",
+      "destination": "/get-started/base-ecosystem-fund"
+    },
+    {
+      "source": "/get-started/financing",
+      "destination": "/get-started/base-ecosystem-fund"
+    },
+    {
+      "source": "/get-started/get-funded",
+      "destination": "/get-started/base-ecosystem-fund"
+    },
+    {
+      "source": "/get-started/run-a-base-node",
+      "destination": "/specifications/node-operators/run-a-node"
+    },
+    {
+      "source": "/get-started/concepts",
+      "destination": "/specifications/overview"
+    },
+    {
+      "source": "/get-started/launch-token",
+      "destination": "/build-on-base/issue-rwa/create-an-asset-token"
+    },
+    {
+      "source": "/get-started/learning-resources",
+      "destination": "/get-started/resources-for-ai-agents"
+    },
+    {
+      "source": "/get-started/prompt-library",
+      "destination": "/get-started/resources-for-ai-agents"
+    },
+    {
+      "source": "/get-started/base-mentorship-program",
+      "destination": "/get-started/base-batches"
+    },
+    {
+      "source": "/get-started/country-leads-and-ambassadors",
+      "destination": "/get-started/base-batches"
+    },
+    {
+      "source": "/base-chain/specs/upgrades/beryl/b20-playground",
+      "destination": "/build-on-base/issue-rwa/create-an-asset-token"
+    },
+    {
+      "source": "/base-chain/security/bug-bounty",
+      "destination": "/specifications/security/report-a-vulnerability"
+    },
+    {
+      "source": "/build-on-base/accept-payments/from-humans",
+      "destination": "/build-on-base/accept-payments/request-a-payment"
+    },
+    {
+      "source": "/build-on-base/accept-payments/from-agents",
+      "destination": "/build-on-base/accept-payments/charge-for-an-api"
+    },
+    {
+      "source": "/sdks/base-account/guides/verify-social-accounts",
+      "destination": "/sdks/base-verify/verify-social-accounts"
+    },
+    {
+      "source": "/base-chain/asset-issuance/tokenized-stocks-on-base",
+      "destination": "/build-on-base/integrate-defi/list-tokenized-stocks"
+    },
+    {
+      "source": "/base-chain/specs/upgrades/denim/200ms-native-blocks",
+      "destination": "/upgrades/denim/200ms-blocks"
+    },
+    {
+      "source": "/base-chain/specs/upgrades/denim/overview",
+      "destination": "/upgrades/denim/200ms-blocks"
+    },
+    {
+      "source": "/base-chain/specs/upgrades/:path*",
+      "destination": "/upgrades/:path*"
+    },
+    {
+      "source": "/base-chain/overview",
+      "destination": "/specifications/overview"
+    },
+    {
+      "source": "/base-chain/specs/native-account-abstraction",
+      "destination": "/specifications/native-account-abstraction"
+    },
+    {
+      "source": "/base-chain/flashblocks/faq",
+      "destination": "/specifications/flashblocks"
+    },
+    {
+      "source": "/base-chain/specs/overview",
+      "destination": "/specifications/base-protocol/overview"
+    },
+    {
+      "source": "/base-chain/specs/design-goals",
+      "destination": "/specifications/base-protocol/design-goals"
+    },
+    {
+      "source": "/base-chain/specs/protocol/batcher",
+      "destination": "/specifications/base-protocol/batcher"
+    },
+    {
+      "source": "/base-chain/specs/protocol/consensus/index",
+      "destination": "/specifications/base-protocol/consensus/specification"
+    },
+    {
+      "source": "/base-chain/specs/protocol/consensus/derivation",
+      "destination": "/specifications/base-protocol/consensus/derivation"
+    },
+    {
+      "source": "/base-chain/specs/protocol/consensus/p2p",
+      "destination": "/specifications/base-protocol/consensus/p2p"
+    },
+    {
+      "source": "/base-chain/specs/protocol/consensus/rpc",
+      "destination": "/specifications/base-protocol/consensus/rpc"
+    },
+    {
+      "source": "/base-chain/specs/protocol/execution/index",
+      "destination": "/specifications/base-protocol/execution/l2-execution-engine"
+    },
+    {
+      "source": "/base-chain/specs/protocol/execution/evm/precompiles",
+      "destination": "/specifications/base-protocol/execution/precompiles"
+    },
+    {
+      "source": "/base-chain/specs/protocol/execution/evm/predeploys",
+      "destination": "/specifications/base-protocol/execution/predeploys"
+    },
+    {
+      "source": "/base-chain/specs/protocol/execution/evm/preinstalls",
+      "destination": "/specifications/base-protocol/execution/preinstalls"
+    },
+    {
+      "source": "/base-chain/specs/protocol/bridging/bridges",
+      "destination": "/specifications/base-protocol/bridging/standard-bridges"
+    },
+    {
+      "source": "/base-chain/specs/protocol/bridging/deposits",
+      "destination": "/specifications/base-protocol/bridging/deposits"
+    },
+    {
+      "source": "/base-chain/specs/protocol/bridging/withdrawals",
+      "destination": "/specifications/base-protocol/bridging/withdrawals"
+    },
+    {
+      "source": "/base-chain/specs/protocol/bridging/messengers",
+      "destination": "/specifications/base-protocol/bridging/cross-domain-messengers"
+    },
+    {
+      "source": "/base-chain/network-information/base-solana-bridge",
+      "destination": "/specifications/base-protocol/bridging/base-solana-bridge"
+    },
+    {
+      "source": "/base-chain/specs/protocol/proofs/index",
+      "destination": "/specifications/base-protocol/proofs/overview"
+    },
+    {
+      "source": "/base-chain/specs/protocol/proofs/challenger",
+      "destination": "/specifications/base-protocol/proofs/challenger"
+    },
+    {
+      "source": "/base-chain/specs/protocol/proofs/proposer",
+      "destination": "/specifications/base-protocol/proofs/proposer"
+    },
+    {
+      "source": "/base-chain/specs/protocol/proofs/registrar",
+      "destination": "/specifications/base-protocol/proofs/registrar"
+    },
+    {
+      "source": "/base-chain/specs/protocol/proofs/tee-prover",
+      "destination": "/specifications/base-protocol/proofs/tee-prover"
+    },
+    {
+      "source": "/base-chain/specs/protocol/proofs/zk-prover",
+      "destination": "/specifications/base-protocol/proofs/zk-prover"
+    },
+    {
+      "source": "/base-chain/specs/protocol/proofs/contracts",
+      "destination": "/specifications/base-protocol/proofs/proof-contracts"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/index",
+      "destination": "/specifications/b20"
+    },
+    {
+      "source": "/base-chain/network-information/b20-token-standard",
+      "destination": "/build-on-base/issue-rwa/create-an-asset-token"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/tokenized-stocks-on-base",
+      "destination": "/build-on-base/integrate-defi/list-tokenized-stocks"
+    },
+    {
+      "source": "/specifications/b20/tokenized-stocks-on-base",
+      "destination": "/build-on-base/integrate-defi/list-tokenized-stocks"
+    },
+    {
+      "source": "/build-on-base/issue-rwa/list-tokenized-stocks",
+      "destination": "/build-on-base/integrate-defi/list-tokenized-stocks"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/changelog",
+      "destination": "/specifications/b20/changelog"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/constants-and-addresses",
+      "destination": "/specifications/b20/reference/constants"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/errors-and-events",
+      "destination": "/specifications/b20/reference/interfaces"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/invariants-and-tests",
+      "destination": "/specifications/b20/reference/interfaces"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IActivationRegistry",
+      "destination": "/specifications/b20/reference/interfaces/i-activation-registry"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IActivationRegistry/activate",
+      "destination": "/specifications/b20/reference/interfaces/i-activation-registry/activate"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IActivationRegistry/admin",
+      "destination": "/specifications/b20/reference/interfaces/i-activation-registry/admin"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IActivationRegistry/checkActivated",
+      "destination": "/specifications/b20/reference/interfaces/i-activation-registry/check-activated"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IActivationRegistry/deactivate",
+      "destination": "/specifications/b20/reference/interfaces/i-activation-registry/deactivate"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IActivationRegistry/isActivated",
+      "destination": "/specifications/b20/reference/interfaces/i-activation-registry/is-activated"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20",
+      "destination": "/specifications/b20/reference/interfaces/ib20"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/BURN_BLOCKED_ROLE",
+      "destination": "/specifications/b20/reference/interfaces/ib20/burn-blocked-role"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/BURN_ROLE",
+      "destination": "/specifications/b20/reference/interfaces/ib20/burn-role"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/DEFAULT_ADMIN_ROLE",
+      "destination": "/specifications/b20/reference/interfaces/ib20/default-admin-role"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/DOMAIN_SEPARATOR",
+      "destination": "/specifications/b20/reference/interfaces/ib20/domain-separator"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/METADATA_ROLE",
+      "destination": "/specifications/b20/reference/interfaces/ib20/metadata-role"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/MINT_RECEIVER_POLICY",
+      "destination": "/specifications/b20/reference/interfaces/ib20/mint-receiver-policy"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/MINT_ROLE",
+      "destination": "/specifications/b20/reference/interfaces/ib20/mint-role"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/PAUSE_ROLE",
+      "destination": "/specifications/b20/reference/interfaces/ib20/pause-role"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/SEIZE_HOLDER_POLICY",
+      "destination": "/specifications/b20/reference/interfaces/ib20/seize-exempt-policy"
+    },
+    {
+      "source": "/specifications/b20/reference/interfaces/ib20/seize-holder-policy",
+      "destination": "/specifications/b20/reference/interfaces/ib20/seize-exempt-policy"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/SEIZE_RECEIVER_POLICY",
+      "destination": "/specifications/b20/reference/interfaces/ib20/seize-receiver-policy"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/SEIZE_ROLE",
+      "destination": "/specifications/b20/reference/interfaces/ib20/seize-role"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/TRANSFER_EXECUTOR_POLICY",
+      "destination": "/specifications/b20/reference/interfaces/ib20/transfer-executor-policy"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/TRANSFER_RECEIVER_POLICY",
+      "destination": "/specifications/b20/reference/interfaces/ib20/transfer-receiver-policy"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/TRANSFER_SENDER_POLICY",
+      "destination": "/specifications/b20/reference/interfaces/ib20/transfer-sender-policy"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/UNPAUSE_ROLE",
+      "destination": "/specifications/b20/reference/interfaces/ib20/unpause-role"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/allowance",
+      "destination": "/specifications/b20/reference/interfaces/ib20/allowance"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/approve",
+      "destination": "/specifications/b20/reference/interfaces/ib20/approve"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/balanceOf",
+      "destination": "/specifications/b20/reference/interfaces/ib20/balance-of"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/burn",
+      "destination": "/specifications/b20/reference/interfaces/ib20/burn"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/burnBlocked",
+      "destination": "/specifications/b20/reference/interfaces/ib20/burn-blocked"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/burnWithMemo",
+      "destination": "/specifications/b20/reference/interfaces/ib20/burn-with-memo"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/contractURI",
+      "destination": "/specifications/b20/reference/interfaces/ib20/contract-uri"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/decimals",
+      "destination": "/specifications/b20/reference/interfaces/ib20/decimals"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/eip712Domain",
+      "destination": "/specifications/b20/reference/interfaces/ib20/eip712-domain"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/getRoleAdmin",
+      "destination": "/specifications/b20/reference/interfaces/ib20/get-role-admin"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/grantRole",
+      "destination": "/specifications/b20/reference/interfaces/ib20/grant-role"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/hasRole",
+      "destination": "/specifications/b20/reference/interfaces/ib20/has-role"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/isPaused",
+      "destination": "/specifications/b20/reference/interfaces/ib20/is-paused"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/mint",
+      "destination": "/specifications/b20/reference/interfaces/ib20/mint"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/mintWithMemo",
+      "destination": "/specifications/b20/reference/interfaces/ib20/mint-with-memo"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/name",
+      "destination": "/specifications/b20/reference/interfaces/ib20/name"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/nonces",
+      "destination": "/specifications/b20/reference/interfaces/ib20/nonces"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/pause",
+      "destination": "/specifications/b20/reference/interfaces/ib20/pause"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/pausedFeatures",
+      "destination": "/specifications/b20/reference/interfaces/ib20/paused-features"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/permit",
+      "destination": "/specifications/b20/reference/interfaces/ib20/permit"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/policyId",
+      "destination": "/specifications/b20/reference/interfaces/ib20/policy-id"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/renounceLastAdmin",
+      "destination": "/specifications/b20/reference/interfaces/ib20/renounce-last-admin"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/renounceRole",
+      "destination": "/specifications/b20/reference/interfaces/ib20/renounce-role"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/revokeRole",
+      "destination": "/specifications/b20/reference/interfaces/ib20/revoke-role"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/seizeWithMemo",
+      "destination": "/specifications/b20/reference/interfaces/ib20/seize-with-memo"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/setRoleAdmin",
+      "destination": "/specifications/b20/reference/interfaces/ib20/set-role-admin"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/supplyCap",
+      "destination": "/specifications/b20/reference/interfaces/ib20/supply-cap"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/symbol",
+      "destination": "/specifications/b20/reference/interfaces/ib20/symbol"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/totalSupply",
+      "destination": "/specifications/b20/reference/interfaces/ib20/total-supply"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/transfer",
+      "destination": "/specifications/b20/reference/interfaces/ib20/transfer"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/transferFrom",
+      "destination": "/specifications/b20/reference/interfaces/ib20/transfer-from"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/transferFromWithMemo",
+      "destination": "/specifications/b20/reference/interfaces/ib20/transfer-from-with-memo"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/transferWithMemo",
+      "destination": "/specifications/b20/reference/interfaces/ib20/transfer-with-memo"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/unpause",
+      "destination": "/specifications/b20/reference/interfaces/ib20/unpause"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/updateContractURI",
+      "destination": "/specifications/b20/reference/interfaces/ib20/update-contract-uri"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/updateName",
+      "destination": "/specifications/b20/reference/interfaces/ib20/update-name"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/updatePolicy",
+      "destination": "/specifications/b20/reference/interfaces/ib20/update-policy"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/updateSupplyCap",
+      "destination": "/specifications/b20/reference/interfaces/ib20/update-supply-cap"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20/updateSymbol",
+      "destination": "/specifications/b20/reference/interfaces/ib20/update-symbol"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20Asset",
+      "destination": "/specifications/b20/reference/interfaces/ib20-asset"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20Asset/MAX_UI_MULTIPLIER",
+      "destination": "/specifications/b20/reference/interfaces/ib20-asset/max-ui-multiplier"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20Asset/OPERATOR_ROLE",
+      "destination": "/specifications/b20/reference/interfaces/ib20-asset/operator-role"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20Asset/WAD_PRECISION",
+      "destination": "/specifications/b20/reference/interfaces/ib20-asset/wad-precision"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20Asset/announce",
+      "destination": "/specifications/b20/reference/interfaces/ib20-asset/announce"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20Asset/balanceOfUI",
+      "destination": "/specifications/b20/reference/interfaces/ib20-asset/balance-of-ui"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20Asset/batchMint",
+      "destination": "/specifications/b20/reference/interfaces/ib20-asset/batch-mint"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20Asset/cancelUIMultiplierUpdate",
+      "destination": "/specifications/b20/reference/interfaces/ib20-asset/cancel-ui-multiplier-update"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20Asset/effectiveAt",
+      "destination": "/specifications/b20/reference/interfaces/ib20-asset/effective-at"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20Asset/extraMetadata",
+      "destination": "/specifications/b20/reference/interfaces/ib20-asset/extra-metadata"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20Asset/fromUIAmount",
+      "destination": "/specifications/b20/reference/interfaces/ib20-asset/from-ui-amount"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20Asset/isAnnouncementIdUsed",
+      "destination": "/specifications/b20/reference/interfaces/ib20-asset/is-announcement-id-used"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20Asset/multiplier",
+      "destination": "/specifications/b20/reference/interfaces/ib20-asset/multiplier"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20Asset/newUIMultiplier",
+      "destination": "/specifications/b20/reference/interfaces/ib20-asset/new-ui-multiplier"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20Asset/scaledBalanceOf",
+      "destination": "/specifications/b20/reference/interfaces/ib20-asset/scaled-balance-of"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20Asset/toRawBalance",
+      "destination": "/specifications/b20/reference/interfaces/ib20-asset/to-raw-balance"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20Asset/toScaledBalance",
+      "destination": "/specifications/b20/reference/interfaces/ib20-asset/to-scaled-balance"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20Asset/toUIAmount",
+      "destination": "/specifications/b20/reference/interfaces/ib20-asset/to-ui-amount"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20Asset/totalSupplyUI",
+      "destination": "/specifications/b20/reference/interfaces/ib20-asset/total-supply-ui"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20Asset/uiMultiplier",
+      "destination": "/specifications/b20/reference/interfaces/ib20-asset/ui-multiplier"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20Asset/updateExtraMetadata",
+      "destination": "/specifications/b20/reference/interfaces/ib20-asset/update-extra-metadata"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20Asset/updateMultiplier",
+      "destination": "/specifications/b20/reference/interfaces/ib20-asset/update-multiplier"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20Asset/updateUIMultiplier",
+      "destination": "/specifications/b20/reference/interfaces/ib20-asset/update-ui-multiplier"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20Factory",
+      "destination": "/specifications/b20/reference/interfaces/ib20-factory"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20Factory/createB20",
+      "destination": "/specifications/b20/reference/interfaces/ib20-factory/create-b20"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20Factory/getB20Address",
+      "destination": "/specifications/b20/reference/interfaces/ib20-factory/get-b20-address"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20Factory/isB20",
+      "destination": "/specifications/b20/reference/interfaces/ib20-factory/is-b20"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20Factory/isB20Initialized",
+      "destination": "/specifications/b20/reference/interfaces/ib20-factory/is-b20-initialized"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20Stablecoin",
+      "destination": "/specifications/b20/reference/interfaces/ib20-stablecoin"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IB20Stablecoin/currency",
+      "destination": "/specifications/b20/reference/interfaces/ib20-stablecoin/currency"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IPolicyRegistry",
+      "destination": "/specifications/b20/reference/interfaces/i-policy-registry"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IPolicyRegistry/MAX_COMPOSITE_CHILD_POLICIES",
+      "destination": "/specifications/b20/reference/interfaces/i-policy-registry/max-composite-child-policies"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IPolicyRegistry/MIN_COMPOSITE_CHILD_POLICIES",
+      "destination": "/specifications/b20/reference/interfaces/i-policy-registry/min-composite-child-policies"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IPolicyRegistry/compositePolicyChildIds",
+      "destination": "/specifications/b20/reference/interfaces/i-policy-registry/composite-policy-child-ids"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IPolicyRegistry/createCompositePolicy",
+      "destination": "/specifications/b20/reference/interfaces/i-policy-registry/create-composite-policy"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IPolicyRegistry/createPolicy",
+      "destination": "/specifications/b20/reference/interfaces/i-policy-registry/create-policy"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IPolicyRegistry/createPolicyWithAccounts",
+      "destination": "/specifications/b20/reference/interfaces/i-policy-registry/create-policy-with-accounts"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IPolicyRegistry/finalizeUpdateAdmin",
+      "destination": "/specifications/b20/reference/interfaces/i-policy-registry/finalize-update-admin"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IPolicyRegistry/isAuthorized",
+      "destination": "/specifications/b20/reference/interfaces/i-policy-registry/is-authorized"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IPolicyRegistry/pendingPolicyAdmin",
+      "destination": "/specifications/b20/reference/interfaces/i-policy-registry/pending-policy-admin"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IPolicyRegistry/policyAdmin",
+      "destination": "/specifications/b20/reference/interfaces/i-policy-registry/policy-admin"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IPolicyRegistry/policyExists",
+      "destination": "/specifications/b20/reference/interfaces/i-policy-registry/policy-exists"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IPolicyRegistry/renounceAdmin",
+      "destination": "/specifications/b20/reference/interfaces/i-policy-registry/renounce-admin"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IPolicyRegistry/stageUpdateAdmin",
+      "destination": "/specifications/b20/reference/interfaces/i-policy-registry/stage-update-admin"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IPolicyRegistry/updateAllowlist",
+      "destination": "/specifications/b20/reference/interfaces/i-policy-registry/update-allowlist"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IPolicyRegistry/updateBlocklist",
+      "destination": "/specifications/b20/reference/interfaces/i-policy-registry/update-blocklist"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20/interfaces/IPolicyRegistry/updateComposite",
+      "destination": "/specifications/b20/reference/interfaces/i-policy-registry/update-composite"
+    },
+    {
+      "source": "/base-chain/network-information/transaction-ordering",
+      "destination": "/specifications/transactions/transaction-ordering"
+    },
+    {
+      "source": "/base-chain/network-information/transaction-finality",
+      "destination": "/specifications/transactions/transaction-finality"
+    },
+    {
+      "source": "/base-chain/network-information/network-fees",
+      "destination": "/specifications/transactions/network-fees"
+    },
+    {
+      "source": "/base-chain/network-information/throughput-and-limits",
+      "destination": "/specifications/transactions/throughput-and-limits"
+    },
+    {
+      "source": "/base-chain/network-information/troubleshooting-transactions",
+      "destination": "/specifications/transactions/troubleshooting-transactions"
+    },
+    {
+      "source": "/base-chain/specs/reference/builder-codes/overview",
+      "destination": "/specifications/builder-codes/overview"
+    },
+    {
+      "source": "/base-chain/specs/reference/builder-codes/app-developers",
+      "destination": "/specifications/builder-codes/for-app-developers"
+    },
+    {
+      "source": "/base-chain/specs/reference/builder-codes/wallet-developers",
+      "destination": "/specifications/builder-codes/for-wallet-developers"
+    },
+    {
+      "source": "/base-chain/specs/reference/builder-codes/agent-developers",
+      "destination": "/specifications/builder-codes/for-agent-developers"
+    },
+    {
+      "source": "/base-chain/network-information/base-contracts",
+      "destination": "/specifications/reference/base-contracts"
+    },
+    {
+      "source": "/base-chain/network-information/smart-contracts",
+      "destination": "/specifications/reference/smart-contracts"
+    },
+    {
+      "source": "/base-chain/specs/reference/configurability",
+      "destination": "/specifications/reference/configuration"
+    },
+    {
+      "source": "/base-chain/specs/reference/glossary",
+      "destination": "/specifications/reference/glossary"
+    },
+    {
+      "source": "/base-chain/node-operators/run-a-base-node",
+      "destination": "/specifications/node-operators/run-a-node"
+    },
+    {
+      "source": "/base-chain/node-operators/performance-tuning",
+      "destination": "/specifications/node-operators/performance-tuning"
+    },
+    {
+      "source": "/base-chain/node-operators/snapshots",
+      "destination": "/specifications/node-operators/snapshots"
+    },
+    {
+      "source": "/base-chain/node-operators/troubleshooting",
+      "destination": "/specifications/node-operators/troubleshooting"
+    },
+    {
+      "source": "/base-chain/security/security-council",
+      "destination": "/specifications/security/security-council-for-base"
+    },
+    {
+      "source": "/base-chain/security/avoid-malicious-flags",
+      "destination": "/specifications/security/avoid-malicious-flags"
+    },
+    {
+      "source": "/base-chain/security/report-vulnerability",
+      "destination": "/specifications/security/report-a-vulnerability"
+    },
+    {
+      "source": "/base-chain/specs/reference/b20",
+      "destination": "/specifications/b20"
+    },
+    {
+      "source": "/base-chain/specs/protocol/consensus",
+      "destination": "/specifications/base-protocol/consensus/specification"
+    },
+    {
+      "source": "/base-chain/specs/protocol/execution",
+      "destination": "/specifications/base-protocol/execution/l2-execution-engine"
+    },
+    {
+      "source": "/base-chain/specs/protocol/proofs",
+      "destination": "/specifications/base-protocol/proofs/overview"
+    }
+  ],
+  "integrations": {
+    "ga4": {
+      "measurementId": "G-TKCM02YFWN"
+    }
+  }
+}

@@ -1,0 +1,97 @@
+---
+title: "Reconcile Payments"
+keywords: ["Commerce Payments reconciliation", "paymentInfoHash report", "payment settlement ledger", "AuthCaptureEscrow accounting"]
+description: "Build a settlement report from escrow charges, captures, fees, voids, reclaims, and refunds."
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+Turn confirmed protocol logs into ledger rows keyed by `paymentInfoHash`. The initial authorization or charge establishes immutable payment terms; later events update capturable and refundable accounting.
+
+<Info>
+This guide's payment flow is based on the [Commerce Payments Protocol](https://github.com/base/commerce-payments).
+</Info>
+
+## Demo
+
+<PaymentsDemo flow="reconcile" />
+
+<Tip>
+The demo above is mock only. If you want to see onchain demos on Vibenet, head to [Base chain demos](https://chain.base.org/demos).
+</Tip>
+
+## Build a Settlement Report
+
+Query the v1.1.0 escrow, then create gross, fee, and refund rows from its lifecycle events.
+
+{/* sample: reconcile-payments-ts */}
+```typescript TypeScript backend lines wrap expandable highlight={5-10,14,22,30}
+export async function buildSettlementReport(
+  fromBlock: bigint,
+  toBlock: bigint,
+) {
+  const logs = await publicClient.getContractEvents({
+    address: AUTH_CAPTURE_ESCROW,
+    abi: authCaptureEscrowAbi,
+    fromBlock,
+    toBlock,
+    strict: true,
+  });
+  return logs.flatMap((log) => {
+    if (!log.transactionHash) return [];
+    if (log.eventName === "PaymentCharged") return [{
+      paymentInfoHash: log.args.paymentInfoHash,
+      transactionHash: log.transactionHash,
+      logIndex: log.logIndex,
+      operation: "charge",
+      grossAmount: log.args.amount,
+      feeAmount: log.args.feeAmount,
+    }];
+    if (log.eventName === "PaymentCaptured") return [{
+      paymentInfoHash: log.args.paymentInfoHash,
+      transactionHash: log.transactionHash,
+      logIndex: log.logIndex,
+      operation: "capture",
+      grossAmount: log.args.amount,
+      feeAmount: log.args.feeAmount,
+    }];
+    if (log.eventName === "PaymentRefunded") return [{
+      paymentInfoHash: log.args.paymentInfoHash,
+      transactionHash: log.transactionHash,
+      logIndex: log.logIndex,
+      operation: "refund",
+      grossAmount: -log.args.amount,
+      feeAmount: 0n,
+    }];
+    return [];
+  });
+}
+```
+
+For every charge or capture:
+
+```text Accounting
+merchant net = gross amount - fee amount
+refundable balance += gross amount
+```
+
+For every refund, reduce the refundable balance by the gross refund amount. A void or reclaim reduces only the capturable balance and does not reverse earlier captures.
+
+<Check>
+For an authorization, reconcile the authorized amount to captures plus the voided or reclaimed amount plus current `capturableAmount`. Reconcile total charged and captured value to refunds plus current `refundableAmount`.
+</Check>
+
+<Warning>
+Run financial reports only through a finalized block range. If you display more recent confirmations, label them provisional and replace them after a reorg.
+</Warning>
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="Watch for Payments" icon="eye" href="/build-on-base/accept-payments/watch-for-payments">
+    Keep the underlying escrow event index current.
+  </Card>
+  <Card title="Refund a Payment" icon="rotate-left" href="/build-on-base/accept-payments/refund-a-payment">
+    Understand gross refund accounting and liquidity.
+  </Card>
+</CardGroup>

@@ -1,0 +1,81 @@
+---
+title: "Refund a Payment"
+keywords: ["Commerce Payments refund", "OperatorRefundCollector", "partial USDC refund", "PaymentRefunded"]
+description: "Return captured value to the original payer within the refund window."
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+Refund all or part of a protocol charge or capture before `refundExpiry`. The refundable limit is maintained onchain, and refunds are always sent to `paymentInfo.payer`.
+
+<Info>
+This guide's payment flow is based on the [Commerce Payments Protocol](https://github.com/base/commerce-payments).
+</Info>
+
+## Demo
+
+<PaymentsDemo flow="refund" />
+
+<Tip>
+The demo above is mock only. If you want to see onchain demos on Vibenet, head to [Base chain demos](https://chain.base.org/demos).
+</Tip>
+
+## Fund and Submit the Refund
+
+Captured funds have already left escrow. The deployed `OperatorRefundCollector` sources replacement liquidity from `paymentInfo.operator`, so approve it for the refund amount before calling `refund`.
+
+{/* sample: refund-payment-ts */}
+```typescript TypeScript lines wrap expandable highlight={8-11,16-17,26-27}
+export async function refundPayment(
+  payment: StoredProtocolPayment,
+  refundAmount: bigint,
+) {
+  const [, , refundableAmount] = await publicClient.readContract({
+    address: AUTH_CAPTURE_ESCROW,
+    abi: authCaptureEscrowAbi,
+    functionName: "paymentState",
+    args: [payment.paymentInfoHash],
+  });
+  if (refundAmount > refundableAmount) throw new Error("Refund exceeds captured amount");
+  const approval = await publicClient.simulateContract({
+    account,
+    address: payment.paymentInfo.token,
+    abi: refundApprovalAbi,
+    functionName: "approve",
+    args: [OPERATOR_REFUND_COLLECTOR, refundAmount],
+  });
+  const approvalHash = await walletClient.writeContract(approval.request);
+  await publicClient.waitForTransactionReceipt({ hash: approvalHash, confirmations: 2 });
+
+  const refund = await publicClient.simulateContract({
+    account,
+    address: AUTH_CAPTURE_ESCROW,
+    abi: authCaptureEscrowAbi,
+    functionName: "refund",
+    args: [payment.paymentInfo, refundAmount, OPERATOR_REFUND_COLLECTOR, "0x"],
+  });
+  const hash = await walletClient.writeContract(refund.request);
+  return publicClient.waitForTransactionReceipt({ hash, confirmations: 2 });
+}
+```
+
+Every charge or capture increases `refundableAmount` by its gross amount. Fees do not reduce that limit. Every refund decreases it by the amount returned.
+
+<Check>
+Verify `PaymentRefunded(paymentInfoHash, amount, tokenCollector)`, the transfer to the stored payer, and the updated `refundableAmount` before completing the return.
+</Check>
+
+<Warning>
+Refund accounting is not refund liquidity. The operator or another independently authorized source must provide the tokens. Never reuse residual payer authorization to fund a refund.
+</Warning>
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="Verify a Payment" icon="shield-check" href="/build-on-base/accept-payments/verify-a-payment">
+    Confirm the original protocol settlement and payment hash.
+  </Card>
+  <Card title="Reconcile Payments" icon="table" href="/build-on-base/accept-payments/reconcile-payments">
+    Match refunds to charges and captures.
+  </Card>
+</CardGroup>

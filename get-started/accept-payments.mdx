@@ -1,0 +1,92 @@
+---
+title: "Accept Payments"
+keywords: ["Commerce Payments Protocol", "accept USDC payments Base", "authorize and capture Base", "x402 agentic payments"]
+description: "Choose an onchain payment lifecycle for commerce checkout, agentic payments, reconciliation, refunds, and payouts on Base."
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+Accept payments on Base with the lifecycle your product needs. Use the [Commerce Payments Protocol](https://github.com/base/commerce-payments) to charge immediately or reserve funds in escrow before fulfillment, then capture, void, reclaim, or refund under payer-approved terms. The same solution area also covers scheduled collection, reconciliation, payouts, splits, and x402 APIs.
+
+## Demo
+
+<PaymentsDemo />
+
+<Tip>
+The demo above is mock only. If you want to see onchain demos on Vibenet, head to [Base chain demos](https://chain.base.org/demos).
+</Tip>
+
+## Payment Lifecycle
+
+| Stage | What happens | Start with |
+|---|---|---|
+| Charge | The operator collects and settles a protocol payment atomically | [Request a payment](/build-on-base/accept-payments/request-a-payment) |
+| Authorize | The operator moves payer funds into escrow | [Authorize a payment](/build-on-base/accept-payments/authorize-a-payment) |
+| Capture | The operator settles all or part of the escrowed amount | [Capture an authorization](/build-on-base/accept-payments/capture-an-authorization) |
+| Confirm | Your backend verifies confirmed protocol events and claims the order once | [Verify a payment](/build-on-base/accept-payments/verify-a-payment) |
+| Return or distribute | You refund the payer or pay downstream recipients | [Refund a payment](/build-on-base/accept-payments/refund-a-payment) |
+
+## Take a Payment
+
+<CardGroup cols={2}>
+  <Card title="Request a Payment" icon="credit-card" href="/build-on-base/accept-payments/request-a-payment">
+    Charge and settle immediately in one transaction.
+  </Card>
+  <Card title="Authorize a Payment" icon="signature" href="/build-on-base/accept-payments/authorize-a-payment">
+    Reserve funds in escrow under immutable payment terms.
+  </Card>
+  <Card title="Capture an Authorization" icon="check" href="/build-on-base/accept-payments/capture-an-authorization">
+    Settle all or part of the escrowed funds before authorization expiry.
+  </Card>
+  <Card title="Charge on a Schedule" icon="calendar" href="/build-on-base/accept-payments/charge-on-a-schedule">
+    Create one protocol charge per billing period with a spend permission.
+  </Card>
+</CardGroup>
+
+## Confirm and Reconcile
+
+<CardGroup cols={2}>
+  <Card title="Verify a Payment" icon="shield-check" href="/build-on-base/accept-payments/verify-a-payment">
+    Validate settlement events and claim each payment once.
+  </Card>
+  <Card title="Watch for Payments" icon="eye" href="/build-on-base/accept-payments/watch-for-payments">
+    Subscribe to escrow events and backfill confirmed blocks.
+  </Card>
+  <Card title="Reconcile Payments" icon="table" href="/build-on-base/accept-payments/reconcile-payments">
+    Export charges, captures, fees, voids, reclaims, and refunds.
+  </Card>
+</CardGroup>
+
+## Refund and Pay Out
+
+<CardGroup cols={2}>
+  <Card title="Refund a Payment" icon="rotate-left" href="/build-on-base/accept-payments/refund-a-payment">
+    Source refund liquidity and return captured value to the payer.
+  </Card>
+  <Card title="Void an Authorization" icon="ban" href="/build-on-base/accept-payments/void-an-authorization">
+    Return the remainder now or let the payer reclaim after expiry.
+  </Card>
+  <Card title="Send a Payout" icon="money-bill-transfer" href="/build-on-base/accept-payments/send-a-payout">
+    Pay a bounded recipient batch under one reference.
+  </Card>
+  <Card title="Split a Payment" icon="divide" href="/build-on-base/accept-payments/split-a-payment">
+    Distribute exact basis-point shares without stranded dust.
+  </Card>
+</CardGroup>
+
+## Accept Agentic Payments
+
+<CardGroup cols={2}>
+  <Card title="Charge for an API" icon="server" href="/build-on-base/accept-payments/charge-for-an-api">
+    Protect a fixed-price route with x402 `exact`.
+  </Card>
+  <Card title="Settle Usage-Based Payments" icon="gauge" href="/build-on-base/accept-payments/settle-usage-based-payments">
+    Authorize a maximum and settle measured usage with `upto`.
+  </Card>
+  <Card title="Batch High-Frequency Payments" icon="layer-group" href="/build-on-base/accept-payments/batch-high-frequency-payments">
+    Advance vouchers per request and settle channels in batches.
+  </Card>
+  <Card title="Call a Paid Service" icon="robot" href="/build-on-base/accept-payments/call-a-paid-service">
+    Enforce network, asset, and spend policy before an agent signs.
+  </Card>
+</CardGroup>
