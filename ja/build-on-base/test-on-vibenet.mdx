@@ -1,0 +1,103 @@
+---
+title: "Vibenetでテストする"
+description: "Baseの実験的なプレビューネットワークであるVibenetで、Baseの最新チェーンレベル機能を使った開発とテストを行えます。現在利用可能な機能はchain.base.org/vibenetで確認できます。"
+---
+
+Vibenetは、Baseの実験的なプレビューネットワークです。新しいチェーンレベルの機能は、SepoliaやMainnetに展開される前に、まずこのdevnetで公開されます。Vibenetを使って、Baseの最先端の機能を活用した開発を進めましょう。
+
+<Warning>
+  Vibenetは実験専用のネットワークです。本番環境やユーザー向けアプリケーションでの利用は想定されておらず、ネットワークの状態は予告なくリセットされる場合があります。
+</Warning>
+
+## Vibenet で公開中の機能を確認する {#see-whats-live-on-vibenet}
+
+[chain.base.org/vibenet](https://chain.base.org/vibenet) は Vibenet のハブです。リリースされる最新機能をチェックしたり、ブロックエクスプローラーを閲覧したり、フォーセットでテストネット ETH をリクエストしたりできます。
+
+<iframe src="https://chain.base.org/vibenet" title="Base Vibenet、chain.base.org" width="100%" height="640" style={{ border: "1px solid rgba(128,128,128,0.25)", borderRadius: "12px" }} loading="lazy" referrerpolicy="strict-origin-when-cross-origin" />
+
+<Note>
+  埋め込みコンテンツが読み込まれない場合は、[chain.base.org/vibenet](https://chain.base.org/vibenet) を新しいタブで直接開いてください。
+</Note>
+
+## ネットワークの詳細 {#network-details}
+
+|                       |                                                                            |
+| :-------------------- | :------------------------------------------------------------------------- |
+| **ネットワーク名**           | Base Vibenet                                                               |
+| **RPC エンドポイント**       | [rpc.vibes.base.org](https://rpc.vibes.base.org)                           |
+| **WebSocket エンドポイント** | `wss://rpc.vibes.base.org/ws`                                              |
+| **チェーン ID**           | 84538453                                                                   |
+| **通貨シンボル**            | ETH                                                                        |
+| **フォーセット**            | [chain.base.org/vibenet/faucet](https://chain.base.org/vibenet/faucet)     |
+| **ブロックエクスプローラー**      | [chain.base.org/vibenet/explorer](https://chain.base.org/vibenet/explorer) |
+
+Vibenet をウォレットに追加する方法については、[Base への接続](/base-chain/quickstart/connecting-to-base)を参照してください。
+
+## テストネット ETH を入手する {#get-testnet-eth}
+
+Vibenet のトランザクションにはガスが必要です。[Vibenet フォーセット](https://chain.base.org/vibenet/faucet)からテストネット ETH をリクエストするか、以下のようにプログラムから取得します。
+
+```bash Terminal
+curl -X POST https://api.vibes.base.org/api/vibenet/faucet/drip \
+  -H "content-type: application/json" \
+  -d '{"address":"0xYourAddress"}'
+```
+
+## WebSocket でストリーミングする {#stream-with-websockets}
+
+Vibenet は公開 WebSocket エンドポイント `wss://rpc.vibes.base.org/ws` を提供しています。ポーリングする代わりに、`eth_subscribe` でサブスクライブすれば、更新をプッシュで受け取れます。
+
+* **`newHeads`** — ブロックごとに新しいイベントが発行されます。チェーンやブロックの状態を追跡する場合に使用します。
+* **`logs`** — アドレスとインデックス付きトピックでフィルタリングされたコントラクトイベントです。アプリケーションの状態を追跡する場合に使用します。
+
+```javascript newHeads subscription lines wrap expandable
+import WebSocket from "ws";
+
+const ws = new WebSocket("wss://rpc.vibes.base.org/ws");
+
+ws.on("open", () => {
+  ws.send(JSON.stringify({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "eth_subscribe",
+    params: ["newHeads"],
+  }));
+});
+
+ws.on("message", (data) => {
+  const msg = JSON.parse(data.toString());
+  if (msg.method === "eth_subscription") {
+    console.log("new head:", msg.params.result.number);
+  }
+});
+```
+
+ブロック間隔が200msの場合、250〜1000msのポーリングでは複数のブロックを取りこぼす可能性があるため、WebSocketによるプッシュを主なデータソースとしてください。長時間維持する接続は少数に抑え、サブスクリプションと通常のJSON-RPC呼び出しは1つの接続上で多重化します。ポーリングは整合性の確認 (残高、手数料、ヘルスチェック) に限って使用してください。また、ソケットが切断された場合に備えて、HTTPSによるRPC呼び出し経路をフォールバックとして用意しておいてください。
+
+<Note>
+  このパブリックWebSocketはVibenet専用です。BaseはBase MainnetおよびBase Sepolia向けに無料のパブリックWebSocket RPCエンドポイントを提供しておらず、これらのネットワークのパブリックエンドポイントはHTTPのみに対応しています。SepoliaまたはMainnetでWebSocketを利用するには、独自のノードを運用するか、[Builder Stack](/ja/get-started/builder-stack)に掲載されているWebSocket対応のプロバイダーを利用してください。
+</Note>
+
+## 現在利用可能な機能 {#whats-available-now}
+
+<CardGroup cols={2}>
+  <Card title="B20トークン標準" icon="coins" href="/ja/build-on-base/issue-rwa/create-an-asset-token">
+    Baseのネイティブトークン標準。ロール、供給上限、ポリシーによるアクセス制御、メモをチェーンレベルで組み込んでいます。
+  </Card>
+
+  <Card title="200msネイティブブロック" icon="clock" href="/ja/upgrades/denim/200ms-blocks">
+    正規の200msブロックをテストし、Flashblocksの統合を移行しましょう。
+  </Card>
+</CardGroup>
+
+## 次のステップ {#next-steps}
+
+<CardGroup cols={2}>
+  <Card title="Base に接続する" icon="plug" href="/base-chain/quickstart/connecting-to-base">
+    Vibenet をウォレットと開発環境に追加します。
+  </Card>
+
+  <Card title="B20 トークンを発行する" icon="rocket" href="/ja/build-on-base/issue-rwa/create-an-asset-token">
+    ファクトリーを 1 回呼び出すだけで、Vibenet 上にトークンをデプロイできます。
+  </Card>
+</CardGroup>

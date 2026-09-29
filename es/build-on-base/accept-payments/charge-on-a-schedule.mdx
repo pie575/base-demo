@@ -1,0 +1,84 @@
+---
+title: "Cobrar de forma programada"
+keywords: ["cobro recurrente de Commerce Payments", "SpendPermissionPaymentCollector", "pago programado en USDC", "facturación con smart wallet"]
+description: "Crea un cobro respaldado por un depósito en garantía (escrow) por cada período de facturación mediante un permiso de gasto de la billetera."
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+Usa el `SpendPermissionPaymentCollector` desplegado cuando una billetera autorice cobros recurrentes. Aun así, tu programador de tareas debe crear un `PaymentInfo` nuevo y una sal única para cada período de facturación, ya que cada pago del protocolo solo puede cobrarse una vez.
+
+<Info>
+  El flujo de pago de esta guía se basa en el [Commerce Payments Protocol](https://github.com/base/commerce-payments).
+</Info>
+
+## Demostración {#demo}
+
+<PaymentsDemo flow="schedule" />
+
+<Tip>
+  La demostración anterior es solo una simulación. Si quieres ver demostraciones onchain en Vibenet, visita [Demostraciones de la cadena Base](https://chain.base.org/demos).
+</Tip>
+
+## Cobrar un período de facturación {#charge-one-billing-period}
+
+El recolector reconstruye un permiso de gasto a partir de `PaymentInfo`: el pagador es la cuenta, el recolector es quien gasta, el token y la asignación provienen del pago, y `preApprovalExpiry` marca el fin del permiso. Codifica la firma del permiso y la solicitud opcional de retiro de MagicSpend como `collectorData`.
+
+Usa una clave de facturación persistente, como `subscriptionId:periodStart`, antes de enviar el cobro del protocolo.
+
+{/* sample: scheduled-charge-ts */}
+
+```typescript TypeScript lines wrap expandable highlight={8-10,15,19-20,28}
+export async function chargeSubscriptionPeriod(args: {
+  paymentInfo: PaymentInfo;
+  collectorData: Hex;
+  billingKey: string;
+  amount: bigint;
+  store: BillingStore;
+}) {
+  if (!(await args.store.reserveOnce(args.billingKey))) {
+    throw new Error("Billing period was already submitted");
+  }
+  const simulation = await publicClient.simulateContract({
+    account,
+    address: AUTH_CAPTURE_ESCROW,
+    abi: authCaptureEscrowAbi,
+    functionName: "charge",
+    args: [
+      args.paymentInfo,
+      args.amount,
+      SPEND_PERMISSION_PAYMENT_COLLECTOR,
+      args.collectorData,
+      0n,
+      zeroAddress,
+    ],
+  });
+  const hash = await walletClient.writeContract(simulation.request);
+  const receipt = await publicClient.waitForTransactionReceipt({ hash, confirmations: 2 });
+  if (receipt.status !== "success") throw new Error("Scheduled charge reverted");
+  await args.store.complete(args.billingKey, hash);
+  return receipt;
+}
+```
+
+Un cobro correcto emite `PaymentCharged` y crea un `refundableAmount` del protocolo para ese período de facturación.
+
+<Check>
+  Almacena la clave de facturación, el `paymentInfoHash`, la transacción de cobro, el importe y el uso del permiso de gasto en un único flujo de trabajo persistente.
+</Check>
+
+<Warning>
+  El [Commerce Payments Protocol](https://github.com/base/commerce-payments) no incluye ningún programador de tareas. Protege la clave del operador, serializa los reintentos y no reutilices el `PaymentInfo` ni la sal de un período anterior.
+</Warning>
+
+## Consulta también {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="Solicitar un pago" icon="credit-card" href="/es/build-on-base/accept-payments/request-a-payment">
+    Usa el mismo ciclo de vida de cobro para un pago único.
+  </Card>
+
+  <Card title="Reembolsar un pago" icon="rotate-left" href="/es/build-on-base/accept-payments/refund-a-payment">
+    Revierte el cobro de un período de facturación antes de que venza el plazo de reembolso.
+  </Card>
+</CardGroup>

@@ -1,0 +1,141 @@
+---
+title: "追回资金"
+keywords: ["追回稳定币资金", "B20 seizeWithMemo", "扣押稳定币", "法律冻结稳定币", "在 Base 上收回代币"]
+description: "在私钥丢失或法律冻结等情况下，将被封禁账户中的稳定币余额转移至 Base 上的托管账户，且不改变总供应量。"
+---
+
+import { StablecoinDemo } from "/snippets/StablecoinDemo.jsx"
+
+有时，您需要从已被您封禁的账户中转出余额，例如持有者丢失了私钥、收到法院命令，或需执行制裁冻结。`seizeWithMemo` 只需一次管理员调用，即可将代币从持有者账户转入保管账户。该操作既不是销毁，也不是铸造：`totalSupply` 保持不变，memo 会将您的案件编号记录在链上，同时代币会触发专门的 `Seized` 事件，便于审计人员和索引器追踪。
+
+## 演示 {#demo}
+
+<StablecoinDemo flow="recover" />
+
+<Tip>
+  该演示使用浏览器本地生成的账户，在 **Base Vibenet** 上提交真实交易。如果 Vibenet 或其 B20 功能不可用，演示会自动切换为离线示意版本。
+</Tip>
+
+<Note>
+  初次接触 B20？请参阅 [B20 代币标准](/zh/specifications/b20)，了解相关概念和完整的发行流程演练。这些示例基于 `base-std@1505323`、`viem@2.55.11` 和 Base Foundry `v1.1.1`。
+</Note>
+
+<Warning>
+  `seizeWithMemo` 属于 Cobalt B20 接口。它目前已在 Base Vibenet 上线，并将随 Cobalt 硬分叉登陆 Base 主网。在此之前，主网代币只能使用已弃用的 `burnBlocked` 路径：该路径会直接销毁余额，如需重新发行，还须另行执行一次铸造。请参阅 [seize 变更日志条目](/zh/base-chain/specs/reference/b20/changelog/02-cobalt-b20-seize)。
+</Warning>
+
+## 开始之前 {#before-you-start}
+
+你需要准备好以下全部条件：
+
+* 一个由你管理的 B20 Stablecoin，且你拥有 `DEFAULT_ADMIN_ROLE`，以便授予角色和附加策略。
+* 一个用于调用 `seizeWithMemo` 的账户 (即扣押者) ，并为其授予 `SEIZE_ROLE`。
+* 你在[封禁账户](/zh/build-on-base/issue-stablecoins/block-an-account)中创建的封禁列表策略 ID，且该持有者已在列表中。
+* 一个非零的保管目标地址，不能是持有者本身，也不能是代币合约自身的地址，通常为你的金库。
+* `SEIZE` 未被暂停。`pause([SEIZE])` 会阻止所有扣押操作，直到调用 `unpause([SEIZE])`。暂停 `TRANSFER`、`MINT` 或 `BURN` 不会影响扣押。
+
+扣押能否执行由以下三项控制决定，并按此顺序依次检查：
+
+| 控制项                     | 检查内容                                       | 未设置时的默认行为               |
+| ----------------------- | ------------------------------------------ | ----------------------- |
+| `SEIZE_ROLE`            | 调用者有权执行扣押。                                 | 任何人都无法扣押。               |
+| `SEIZE_EXEMPT_POLICY`   | 持有者 (`from`) 在所附加的策略下**未**获授权。已获授权的账户免于扣押。 | 所有账户均视为已获授权，因此没有账户可被扣押。 |
+| `SEIZE_RECEIVER_POLICY` | 目标地址 (`to`) 在所附加的策略下已获授权。                  | 允许任何目标地址。               |
+
+`SEIZE_EXEMPT_POLICY` 的逻辑与转账作用域相反。应附加**封禁列表**：列表中的账户未获授权，因而可被扣押，其余账户则仍享有豁免。不要附加允许列表或 `ALWAYS_BLOCK`；空的允许列表不会授权任何账户，这将导致所有持有者都可被扣押。
+
+扣押不会读取转账作用域。在 `TRANSFER_SENDER_POLICY` 下封禁某个持有者会冻结其转出操作，但只有将同一封禁列表 (或其他封禁列表) 附加到 `SEIZE_EXEMPT_POLICY` 后，该持有者才会变为可扣押。
+
+## 扣押并验证被冻结的余额 {#seize-and-verify-the-blocked-balance}
+
+首先向扣押方授予 `SEIZE_ROLE`。每个代币只需进行一次此项设置：
+
+```solidity Grant SEIZE_ROLE
+token.grantRole(token.SEIZE_ROLE(), seizer);
+```
+
+然后将你的封禁列表关联到 `SEIZE_EXEMPT_POLICY`，并转移余额：
+
+<CodeGroup>
+  {/* sample: stablecoin-recover-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={10,11}
+  import { parseUnits, stringToHex, type Address } from "viem";
+  import { publicClient } from "../../shared/clients.js";
+  import { b20Abi, scope } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function recoverBlockedFunds(token: Address, blocklistId: bigint, blocked: Address, treasury: Address) {
+    const amount = parseUnits("50", 6);
+    const memo = stringToHex("legal-hold-2026-118", { size: 32 });
+    await sendContract({ address: token, abi: b20Abi, functionName: "updatePolicy", args: [scope("SEIZE_EXEMPT_POLICY"), blocklistId] });
+    await sendContract({ address: token, abi: b20Abi, functionName: "seizeWithMemo", args: [blocked, treasury, amount, memo] });
+    const balance = await publicClient.readContract({ address: token, abi: b20Abi, functionName: "balanceOf", args: [treasury] });
+    if (balance < amount) throw new Error("Seized balance did not reach the treasury");
+  }
+  ```
+
+  {/* sample: stablecoin-recover-solidity */}
+
+  ```solidity Solidity lines wrap expandable highlight={2,3}
+  function recoverStablecoin(address token, uint64 blocklistId, address blocked, address treasury) public {
+      IB20(token).updatePolicy(B20Constants.SEIZE_EXEMPT_POLICY, blocklistId);
+      IB20(token).seizeWithMemo(blocked, treasury, 50e6, bytes32("legal-hold-2026-118"));
+      require(IB20(token).balanceOf(treasury) >= 50e6, "treasury not funded");
+  }
+  ```
+
+  {/* sample: stablecoin-recover-cli */}
+
+  ```bash CLI lines wrap expandable highlight={1,3}
+  base-cast send "$TOKEN_ADDRESS" "updatePolicy(bytes32,uint64)" "$(base-cast keccak SEIZE_EXEMPT_POLICY)" "$BLOCKLIST_ID" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  base-cast send "$TOKEN_ADDRESS" "seizeWithMemo(address,address,uint256,bytes32)" "$BLOCKED" "$TREASURY" 50000000 \
+    "$(base-cast format-bytes32-string legal-hold-2026-118)" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  base-cast call "$TOKEN_ADDRESS" "balanceOf(address)(uint256)" "$TREASURY" --rpc-url "$RPC_URL"
+  ```
+</CodeGroup>
+
+关联策略会触发 `PolicyUpdated` 事件，并从下一次 `seizeWithMemo` 调用起生效。多个代币可以共用同一个封禁列表。扣押操作本身会依次触发 `Transfer(from, to, amount)`、`Memo(caller, memo)` 和 `Seized(caller, from, to, amount)` 事件。
+
+资金转入金库后，就是一笔普通余额。你可以通过常规的 `transfer` 将其重新发放到持有人的新地址，也可以在案件处理期间暂时保留。
+
+如需同时限定接收地址，请创建一个包含金库地址的允许列表，并将其关联到 `SEIZE_RECEIVER_POLICY`。如果任何保管地址均可接受，则可跳过此步骤：该作用域未设置时，默认允许所有 `to` 地址。
+
+<Check>
+  交易中出现 `Seized(caller, from, to, amount)` 事件。被阻止地址的余额减少，金库余额增加相同数额，且 `totalSupply` 保持不变。
+</Check>
+
+## 常见错误 {#common-errors}
+
+以下错误按 `seizeWithMemo` 的检查顺序排列。
+
+| 错误                                                     | 原因                                                                 | 解决方法                                            |
+| ------------------------------------------------------ | ------------------------------------------------------------------ | ----------------------------------------------- |
+| `ContractPaused(SEIZE)`                                | `SEIZE` 已暂停。                                                       | 以 `PausableFeature.SEIZE` 为参数调用 `unpause`。      |
+| `AccessControlUnauthorizedAccount(caller, SEIZE_ROLE)` | 调用者未持有 `SEIZE_ROLE`。                                               | 向执行扣押的账户授予 `SEIZE_ROLE`。                        |
+| `InvalidReceiver(to)`                                  | `to` 为 `address(0)`、代币自身地址，或与 `from` 相同。                           | 使用一个与 `from` 不同的非零保管地址。                         |
+| `InvalidSender(from)`                                  | `from` 为 `address(0)`。                                             | 传入持有者的地址。                                       |
+| `AccountNotSeizable(from)`                             | `from` 在 `SEIZE_EXEMPT_POLICY` 下仍处于已授权状态，原因是该槽位未设置，或持有者不在所附加的封禁列表中。 | 为 `SEIZE_EXEMPT_POLICY` 附加一个封禁列表，并将 `from` 加入其中。 |
+| `PolicyForbids(SEIZE_RECEIVER_POLICY, policyId)`       | `to` 在 `SEIZE_RECEIVER_POLICY` 下未获授权。                              | 将 `to` 加入接收方允许列表，或将作用域重新设为 `0`。                 |
+| `InsufficientBalance(from, balance, amount)`           | `from` 持有的余额少于 `amount`。                                           | 扣押数量不得超过 `balanceOf(from)`。                     |
+| `PolicyNotFound(policyId)`                             | `updatePolicy` 收到的 ID 在注册表中不存在。                                    | 先创建策略，再附加返回的 ID。                                |
+| `Unauthorized()`                                       | 非管理员调用了 `updateBlocklist` 或 `updateAllowlist`。                     | 以该策略的 `policyAdmin` 身份调用。                       |
+
+已存放在代币自身地址上的余额仍可追回：允许调用 `seizeWithMemo(address(token), treasury, amount, memo)`。但不允许将资产扣押*至*代币地址。
+
+<Warning>
+  请优先采用此方式，而不是已弃用的 `burnBlocked` 变通方案。后者会销毁被封禁的余额，再铸造等额的替代余额，导致 `totalSupply` 先降后升，不会触发 `Seized` 事件，且对账时看到的是两笔互不关联的交易，而非一笔可追溯的资金转移。
+</Warning>
+
+## 另请参阅 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="封禁账户" icon="user-lock" href="/zh/build-on-base/issue-stablecoins/block-an-account">
+    将特定地址列入拒绝名单，使其资产可被罚没。
+  </Card>
+
+  <Card title="使用 Memo 对账" icon="receipt" href="/zh/build-on-base/issue-stablecoins/reconcile-with-memos">
+    借助链上 Memo 匹配相应操作。
+  </Card>
+</CardGroup>

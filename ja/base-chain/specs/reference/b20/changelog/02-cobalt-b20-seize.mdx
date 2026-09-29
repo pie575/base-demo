@@ -1,0 +1,152 @@
+---
+title: "B20: seize サーフェスと burnBlocked の非推奨化"
+description: "Cobalt で導入される B20 の seize サーフェスと、burnBlocked の非推奨化について解説します。Beryl の seize パスと統合しているチーム向けの移行ノートです。"
+---
+
+> **対象読者:** Beryl (現在稼働中) の基本 B20 サーフェスと統合しており、管理者による残高の削除を
+> 現在は非推奨の `burnBlocked` で行っているチーム。このノートでは、Cobalt ハードフォークで導入される
+> seize サーフェスと、それによる `burnBlocked` への影響のみを扱います。このサーフェスは共通のため、
+> B20 Asset と B20 Stablecoin の両方に適用されます。
+
+## 概要 {#summary}
+
+Cobalt では、B20 の基本サーフェスにファーストクラスの seize 操作が追加されます。`seizeWithMemo(from, to,
+amount, memo)` を使うと、1 回の管理者呼び出しで保有者の残高を指定先へ移し替えられます。この操作は、新しい
+`SEIZE_ROLE`、新しい `SEIZE` 一時停止ベクター、および 2 つの新しいポリシースロット (`SEIZE_EXEMPT_POLICY`、
+`SEIZE_RECEIVER_POLICY`) によって制御されます。
+
+現在の呼び出しが動作しなくなることはありません。Beryl のすべてのセレクター、イベントトピック、エラーは 4 バイトの
+セレクターまたは topic0 を完全にそのまま維持し、Cobalt でも引き続き呼び出せます。特に `burnBlocked` は非推奨になりますが、
+何も変更されておらず (セレクター、イベント、動作はすべて同じ) 、引き続き呼び出し可能です。
+
+移行する際は、管理者による残高の除去を `burnBlocked` から `seizeWithMemo` に切り替えてください。トレジャリーまたは自身のアドレスへ seize し、
+供給量を消滅させたい場合はその後に `burn` を呼び出します。
+
+seize はトークンごとのオプトイン方式です。サーフェス自体は Cobalt で存在しますが、発行者が
+`SEIZE_EXEMPT_POLICY` を設定するまで seize は機能しません。スロットが未設定 (常に許可) の場合、seize 可能なアカウントは存在せず、
+`seizeWithMemo` の呼び出しはすべて `AccountNotSeizable` でリバートします。つまり、ポリシーを一度も設定しない発行者は、
+そのトークンに対する seize 機能を実質的に持たないことになります。
+
+Cobalt はまだ稼働していません。有効化されるまではオンチェーンには Beryl のサーフェスしか存在せず、以下の
+`seize*`/`SEIZE_*` セレクターはいずれも呼び出せません。
+
+## 対応表 {#mapping-table}
+
+以下のセレクターと topic0 は、凍結済み ABI から取得した実際の値です。Beryl は
+`crates/common/precompiles/src/common/abi/v1.rs`、
+Cobalt は `crates/common/precompiles/src/common/abi/v2.rs` に基づいています。Beryl のシンボルはすべて、Cobalt でも同じセレクターを
+維持します。Seize は共通の `IB20` インターフェースで定義されているため、Asset と Stablecoin で同一です。
+
+### 関数 {#functions}
+
+| Beryl のシンボル (セレクター)                         | Cobalt (セレクター)                                                | ステータス               | 理由                                                                                                                                          |
+| ------------------------------------------- | ------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `burnBlocked(address,uint256)` `0xec0cf3dc` | `burnBlocked(address,uint256)` `0xec0cf3dc`                   | deprecated-dialable | 後方互換性のため、変更せずに残されています。`seizeWithMemo` を実行してから `burn` を呼び出す方法を推奨します。供給量を減少させ、`TRANSFER_SENDER_POLICY` を参照します。                                |
+| `BURN_BLOCKED_ROLE()` `0x32ad9be8`          | `BURN_BLOCKED_ROLE()` `0x32ad9be8`                            | 変更なしで引き継ぎ           | 引き続き `burnBlocked` の実行権限のみを制御します。                                                                                                           |
+| —                                           | `seizeWithMemo(address,address,uint256,bytes32)` `0xf916d81b` | 新規                  | 管理者による残高の付け替えです。バーンではなく転送として扱われます。                                                                                                          |
+| —                                           | `SEIZE_ROLE()` `0x3c7e9ba5`                                   | 新規                  | `seizeWithMemo` を呼び出すために必要です。値は `keccak256("SEIZE_ROLE")` = `0x3469b8b0d89e9604f8510ed143f74a8336d22955d4f83e23bf53d9414e27f432` です。        |
+| —                                           | `SEIZE_EXEMPT_POLICY()` `0xfeb346ec`                          | 新規                  | `from` に対して照合されるポリシースロットです。値は `keccak256("SEIZE_EXEMPT_POLICY")` = `0xedb5da348cfb67af08746d3afd1be81034b50d5c8576f31aff688f39dfd540ed` です。 |
+| —                                           | `SEIZE_RECEIVER_POLICY()` `0xb31da27f`                        | 新規                  | `to` に対して照合されるポリシースロットです。値は `keccak256("SEIZE_RECEIVER_POLICY")` = `0xbf15b19caf5c77422c038bc25f26b8b815c3a14f6d04c6616076b81bcfe07b3d` です。 |
+
+### イベント {#events}
+
+| Beryl のイベント (topic0)                                                                                          | Cobalt (topic0)                                                                                                | ステータス                    | 理由                                                                                 |
+| ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------- |
+| `BurnedBlocked(address,address,uint256)` `0x0b552e96653fd6842da37c477005d3b5c08a8c7d3631b1f43787b2dc9a1006a3` | 変更なし                                                                                                           | deprecated-still-emitted | 引き続き `burnBlocked` から `Transfer(from, address(0), amount)` とあわせて発行されます。            |
+| —                                                                                                             | `Seized(address,address,address,uint256)` `0xa9aec5d8b86e2fa2fd6ac3af62f2622e3dfdab1967d4cbbb56a5df7d74cb887c` | new                      | `seizeWithMemo` から、`Transfer(from, to, amount)` と `Memo(caller, memo)` に続いて発行されます。 |
+
+### エラー {#errors}
+
+| Beryl のエラー (セレクター)                        | Cobalt (セレクター)                             | ステータス     | 理由                                                                                    |
+| ----------------------------------------- | ------------------------------------------ | --------- | ------------------------------------------------------------------------------------- |
+| `AccountNotBlocked(address)` `0x64a5cb46` | 変更なし                                       | Beryl に既存 | `from` が `TRANSFER_SENDER_POLICY` で許可されている (つまりブロックされていない) 場合に、`burnBlocked` がスローします。 |
+| —                                         | `AccountNotSeizable(address)` `0x91dbbc8d` | 新規        | `from` が `SEIZE_EXEMPT_POLICY` で許可されている (つまり差し押さえできない) 場合に、`seizeWithMemo` がスローします。   |
+
+### 一時停止機能 {#pause-features}
+
+`PausableFeature` は追記専用です。Cobalt では序数が 1 つ追加されます。
+
+| Beryl の序数                        | Cobalt での追加 | ストレージビット     | 理由                                                                                 |
+| -------------------------------- | ----------- | ------------ | ---------------------------------------------------------------------------------- |
+| `TRANSFER=0`, `MINT=1`, `BURN=2` | `SEIZE=3`   | `1 << 3 = 8` | `seizeWithMemo` を個別に一時停止するためのベクトルです。`ALL_FEATURES_PAUSED` は `15` (`0b1111`) になります。 |
+
+`seizeWithMemo` を制御するのは `BURN` ではなく、新しい `SEIZE` ベクトルです。`burnBlocked` は引き続き `BURN` によって制御されます。
+
+## Cobalt の新機能: 導入すべきもの {#new-at-cobalt-adopt-these}
+
+### `seizeWithMemo(from, to, amount, memo)` {#seizewithmemofrom-to-amount-memo}
+
+これは、管理者が残高を取り除くための正規の手段です。この操作は送金であり、残高は
+`from` から `to` へ移動し、`totalSupply` は変化しません。管理者操作として実行されるため、アローワンス
+および転送ポリシー (`TRANSFER_SENDER/RECEIVER/EXECUTOR_POLICY`) のチェックはスキップされます。発行されるイベントは次の順序です。
+
+1. `Transfer(from, to, amount)`
+2. `Memo(caller, memo)` (`bytes32(0)` のメモも許可されます) 
+3. `Seized(caller, from, to, amount)`
+
+要件とガード:
+
+* **ロール**: 呼び出し元は `SEIZE_ROLE` を保持している必要があります。保持していない場合、呼び出しは `AccessControlUnauthorizedAccount` でリバートします。
+* **一時停止**: `SEIZE` が一時停止されていないことが必要です。一時停止中の場合、呼び出しは `ContractPaused(SEIZE)` でリバートします。
+* **アドレス**: `to != address(0)` かつ `from != to` である必要があります。満たさない場合、呼び出しは `InvalidReceiver` でリバートします。
+  また、`from != address(0)` である必要があり、満たさない場合は `InvalidSender` でリバートします。
+* **保有者ゲート**: `from` は `SEIZE_EXEMPT_POLICY` でブロックされている、つまり同ポリシーで
+  許可されていない必要があります。そうでない場合、呼び出しは `AccountNotSeizable` でリバートします。未設定のスロットは常に許可として扱われるため、
+  発行者が `SEIZE_EXEMPT_POLICY` を設定するまでは、どのアカウントも seize の対象になりません。
+* **送付先ゲート**: `to` は `SEIZE_RECEIVER_POLICY` で許可されている必要があります。このポリシーは
+  `MINT_RECEIVER_POLICY` と対になるもので、常に適用されます。ただし、未設定のスロットは常に許可として扱われるため、
+  スロットが設定されるまでは、トークンは任意の送付先に対して seize を実行できます (トレジャリーを許可リストに登録する必要はありません) 。
+* **残高**: `from` の残高が `>= amount` である必要があります。満たさない場合、呼び出しは `InsufficientBalance` でリバートします。
+
+複数のガードに該当する場合の優先順位は、保有者ゲート、送付先ゲート、
+残高の順です。つまり、`AccountNotSeizable` は `PolicyForbids(SEIZE_RECEIVER_POLICY,
+...)` より先に発生し、`PolicyForbids` は `InsufficientBalance` より先に発生します。
+
+## `burnBlocked` は非推奨だが、動作は変わらず引き続き呼び出し可能 {#burnblocked-is-deprecated-but-unchanged-and-still-dialable}
+
+`burnBlocked(from, amount)` は、Beryl のときとまったく同じように動作します。
+
+* `TRANSFER_SENDER_POLICY` によってブロックされている `from` から、アローワンスを消費せずに `amount` をバーンします。`Transfer(from, address(0), amount)` と `BurnedBlocked(caller, from, amount)`
+  を発行します (`Memo` は発行されません) 。
+* `BURN_BLOCKED_ROLE` と `BURN` 一時停止ベクターによって制御されます。
+* `from` が `TRANSFER_SENDER_POLICY` で許可されている場合は、`AccountNotBlocked` でリバートします。
+
+移行するには、`burnBlocked(from, amount)` を `seizeWithMemo(from, treasury, amount, memo)` に置き換えます。
+そのうえで供給量を減らしたい場合は、トレジャリーから `burn(amount)` を呼び出してください。この手順ではポリシー、ロール、一時停止のドメインを
+それぞれ 2 つずつまたぐため (後述のエッジケースを参照) 、セレクターを差し替えるだけでは移行できません。
+
+## 保証とエッジケース {#guarantees-and-edge-cases}
+
+**Q: seize は `totalSupply` を変更しますか？これはバーンですか？**
+いいえ。seize は転送です。`amount` を `from` から `to` へ移し替えるだけで、`totalSupply`
+には影響しません。バーンに当たるのは `burnBlocked` で、`address(0)` へ送信して供給量を減らします。従来の
+burn-blocked と同じ結果を得るには、トレジャリーまたは自身のアドレスへ seize してから `burn` を呼び出してください。
+
+**Q: `seizeWithMemo` と `burnBlocked` はどちらも「不正な」アカウントを対象とします。両者は同じ集合を参照しますか？**
+いいえ。これは意図的な設計です。`seizeWithMemo` は `SEIZE_EXEMPT_POLICY` を参照し、`burnBlocked` は
+`TRANSFER_SENDER_POLICY` を参照します。そのため、トークンは転送ブロック対象の集合とは別に、seize 可能な集合を
+定義できます。いずれの場合も、「対象となる」とは該当ポリシーで許可されていないことを意味します。
+ポリシーが未設定 (常に許可) の場合、対象となるアカウントは存在しません。
+
+**Q: バーンを一時停止せずに seize だけを一時停止できますか？また、その逆は可能ですか？**
+はい。`SEIZE` (序数 3) と `BURN` (序数 2) は独立した一時停止ビットです。`BURN` を一時停止しても
+`seizeWithMemo` は停止せず、`SEIZE` を一時停止しても `burn`、`burnWithMemo`、`burnBlocked` は停止しません。
+
+**Q: `SEIZE_ROLE` と `BURN_BLOCKED_ROLE` は重複しますか？**
+いいえ。`seizeWithMemo` には `SEIZE_ROLE` が、`burnBlocked` には `BURN_BLOCKED_ROLE` が必要です。一方を付与しても
+もう一方が付与されることはありません。
+
+**Q: seize ポリシーを一度も設定していません。`seizeWithMemo` を呼び出すとどうなりますか？**
+どの `from` に対しても `AccountNotSeizable(from)` でリバートします。未設定の `SEIZE_EXEMPT_POLICY` は
+常に許可として扱われるため、seize 可能なアカウントが存在しないからです。seize を機能させるには、まず `SEIZE_EXEMPT_POLICY` を設定して
+seize 可能な保有者を指定する必要があります。 (なお、`SEIZE_RECEIVER_POLICY` を未設定のままにした場合は、
+単に任意の送信先が許可されます。) 
+
+**Q: seize は転送ポリシーを参照したり、アローワンスを消費したりしますか？**
+いいえ。seize は管理者向けの操作であり、`TRANSFER_SENDER/RECEIVER/EXECUTOR_POLICY` とアローワンスをバイパスして、
+`SEIZE_EXEMPT_POLICY` (`from` に適用) と `SEIZE_RECEIVER_POLICY` (`to` に適用) のみを適用します。
+
+**Q: seize は B20 Asset だけでなく B20 Stablecoin でも利用できますか？**
+はい。共有の `IB20` インターフェース上で定義されているため、Cobalt 時点で両バリアントとも同一の
+`seizeWithMemo` セレクター、`Seized` topic0、`AccountNotSeizable` セレクター、`SEIZE_*` ゲッター、
+`SEIZE` 一時停止ビットを公開しています。

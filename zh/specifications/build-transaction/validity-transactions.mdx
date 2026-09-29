@@ -1,0 +1,49 @@
+---
+title: "概述"
+description: "提交已签名的交易，Base 会在链上条件满足时考虑将其打包。"
+tag: "Soon"
+---
+
+借助有效性交易，你可以提交一笔以 Base 状态为条件的已签名交易。该 API 支持 legacy、EIP-2930 和 EIP-1559 交易，推荐使用 EIP-1559。它适用于条件兑换、提款以及其他依赖链上状态的操作。
+
+<Warning>
+  有效性交易尚处于实验阶段。`base_sendRawTransactionValidity` 目前仅在 Vibenet 上可用，主网和 Base Sepolia 何时上线尚未确定。
+</Warning>
+
+## 工作原理 {#how-it-works}
+
+提交一笔已签名的原始交易，并附带一个非空的 `validity` 数组。当前 API 支持余额、存储、区块号和 Flashblock 索引四类谓词。
+
+只有当所有谓词全部匹配时，交易才符合打包条件。Base 会在打包前检查谓词。对于待处理的交易，如果其监视的状态被更早的交易改变，它就可能转为符合条件。
+
+EIP-1559 有效性交易 (Validity Transactions) 使用常规的费用字段。符合条件并不意味着会预留区块空间，也不保证交易一定会被打包。
+
+## 生命周期与隐私 {#lifetime-and-privacy}
+
+使用 `block_number` 或 `flashblock_index` 谓词来限定交易可被打包的时机。替换待处理 (pending) 交易时，请使用发送方的 nonce。
+
+有效性条件与已签名交易分开发送，不会出现在最终上链的交易中。请勿在 calldata 或谓词值中包含机密信息。
+
+## 后续步骤 {#next-steps}
+
+<CardGroup cols={2}>
+  <Card title="构建有效性交易" href="/zh/specifications/build-transaction/build-a-validity-transaction" icon="hammer">
+    使用 Viem 签名并提交交易。
+  </Card>
+
+  <Card title="有效性交易 RPC" href="/zh/specifications/build-transaction/base_sendRawTransactionValidity" icon="code">
+    查看请求格式。
+  </Card>
+
+  <Card title="费用、排序与生命周期" href="/zh/specifications/build-transaction/fees-ordering-and-lifecycle" icon="arrow-down-1-9">
+    了解费用、过期与替换机制。
+  </Card>
+
+  <Card title="谓词与安全" href="/zh/specifications/build-transaction/predicates-and-safety" icon="shield-check">
+    了解谓词规则与安全限制。
+  </Card>
+
+  <Card title="故障排查" href="/zh/specifications/build-transaction/troubleshooting" icon="screwdriver-wrench">
+    诊断交易提交与打包上链问题。
+  </Card>
+</CardGroup>

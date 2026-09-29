@@ -1,0 +1,67 @@
+---
+title: 'newFlashblocks'
+sidebarTitle: 'newFlashblocks'
+description: 'プリコンファームされたブロックが構築されるたびに、Flashblock の完全なペイロードストリームを受信するためのサブスクリプションです。Flashblocks WebSocket エンドポイントでのみ利用できます。'
+---
+
+`eth_subscribe` でサブスクライブすると、Flashblock が構築されるたびに、ブロック状態の完全な更新を受信できます。各メッセージには、構築中のブロックでこれまでに蓄積されたプリコンファーム済みの状態が含まれます。
+
+<Info>
+  このサブスクリプションには、WebSocket に対応した RPC エンドポイントが必要です。Base の公開エンドポイント (`mainnet.base.org`、`sepolia.base.org`) は HTTP にのみ対応しています。[Builder Stack](/ja/get-started/builder-stack) から Flashblocks に対応した WebSocket プロバイダーを選択してください。
+</Info>
+
+<Note>
+  [base/base](https://github.com/base/base) クライアントのバージョン v0.3.1 以上が必要です。
+</Note>
+
+<Warning>
+  各サブスクリプションは、**WebSocket メッセージ 1 件につき 1 つの Flashblock オブジェクト**を送信します。イベントは約 200ms ごとに届きます。ハンドラーでイベントごとに重い処理を行う場合は、ブロッキングを避けるためにスロットリングまたはデバウンスを適用してください。
+</Warning>
+
+## パラメーター {#parameters}
+
+<ParamField body="subscriptionType" type="string" required>
+  `"newFlashblocks"` を指定する必要があります。
+</ParamField>
+
+## Returns {#returns}
+
+<ResponseField name="result" type="string">
+  16進数でエンコードされたサブスクリプションID。各イベント通知で配信されるのは、標準のブロックオブジェクトではなく **Flashblock オブジェクト** です。ペイロードには `payload_id`、`index`、`diff`、および `base` (index 0 の場合のみ) が含まれます。構造の詳細については、[Infrastructure Stream スキーマ](/ja/base-chain/api-reference/flashblocks-api/flashblocks-api-overview#flashblock-object)を参照してください。
+</ResponseField>
+
+## 例 {#example}
+
+<CodeGroup>
+  ```json Subscribe
+  {"jsonrpc": "2.0", "id": 1, "method": "eth_subscribe", "params": ["newFlashblocks"]}
+  ```
+
+  ```json Subscription ID Response
+  {"jsonrpc": "2.0", "id": 1, "result": "0x3b8cd9e5f4a7b2c1d0e3f4a5b6c7d8e9"}
+  ```
+
+  ```javascript JavaScript lines wrap expandable
+  import WebSocket from 'ws';
+
+  // Flashblocks に対応したプロバイダーの WSS エンドポイントを使用します（Builder Stack を参照）
+  const ws = new WebSocket('wss://your-flashblocks-provider.example/ws');
+
+  ws.on('open', () => {
+    ws.send(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'eth_subscribe',
+      params: ['newFlashblocks'],
+      id: 1
+    }));
+  });
+
+  ws.on('message', (data) => {
+    const msg = JSON.parse(data.toString());
+    if (msg.method === 'eth_subscription') {
+      // 約 200ms ごとに発火し、最新の Flashblock の状態を受け取ります
+      console.log('Flashblock update:', msg.params.result);
+    }
+  });
+  ```
+</CodeGroup>

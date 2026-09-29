@@ -1,0 +1,79 @@
+---
+title: "概要"
+description: "Azul は、Base にとって初めての独自のネットワークアップグレードです。セキュリティと分散性の強化、1 gigagas/s 達成に向けた取り組みの加速、開発者体験の向上に重点を置いています。"
+---
+
+|         | ステータス | 日付         |
+| ------- | ----- | ---------- |
+| Sepolia | 稼働中   | 2026年4月20日 |
+| Mainnet | 稼働中   | 2026年5月28日 |
+
+## 機能 {#features}
+
+<AccordionGroup>
+  <Accordion title="EIP-7823: MODEXPの上限設定">
+    **EIP** · 実行
+
+    MODEXPプリコンパイルの入力を、フィールドごとに最大1024バイトに制限します。これを超える入力を含む呼び出しは拒否されます。
+  </Accordion>
+
+  <Accordion title="EIP-7825: トランザクションのガスリミット上限">
+    **EIP** · 実行
+
+    トランザクションあたりのガスリミットに、プロトコルレベルの上限として16,777,216 (2^24) を導入します。この上限を超えるトランザクションは検証時に拒否されます。BaseはEthereumとの同等性を最大限に確保するため、L1と同じ上限を採用しています。
+  </Accordion>
+
+  <Accordion title="EIP-7883: MODEXPのガスコスト引き上げ">
+    **EIP** · 実行
+
+    MODEXPプリコンパイルの最小ガスコストを200から500に引き上げ、通常のコスト計算結果を3倍にします。
+  </Accordion>
+
+  <Accordion title="EIP-7939: CLZオペコード">
+    **EIP** · 実行
+
+    256ビットワードの先頭に連続するゼロビットの数を数える、新しいCLZオペコードを追加します。入力がゼロの場合は256を返します。
+  </Accordion>
+
+  <Accordion title="EIP-7951: secp256r1プリコンパイル">
+    **EIP** · 実行
+
+    アドレス0×100のsecp256r1プリコンパイルを規定します。Azul以降、ガスコストはEIP-7951で規定されたL1のガスコストに合わせて6,900に引き上げられます。
+  </Accordion>
+
+  <Accordion title="EIP-7642: eth/69">
+    **EIP** · ネットワーキング
+
+    Ethereumワイヤープロトコルをバージョン69に更新し、Statusメッセージからレガシーフィールドを削除してハンドシェイクを簡素化します。
+  </Accordion>
+
+  <Accordion title="アカウント残高とレシートの削除">
+    **Base** · ネットワーキング
+
+    Flashblocks WebSocketフォーマットからnew&#95;account&#95;balancesとreceiptsを削除し、FlashblocksMetadataペイロードを簡素化します。
+  </Accordion>
+
+  <Accordion title="discv5でbasev0プロトコルIDを使用">
+    **Base** · ネットワーキング
+
+    実行レイヤーのディスカバリーでプロトコルIDとしてbasev0を使用するよう変更します。これにより、特にSepoliaのような小規模なネットワークで、Baseノード同士がより迅速に互いを発見できるようになります。
+  </Accordion>
+
+  <Accordion title="EIP-7910: eth_config RPCメソッド">
+    **EIP** · RPC
+
+    フォークの有効化タイムスタンプなどのチェーン設定パラメータを返す、eth&#95;config JSON-RPCメソッドを導入します。
+  </Accordion>
+
+  <Accordion title="Engine APIの使用">
+    **Base** · RPC
+
+    Azulの有効化以降、ブロックの生成とインポートでは次のEngine APIメソッドを使用します。ブロック構築の開始とフォークチョイスの同期にはengine&#95;forkchoiceUpdatedV3を、構築済みペイロードの取得にはengine&#95;getPayloadV5を使用します。
+  </Accordion>
+
+  <Accordion title="マルチプルーフ">
+    **Base** · プルーフ
+
+    プルーフシステムに、L2チェックポイント向けのマルチプルーフ方式を導入します。AggregateVerifierは、出金処理がプロポーザルを前提とする前に、同一のプロポーザルに対して1つまたは2つのプルーフを検証できます。
+  </Accordion>
+</AccordionGroup>

@@ -1,0 +1,17 @@
+---
+title: "Granite L2 链派生变更"
+description: "Granite 升级中的派生变更，更新了协议参数 CHANNEL_TIMEOUT。"
+---
+
+## 协议参数变更 {#protocol-parameter-changes}
+
+下表概述了各参数的变更情况。
+
+| 参数                | Granite 之前的 (默认) 值 | Granite 值 | 备注          |
+| ----------------- | ------------------ | --------- | ----------- |
+| `CHANNEL_TIMEOUT` | 300                | 50        | 该协议常量的值已调低。 |
+
+## 缩短通道超时 {#reduce-channel-timeout}
+
+Granite 升级将 `CHANNEL_TIMEOUT` 从 300 个 L1 区块缩短为 50 个 L1 区块。
+新规则的激活时间戳以包含该通道帧的 L1 区块的区块时间为准。

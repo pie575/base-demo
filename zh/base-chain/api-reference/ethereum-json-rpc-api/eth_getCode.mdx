@@ -1,0 +1,63 @@
+---
+title: 'eth_getCode'
+sidebarTitle: 'eth_getCode'
+description: '返回指定地址上的合约字节码。使用 pending 可在区块最终确定前检测新部署的合约。'
+---
+
+返回指定地址上的已编译字节码。对于外部账户 (EOA) ，返回 `"0x"`。
+
+<Tip>
+  **Flashblocks：** 使用 `"pending"` 查询 `https://mainnet.base.org`，即可在区块封存前检测到合约部署。
+</Tip>
+
+## 参数 {#parameters}
+
+<ParamField body="address" type="string" required>
+  要查询的 20 字节地址。
+</ParamField>
+
+<ParamField body="block" type="string" required>
+  十六进制区块号，或 `"latest"`、`"pending"`、`"safe"`、`"finalized"`、`"earliest"` 之一。
+</ParamField>
+
+## 返回值 {#returns}
+
+<ResponseField name="result" type="string">
+  该地址上的字节码，以十六进制字符串表示。若该地址无代码，则返回 `"0x"`。
+</ResponseField>
+
+## 示例 {#example}
+
+<CodeGroup>
+  ```bash 标准（latest） lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_getCode",
+      "params": ["0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", "latest"],
+      "id": 1
+    }'
+  ```
+
+  ```bash Flashblocks（pending，约 200ms） lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_getCode",
+      "params": ["0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", "pending"],
+      "id": 1
+    }'
+  ```
+
+  ```json 响应
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x608060405234801561001057600080fd5b50..."
+  }
+  ```
+</CodeGroup>

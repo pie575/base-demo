@@ -1,0 +1,40 @@
+---
+title: "存入账本"
+keywords: ["Base 账本存款", "加密接收方", "Portal 合约存款", "Base 私密存款"]
+description: "通过 Portal 合约将资金从 Base 转入私有账本，接收方信息在链上以加密形式存储。"
+---
+
+import { LedgersDemo } from "/snippets/LedgersDemo.jsx"
+
+存款是指通过 `Portal` 合约将资金从 Base 转入账本。资产、金额和发送方均在 Base 上公开结算，但接收方经过加密，因此即使多笔存款转入同一账户，也无法将它们相互关联。请参阅[私密交易](/zh/get-started/private-transactions)。
+
+## 演示 {#demo}
+
+<LedgersDemo flow="deposit" />
+
+<Tip>
+  以上演示仅为模拟效果。如需查看 Vibenet 上的链上演示，请前往 [Base 链演示](https://chain.base.org/demos)。
+</Tip>
+
+## 链上公开的信息 {#whats-exposed-onchain}
+
+| 数据  | 是否公开 | 原因                                 |
+| --- | ---- | ---------------------------------- |
+| 资产  | 公开   | Portal 在 Base 上结算该笔转账。             |
+| 金额  | 公开   | Portal 在 Base 上结算该笔转账。             |
+| 发送方 | 公开   | 即提交存款的地址。                          |
+| 接收方 | 隐藏   | 经过加密，因此存入同一账户的多笔存款无法被相互关联，也无法追溯归属。 |
+
+存款还可以要求提供证明 (attestation) 或许可，例如用于限制哪些人可以存款。
+
+## 另请参阅 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="在账本内转账" icon="arrow-right-arrow-left" href="/zh/build-on-base/ledgers/transfer">
+    在账户之间私密转移价值。
+  </Card>
+
+  <Card title="从账本提款" icon="upload" href="/zh/build-on-base/ledgers/withdraw">
+    将资金从账本转回 Base。
+  </Card>
+</CardGroup>

@@ -1,0 +1,25 @@
+---
+title: "Fjord"
+sidebarTitle: "概述"
+description: "Fjord 硬分叉概述。该硬分叉引入了基于 FastLZ 的 L1 费用估算、RIP-7212 secp256r1 预编译合约以及 brotli 通道压缩。"
+---
+
+## 激活时间戳 {#activation-timestamps}
+
+| 网络        | 激活时间戳                                   |
+| --------- | --------------------------------------- |
+| `mainnet` | `1720627201` (2024-07-10 16:00:01 UTC)  |
+| `sepolia` | `1716998400` (2024-05-29 16:00:00 UTC)  |
+
+## 执行层 {#execution-layer}
+
+* [RIP-7212：支持 secp256r1 曲线的预编译合约](/zh/specifications/base-protocol/execution/precompiles#P256VERIFY)
+* [使用 FastLZ 压缩计算 L1 数据费用](/zh/upgrades/fjord/exec-engine#fees)
+* [弃用 `GasPriceOracle` 合约的 `getL1GasUsed` 方法](/zh/upgrades/fjord/predeploys#l1-gas-usage-estimation)
+* [弃用交易回执中的 `L1GasUsed` 字段](/zh/upgrades/fjord/exec-engine#l1-gas-usage-estimation)
+
+## 共识层 {#consensus-layer}
+
+* [固定的最大 sequencer 漂移](/zh/upgrades/fjord/derivation#constant-maximum-sequencer-drift)
+* [Brotli 通道压缩](/zh/upgrades/fjord/derivation#brotli-channel-compression)
+* [提高每个通道的最大字节数及 channel bank 的最大容量](/zh/upgrades/fjord/derivation#increasing-max_rlp_bytes_per_channel-and-max_channel_bank_size)

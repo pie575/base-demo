@@ -1,0 +1,213 @@
+---
+title: "200ms 原生区块"
+description: "Denim 规范 200ms 区块的规范说明，涵盖 BaseTime、派生、验证及 RPC 行为。"
+tag: "Vibenet"
+---
+
+<Warning>
+  200ms 原生区块已在 [Vibenet](/zh/build-on-base/test-on-vibenet) 上线，供开发者进行实验性测试。该部署可能会有变动，请勿据此做出生产环境相关决策。
+
+  Denim 计划于 2026 年 10 月在 Base Sepolia 和 Base Mainnet 上线；具体激活时间及所需客户端版本尚未确定。
+
+  Denim 会改变 `block.number` 的递增速度。如果你的合约以区块数计时，请在激活前阅读[基于区块号的合约逻辑](#block-number-based-contract-logic)。
+</Warning>
+
+## 概述 {#summary}
+
+Denim 将 Base 的出块方式从每两秒产生一个规范区块，改为每秒产生五个完整的规范区块。每个 200ms 区块都有各自的区块号、哈希、状态根、收据和分叉选择更新，并拥有独立的 unsafe、safe 和 finalized 生命周期。
+
+Denim 将取代 [Flashblocks](/zh/specifications/flashblocks)。Flashblocks 针对单个区块发布增量的待确认 (pending) 状态更新。在 Denim 上线过程中，Base 将停止生成 Flashblocks，改为每 200ms 生成一个规范区块。使用 Flashblocks 的应用必须迁移到规范区块和 RPC 流。
+
+Denim 不改变以太坊区块头及其以秒为单位的 `timestamp`，亚秒部分由 BaseTime 元数据存款交易提供。两者结合，即可确定规范区块完整的毫秒级时间戳。
+
+<Info>
+  如果您的应用使用了 Flashblocks，请参阅[从 Flashblocks 迁移](/zh/upgrades/denim/migrate-from-flashblocks)，了解所需的 API 变更。
+</Info>
+
+## 网络可用性 {#network-availability}
+
+| 网络        | 状态                | 激活时间戳 | 所需客户端版本 |
+| --------- | ----------------- | ----- | ------- |
+| `vibenet` | 已上线，供实验性测试        | —     | —       |
+| `sepolia` | 计划于 2026 年 10 月上线 | `TBD` | `TBD`   |
+| `mainnet` | 计划于 2026 年 10 月上线 | `TBD` | `TBD`   |
+
+Base Sepolia 和 Base Mainnet 的激活时间戳尚未排定。确定后，本页面将列出相应的激活时间戳及所需客户端版本。
+
+## 基于区块号的合约逻辑 {#block-number-based-contract-logic}
+
+<Warning>
+  Denim 将 Base 的出块速度从每两秒一个区块提升至每秒五个区块。按挂钟时间计算，`block.number` 的增长速度将提高十倍，而 `block.timestamp` 仍以整秒递增。任何将区块数量当作时长使用的合约或链下系统，在激活后都会发现该时长缩短为预期的十分之一。硬编码在不可变或不可升级合约中的区块数量常量，在激活后将无法再调整。
+</Warning>
+
+请在 Denim 激活前审计合约中将区块数量换算为时间的逻辑：
+
+| 模式                                                  | Denim 激活后的影响                                                                     |
+| --------------------------------------------------- | -------------------------------------------------------------------------------- |
+| 以 `block.number - start >= N` 衡量的时间锁、冷却期和退出延迟       | 只需预期挂钟时间的十分之一即到期。                                                                |
+| 以区块计量的归属 (vesting) 、发行或难度调度                         | 按挂钟时间计算，完成或重新调整的速度加快十倍。                                                          |
+| 在 `block.number` 变化时重置的每区块速率限制或上限                   | 从每两秒重置一次变为每秒重置五次，实际每秒限额因此提高十倍。                                                   |
+| 以 `expirationBlock = block.number + N` 设置的截止时间      | 只需预期挂钟时间的十分之一即过期。                                                                |
+| 以区块计量的治理投票延迟和投票期，包括使用默认区块号 `clock()` 的 `ERC20Votes` | 投票窗口缩短为原来的十分之一。已存储的检查点仍然正确。                                                      |
+| Uniswap V3 风格的 TWAP 预言机                             | 由于累加器按秒加权，TWAP 值仍然正确。但固定观测基数所覆盖的挂钟历史时长约减半，因此回溯期较长的 `observe()` 调用会更早因 `OLD` 而回滚。 |
+
+使用 `block.timestamp` 衡量时间的逻辑不受影响。
+
+准备工作：
+
+* 对于可以重新部署或升级的合约，将基于区块数量的时长改为 `block.timestamp` 比较。
+* 对于可通过治理调整的区块数量，计划在激活时将其除以十。
+* 对于不可变且无法更改的区块数量，请在激活前评估影响并制定迁移方案。
+* 在已采用 200ms 出块的 [Vibenet](/zh/build-on-base/test-on-vibenet) 上测试变更后的行为。
+
+## 执行 {#execution}
+
+### 完整区块时间戳 {#full-block-timestamp}
+
+Denim 保持 `block.header.timestamp` 为以整秒计的 Unix 时间。对于已激活的区块 `b`，其完整时间戳为：
+
+$$
+T&#95;{ms}(b) = 1000 \times b.header.timestamp + b.tx[1].timestamp&#95;millis&#95;part
+$$
+
+位于 `tx[1]` 的 BaseTime 存款交易携带 `timestamp_millis_part`，其有效值仅限 `0`、`200`、`400`、`600` 和 `800`。相邻的已激活区块满足：
+
+$$
+T&#95;{ms}(child) = T&#95;{ms}(parent) + 200
+$$
+
+区块不得跳过时隙。header 中的秒数与毫秒部分必须取自同一个计划时间戳；挂钟时间只决定 sequencer 何时开始构建区块，而不决定分配给该区块的时间戳。EVM 中的 `block.timestamp` 仍为 header 中的整秒值。
+
+### BaseTime 元数据存款交易 {#basetime-metadata-deposit}
+
+激活后，每个区块都必须在 `tx[1]` 位置包含规范的 BaseTime 更新交易，紧随 `tx[0]` 处的 L1 信息存款交易之后、所有用户交易之前。该存款交易通过 source-hash 域 `3` 与当前区块号绑定。
+
+| 字段          | 值                                                                       |
+| ----------- | ----------------------------------------------------------------------- |
+| 交易类型        | 存款交易 (`0x7e`)                                                           |
+| Source hash | 域 `3`，与当前区块号绑定                                                          |
+| From        | `0xDeaDDEaDDeAdDeAdDEAdDEaddeAddEAdDEAd0001`                            |
+| To          | `0x4200000000000000000000000000000000000030`                            |
+| Mint        | `0`                                                                     |
+| Value       | `0`                                                                     |
+| Gas 上限      | `1,000,000`                                                             |
+| 系统交易        | `false`                                                                 |
+| Calldata    | `setTimestampMillisPart(uint16)`，选择器为 `0x86bdf394`，后接 32 字节 ABI 编码的毫秒部分 |
+
+激活前，区块不得包含此元数据交易，也不得包含 Engine 毫秒字段。激活后，各实现需校验该交易的位置、source hash、发送方、接收方、mint、value、gas 上限、系统标志、calldata 格式以及格点 (lattice) 值。
+
+### BaseTime 预部署合约 {#basetime-predeploy}
+
+初始设计通过一个预部署合约，向合约公开当前区块时间戳的毫秒部分。
+
+| 属性           | 值                                            |
+| ------------ | -------------------------------------------- |
+| 代理           | `0x4200000000000000000000000000000000000030` |
+| 实现           | `0xc0D3C0d3C0d3C0D3c0d3C0d3c0D3C0d3c0d30030` |
+| 存储           | 槽位 `0` 中的 `uint16` 毫秒部分                      |
+| Setter       | `setTimestampMillisPart(uint16)`             |
+| 毫秒部分 getter  | `timestampMillisPart()`                      |
+| 完整时间戳 getter | `timestampMs()`                              |
+
+BaseTime 存款交易先于 L1 用户存款和用户交易执行，因此后续所有交易都能读取到更新后的值。
+
+新链会在创世区块中直接安装已链接的 BaseTime 预部署合约。在现有链上，该保留地址已部署规范的代理运行时代码并使用 Base ProxyAdmin，但其实现槽位尚未设置，因此在激活之前，对它的任何调用都会 revert。
+
+激活时，协议会在执行交易之前安装规范的 BaseTime 实现，并将其链接到现有代理。此过程会保留代理管理员，以及任何已通过治理设置的实现。
+
+### Engine 负载属性 {#engine-payload-attributes}
+
+Engine API 使用 `BasePayloadAttributes`，它将标准 `PayloadAttributes` 字段与 Base 特有字段扁平化合并在一起。
+
+对于 Denim 激活时或激活之后的负载，`BasePayloadAttributes.timestampMillisPart` **MUST** 存在，且其值必须为 `0`、`200`、`400`、`600` 或 `800` 之一。激活之前，该字段 **MUST NOT** 存在。
+
+`BasePayloadAttributes.transactions[1]` **MUST** 包含 BaseTime 元数据存款交易。该存款交易 **MUST** 由协议存款方发送至 BaseTime 预部署合约，且其 calldata **MUST** 包含 `setTimestampMillisPart(uint16)` 的规范编码。编码值 **MUST** 等于 `timestampMillisPart`。
+
+对于格式错误的 `forkchoiceUpdated` 负载属性，执行客户端 **MUST** 以 JSON-RPC `Invalid params` (`-32602`) 错误予以拒绝。对于缺少 BaseTime 存款交易或该交易无效的执行负载，执行客户端 **MUST** 在 `newPayload` 验证期间将其报告为无效。
+
+负载 ID 包含 `timestampMillisPart`，因此仅毫秒部分不同的构建会获得不同的 ID。当该字段不存在时，旧版负载 ID 的计算方式保持不变。
+
+所有现有的 Engine 时间戳字段仍以秒为单位。
+
+### 验证 {#validation}
+
+处理 `forkchoiceUpdated` 时，执行客户端会进行一系列无需读取合约状态的检查。在 Denim 之前，`timestampMillisPart` 必须不存在；在 Denim 之后，该字段必须存在，且值必须为 `0`、`200`、`400`、`600` 或 `800`。区块以整秒计的时间戳不得早于其父区块的时间戳。由于区块头不存储毫秒部分，客户端会在执行后再检查时间戳是否严格以 200ms 递增。
+
+执行完成后，客户端**必须 (MUST) **验证该区块的完整时间戳恰好比其父区块晚 200ms。不满足此要求的区块均为无效区块。
+
+## 派生 {#derivation}
+
+### 预定时间戳 {#scheduled-timestamps}
+
+激活后，派生管道会根据 Denim 激活计划和 L2 绝对区块号计算每个区块的时间戳。毫秒部分既不从批次数据中读取，也不根据本地挂钟时间推导。时间戳序列如下：
+
+`p (.000)` → `child (.200)` → `child (.400)` → `child (.600)` → `child (.800)` → `child (.000 in the next second)`
+
+管道会将预定时间戳拆分为以秒为单位的区块头时间戳和 BaseTime 毫秒部分，然后在 `tx[1]` 处重建 BaseTime 存款交易。
+
+### 区块生命周期 {#block-lifecycle}
+
+对于每个选定的 200ms 时隙，sequencer 都会构建并执行一个完整的区块。每个区块都有独立的哈希、状态根、收据、Engine 负载和分叉选择更新，并各自经历从 unsafe 到 safe 再到 finalized 的生命周期。
+
+区块的首笔交易 `tx[0]` 是 L1 信息存款交易，`tx[1]` 是 BaseTime 元数据存款交易，其后是用户交易及其他适用交易。按照设计，负载属性、`tx[1]` 以及写入 BaseTime 预部署合约的值应表示同一个计划的毫秒部分。
+
+## RPC {#rpc}
+
+<Note>
+  以下 RPC 行为计划随 Denim 推出，目前在生产端点上尚不可用。
+</Note>
+
+### 秒级兼容性 {#seconds-compatibility}
+
+Denim 保留现有的 `timestamp` JSON-RPC 字段，单位仍为 Unix 秒。Engine 时间戳、交易有效性时间戳、`eth_call` 时间戳以及 EVM `block.timestamp` 也仍以秒为单位。RPC 响应不会暴露内部的 `timestampMillisPart` 字段。
+
+Denim 上线后，请使用规范区块响应和订阅 (例如 `eth_subscribe("newHeads")`) 获取亚秒级更新。Flashblocks 流将停止服务。
+
+### 区块与区块头时间戳 {#block-and-header-timestamps}
+
+以下响应将新增可选字段 `timestampMs`，该字段编码为 JSON-RPC quantity，表示以毫秒为单位的完整 Unix 时间戳：
+
+* `eth_getBlockByHash`
+* `eth_getBlockByNumber`
+* `eth_getHeaderByHash`
+* `eth_getHeaderByNumber`
+* `eth_subscribe("newHeads")`
+
+例如，时间戳为 42.200 秒的区块包含以下字段：
+
+| 字段            | 值        |
+| ------------- | -------- |
+| `timestamp`   | `0x2a`   |
+| `timestampMs` | `0xa4d8` |
+
+客户端将根据经过认证的 BaseTime 元数据推导出 `timestampMs`，而不是根据秒级字段估算。如果某个历史区块的区块体或其 BaseTime 元数据已被修剪或因其他原因不可用，响应中将不包含 `timestampMs`。
+
+### 交易时间戳 {#transaction-timestamps}
+
+以下方法返回的已上链交易对象将新增可选字段 `blockTimestampMs`：
+
+* `eth_getTransactionByHash`
+* `eth_getTransactionByBlockHashAndIndex`
+* `eth_getTransactionByBlockNumberAndIndex`
+
+区块响应中嵌套的完整交易对象也将遵循与已上链交易相同的处理方式。待处理交易不会包含 `blockTimestampMs`，因为它们尚未被纳入规范区块。
+
+### 日志和收据时间戳 {#log-and-receipt-timestamps}
+
+通过以下方法返回的已打包日志对象将新增可选字段 `blockTimestampMs`：
+
+* `eth_getLogs`
+* `eth_getFilterChanges`
+* `eth_getFilterLogs`
+* `eth_getTransactionReceipt`
+* `eth_getBlockReceipts`
+* `eth_subscribe("logs")`
+* `eth_subscribe("transactionReceipts")`
+
+收据会在其嵌套的日志中提供该字段，而不是在收据顶层提供。已移除的日志将保留其原始区块时间戳以及原始区块来源信息。如果无法获取来源区块经过认证的 BaseTime 元数据，日志将直接省略该字段，而不会进行估算。
+
+与区块响应相同，已被修剪或缺少来源信息的交易和日志数据将省略 `blockTimestampMs`。这些字段均为可选字段，以确保 Denim 之前的历史数据以及缺少所需区块体数据的客户端仍可正常表示。
+
+### 工具 {#tooling}
+
+Foundry 的 `AnyRpcBlock` 和 `OtherFields` 路径能够保留未知的区块级 `timestampMs` 字段，而 EVM 执行仍以秒为单位。原生 Alloy `AnyRpcHeader` 会丢弃未知字段；如需获取 Denim 时间戳，可以改用 `WithOtherFields<AnyRpcHeader>` 或带类型的 Base 响应。在首批上线阶段，Anvil 本地挖出的区块预计不会生成 BaseTime 元数据。

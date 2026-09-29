@@ -1,0 +1,148 @@
+---
+title: "升级"
+description: "跟踪 Base 网络升级、激活日期以及每个版本包含的协议变更。"
+---
+
+Base 通过一系列具名的网络升级持续演进。每个版本都会引入协议变更、新功能或参数更新，并在 Base Sepolia 和 Base Mainnet 上激活。
+
+对于尚未确定激活时间戳的月份，仅为规划目标，可能会有所调整。
+
+<Update label="2026 年 10 月" tags={["Planning"]}>
+  ## Denim {#denim}
+
+  Denim 引入以 200ms 为间隔生成的原生区块，以规范区块流和 RPC 流取代 Flashblocks。
+
+  * **Base Sepolia：** 目标时间为 2026 年 10 月
+  * **Base Mainnet：** 目标时间为 2026 年 10 月
+
+  <a className="view-features-btn" href="/zh/upgrades/denim/overview">查看功能</a>
+</Update>
+
+<Update label="2026 年 9 月 30 日" tags={["Planning"]}>
+  ## Cobalt {#cobalt}
+
+  Cobalt 改进了 B20 代币标准，新增有效性交易，引入动态节点升级 (在 Mainnet 上仅提供指标) ，并将 Base 迁移至可信执行环境。
+
+  * **Base Sepolia：** 已于 2026 年 9 月 23 日激活
+  * **Base Mainnet：** 目标时间为 2026 年 9 月 30 日
+
+  <a className="view-features-btn" href="/zh/upgrades/cobalt/overview">查看功能</a>
+</Update>
+
+<Update label="2026 年 6 月 25 日" tags={["Live"]}>
+  ## Beryl {#beryl}
+
+  Beryl 借助 B20 代币让 Base 成为一流的资产发行平台，缩短了提款延迟，并采用 Reth V2 作为参考执行客户端。
+
+  * **Base Sepolia：** 已于 2026 年 6 月 18 日激活
+  * **Base Mainnet：** 已于 2026 年 6 月 25 日激活
+
+  <a className="view-features-btn" href="/zh/upgrades/beryl/overview">查看功能</a>
+</Update>
+
+<Update label="2026 年 5 月 28 日" tags={["Live"]}>
+  ## Azul {#azul}
+
+  Azul 是 Base 首次独立进行的网络升级。它增强了安全性与去中心化程度，推动网络向每秒 1 gigagas 的目标迈进，并改善了开发者体验。
+
+  * **Base Sepolia：** 已于 2026 年 4 月 20 日激活
+  * **Base Mainnet：** 已于 2026 年 5 月 28 日激活
+
+  <a className="view-features-btn" href="/zh/upgrades/azul/overview">查看功能</a>
+</Update>
+
+## 上游 OP Stack 硬分叉 {#upstream-op-stack-hardforks}
+
+Base 采用了以下上游 OP Stack 硬分叉。各条目按 Base Mainnet 激活日期排序。
+
+<Update label="2025 年 12 月 2 日" tags={["Live"]}>
+  ## Jovian {#jovian}
+
+  Jovian 引入了可配置的最低基础费用和数据可用性占用 gas 标量，以提升费用市场的稳定性。
+
+  * **Base Sepolia：** 已于 2025 年 11 月 19 日激活
+  * **Base Mainnet：** 已于 2025 年 12 月 2 日激活
+
+  <a className="view-features-btn" href="/zh/upgrades/jovian/overview">查看功能</a>
+</Update>
+
+<Update label="2025 年 5 月 9 日" tags={["Live"]}>
+  ## Isthmus {#isthmus}
+
+  Isthmus 纳入了以太坊 Pectra 相关 EIP，并引入了为 sequencer 带来收入的运营者费用机制。
+
+  * **Base Sepolia：** 已于 2025 年 4 月 17 日激活
+  * **Base Mainnet：** 已于 2025 年 5 月 9 日激活
+
+  <a className="view-features-btn" href="/zh/upgrades/isthmus/overview">查看功能</a>
+</Update>
+
+<Update label="2025 年 1 月 9 日" tags={["Live"]}>
+  ## Holocene {#holocene}
+
+  Holocene 引入了可通过 `SystemConfig` 配置的动态 EIP-1559 参数，以及更严格的区块派生规则。
+
+  * **Base Sepolia：** 已于 2024 年 11 月 26 日激活
+  * **Base Mainnet：** 已于 2025 年 1 月 9 日激活
+
+  <a className="view-features-btn" href="/zh/upgrades/holocene/overview">查看功能</a>
+</Update>
+
+<Update label="2024 年 9 月 11 日" tags={["Live"]}>
+  ## Granite {#granite}
+
+  Granite 为 `bn256Pairing` 预编译合约增加了输入大小限制，并更新了通道超时参数。
+
+  * **Base Sepolia：** 已于 2024 年 8 月 12 日激活
+  * **Base Mainnet：** 已于 2024 年 9 月 11 日激活
+
+  <a className="view-features-btn" href="/zh/upgrades/granite/overview">查看功能</a>
+</Update>
+
+<Update label="2024 年 7 月 10 日" tags={["Live"]}>
+  ## Fjord {#fjord}
+
+  Fjord 引入了基于 FastLZ 的 L1 费用估算、RIP-7212 `secp256r1` 预编译合约以及 Brotli 通道压缩。
+
+  * **Base Sepolia：** 已于 2024 年 5 月 29 日激活
+  * **Base Mainnet：** 已于 2024 年 7 月 10 日激活
+
+  <a className="view-features-btn" href="/zh/upgrades/fjord/overview">查看功能</a>
+</Update>
+
+<Update label="2024 年 3 月 14 日" tags={["Live"]}>
+  ## Ecotone {#ecotone}
+
+  Ecotone 集成了以太坊 Dencun 升级的变更，包括 EIP-4844 blob 交易和 EIP-4788 信标区块根。
+
+  * **Base Sepolia：** 已于 2024 年 2 月 21 日激活
+  * **Base Mainnet：** 已于 2024 年 3 月 14 日激活
+
+  <a className="view-features-btn" href="/zh/upgrades/ecotone/overview">查看功能</a>
+</Update>
+
+<Update label="2024 年 2 月 22 日" tags={["Live"]}>
+  ## Delta {#delta}
+
+  Delta 引入了跨度批次，将多个 L2 区块压缩到单笔 batcher 交易中，从而降低 L1 数据成本。
+
+  * **Base Sepolia：** 已于 2023 年 12 月 22 日激活
+  * **Base Mainnet：** 已于 2024 年 2 月 22 日激活
+
+  <a className="view-features-btn" href="/zh/upgrades/delta/overview">查看功能</a>
+</Update>
+
+<Update label="2024 年 1 月 11 日" tags={["Live"]}>
+  ## Canyon {#canyon}
+
+  Canyon 将以太坊 Shanghai 升级的 EIP (包括 EIP-3651、EIP-3855 和 EIP-3860) 引入 Base 执行层。
+
+  * **Base Sepolia：** 已于 2023 年 11 月 14 日激活
+  * **Base Mainnet：** 已于 2024 年 1 月 11 日激活
+
+  <a className="view-features-btn" href="/zh/upgrades/canyon/overview">查看功能</a>
+</Update>
+
+## 其他变更 {#other-changes}
+
+[配置变更日志](/zh/base-chain/network-information/configuration-changelog)记录了不隶属于任何特定升级的网络参数变更。

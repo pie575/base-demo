@@ -1,0 +1,174 @@
+---
+title: "Jovian：执行引擎"
+description: "Jovian 升级对执行引擎的变更：通过 SystemConfig 引入可配置的最低基础费用，以缩短优先费拍卖的持续时间。"
+---
+
+## 最低基础费用 {#minimum-base-fee}
+
+Jovian 引入了
+[可配置的最低基础费用](https://github.com/ethereum-optimism/design-docs/blob/main/protocol/minimum-base-fee.md)，
+以缩短 Base 上优先费拍卖的持续时间。
+
+最低基础费用通过 `SystemConfig` 配置 (参见[系统配置](/zh/specifications/base-protocol/consensus/derivation#system-configuration)) ，并由执行引擎
+借助区块 header 的 `extraData` 编码以及 Engine API 的 `PayloadAttributesV3` 参数强制执行。
+
+### 区块 header 中的最低基础费用 {#minimum-base-fee-in-block-header}
+
+与 [Holocene 的动态 EIP-1559 参数](../holocene/exec-engine#dynamic-eip-1559-parameters)类似，Jovian 将
+费用参数编码在每个 L2 区块 header 的 `extraData` 字段中。该格式经过扩展，新增了一个
+`u64` 字段，用于表示以 wei 为单位的最低基础费用。
+
+| 名称           | 类型                 | 字节偏移      |
+| ------------ | ------------------ | --------- |
+| `minBaseFee` | `u64 (big-endian)` | `[9, 17)` |
+
+约束条件：
+
+* `version` 必须 (MUST) 为 `1` (在 Holocene 的 `0` 基础上递增) 。
+* 这 17 个字节之后不得 (MUST NOT) 再有任何数据。
+
+`minBaseFee` 字段是以 wei 为单位的绝对下限。在计算基础费用时，如果
+计算得出的 `baseFee` 小于 `minBaseFee`，则必须 (MUST) 将其钳制为 `minBaseFee`。
+
+```javascript Minimum Base Fee Clamp
+if (baseFee < minBaseFee) {
+  baseFee = minBaseFee
+}
+```
+
+注意：`extraData` 的最大容量为 32 字节 (以适配 L1 信标链的 `extraData` 类型) ，未来的升级
+可能会对其进行扩展。
+
+### `PayloadAttributesV3` 中的最低基础费用 {#minimum-base-fee-in-payloadattributesv3}
+
+Engine API [`PayloadAttributesV3`](/zh/specifications/base-protocol/execution/l2-execution-engine#extended-payloadattributesv3) 新增了
+字段 `minBaseFee`。现有的 `eip1559Params` 仍保持 8 字节 (Holocene 格式) 。
+
+```text Extended PayloadAttributesV3 lines wrap expandable
+PayloadAttributesV3: {
+    timestamp: QUANTITY
+    prevRandao: DATA (32 bytes)
+    suggestedFeeRecipient: DATA (20 bytes)
+    withdrawals: array of WithdrawalV1
+    parentBeaconBlockRoot: DATA (32 bytes)
+    transactions: array of DATA
+    noTxPool: bool
+    gasLimit: QUANTITY or null
+    eip1559Params: DATA (8 bytes) or null
+    minBaseFee: QUANTITY or null
+}
+```
+
+在 Jovian 分叉之前，`minBaseFee` MUST 为 `null`；在 Jovian 分叉之后，`minBaseFee` MUST 不为 `null`。
+
+### 设计原理 {#rationale}
+
+与 [Holocene 的动态 EIP-1559 参数](../holocene/exec-engine#rationale)一样，将
+最低基础费用放在区块 header 中，可以避免在区块封装期间读取状态。
+这样既保持了“根据父区块 header 计算下一个区块基础费用”这一函数的纯粹性，
+又允许对这些参数进行动态配置。动态配置的处理方式
+与 `gasLimit` 类似：派生管道通过 `PayloadAttributesV3` 参数，将相应的 `SystemConfig`
+合约值提供给区块构建者。
+
+## DA 占用量区块限制 {#da-footprint-block-limit}
+
+本规范引入了*DA 占用量区块限制* (DA footprint block limit) ，用于限制单个区块可容纳的估算压缩交易数据总量。
+除 gas 用量外，每笔交易还会额外追踪一种名为 DA 占用量 (DA footprint) 的新资源。
+该资源会按比例换算到 gas 维度，这样其区块总量也能像区块的 gas 总用量一样，受区块 gas 上限的约束。
+
+区块的 `daFootprint` 定义如下：
+
+```python DA Footprint Calculation lines wrap expandable
+def daFootprint(block: Block) -> int:
+  daFootprint = 0
+
+  for tx in block.transactions:
+      if tx.type == DEPOSIT_TX_TYPE:
+          continue
+
+      daUsageEstimate = max(
+          minTransactionSize,
+          (intercept + fastlzCoef * tx.fastlzSize) // 1e6
+      )
+      daFootprint += daUsageEstimate * daFootprintGasScalar
+
+  return daFootprint 
+```
+
+其中 `intercept`、`minTransactionSize`、`fastlzCoef` 和 `fastlzSize`
+在 [Fjord 规范](../fjord/exec-engine)中定义，`DEPOSIT_TX_TYPE` 为 `0x7E`，
+`//` 表示整数向下取整除法。
+
+自 Jovian 起，每个区块 header 的 `blobGasUsed` 属性被设为该区块的 `daFootprint`。请注意，在 Jovian 之前 (自 Ecotone 起) ，
+由于 Base 不支持 blob，该属性一直被设为 0。现在它被重新用于存储 DA 占用量。
+
+在区块构建期间必须保证、在 header 验证期间必须检查区块的
+`daFootprint` 低于 `gasLimit`，这与对 `gasUsed` 属性的要求相同。
+请注意，这意味着区块的估算 DA 使用总字节数不得超过 `gasLimit/daFootprintGasScalar`。
+
+此外，自 Jovian 起，基础费用的更新计算改用 `gasMetered := max(gasUsed, blobGasUsed)`，
+取代此前使用的 `gasUsed` 值。
+因此，DA 使用量较高的区块可能会导致后续区块的基础费用上涨。
+
+### 标量加载 {#scalar-loading}
+
+`daFootprintGasScalar` 的加载方式与 Isthmus 硬分叉中[引入](../isthmus/exec-engine#operator-fee)的 `operatorFeeScalar` 和 `operatorFeeConstant` 类似。可通过以下两种等效方式读取：
+
+* 从当前 L2 区块的存入 L1 属性 (`daFootprintGasScalar`) 中读取
+  (按照 [jovian 模式](./l1-attributes)解码)
+* 从 L1 Block Info 合约 (`0x4200000000000000000000000000000000000015`) 中读取
+  * 使用 Solidity getter 函数 `daFootprintGasScalar`
+  * 直接读取存储：位于槽 `8`、偏移量 `12` 处的大端序 `uint16`。
+
+其默认值详见 [L1 属性](./l1-attributes)一节。
+
+### 收据 {#receipts}
+
+Jovian 激活后，交易收据中将新增字段 `daFootprintGasScalar`，其值为该交易所在区块的 DA 占用 gas 标量。
+此外，收据字段 `blobGasUsed` 将被设为该交易的 DA 占用量。
+
+### 设计依据 {#rationale-2}
+
+尽管当前的 L1 fee 机制会根据交易 DA 占用量的估算值对 DA 使用收费，但目前尚无任何
+协议机制能够反映 *L1 上有限的 DA 吞吐量*。例如，在启用了 Pectra 的 Ethereum L1 上，
+可用的 blob 吞吐量为 `~96 kB/s` (目标值为 `~64 kB/s`) ，但对于以 calldata 为主的 L2 交易，
+`40` 的 calldata 下限 gas 价格使得大多数 Base 链可纳入的不可压缩交易数据量超出
+Ethereum blob 空间的承载能力。目前，这一问题在策略层面通过 batcher-sequencer 限流来缓解，
+即一种人为限制区块构建的机制。这可能导致基础费用下降，进而给链运营方造成不必要的损失，
+并损害用户体验 (交易打包延迟、priority fee 竞价) 。因此，对区块的 DA 占用量设置硬性上限，
+并使其同时作用于基础费用，即可缓解上述基于策略的方案所存在的问题。
+
+## 运营方费用 {#operator-fee}
+
+### 费用公式更新 {#fee-formula-update}
+
+Jovian 更新了运营方费用 (operator fee) 的计算方式，以便收取更高的费用。
+自 Jovian 激活起，运营方费用 MUST 按以下公式计算：
+
+$$
+\text{operatorFee} = (\text{gas} \times \text{operatorFeeScalar} \times 100) + \text{operatorFeeConstant}
+$$
+
+因此，实际生效的每单位 gas 标量为 `100 * operatorFeeScalar`。除此之外，[Isthmus 规范](../isthmus/exec-engine#operator-fee)中描述的数据类型及运营方费用
+语义仍然适用。
+
+### 最大值 {#maximum-value}
+
+采用新公式后，运营方费用的最大值占 103 位：
+
+```text Maximum Operator Fee
+operatorFee_max = (uint64_max * uint32_max * 100) + uint64_max ≈ 7.924660923989131 * 10^30
+```
+
+若实现在中间运算中使用 `uint256`，则无需额外进行溢出检查。
+
+## EVM 变更 {#evm-changes}
+
+### 预编译合约输入大小限制 {#precompile-input-size-restrictions}
+
+部分预编译合约的输入大小限制有所调整，调整后的限制如下：
+
+* `bn256Pairing`：81,984 字节 (427 对)
+* `BLS12-381 G1 MSM`：288,960 字节 (1,806 对)
+* `BLS12-381 G2 MSM`：278,784 字节 (968 对)
+* `BLS12-381 Pairing`：156,672 字节 (408 对)

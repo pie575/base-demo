@@ -1,0 +1,343 @@
+---
+title: "概要"
+description: "Base Chain プロトコルの全体像 — ネットワーク参加者、システムアーキテクチャ、主要コンポーネント、ユーザーフローについて解説します。"
+---
+
+Base は Ethereum 上に構築されたロールアップです。L2 のトランザクションデータはデータ可用性を確保するために Ethereum に投稿され、
+証明を用いることで、誰でも不正な状態遷移に異議を申し立てることができます。このページでは、
+プロトコルを構成するコンポーネントと主要なユーザーフローの全体像を紹介します。
+
+## ネットワーク参加者 {#network-participants}
+
+Base とやり取りする主要なアクターには、ユーザー、シーケンサー、バリデーターの3種類があります。
+
+```mermaid Network Participants lines wrap expandable
+graph TD
+    EthereumL1(Ethereum L1)
+
+    subgraph "L2参加者"
+        Users(ユーザー)
+        Sequencers(シーケンサー)
+        Validators(バリデーター)
+    end
+
+    Validators -.->|トランザクションバッチを取得| EthereumL1
+    Validators -.->|入金データを取得| EthereumL1
+    Validators -->|出力プロポーザルの提出・検証・異議申し立て| EthereumL1
+    Validators -.->|P2Pの更新情報をリアルタイムで取得| Sequencers
+
+    Users -->|入金・出金を申請| EthereumL1
+    Users -->|トランザクションを送信| Sequencers
+    Users -->|データを照会| Validators
+
+    Sequencers -->|トランザクションバッチを送信| EthereumL1
+    Sequencers -.->|入金データを取得| EthereumL1
+
+    classDef l1Contracts stroke:#bbf,stroke-width:2px;
+    classDef l2Components stroke:#333,stroke-width:2px;
+    classDef systemUser stroke:#f9a,stroke-width:2px;
+
+    class EthereumL1 l1Contracts;
+    class Users,Sequencers,Validators l2Components;
+```
+
+### ユーザー {#users}
+
+ユーザーとは、次のことを行うネットワーク参加者全般を指します。
+
+* シーケンサー経由で、またはEthereum上のコントラクトを操作して、トランザクションを送信する。
+* バリデーターが運用するインターフェースからトランザクションデータを照会する。
+
+### シーケンサー {#sequencers}
+
+シーケンサーは、Base におけるブロック生成者の役割を担います。現在、Base ではアクティブなシーケンサーが 1 つだけ稼働しています。
+
+シーケンサーは次の処理を行います。
+
+* ユーザーから直接トランザクションを受け付けます。
+* Ethereum 上で生成された「デポジット」トランザクションを監視します。
+* これら 2 つのトランザクションストリームを統合し、順序付けられた L2 ブロックにまとめます。
+* それらの L2 ブロックを完全に再現できるだけの情報を L1 に送信します。
+* L1 上でまだ確定していない保留中の L2 ブロックへのリアルタイムアクセスを提供します。
+* 200ms ごとに Flashblocks を生成し、構築中のブロック内におけるトランザクションの順序を確約します。
+
+シーケンサーは L2 チェーンの運用において重要な役割を果たしますが、信頼される主体ではありません。シーケンサーの主な役割は、
+ユーザーがすべてのトランザクションを直接 L1 に送信する現状の方法と比べて、はるかに高速かつ低コストでトランザクションを順序付けることで、
+ユーザーエクスペリエンスを向上させることです。
+
+### バリデーター {#validators}
+
+バリデーターは、シーケンサーとは独立して L2 の状態遷移関数を実行します。バリデーターはネットワークの
+完全性の維持に寄与し、ユーザーにブロックチェーンデータを提供します。
+
+バリデーターは一般的に次の役割を担います。
+
+* L1 およびシーケンサーからロールアップデータを同期する。
+* ロールアップデータを使用して L2 の状態遷移関数を実行する。
+* ロールアップデータと、計算した L2 の状態情報をユーザーに提供する。
+
+バリデーターは、プロポーザーやチャレンジャーを兼ねることもでき、その場合は次の役割を担います。
+
+* L2 の状態に関するアサーションを L1 上のスマートコントラクトに提出する。
+* 他の参加者が行ったアサーションを検証する。
+* 他の参加者が行った無効なアサーションに異議を申し立てる。
+
+## システム概要図 {#high-level-system-diagram}
+
+次の図は、主要なプロトコルコンポーネントが L1 と L2 をまたいでどのように連携するかを示しています。
+
+```mermaid Protocol Architecture lines wrap expandable
+graph LR
+    subgraph "Ethereum L1"
+        OptimismPortal(<a href="/specifications/base-protocol/bridging/withdrawals#the-optimism-portal-contract">OptimismPortal</a>)
+        BatchInbox(<a href="/specifications/reference/glossary#batcher-transaction">バッチインボックスアドレス</a>)
+        DisputeGameFactory(<a href="/specifications/base-protocol/proofs/proof-contracts#disputegamefactory">DisputeGameFactory</a>)
+    end
+
+    subgraph "L2ノード"
+        RollupNode(<a href="/specifications/base-protocol/consensus/specification">コンセンサス</a>)
+        ExecutionEngine(<a href="/specifications/base-protocol/execution/l2-execution-engine">実行エンジン</a>)
+    end
+
+    Batcher(<a href="/specifications/base-protocol/batcher">バッチャー</a>)
+    Proposers(プロポーザー)
+    Challengers(チャレンジャー)
+    Users(ユーザー)
+
+    Users -->|入金 / 出金| OptimismPortal
+    Users -->|トランザクション| ExecutionEngine
+
+    Batcher -->|トランザクションのバッチを投稿| BatchInbox
+    Batcher -.->|バッチデータを取得| RollupNode
+
+    RollupNode -.->|バッチを取得| BatchInbox
+    RollupNode -.->|入金イベントを取得| OptimismPortal
+    RollupNode -->|Engine API| ExecutionEngine
+
+    Proposers -->|出力プロポーザルを提出| DisputeGameFactory
+    Proposers -.->|出力を取得| RollupNode
+    Challengers -->|ゲームを検証 / チャレンジ| DisputeGameFactory
+    OptimismPortal -.->|状態提案を照会| DisputeGameFactory
+
+    classDef l1Contracts stroke:#bbf,stroke-width:2px;
+    classDef l2Components stroke:#333,stroke-width:2px;
+    classDef systemUser stroke:#f9a,stroke-width:2px;
+
+    class OptimismPortal,BatchInbox,DisputeGameFactory l1Contracts;
+    class RollupNode,ExecutionEngine l2Components;
+    class Batcher,Proposers,Challengers,Users systemUser;
+```
+
+## プロトコルの構成要素 {#protocol-components}
+
+### コンセンサス {#consensus}
+
+コンセンサスは、L1 のデータから正規の L2 チェーンを導出する役割を担います。Batch Inbox からトランザクションバッチを、
+OptimismPortal からデポジットイベントを読み取ってペイロード属性を構築し、Engine API を介して
+実行エンジンを駆動します。Unsafe (未確認) ブロックは専用の P2P ネットワーク経由で他のノードにゴシップ配信されます。
+これにより、バリデーターはバッチが L1 に取り込まれる前に、低レイテンシでブロックにアクセスできます。
+
+[コンセンサス →](/ja/specifications/base-protocol/consensus/specification)
+
+```mermaid Consensus Components lines wrap expandable
+graph LR
+    L1(Ethereum L1)
+    subgraph "ロールアップノード"
+        BatchDecoding(バッチのデコード)
+        Derivation(導出パイプライン)
+    end
+    EngineAPI(Engine API)
+    EE(実行エンジン)
+    L2(L2ブロック)
+
+    L1 -->|バッチ + 入金イベント| BatchDecoding
+    BatchDecoding --> Derivation
+    Derivation -->|ペイロード属性| EngineAPI
+    EngineAPI --> EE
+    EE --> L2
+
+    classDef l1 stroke:#bbf,stroke-width:2px;
+    classDef l2 stroke:#333,stroke-width:2px;
+    class L1 l1;
+    class EE,L2 l2;
+```
+
+### 実行 {#execution}
+
+実行エンジンは Reth ベースのランタイムです。標準の Ethereum JSON-RPC API を公開し、
+コンセンサスが生成したブロックを処理します。プリデプロイ (固定の L2 アドレスに配置されたシステムコントラクト) 、プリコンパイル、
+プリインストールによって EVM が拡張され、手数料の分配、L1 ブロック属性の
+注入、クロスドメインメッセージングといったロールアップ固有の機能が実現されます。
+
+[実行 →](/ja/specifications/base-protocol/execution/l2-execution-engine)
+
+### ブリッジング {#bridging}
+
+デポジットは、L1 上の `OptimismPortal` コントラクトから L2 へ送られ、各 L2 ブロックの先頭に含まれる特殊なデポジットトランザクションとして
+取り込まれます。出金はこれと逆方向の流れになります。まず L2 上で出金トランザクションが開始され、
+プロポーザーが `DisputeGameFactory` に出力ルートを提出します。チャレンジ期間の経過後、ユーザーは `OptimismPortal` を介して L1 上で出金を証明し、
+ファイナライズします。
+
+[ブリッジング →](/ja/specifications/base-protocol/bridging/deposits)
+
+```mermaid Deposit Flow lines wrap expandable
+graph LR
+    subgraph "入金経路"
+        User1(ユーザー)
+        OP1(OptimismPortal)
+        DepTx(L2上の入金トランザクション)
+    end
+
+    subgraph "出金経路"
+        User2(ユーザー)
+        WdTx(L2上の出金トランザクション)
+        DGF(DisputeGameFactory)
+        OP2(OptimismPortal)
+    end
+
+    User1 -->|depositTransaction| OP1
+    OP1 -->|TransactionDepositedイベント| DepTx
+
+    User2 -->|出金を開始| WdTx
+    WdTx -->|出力ルートが提案される| DGF
+    User2 -->|証明・確定| OP2
+    OP2 -.->|ゲームを検証| DGF
+
+    classDef l1 stroke:#bbf,stroke-width:2px;
+    classDef systemUser stroke:#f9a,stroke-width:2px;
+    class OP1,OP2,DGF l1;
+    class User1,User2 systemUser;
+```
+
+### バッチャー {#batcher}
+
+バッチャーはシーケンサーが運用するサービスで、L2 のトランザクションデータを圧縮してチャネルフレームにまとめ、
+calldata (または blob) として L1 上の バッチインボックスアドレス に送信します。これがデータ可用性レイヤーとなり、
+どのバリデーターでも L1 から L2 チェーンを独立して再構築できます。
+
+[バッチャー →](/ja/specifications/base-protocol/batcher)
+
+```mermaid Batcher Flow lines wrap expandable
+graph LR
+    Sequencer(シーケンサー)
+    Batcher(<a href="/specifications/base-protocol/batcher">バッチャー</a>)
+    BatchInbox(<a href="/specifications/reference/glossary#batcher-transaction">バッチインボックスアドレス</a>)
+    RollupNode(<a href="/specifications/base-protocol/consensus/specification">ロールアップノード</a>)
+
+    Sequencer -->|L2ブロック| Batcher
+    Batcher -->|圧縮されたチャネルフレーム| BatchInbox
+    BatchInbox -.->|バッチを取得| RollupNode
+
+    classDef l1 stroke:#bbf,stroke-width:2px;
+    classDef l2 stroke:#333,stroke-width:2px;
+    classDef systemUser stroke:#f9a,stroke-width:2px;
+    class BatchInbox l1;
+    class RollupNode l2;
+    class Batcher,Sequencer systemUser;
+```
+
+### 証明 {#proofs}
+
+出力プロポーザルと証明によって、L2 の状態を検証できます。プロポーザーは `DisputeGameFactory` を通じてチェックポイントゲームを作成し、証明データはオンチェーンの検証コントラクトで検証されます。チャレンジャーは無効な主張に対して異議を申し立てることができます。有効な出金は、関連するゲームがプロポーザー側の勝利として解決された後にのみ、`OptimismPortal` を通じてファイナライズできます。
+
+[証明 →](/ja/specifications/base-protocol/proofs/overview)
+
+```mermaid Proof Flow lines wrap expandable
+graph LR
+    Proposer(提案者)
+    DGF(<a href="/specifications/base-protocol/proofs/proof-contracts#disputegamefactory">DisputeGameFactory</a>)
+    Game(<a href="/specifications/base-protocol/proofs/proof-contracts#aggregateverifier">AggregateVerifierゲーム</a>)
+    Challengers(チャレンジャー)
+    OP(<a href="/specifications/base-protocol/bridging/withdrawals#the-optimism-portal-contract">OptimismPortal</a>)
+
+    Proposer -->|チェックポイントの証明を提出| DGF
+    DGF -->|ゲームを作成| Game
+    Challengers -->|無効な主張に異議を申し立てる| Game
+    Game -->|確定した結果| OP
+
+    classDef l1 stroke:#bbf,stroke-width:2px;
+    classDef systemUser stroke:#f9a,stroke-width:2px;
+    class DGF,Game,OP l1;
+    class Proposer,Challengers systemUser;
+```
+
+## 主要なユーザーフロー {#core-user-flows}
+
+### Base への ETH の入金 {#depositing-eth-to-base}
+
+ユーザーはまず、L1 から ETH を入金して L2 の利用を始めるのが一般的です。
+手数料の支払いに必要な ETH を用意できたら、L2 でトランザクションを送信し始めます。
+次の図は、この一連のやり取りと Base プロトコルの主要なコンポーネントを示しています。
+
+```mermaid Transaction Flow lines wrap expandable
+graph TD
+    subgraph "Ethereum L1"
+        OptimismPortal(<a href="/specifications/base-protocol/bridging/withdrawals#the-optimism-portal-contract">OptimismPortal</a>)
+        BatchInbox(<a href="/specifications/reference/glossary#batcher-transaction">バッチインボックスアドレス</a>)
+    end
+
+    Sequencer(シーケンサー)
+    Users(ユーザー)
+
+    %% Interactions
+    Users -->|<b>1.</b> 入金トランザクションを送信| OptimismPortal
+    Sequencer -.->|<b>2.</b> 入金イベントを取得| OptimismPortal
+    Sequencer -->|<b>3.</b> 入金ブロックを生成| Sequencer
+    Users -->|<b>4.</b> トランザクションを送信| Sequencer
+    Sequencer -->|<b>5.</b> トランザクションのバッチを送信| BatchInbox
+
+    classDef l1Contracts stroke:#bbf,stroke-width:2px;
+    classDef l2Components stroke:#333,stroke-width:2px;
+    classDef systemUser stroke:#f9a,stroke-width:2px;
+
+    class OptimismPortal,BatchInbox l1Contracts;
+    class Sequencer l2Components;
+    class Users systemUser;
+```
+
+### Base でのトランザクション送信 {#sending-transactions-on-base}
+
+Base でのトランザクション送信は、Ethereum の場合と同じです。ユーザーはトランザクションに署名し、
+`eth_sendRawTransaction` を使って任意のノードの JSON-RPC エンドポイントに送信します。シーケンサーはメモリプールからトランザクションを取得して順序付け、
+L2 ブロックにまとめたうえで、最終的にそのバッチを L1 に投稿します。
+
+### Base からの出金 {#withdrawing-from-base}
+
+ユーザーが ETH や ERC20 トークンを Base から Ethereum に戻したい場合もあります。出金は L2 上の通常のトランザクションとして開始され、
+その後 L1 上のトランザクションによって完了します。出金時には、特定の時点における L2 の状態を提案する有効な
+プルーフゲームコントラクトを参照しなければなりません。
+
+```mermaid Withdrawal Flow lines wrap expandable
+graph LR
+    subgraph "Ethereum L1"
+        BatchInbox(<a href="/specifications/reference/glossary#batcher-transaction">バッチインボックスアドレス</a>)
+        DisputeGameFactory(<a href="/specifications/base-protocol/proofs/proof-contracts#disputegamefactory">DisputeGameFactory</a>)
+        ProofGame(<a href="/specifications/base-protocol/proofs/proof-contracts#aggregateverifier">AggregateVerifierゲーム</a>)
+        OptimismPortal(<a href="/specifications/base-protocol/bridging/withdrawals#the-optimism-portal-contract">OptimismPortal</a>)
+        ExternalContracts(外部コントラクト)
+    end
+
+    Sequencer(シーケンサー)
+    Proposers(プロポーザー)
+    Users(ユーザー)
+
+    %% Interactions
+    Users -->|<b>1.</b> 引き出し開始トランザクションを送信| Sequencer
+    Sequencer -->|<b>2.</b> トランザクションバッチを送信| BatchInbox
+    Proposers -->|<b>3.</b> 出力プロポーザルを提出| DisputeGameFactory
+    DisputeGameFactory -->|<b>4.</b> ゲームを生成| ProofGame
+    Users -->|<b>5.</b> 引き出しの証明を提出| OptimismPortal
+    Users -->|<b>6.</b> 確定を待つ| ProofGame
+    Users -->|<b>7.</b> 引き出しの確定を申請| OptimismPortal
+    OptimismPortal -->|<b>8.</b> ゲームの有効性を確認| ProofGame
+    OptimismPortal -->|<b>9.</b> 引き出しトランザクションを実行| ExternalContracts
+
+    %% Styling
+    classDef l1Contracts stroke:#bbf,stroke-width:2px;
+    classDef l2Components stroke:#333,stroke-width:2px;
+    classDef systemUser stroke:#f9a,stroke-width:2px;
+
+    class BatchInbox,DisputeGameFactory,ProofGame,OptimismPortal l1Contracts;
+    class Sequencer l2Components;
+    class Users,Proposers systemUser;
+```

@@ -1,0 +1,88 @@
+---
+title: "向持有人发行份额"
+description: "一次性批量向多个已获批准的持有人分发 B20 Asset 份额。"
+keywords: ["发行代币化份额", "B20 batchMint", "资产代币分发", "Base 股权结构表"]
+---
+
+import { AssetDemo } from "/snippets/AssetDemo.jsx"
+import RwaDisclaimer from "/snippets/zh/RwaDisclaimer.mdx"
+
+使用 B20 Asset 的 `batchMint`，可在一笔原子交易中向多个持有人分发份额：要么全部成功，要么全部失败。每个接收方都必须通过该代币的铸造接收方策略，且总发行量必须低于其供应上限。
+
+<RwaDisclaimer />
+
+## 演示 {#demo}
+
+<AssetDemo flow="issue" />
+
+<Tip>
+  此演示使用浏览器本地生成的账户，在 **Base Vibenet** 上提交真实交易。如果 Vibenet 或其 B20 功能不可用，演示会自动切换到仅供示意的离线版本。
+</Tip>
+
+<Note>
+  初次接触 B20？请参阅 [B20 代币标准](/zh/build-on-base/issue-rwa/create-an-asset-token)，了解相关概念和完整的发行流程。这些示例基于 `base-std@1505323`、`viem@2.55.11` 和 Base Foundry `v1.1.1`。
+</Note>
+
+## 发行并验证份额 {#issue-and-verify-the-shares}
+
+<CodeGroup>
+  {/* sample: stock-issue-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={8}
+  import { parseUnits, type Address } from "viem";
+  import { publicClient } from "../../shared/clients.js";
+  import { assetAbi, b20Abi } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function issueShares(token: Address, holders: [Address, Address]) {
+    const amounts = [parseUnits("600", 6), parseUnits("400", 6)] as const;
+    await sendContract({ address: token, abi: assetAbi, functionName: "batchMint", args: [holders, amounts] });
+    const balances = await Promise.all(holders.map((holder) => publicClient.readContract({ address: token, abi: b20Abi, functionName: "balanceOf", args: [holder] })));
+    if (balances[0] !== amounts[0] || balances[1] !== amounts[1]) throw new Error("Unexpected issuance balances");
+  }
+  ```
+
+  {/* sample: stock-issue-solidity */}
+
+  ```solidity Solidity lines wrap expandable highlight={8}
+      function issueShares(address token, address alice, address bob) public {
+          address[] memory recipients = new address[](2);
+          recipients[0] = alice;
+          recipients[1] = bob;
+          uint256[] memory amounts = new uint256[](2);
+          amounts[0] = 600e6;
+          amounts[1] = 400e6;
+          IB20Asset(token).batchMint(recipients, amounts);
+      }
+  ```
+
+  {/* sample: stock-issue-cli */}
+
+  ```bash CLI lines wrap expandable highlight={1}
+  base-cast send "$TOKEN_ADDRESS" "batchMint(address[],uint256[])" \
+    "[$ALICE,$BOB]" "[600000000,400000000]" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  base-cast call "$TOKEN_ADDRESS" "balanceOf(address)(uint256)" "$ALICE" --rpc-url "$RPC_URL"
+  ```
+</CodeGroup>
+
+完整的接口、角色和策略说明，请参阅 [B20 代币标准](/zh/build-on-base/issue-rwa/create-an-asset-token)。
+
+<Check>
+  该批量操作遵循“全部成功或全部失败”原则，执行完成后，Alice 持有 600 EXM，Bob 持有 400 EXM。
+</Check>
+
+<Warning>
+  若数组长度不一致、任一接收方未通过策略校验，或总供应量将超出上限，整个批量操作都会回滚。
+</Warning>
+
+## 另请参阅 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="限制合格持有人" icon="user-check" href="/zh/build-on-base/issue-rwa/restrict-eligible-holders">
+    通过策略控制谁可以持有代币。
+  </Card>
+
+  <Card title="向持有人公告变更" icon="bullhorn" href="/zh/build-on-base/issue-rwa/announce-a-distribution">
+    在链上披露增发或其他影响持有人的变更。
+  </Card>
+</CardGroup>

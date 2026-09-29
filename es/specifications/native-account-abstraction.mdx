@@ -1,0 +1,163 @@
+---
+title: "Abstracción de cuentas nativa"
+sidebarTitle: "Abstracción de cuentas nativa"
+description: "Referencia de EIP-8130 para Base: detalles de la cadena vibenet, configuración del cliente, estructura de las transacciones, configuración de cuentas, autenticadores y pagadores."
+tag: "Vibenet"
+---
+
+Esta es la referencia técnica de EIP-8130 en Base. Si quieres saber qué es la abstracción de cuentas nativa y por qué el protocolo la implementa, empieza por Abstracción de cuentas nativa.
+
+[EIP-8130](https://eip.tools/eip/8130) incorpora la abstracción de cuentas directamente en el protocolo. Cada cuenta registra en un contrato de sistema onchain quién puede actuar en su nombre y cómo se verifican sus firmas. La cadena valida cada transacción con respecto a esa configuración, de modo que las cuentas inteligentes funcionan sin bundlers, relays ni un mempool independiente.
+
+<Warning>
+  EIP-8130 es experimental y, por ahora, solo se ejecuta en la [devnet vibenet](https://chain.base.org/vibenet). Encontrarás más información en la guía para [conectarte a vibenet](/base-chain/quickstart/connecting-to-base#vibenet).
+</Warning>
+
+## Detalles de la red {#network-details}
+
+| Campo    | Valor                                                     |
+| -------- | --------------------------------------------------------- |
+| Red      | devnet vibenet                                            |
+| Chain ID | `84538453`                                                |
+| RPC      | `https://rpc.vibes.base.org`                              |
+| Faucet   | `POST https://api.vibes.base.org/api/vibenet/faucet/drip` |
+
+## Configuración del cliente {#client-setup}
+
+La compatibilidad del lado del cliente está disponible en un fork experimental de viem:
+
+```bash Terminal
+bun add "viem@github:chunter-cb/viem#feat/eip-8130"
+```
+
+## Crear una cuenta y enviar un lote {#create-an-account-and-send-a-batch}
+
+El siguiente ejemplo ejecuta el flujo completo:
+
+1. Crea una cuenta.
+2. La financia desde el faucet.
+3. Envía un lote de llamadas que se completan o se revierten todas juntas.
+4. Verifica que todas las fases se hayan completado correctamente.
+
+```ts create-and-send.ts lines wrap expandable highlight={19,30-40,43-44}
+import { createPublicClient, http, parseEther } from "viem";
+import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
+import {
+  newSmartAccount8130, sendCalls8130, estimateGas8130,
+  encodeWalletCalls, waitForTransactionReceipt8130, allPhasesSucceeded,
+} from "viem/experimental/eip8130";
+
+const RPC_URL = "https://rpc.vibes.base.org";
+const chain = {
+  id: 84538453,
+  name: "vibenet",
+  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: { default: { http: [RPC_URL] } },
+};
+const client = createPublicClient({ chain, transport: http(RPC_URL) });
+
+// La dirección de la cuenta es determinista y existe antes de cualquier despliegue
+const signer = privateKeyToAccount(generatePrivateKey());
+const account = newSmartAccount8130({ signer });
+
+// Añádele fondos desde el faucet de vibenet
+await fetch("https://api.vibes.base.org/api/vibenet/faucet/drip", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ address: account.address }),
+});
+
+// Estima el gas y luego envía un lote. La creación de la cuenta va incluida en la misma transacción
+const calls = [{ to: "0x…recipient", value: parseEther("0.001") }];
+const gas = await estimateGas8130(client, {
+  sender: account.address,
+  accountChanges: [account.createChange],
+  calls: encodeWalletCalls({ account: account.address, calls: [calls] }),
+});
+const hash = await sendCalls8130(client, {
+  account,
+  accountChanges: [account.createChange],
+  calls,
+  gas: (gas * 120n) / 100n,
+});
+
+// Un recibo 8130 informa de los resultados de cada fase, así que compruébalos todos
+const receipt = await waitForTransactionReceipt8130(client, { hash });
+if (!allPhasesSucceeded(receipt)) throw new Error("a phase reverted");
+```
+
+Una sola transacción crea la cuenta, ejecuta el lote y paga el gas.
+
+## Estructura de la transacción {#transaction-structure}
+
+Una transacción 8130 especifica una cuenta remitente, demuestra que el remitente está autorizado para actuar en su nombre e incluye un lote de llamadas.
+
+| Campo            | Propósito                                                                                         |
+| ---------------- | ------------------------------------------------------------------------------------------------- |
+| `sender`         | La cuenta en cuyo nombre actúa la transacción.                                                    |
+| `accountChanges` | Cambios de configuración que se aplican antes de la ejecución, incluida la creación de la cuenta. |
+| `calls`          | El lote que se ejecuta de forma atómica.                                                          |
+| `payer`          | Cuenta opcional que paga el gas en nombre del remitente.                                          |
+
+Los recibos informan de los resultados por fase, no mediante un único estado, por lo que una transacción puede completarse correctamente a nivel de transacción aunque una fase concreta se revierta. Comprueba todas las fases; en el cliente de referencia, `allPhasesSucceeded` se encarga de ello.
+
+## Cuentas {#accounts}
+
+Las direcciones de las cuentas se derivan con `CREATE2`, por lo que un cliente puede calcularlas localmente y la dirección existe antes de cualquier despliegue. Por eso `account.address` está disponible de inmediato y `account.createChange` puede incluirse en la primera transacción.
+
+Cada cuenta es un pequeño contrato proxy que reenvía las llamadas a una implementación compartida.
+
+| Implementación        | Notas                                                                                             |
+| --------------------- | ------------------------------------------------------------------------------------------------- |
+| `DefaultAccount`      | El componente básico mínimo. También sirve de base para las EOA actualizadas mediante EIP-7702.   |
+| Variante de alta tasa | Bloquea el ETH saliente durante la ejecución a cambio de límites de tasa más altos en el mempool. |
+
+## Configuración de la cuenta {#account-configuration}
+
+La autorización reside en el contrato de sistema `AccountConfiguration`, que registra los **actores** que autoriza una cuenta: las identidades onchain en las que se resuelve la autorización de un firmante. Una cuenta puede autorizar muchos actores y revocar cada uno de ellos de forma independiente.
+
+Cada entrada de actor contiene:
+
+| Elemento                | Propósito                                                                                 |
+| ----------------------- | ----------------------------------------------------------------------------------------- |
+| Indicadores de alcance  | `SCOPE_NONCE` y `SCOPE_POLICY` delimitan lo que puede hacer el actor.                     |
+| Vinculación de política | Política onchain opcional: límites de gasto por token y contratos y funciones permitidos. |
+| Autenticador            | El contrato que valida las firmas de este actor.                                          |
+
+Vincular un actor a una política constituye el modelo nativo de claves de sesión: una aplicación recibe un actor con los permisos exactos que necesita, revocable en cualquier momento.
+
+## Autenticadores {#authenticators}
+
+La validación de firmas es modular. Los contratos autenticadores implementan lo siguiente:
+
+```solidity IAuthenticator.sol
+interface IAuthenticator {
+    function authenticate(bytes32 hash, bytes calldata data) external view returns (bool);
+}
+```
+
+El conjunto de referencia incluye:
+
+| Autenticador | Claves                                  |
+| ------------ | --------------------------------------- |
+| secp256k1    | Claves EVM estándar                     |
+| P-256        | NIST P-256                              |
+| WebAuthn     | Passkeys y autenticadores de plataforma |
+
+Así, las passkeys se validan a nivel de protocolo y no mediante contratos envoltorio (wrappers).
+
+## Pagadores {#payers}
+
+Una transacción puede designar un **pagador** que cubra el gas en nombre del remitente, sin necesidad de ningún contrato paymaster. El borrador [ERC-8168](https://eip.tools/eip/8168) estandariza el flujo del servicio de pagador, es decir, cómo las aplicaciones localizan un pagador y le solicitan el patrocinio.
+
+## Profundiza {#go-deeper}
+
+<CardGroup cols={2}>
+  <Card title="Contratos de referencia" href="https://github.com/base/eip-8130" icon="github">
+    `AccountConfiguration`, implementaciones de cuentas y autenticadores, con pruebas en Foundry.
+  </Card>
+
+  <Card title="Especificaciones" href="https://eip.tools/eip/8130" icon="file-lines">
+    El borrador de EIP-8130 y su borrador complementario, [ERC-8168](https://eip.tools/eip/8168), para servicios de pagadores.
+  </Card>
+</CardGroup>

@@ -1,0 +1,67 @@
+---
+title: 'eth_getStorageAt'
+sidebarTitle: 'eth_getStorageAt'
+description: '指定したアドレスのストレージスロットの値を返します。pre-confirmed 状態のストレージを読み取るには pending を使用します。'
+---
+
+指定したアドレスのストレージ位置に格納されている値を返します。
+
+<Tip>
+  **Flashblocks:** `https://mainnet.base.org` に対して `"pending"` を指定してクエリすると、約 200ms ごとに pre-confirmed トランザクションで更新されたストレージを読み取れます。
+</Tip>
+
+## パラメーター {#parameters}
+
+<ParamField body="address" type="string" required>
+  ストレージの20バイトのアドレス。
+</ParamField>
+
+<ParamField body="position" type="string" required>
+  ストレージスロットの位置 (16進数の整数) 。
+</ParamField>
+
+<ParamField body="block" type="string" required>
+  16進数のブロック番号、または `"latest"`、`"pending"`、`"safe"`、`"finalized"`、`"earliest"` のいずれか。
+</ParamField>
+
+## 戻り値 {#returns}
+
+<ResponseField name="result" type="string">
+  指定したストレージ位置の値。32 バイトの 16 進文字列として返されます。
+</ResponseField>
+
+## 例 {#example}
+
+<CodeGroup>
+  ```bash 標準 (latest) lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_getStorageAt",
+      "params": ["0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", "0x0", "latest"],
+      "id": 1
+    }'
+  ```
+
+  ```bash Flashblocks (pending, ~200ms) lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_getStorageAt",
+      "params": ["0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", "0x0", "pending"],
+      "id": 1
+    }'
+  ```
+
+  ```json レスポンス
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x0000000000000000000000000000000000000000000000000000000000000001"
+  }
+  ```
+</CodeGroup>

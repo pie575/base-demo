@@ -1,0 +1,90 @@
+---
+title: "暂停操作"
+keywords: ["暂停稳定币", "B20 暂停", "在 Base 上暂停转账", "稳定币安全事件响应"]
+description: "在发生安全事件时，分别暂停稳定币的转账、铸造或销毁操作，并在事件解决后恢复。"
+---
+
+import { StablecoinDemo } from "/snippets/StablecoinDemo.jsx"
+
+一旦出现问题，应迅速暂停相关活动。B20 的暂停功能是**细粒度**的：转账、铸造和销毁均可单独暂停。`PAUSE_ROLE` 和 `UNPAUSE_ROLE` 相互独立，因此暂停代币的权限可以授予更多人，而恢复代币的权限则可限制在更小的范围内。
+
+可暂停的功能共有四种：`TRANSFER`、`MINT`、`BURN` 和 `SEIZE` (枚举值为 `0` 到 `3`) 。各项功能互不影响：暂停 `MINT` 和 `BURN` 后，`TRANSFER` 仍然可用。`MINT` 处于暂停状态时，调用者即使持有 `MINT_ROLE`，也无法铸造。
+
+## 演示 {#demo}
+
+<StablecoinDemo flow="pause" />
+
+<Tip>
+  该演示使用浏览器本地生成的账户，在 **Base Vibenet** 上提交真实交易。如果 Vibenet 或其 B20 功能不可用，演示会自动切换为离线示意版本。
+</Tip>
+
+<Note>
+  初次接触 B20？请参阅 [B20 代币标准](/zh/specifications/b20)，了解相关概念及完整的发行流程演练。这些示例适用于 `base-std@1505323`、`viem@2.55.11` 和 Base Foundry `v1.1.1`。
+</Note>
+
+## 暂停和恢复转账 {#pause-and-resume-transfers}
+
+<CodeGroup>
+  {/* sample: stablecoin-pause-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={7}
+  import { type Address } from "viem";
+  import { publicClient } from "../../shared/clients.js";
+  import { b20Abi } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function setTransfersPaused(token: Address, paused: boolean) {
+    await sendContract({
+      address: token,
+      abi: b20Abi,
+      functionName: paused ? "pause" : "unpause",
+      args: [[0]],
+    });
+    const current = await publicClient.readContract({ address: token, abi: b20Abi, functionName: "isPaused", args: [0] });
+    if (current !== paused) throw new Error("Pause state did not change");
+  }
+  ```
+
+  {/* sample: stablecoin-pause-cli */}
+
+  ```bash CLI lines wrap expandable highlight={1,4}
+  base-cast send "$TOKEN_ADDRESS" "pause(uint8[])" "[0]" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  base-cast call "$TOKEN_ADDRESS" "isPaused(uint8)(bool)" 0 --rpc-url "$RPC_URL"
+  base-cast send "$TOKEN_ADDRESS" "unpause(uint8[])" "[0]" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  ```
+</CodeGroup>
+
+有关完整的接口、角色和策略，请参阅 [B20 代币标准](/zh/specifications/b20)。
+
+<Check>
+  暂停后，`isPaused(0)` 返回 `true`；恢复后返回 `false`。
+</Check>
+
+<Warning>
+  `pause` 和 `unpause` 接受 `PausableFeature[]` 数组作为参数。传入空数组会触发 `EmptyFeatureSet` 回滚。转账功能对应的枚举值为 `0`；切勿传入 `keccak256("TRANSFER")` 之类的哈希值。如果某项功能已处于目标状态，该操作不会产生任何效果，调用也不会回滚。
+</Warning>
+
+## 可暂停功能 {#pausable-features}
+
+| 功能         | 枚举值 | 管控的操作                                |
+| ---------- | --- | ------------------------------------ |
+| `TRANSFER` | `0` | `transfer`、`transferFrom` 及其 memo 变体 |
+| `MINT`     | `1` | `mint` 和 `mintWithMemo`              |
+| `BURN`     | `2` | `burn`、`burnWithMemo`、`burnBlocked`  |
+| `SEIZE`    | `3` | `seizeWithMemo`                      |
+
+如果调用因某项功能已暂停而被拦截，交易将回滚并抛出 `ContractPaused(feature)`。该错误只会指明拦截此次调用的那一项功能。
+
+## 另请参阅 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="封禁账户" icon="user-lock" href="/zh/build-on-base/issue-stablecoins/block-an-account">
+    拒绝特定地址的访问。
+  </Card>
+
+  <Card title="暂停（B20 标准）" icon="book" href="/zh/specifications/b20/concepts/roles-and-pause#3-pause">
+    B20 标准中的暂停控制机制。
+  </Card>
+</CardGroup>

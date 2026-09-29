@@ -1,0 +1,123 @@
+---
+title: "レンディングを統合する"
+description: "ユーザーが Base 上の Morpho または Aave のレンディングマーケットに USDC を直接供給できるようにします。"
+keywords: ["Base レンディング 統合", "Morpho USDC 供給", "Aave Base 供給", "DeFi レンディングアプリ"]
+---
+
+import { DeFiDemo } from "/snippets/DeFiDemo.jsx"
+
+ユーザーがサードパーティのマネーマーケットに USDC を供給し、それによって得られるプロトコルポジションをアプリ上で管理できるようにします。各呼び出しの準備とシミュレーションはアプリが行い、署名はユーザーが自身のウォレットから行います。
+
+## デモ {#demo}
+
+<DeFiDemo flow="lend" />
+
+<Tip>
+  上記のデモはモックです。Vibenet 上のオンチェーンデモを確認したい場合は、[Base チェーンデモ](https://chain.base.org/demos)をご覧ください。
+</Tip>
+
+## USDC を供給する {#supply-usdc}
+
+`clients.ts` は、サーバー側の `PRIVATE_KEY` を使って Base Mainnet のパブリッククライアントとウォレットクライアントを作成します。このファイルはすべてのサンプルでインポートされます。
+
+<Info>
+  これらのスニペットは説明用です。Base 上での供給インテグレーションの構成例を示すもので、本番環境向けのコードではありません。最新のアドレス、SDK の詳細、リスクパラメータについては、各プロトコルのドキュメント ([Morpho](https://docs.morpho.org)、[Aave](https://aave.com/docs)) を参照してください。
+</Info>
+
+<Tabs>
+  <Tab title="Morpho">
+    Morpho の WETH/USDC マーケットに供給します。マーケット ID でパラメータを取得すれば、オラクル、金利モデル、LLTV をハードコードする必要がありません。
+
+    {/* sample: defi-supply-morpho */}
+
+    ```typescript supply-morpho.ts lines wrap expandable highlight={5}
+    import { publicClient, walletClient } from './clients.js';
+    import { type MarketId } from '@morpho-org/blue-sdk';
+    import { fetchMarketParams } from '@morpho-org/blue-sdk-viem';
+    import {
+      isRequirementSignature,
+      morphoViemExtension,
+    } from '@morpho-org/morpho-sdk';
+    import { parseUnits } from 'viem';
+    import { base } from 'viem/chains';
+
+    const marketId =
+      '0x8793cf302b8ffd655ab97bd1c695dbd967807e8367a65cb2f4edaf1380ba1bda' as MarketId;
+    const user = walletClient.account.address;
+    const client = publicClient.extend(morphoViemExtension());
+    const params = await fetchMarketParams(marketId, publicClient);
+    const market = client.morpho.blue(params, base.id);
+    const action = market.supply({
+      amount: parseUnits('1000', 6),
+      userAddress: user,
+      marketData: await market.getMarketData(),
+    });
+
+    const signatures = [];
+    for (const requirement of await action.getRequirements()) {
+      if (isRequirementSignature(requirement)) {
+        signatures.push(await requirement.sign(walletClient, user));
+      } else {
+        const hash = await walletClient.sendTransaction(requirement);
+        await publicClient.waitForTransactionReceipt({ hash });
+      }
+    }
+    const request = action.buildTx(signatures);
+    await publicClient.call({ account: user, ...request });
+    const hash = await walletClient.sendTransaction(request);
+    await publicClient.waitForTransactionReceipt({ hash });
+    ```
+  </Tab>
+
+  <Tab title="Aave">
+    Aave の公式アドレスブックから Base の Pool アドレスとアセットアドレスを取得し、viem を使って Aave V3 Pool に対して承認と供給を実行します。
+
+    {/* sample: defi-supply-aave */}
+
+    ```typescript supply-aave.ts lines wrap expandable highlight={12,17,20,26}
+    import { publicClient, walletClient } from './clients.js';
+    import { AaveV3Base } from '@aave-dao/aave-address-book';
+    import { parseAbi, parseUnits } from 'viem';
+
+    const user = walletClient.account;
+    const amount = parseUnits('1000', 6);
+    const erc20Abi = parseAbi(['function approve(address,uint256) returns (bool)']);
+    const poolAbi = parseAbi([
+      'function supply(address,uint256,address,uint16)',
+    ]);
+
+    const approval = await publicClient.simulateContract({
+      account: user, address: AaveV3Base.ASSETS.USDC.UNDERLYING,
+      abi: erc20Abi, functionName: 'approve', args: [AaveV3Base.POOL, amount],
+    });
+    await publicClient.waitForTransactionReceipt({
+      hash: await walletClient.writeContract(approval.request),
+    });
+
+    const supply = await publicClient.simulateContract({
+      account: user, address: AaveV3Base.POOL, abi: poolAbi,
+      functionName: 'supply',
+      args: [AaveV3Base.ASSETS.USDC.UNDERLYING, amount, user.address, 0],
+    });
+    await publicClient.waitForTransactionReceipt({
+      hash: await walletClient.writeContract(supply.request),
+    });
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+  供給レートは変動し、引き出しの可否はマーケットの流動性に左右されます。また、どのインテグレーションもプロトコル、オラクル、承認に起因するリスクを伴います。ユーザーに署名を求める前に、最新の条件を表示したうえで、実際に送信するトランザクションそのものをシミュレーションしてください。
+</Warning>
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="借入機能を統合する" icon="hand-holding-dollar" href="/ja/build-on-base/integrate-defi/integrate-borrowing">
+    WETHを担保にしてローンを組みます。
+  </Card>
+
+  <Card title="Earnプロダクトを統合する" icon="vault" href="/ja/build-on-base/integrate-defi/integrate-earn-product">
+    預け入れた資金を利回りが得られるボールトに振り分けます。
+  </Card>
+</CardGroup>

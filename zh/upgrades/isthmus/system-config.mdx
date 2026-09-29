@@ -1,0 +1,71 @@
+---
+title: "Isthmus：系统配置"
+description: "Isthmus 升级对 SystemConfig 的变更，新增了 operatorFeeScalar 和 operatorFeeConstant 两个配置变量。"
+---
+
+## 运营方费用参数配置 {#operator-fee-parameter-configuration}
+
+Isthmus 在 `SystemConfig` 中新增了配置变量 `operatorFeeScalar` (`uint32`) 
+和 `operatorFeeConstant` (`uint64`) ，用于控制运营方费用参数。
+
+### `ConfigUpdate` {#configupdate}
+
+当 `CONFIG_VERSION` 为 `uint256(0)` 时，定义以下 `ConfigUpdate` 事件：
+
+| 名称                    | 值          | 定义                                                                                | 用途                            |
+| --------------------- | ---------- | --------------------------------------------------------------------------------- | ----------------------------- |
+| `BATCHER`             | `uint8(0)` | `abi.encode(address)`                                                             | 修改有权推进安全链 (safe chain) 的账户    |
+| `FEE_SCALARS`         | `uint8(1)` | `(uint256(0x01) << 248) \| (uint256(_blobbasefeeScalar) << 32) \| _basefeeScalar` | 修改费用标量                        |
+| `GAS_LIMIT`           | `uint8(2)` | `abi.encode(uint64 _gasLimit)`                                                    | 修改 L2 gas 上限                  |
+| `UNSAFE_BLOCK_SIGNER` | `uint8(3)` | `abi.encode(address)`                                                             | 修改有权推进不安全链 (unsafe chain) 的账户 |
+| `EIP_1559_PARAMS`     | `uint8(4)` | `uint256(uint64(uint32(_denominator))) << 32 \| uint64(uint32(_elasticity))`      | 修改 EIP-1559 的分母和弹性系数          |
+| `OPERATOR_FEE_PARAMS` | `uint8(5)` | `uint256(_operatorFeeScalar) << 64 \| _operatorFeeConstant`                       | 修改运营方费用标量和常量                  |
+
+### 初始化 {#initialization}
+
+在 `SystemConfig` 初始化期间，应执行以下操作：
+
+* `emit ConfigUpdate.BATCHER`
+* `emit ConfigUpdate.FEE_SCALARS`
+* `emit ConfigUpdate.GAS_LIMIT`
+* `emit ConfigUpdate.UNSAFE_BLOCK_SIGNER`
+* `emit ConfigUpdate.EIP_1559_PARAMS`
+
+这些操作 MAY 仅在值发生变化时触发。
+
+`operatorFeeScalar` 和 `operatorFeeConstant` 的初始值为 0。
+
+### 修改运营方费用参数 {#modifying-operator-fee-parameters}
+
+新增了一种 `SystemConfig` `UpdateType`，允许 `SystemConfig` 所有者修改
+`operatorFeeScalar` 和 `operatorFeeConstant`。
+
+### 接口 {#interface}
+
+#### 运营方费用参数 {#operator-fee-parameters}
+
+##### `operatorFeeScalar` {#operatorfeescalar}
+
+该函数返回当前配置的运营方费用标量 (operator fee scalar) 。
+
+```solidity SystemConfig.sol
+function operatorFeeScalar()(uint32)
+```
+
+##### `operatorFeeConstant` {#operatorfeeconstant}
+
+该函数返回当前配置的运营方费用常量。
+
+```solidity SystemConfig.sol
+function operatorFeeConstant()(uint64)
+```
+
+##### `setOperatorFeeScalars` {#setoperatorfeescalars}
+
+此函数用于设置 `operatorFeeScalar` 和 `operatorFeeConstant`。
+
+此函数 MUST 仅允许 `SystemConfig` 所有者调用。
+
+```solidity SystemConfig.sol
+function setOperatorFeeScalar(uint32 _operatorFeeScalar, uint64 _operatorFeeConstant)
+```

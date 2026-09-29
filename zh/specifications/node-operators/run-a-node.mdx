@@ -1,0 +1,229 @@
+---
+title: 运行节点
+description: 本教程介绍如何搭建并运行 Base 节点。
+---
+
+本教程将逐步指导你搭建自己的 [Base 节点](https://github.com/base/base)。
+
+## 学习目标 {#objectives}
+
+完成本教程后，你将能够：
+
+* 部署并同步 Base 节点
+* 启用 Flashblocks，实现 200ms 预确认
+
+## 前提条件 {#prerequisites}
+
+<Warning>
+  运行节点耗时费力、占用大量资源，还可能产生高昂费用。如果你还不清楚自己为什么需要运行节点，那么你很可能并不需要。
+
+  如果你刚刚入门，只是需要一个 RPC URL，可以使用我们的免费端点：
+
+  * **主网**：`https://mainnet.base.org`
+  * **测试网 (Sepolia)&#x20;**：`https://sepolia.base.org`
+
+  **注意：** 我们的 RPC 有速率限制，不适合用于生产环境应用。
+
+  如果你希望提升应用的健壮性，并避免用户受到速率限制，请从 [Builder Stack](/zh/get-started/builder-stack) 中选择一家 RPC 提供商。
+</Warning>
+
+### 硬件要求 {#hardware-requirements}
+
+有关完整的硬件规格、存储要求以及生产环境硬件示例，请参阅[节点性能指南](/zh/specifications/node-operators/performance-tuning#hardware)。
+
+### 网络 {#networking}
+
+请配置防火墙，放行以下端口，用于对等节点发现和同步。如果你的出站规则较为严格，必须开放相应的出站端口，才能连接到 Base 引导节点 (bootnode) 。
+
+<Tabs>
+  <Tab title="入站">
+    | 端口      | 协议      | 用途                         |
+    | ------- | ------- | -------------------------- |
+    | `9222`  | TCP/UDP | Reth Discovery v5 (discv5) |
+    | `30303` | TCP/UDP | P2P 发现 (discv4) 与 RLPx     |
+  </Tab>
+
+  <Tab title="出站">
+    | 端口      | 协议      | 用途                         |
+    | ------- | ------- | -------------------------- |
+    | `9200`  | UDP     | 引导节点连接                     |
+    | `9222`  | TCP/UDP | Reth Discovery v5 (discv5) |
+    | `30301` | TCP/UDP | 引导节点连接                     |
+    | `30303` | TCP/UDP | P2P 发现 (discv4) 与 RLPx     |
+
+    <Note>
+      连接 Base 引导节点需要用到端口 `9200` (UDP) 和 `30301` (TCP/UDP) 。如果发往这些端口的出站流量被拦截，你的节点将无法建立初始对等连接。
+    </Note>
+
+    <Warning>
+      如果你使用网络 ACL (而非 AWS SG 等有状态安全组) 进行出站控制，还必须放行临时端口范围 **32768–60999** (TCP/UDP) 上的出站流量。有状态防火墙会自动跟踪返回流量，而 ACL 不会；因此缺少这条规则时，来自对等节点的响应数据包会被静默丢弃。
+    </Warning>
+  </Tab>
+</Tabs>
+
+### Docker {#docker}
+
+本教程假定你已熟悉 [Docker](https://www.docker.com/)，并已在本机上运行 Docker。
+
+### L1 RPC URL {#l1-rpc-url}
+
+你需要准备自己的 L1 RPC URL。你可以自行运行该端点，也可以从 [Builder Stack](/zh/get-started/builder-stack) 中选择第三方服务商。
+
+## 运行节点 {#running-a-node}
+
+<Warning>
+  **base/node 已迁移至 [base/base](https://github.com/base/base)。** 自 **v1.3.0** 起，运营节点改由 base/base 发布，所有新版本也都在该仓库发布。
+
+  **base/node 将于 2026 年 9 月 4 日归档**并变为只读 (不再接受新的 issue、PR，也不再发布新版本) ，仅保留作为 v1.3.0 之前版本的参考。如需全新部署或升级，请使用 base/base。
+</Warning>
+
+根目录下的 `docker-compose.yml` 默认拉取 `ghcr.io/base/node`；如需改为编译当前源码树，请传入 `--build`。
+
+1. 克隆[仓库](https://github.com/base/base)。
+2. 确保你有可用的 Ethereum L1 全节点 RPC (而非 Base 的 RPC) ，并在相应的 `.env` 文件 (`.env.mainnet` 或 `.env.sepolia`) 中设置 `BASE_NODE_L1_ETH_RPC` &amp; `BASE_NODE_L1_BEACON`。如果你自行运行 L1 节点，需要先等它完成同步，Base 才能完全同步。
+3. 启动节点：
+   * **主网 (拉取已发布的镜像)&#x20;**：`docker compose up`
+   * **主网 (从源码编译)&#x20;**：`docker compose up --build`
+   * **测试网**：`NETWORK_ENV=.env.sepolia docker compose up`
+4. 确认以下命令能返回响应：
+
+```bash Terminal
+curl -d '{"id":0,"jsonrpc":"2.0","method":"eth_getBlockByNumber","params":["latest",false]}' \
+  -H "Content-Type: application/json" http://localhost:8545
+```
+
+<Warning>
+  节点同步可能需要**数天**时间，并会消耗大量请求配额。请务必密切关注用量，必要时升级您的套餐。
+</Warning>
+
+### 使用 `NODE_TAG` 固定已发布的镜像版本 {#pin-a-released-image-with-node_tag}
+
+`docker compose up` 默认拉取 `ghcr.io/base/node:latest`。如需运行特定版本且不想从源码重新编译，请将 `NODE_TAG` 设置为已发布的标签：
+
+```bash Terminal
+NODE_TAG=v1.3.0 docker compose up
+```
+
+固定 `NODE_TAG` 会完全跳过源码构建，镜像拉取完成后节点即可启动。使用 `NODE_TAG` 时请勿添加 `--build`；传入 `--build` 会强制进行本地编译，覆盖已固定的镜像。
+
+### Compose 环境变量 {#compose-environment-variables}
+
+根目录下的 `docker-compose.yml` 提供了若干可调参数，你可以通过 shell 或 `.env` 文件覆盖默认值，无需修改 compose 文件：
+
+| 变量              | 默认值            | 用途                                                            |
+| --------------- | -------------- | ------------------------------------------------------------- |
+| `NODE_TAG`      | `latest`       | 从 `ghcr.io/base/node` 拉取的镜像标签。设为某个发布标签 (例如 `v1.3.0`) 即可固定版本。  |
+| `NETWORK_ENV`   | `.env.mainnet` | `execution` 和 `node` 服务所加载的网络环境文件。如需使用测试网，请设为 `.env.sepolia`。 |
+| `HOST_DATA_DIR` | `./reth-data`  | 挂载到 execution 容器 `/data` 目录的主机路径。可改为指向外部卷。                    |
+| `PROFILE`       | `maxperf`      | 传入 `--build` 时使用的 Cargo 构建配置，与已发布镜像所用的配置相同。                   |
+
+运行 `docker compose up --build` 时，会使用 `etc/docker/Dockerfile.rust-services` 中的 `base` 目标 (也就是生成已发布 `ghcr.io/base/node` 镜像的那个目标) 来编译当前的 `base/base` 源码树，因此从源码构建的二进制文件与固定版本镜像中的二进制布局完全一致。
+
+### 快照 {#snapshots}
+
+如果你是 Base 节点运营者，希望大幅缩短初始同步的时间，可以[从快照恢复](/zh/specifications/node-operators/snapshots#restoring-from-snapshot)。快照每周更新一次。
+
+### 同步 {#syncing}
+
+你可以通过以下命令监控同步进度：
+
+```bash Terminal
+echo Latest synced block behind by: $((($(date +%s)-$( \
+  curl -d '{"id":0,"jsonrpc":"2.0","method":"optimism_syncStatus"}' \
+  -H "Content-Type: application/json" http://localhost:7545 | \
+  jq -r .result.unsafe_l2.timestamp))/60)) minutes
+```
+
+如果你尝试通过自己的节点进行部署时遇到 `Error: nonce has already been used` 错误，同样说明同步尚未完成。
+
+<Tip>
+  如需获取更丰富的节点数据并执行诊断检查，请使用 Base 节点运营者 CLI [`basectl`](https://github.com/base/base/tree/main/bin/basectl)。
+</Tip>
+
+***
+
+## 启用 Flashblocks {#enable-flashblocks}
+
+节点同步完成后，即可启用 Flashblocks，为你的应用提供 200ms 预确认。
+
+### 配置 {#configuration}
+
+如需启用 Flashblocks，请在启动节点时设置 `RETH_FB_WEBSOCKET_URL`：
+
+```sh Terminal
+RETH_FB_WEBSOCKET_URL="wss://mainnet.flashblocks.base.org/ws" docker compose up --build
+```
+
+| 变量                      | 说明                              |
+| ----------------------- | ------------------------------- |
+| `RETH_FB_WEBSOCKET_URL` | Flashblocks WebSocket 端点 (见下文)  |
+
+### WebSocket 端点 {#websocket-endpoints}
+
+| 网络      | URL                                     |
+| ------- | --------------------------------------- |
+| 主网 | `wss://mainnet.flashblocks.base.org/ws` |
+| Sepolia | `wss://sepolia.flashblocks.base.org/ws` |
+
+<Warning>
+  **这些 WebSocket 端点仅供节点基础设施使用。**
+
+  应用不应直接连接 `wss://mainnet.flashblocks.base.org/ws`，而应向你的 RPC 节点查询 Flashblocks 数据。详情请参阅 [RPC 概览](/zh/base-chain/api-reference/rpc-overview#flashblocks)。
+</Warning>
+
+<Note>
+  [base](https://github.com/base/base) 二进制程序会监听 Flashblocks WebSocket 数据流，并缓存预确认数据。调用支持 Flashblocks 的 RPC 方法时，它会从该缓存中返回数据。完整的消息模式和负载结构，请参阅 [Flashblocks API 概览](/zh/base-chain/api-reference/flashblocks-api/flashblocks-api-overview)。
+</Note>
+
+<Tip>
+  设置 `RETH_FB_WEBSOCKET_URL` 后，在 [base/base](https://github.com/base/base) 仓库中运行 `docker compose up --build` 同样会应用 Flashblocks 配置。如果不想从源码编译，请在 `.env` 文件中设置 `RETH_FB_WEBSOCKET_URL`，然后运行 `NODE_TAG=vX.Y.Z docker compose up`。
+</Tip>
+
+### 验证 Flashblocks 功能 {#verify-flashblocks-functionality}
+
+查询 pending 区块，测试你的节点能否正常提供 Flashblocks 服务：
+
+```sh Health Check
+curl -X POST \
+  --data '{"jsonrpc":"2.0","method":"eth_getBlockByNumber","params":["pending", false],"id":1}' \
+  http://localhost:8545
+```
+
+响应成功时，将返回最新 Flashblock 中的区块数据。如果 Flashblocks 暂时不可用，节点会回退为返回最新的已最终确认区块。
+
+### 可用的 RPC 方法 {#available-rpc-methods}
+
+支持 Flashblocks 的节点兼容所有标准以太坊 JSON-RPC 方法，同时还提供 Flashblocks 专用方法和 WebSocket 订阅。完整的方法列表 (含代码示例和参数详情) 请参阅 [Flashblocks API 参考](/zh/base-chain/api-reference/flashblocks-api/flashblocks-api-overview)。
+
+## 启用历史证明 RPC {#enable-historical-proofs-rpcs}
+
+若要高效地支持 `eth_getProof`、`debug_executionWitness` 和 `debug_executePayload` 等方法，你需要配置历史证明执行扩展 (ExEx) 。该 ExEx 会维护一个独立的数据库，用于存储这些方法所需的数据。此数据库可能额外占用数百 GB 的存储空间，并要求机器具备更高的 I/O 吞吐量。大多数用户并不需要启用这些 RPC。
+
+要运行历史证明 ExEx，只需设置以下环境变量：
+
+```bash Terminal
+RETH_HISTORICAL_PROOFS=true
+```
+
+节点首次启动时，会将现有状态回填到位于 `<datadir>/proofs` 的新证明数据库中。此过程可能耗时较长 (主网需要 24-48 小时) 。
+
+如需跳过回填，可以使用证明数据库的快照。下载说明请参阅[快照](/zh/specifications/node-operators/snapshots#proofs-snapshots)页面。
+
+<Note>
+  ExEx 首次启动时所处的区块，即为这些 RPC 可查询的最早区块。启用证明 ExEx 后，`--rpc.eth-proof-window` 标志将被忽略。
+
+  默认情况下，ExEx 会保留最近 28 天的区块，你也可以通过设置 `RETH_PROOFS_HISTORY_WINDOW=<num_blocks>` 自定义保留范围。
+</Note>
+
+### 提升性能 {#improving-performance}
+
+证明 ExEx 在距链头 1024 个区块以内时性能最佳。因此，在向链头同步的过程中，性能可能会有所下降。在 Base 主网上进行初始同步时，ExEx 可能会落后过多，无法自行追上。
+
+为解决此问题，可以以 follow 模式运行 `base-consensus`，使其与证明 ExEx 的距离保持在 512 个区块以内。
+
+```bash Terminal
+BASE_NODE_SOURCE_L2_RPC=<trusted_rpc>
+BASE_NODE_PROOFS=true
+```
+
+要确认证明 ExEx 是否在高效同步，可以检查状态根 (state root) 计算耗时和执行耗时是否均为 0。此时 ExEx 并不执行区块，只是将已执行区块的数据写入磁盘。

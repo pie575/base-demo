@@ -1,0 +1,379 @@
+---
+title: "Span batch"
+description: "Especificación de los span batch introducidos en Delta, un nuevo formato de lote que comprime secuencias de bloques de L2 para que la publicación de datos en L1 sea más eficiente."
+---
+
+[g-deposit-tx-type]: /specifications/reference/glossary#deposited-transaction-type
+
+[derivation]: /specifications/base-protocol/consensus/derivation
+
+[channel-format]: /specifications/base-protocol/consensus/derivation#channel-format
+
+[batch-format]: /specifications/base-protocol/consensus/derivation#batch-format
+
+[frame-format]: /specifications/base-protocol/consensus/derivation#frame-format
+
+[batch-queue]: /specifications/base-protocol/consensus/derivation#batch-queue
+
+[batcher]: /specifications/base-protocol/batcher
+
+## Introducción {#introduction}
+
+Span-batch es una nueva especificación de agrupación en lotes que reduce la sobrecarga,
+introducida en la actualización de red [Delta](./overview).
+
+La sobrecarga se reduce representando de forma más eficiente un intervalo de
+bloques L2 consecutivos,
+sin dejar de aplicar las mismas comprobaciones de consistencia que a los datos de lotes normales.
+
+Tenga en cuenta que los formatos de [canal][channel-format] y
+de [trama][frame-format] no cambian:
+la fragmentación de datos, el empaquetado y el transporte multitransacción ya están optimizados.
+
+La sobrecarga del [formato de lote V0][derivation] se debe a lo siguiente:
+
+* Los atributos de metadatos se repiten en cada bloque L2, aunque en su mayoría ya están implícitos:
+  * hash del bloque padre (32 bytes)
+  * época de L1: blockhash (32 bytes) y número de bloque (~4 bytes)
+  * marca de tiempo (~4 bytes)
+* Los datos del bloque están organizados de forma ineficiente:
+  * Los atributos similares están muy separados entre sí, lo que reduce las posibilidades de lograr una compresión eficaz.
+  * Los datos aleatorios, como los hashes, se intercalan con los datos de aplicación, que son más compresibles.
+* La codificación RLP de los datos añade una sobrecarga innecesaria
+  * No es necesario codificar la longitud de la lista externa, ya que los atributos son conocidos
+  * Los atributos de longitud fija no necesitan ninguna codificación
+  * El formato de lote es estático y puede optimizarse aún más
+* Los metadatos restantes para las comprobaciones de consistencia pueden optimizarse aún más:
+  * Los metadatos solo necesitan ser lo bastante seguros para las comprobaciones de consistencia. Por ejemplo, 20 bytes de un hash pueden bastar.
+
+Los span-batches resuelven estas ineficiencias mediante una nueva versión del formato de lote.
+
+## Formato de span batch {#span-batch-format}
+
+[span-batch-format]: #span-batch-format
+
+Tenga en cuenta que los span batches, a diferencia de los lotes individuales anteriores,
+codifican simultáneamente *un rango de bloques L2 consecutivos*.
+
+Se introduce la versión `1` en la tabla de [formato de lote][batch-format]:
+
+| `batch_version` | `content`           |
+| --------------- | ------------------- |
+| 1               | `prefix ++ payload` |
+
+Notación:
+
+* `++`: concatenación de cadenas de bytes
+* `span_start`: primer bloque L2 del span
+* `span_end`: último bloque L2 del span
+* `uvarint`: varint Base128 sin signo, según se define en la [especificación de protobuf][protobuf spec]
+* `rlp_encode`: una función que codifica un lote según el formato RLP,
+  y `[x, y, z]` denota una lista que contiene los elementos `x`, `y` y `z`
+
+[protobuf spec]: https://protobuf.dev/programming-guides/encoding/#varints
+
+En el contexto de los span batches, las listas de bits estándar se codifican como enteros big-endian,
+rellenados con ceros a la izquierda hasta el siguiente múltiplo de 8 bits.
+
+Donde:
+
+* `prefix = rel_timestamp ++ l1_origin_num ++ parent_check ++ l1_origin_check`
+  * `rel_timestamp`: marca de tiempo relativa `uvarint` desde el génesis de L2,
+    es decir, `span_start.timestamp - config.genesis.timestamp`.
+  * `l1_origin_num`: número `uvarint` del último origen de L1, es decir, `span_end.l1_origin.number`
+  * `parent_check`: primeros 20 bytes del hash del bloque padre; el hash se trunca a 20 bytes por eficiencia,
+    es decir, `span_start.parent_hash[:20]`.
+  * `l1_origin_check`: hash de bloque del último origen de L1.
+    El hash se trunca a 20 bytes por eficiencia, es decir, `span_end.l1_origin.hash[:20]`.
+* `payload = block_count ++ origin_bits ++ block_tx_counts ++ txs`:
+  * `block_count`: número `uvarint` de bloques L2. Es como mínimo 1; los span batches vacíos no son válidos.
+  * `origin_bits`: lista de bits estándar de `block_count` bits:
+    1 bit por bloque L2, que indica si el origen de L1 cambió en ese bloque L2.
+  * `block_tx_counts`: para cada bloque, un `uvarint` de `len(block.transactions)`.
+  * `txs`: transacciones de L2, reorganizadas y codificadas como se indica a continuación.
+* `txs = contract_creation_bits ++ y_parity_bits ++
+  tx_sigs ++ tx_tos ++ tx_datas ++ tx_nonces ++ tx_gases ++ protected_bits`
+  * `contract_creation_bits`: lista de bits estándar de `sum(block_tx_counts)` bits:
+    1 bit por transacción de L2, que indica si la transacción es de creación de contrato.
+  * `y_parity_bits`: lista de bits estándar de `sum(block_tx_counts)` bits:
+    1 bit por transacción de L2, que indica el valor de paridad y que se usa al recuperar la dirección del remitente de la transacción.
+  * `tx_sigs`: lista concatenada de firmas de transacciones
+    * `r` se codifica como `uint256` big-endian
+    * `s` se codifica como `uint256` big-endian
+  * `tx_tos`: lista concatenada de los campos `to`. En las transacciones de creación de contrato, el campo `to` será `nil` y se ignorará.
+  * `tx_datas`: lista concatenada de datos de longitud variable codificados en RLP,
+    que sigue la codificación de los campos del formato [EIP-2718] correspondiente al `TransactionType`.
+    * `legacy`: `rlp_encode(value, gasPrice, data)`
+    * `1`: ([EIP-2930]): `0x01 ++ rlp_encode(value, gasPrice, data, accessList)`
+    * `2`: ([EIP-1559]): `0x02 ++ rlp_encode(value, max_priority_fee_per_gas, max_fee_per_gas, data, access_list)`
+  * `tx_nonces`: lista concatenada de `uvarint` del campo `nonce`.
+  * `tx_gases`: lista concatenada de `uvarint` de los límites de gas.
+    * `legacy`: `gasLimit`
+    * `1`: ([EIP-2930]): `gasLimit`
+    * `2`: ([EIP-1559]): `gas_limit`
+  * `protected_bits`: lista de bits estándar con longitud igual al número de transacciones legacy:
+    1 bit por transacción legacy de L2, que indica si la transacción está protegida ([EIP-155]) o no.
+
+[EIP-2718]: https://eips.ethereum.org/EIPS/eip-2718
+
+[EIP-2930]: https://eips.ethereum.org/EIPS/eip-2930
+
+[EIP-1559]: https://eips.ethereum.org/EIPS/eip-1559
+
+[EIP-155]: https://eips.ethereum.org/EIPS/eip-155
+
+### Límites de tamaño de los span batches {#span-batch-size-limits}
+
+El tamaño total de un span batch codificado está limitado a `MAX_RLP_BYTES_PER_CHANNEL`, que se define en la
+[tabla de parámetros del protocolo](/es/specifications/base-protocol/consensus/derivation#protocol-parameters).
+Este límite se aplica a nivel de canal, no a nivel de span batch.
+
+Además del límite de bytes, tanto el número de bloques como el total de transacciones están limitados a `MAX_SPAN_BATCH_ELEMENT_COUNT`.
+Esto implica que el número máximo de transacciones por bloque también es `MAX_SPAN_BATCH_ELEMENT_COUNT`.
+`MAX_SPAN_BATCH_ELEMENT_COUNT` se define en la [tabla de parámetros del protocolo](/es/specifications/base-protocol/consensus/derivation#protocol-parameters).
+
+### Extensión futura del formato de lote {#future-batch-format-extension}
+
+Esta es una extensión experimental del formato span-batch que todavía no se activa con la actualización Delta.
+
+Se añade la versión `2` a la tabla de [formato de lote][batch-format]:
+
+| `batch_version` | `content`           |
+| --------------- | ------------------- |
+| 2               | `prefix ++ payload` |
+
+Donde:
+
+* `prefix = rel_timestamp ++ l1_origin_num ++ parent_check ++ l1_origin_check`:
+  * Idéntico a `batch_version` 1
+* `payload = block_count ++ origin_bits ++ block_tx_counts ++ txs ++ fee_recipients`:
+  * Un span-batch vacío, es decir, con `block_count == 0`, no es válido y no debe procesarse.
+  * Todas las definiciones de campos son idénticas a las de `batch_version` 1, salvo que se añade `fee_recipients`
+    para admitir una secuenciación más descentralizada.
+  * `fee_recipients = fee_recipients_idxs + fee_recipients_set`
+    * `fee_recipients_set`: lista concatenada de direcciones únicas de destinatarios de comisiones en L2.
+    * `fee_recipients_idxs`: para cada bloque,
+      número `uvarint` del índice con el que se decodifica el destinatario de comisiones a partir de `fee_recipients_set`.
+
+## Regla de activación de los span batches {#span-batch-activation-rule}
+
+La actualización de span batches se activa en función de la marca de tiempo.
+
+Regla de activación: `upgradeTime != null && span_start.l1_origin.timestamp >= upgradeTime`
+
+`span_start.l1_origin.timestamp` es la marca de tiempo del bloque de origen en L1 del primer bloque del span batch.
+Esta regla garantiza que toda la actividad de la cadena relacionada con este span batch ocurra después del hard fork.
+Es decir, todos los bloques del span se crean, se envían a L1 y se derivan de L1 después del hard fork.
+
+## Estrategias de optimización {#optimization-strategies}
+
+### Truncamiento de información y almacenamiento exclusivo de los datos necesarios {#truncating-information-and-storing-only-necessary-data}
+
+Los siguientes campos almacenan datos truncados:
+
+* `rel_timestamp`: podemos ahorrar dos bytes almacenando `rel_timestamp` en lugar del `span_start.timestamp` completo.
+* `parent_check` y `l1_origin_check`: podemos ahorrar doce bytes truncando doce bytes del hash completo,
+  sin dejar de tener un margen de seguridad suficiente.
+
+### Eliminación de `tx_data_headers` de las especificaciones iniciales {#tx_data_headers-removal-from-initial-specs}
+
+No es necesario almacenar la longitud de cada elemento de `tx_datas`, aunque sean de longitud variable,
+ya que los propios elementos están codificados en RLP y su longitud figura en el prefijo RLP.
+
+### Eliminación de `Chain ID` de las especificaciones iniciales {#chain-id-removal-from-initial-specs}
+
+Todas las transacciones tienen un chain id. No es necesario incluir el chain id en el span batch porque la L2 ya conoce su propio chain id,
+y utiliza ese valor para procesar los span batches durante la derivación.
+
+### Reorganización de los campos de transacción de longitud constante {#reorganization-of-constant-length-transaction-fields}
+
+Los campos `signature`, `nonce`, `gaslimit` y `to` tienen un tamaño constante, por lo que se separaron por completo y
+se agruparon en arreglos individuales.
+Esto añade complejidad, pero organiza los datos de forma que mejora la compresión, ya que agrupa datos con patrones similares.
+
+### Codificación RLP solo para campos de longitud variable {#rlp-encoding-for-only-variable-length-fields}
+
+Es posible optimizar aún más el tamaño empaquetando los campos de longitud variable, como `access_list`.
+Sin embargo, hacerlo añadiría mucha más complejidad al código, que no compensa el beneficio de la reducción de tamaño.
+
+Nuestro objetivo es encontrar el punto óptimo en el equilibrio entre la complejidad del código y el tamaño del span batch.
+Decidí que usar RLP para todos los campos de longitud variable sería la mejor opción,
+para no poner en riesgo el código base con implementaciones enrevesadas de codificación/decodificación personalizadas.
+
+### Almacenar `y_parity` y `protected_bit` en lugar de `v` {#store-y_parity-and-protected_bit-instead-of-v}
+
+Solo las transacciones de tipo legacy pueden estar protegidas de forma opcional. Si están protegidas ([EIP-155]), `v = 2 * ChainID + 35 + y_parity`.
+En caso contrario, `v = 27 + y_parity`. Para los demás tipos de transacciones, `v = y_parity`.
+Almacenamos `y_parity`, que ocupa un solo bit por transacción de L2.
+Almacenamos `protected_bit`, que ocupa un solo bit por transacción de L2 de tipo legacy e indica si la transacción está protegida.
+
+Esta optimización será más beneficiosa cuanto mayor sea la proporción de transacciones de tipo legacy respecto al total de transacciones,
+sin contar las transacciones de depósito.
+Las transacciones de depósito no se incluyen en los lotes y nunca se escriben en L1, por lo que se excluyen del análisis.
+
+### Ajustar la disposición de datos de `txs` para mejorar la compresión {#adjust-txs-data-layout-for-better-compression}
+
+Existen (8 choose 2) * 6! = 20160 permutaciones posibles para ordenar los campos de `txs`.  No son 8!
+porque `contract_creation_bits` debe decodificarse primero para poder decodificar `tx_tos`.  Experimentamos
+con distintas disposiciones de datos y descubrimos que separar los datos aleatorios (`tx_sigs`,
+`tx_tos`, `tx_datas`) del resto era lo que más mejoraba la tasa de compresión de zlib.
+
+### Esquema de codificación de `fee_recipients` {#fee_recipients-encoding-scheme}
+
+Sea `K` := número de destinatarios de comisiones únicos (cardinalidad) por span batch. Sea `N` := número de bloques de L2.
+Si codificamos de forma ingenua los destinatarios de comisiones concatenándolos todos, se necesitarán `20 * N` bytes.
+Si gestionamos `fee_recipients_idxs` y `fee_recipients_set`, se necesitarán como máximo `max uvarint size * N = 8 * N` y
+`20 * K` bytes, respectivamente. Si `20 * N > 8 * N + 20 * K`, mantener un índice de destinatarios de comisiones reduce el tamaño.
+
+Consideramos que la rotación del sequencer no es muy frecuente, por lo que supusimos que `K` será mucho menor que `N`.
+Con esta suposición, se cumple la desigualdad anterior. Por lo tanto, decidimos gestionar `fee_recipients_idxs` y
+`fee_recipients_set` por separado. Esto añade complejidad, pero reduce el volumen de datos.
+
+## Cómo funciona la derivación con Span Batches {#how-derivation-works-with-span-batches}
+
+* Marca de tiempo del bloque
+  * La marca de tiempo del primer bloque de L2 es `rel_timestamp + L2Genesis.Timestamp`.
+  * A partir de ahí, podemos derivar la marca de tiempo de los demás bloques sumando el tiempo de bloque de L2 por cada uno.
+* Número de origen de L1
+  * El número de origen de L1 del padre del primer bloque de L2 es `l1_origin_num - sum(origin_bits)`
+  * A partir de ahí, podemos derivar el número de origen de L1 de los demás bloques con `origin_bits`
+    * `i-th block's L1 origin number = (i-1)th block's L1 origin number + (origin_bits[i] ? 1 : 0)`
+* Hash de origen de L1
+  * Solo necesitamos `l1_origin_check`, el hash de origen de L1 truncado del último bloque de L2 del Span Batch.
+  * Si el último bloque hace referencia a la cadena canónica de L1 como origen,
+    podemos garantizar que los orígenes de todos los demás bloques son coherentes con la cadena canónica de L1.
+* Hash del padre
+  * En la especificación de V0 Batch, necesitamos el hash del padre del lote para validar si el padre del lote es coherente con el safe head actual de L2.
+  * Sin embargo, en el caso de Span Batch, como contiene bloques de L2 consecutivos dentro del span,
+    no es necesario validar el hash del padre de todos los bloques, salvo el del primero.
+* Transacciones
+  * Las transacciones de depósito pueden derivarse de su origen de L1, igual que en el lote V0.
+  * Las transacciones de usuario pueden derivarse de la siguiente manera:
+    * Se recupera el valor `V` de la firma de la TX a partir de `y_parity_bits` y el chain id de L2, tal como se describe en las estrategias de optimización.
+    * Al analizar `tx_tos`, se usa `contract_creation_bits` para determinar si la TX tiene valor `to` o no.
+
+## Integración {#integration}
+
+### Channel Reader (decodificación de lotes) {#channel-reader-batch-decoding}
+
+El Channel Reader decodifica el span-batch, tal como se describe en el [formato de span-batch](#span-batch-format).
+
+Se calcula un conjunto de atributos derivados según lo descrito anteriormente, que luego se almacena en caché junto con el resultado decodificado:
+
+### Cola de lotes {#batch-queue}
+
+Un span-batch se almacena en búfer como un único lote grande,
+según su marca de tiempo inicial (`rel_timestamp` transformado).
+
+Los span-batches comparten cola con los lotes v0: los lotes se procesan en el orden de inclusión en L1.
+
+A los span-batches se les aplica un conjunto de reglas de validación modificadas.
+
+Las reglas se aplican con las mismas [definiciones contextuales][batch-queue] que la validación de lotes v0:
+`epoch`, `inclusion_block_number`, `next_timestamp`
+
+Definiciones:
+
+* `batch`, tal como se define en la [sección sobre el formato de span batch][span-batch-format].
+* `prev_l2_block` es el bloque de L2 de la cadena segura actual
+  cuya marca de tiempo es `span_start.timestamp - l2_block_time`
+
+Reglas de span-batch, en orden de validación:
+
+* `batch_origin` se determina del mismo modo que con los lotes individuales:
+  * `batch.epoch_num == epoch.number+1`:
+    * Si `next_epoch` no se conoce -&gt; `undecided`:
+      es decir, un lote que cambia el origen en L1 no puede procesarse hasta que dispongamos de los datos del origen en L1.
+    * Si se conoce, se define `batch_origin` como `next_epoch`
+* `batch_origin.timestamp < span_batch_upgrade_timestamp` -&gt; `drop`:
+  es decir, se aplica la [regla de activación de la actualización de span batch](#span-batch-activation-rule).
+* `span_start.timestamp > next_timestamp` -&gt; `future`: es decir, el lote debe estar listo para procesarse,
+  pero no tiene por qué comenzar exactamente en `next_timestamp`, ya que puede solaparse con bloques procesados previamente,
+* `span_end.timestamp < next_timestamp` -&gt; `drop`: es decir, el lote debe contener al menos un bloque nuevo que procesar.
+* Si no existe `prev_l2_block` en la cadena segura actual -&gt; `drop`: es decir, el timestamp debe estar alineado.
+* `batch.parent_check != prev_l2_block.hash[:20]` -&gt; `drop`:
+  es decir, la parte verificada del hash del bloque padre debe coincidir con la misma parte del hash del bloque L2 correspondiente.
+* Comprobaciones de la ventana de secuenciación:
+  * Nota: la ventana de secuenciación se aplica al *lote en su conjunto*:
+    si, en cambio, el lote pudiera ser parcialmente inválido, se descartarían los bloques L2 más antiguos,
+    lo que invalidaría los bloques L2 posteriores.
+  * Variables:
+    * `origin_changed_bit = origin_bits[0]`: `true` si el primer bloque L2 cambió su origen L1, `false` en caso contrario.
+    * `start_epoch_num = batch.l1_origin_num - sum(origin_bits) + (origin_changed_bit ? 1 : 0)`
+    * `end_epoch_num = batch.l1_origin_num`
+  * Reglas:
+    * `start_epoch_num + sequence_window_size < inclusion_block_number` -&gt; `drop`:
+      es decir, el lote debe incluirse a tiempo.
+    * `start_epoch_num > prev_l2_block.l1_origin.number + 1` -&gt; `drop`:
+      es decir, el origen L1 no puede avanzar más de un bloque L1 por cada bloque L2.
+    * Si `batch.l1_origin_check` no coincide con la cadena L1 canónica en `end_epoch_num` -&gt; `drop`:
+      se verifica que el lote esté destinado a esta cadena L1.
+      * Una vez superada la comprobación de `l1_origin_check` anterior, no es necesario comprobar si el origen
+        es posterior a `inclusion_block_number`, debido al siguiente invariante.
+      * Invariante: el número de época del lote siempre es menor que el número del bloque de inclusión
+        si y solo si el hash de la época L1 es correcto.
+    * `start_epoch_num < prev_l2_block.l1_origin.number` -&gt; `drop`:
+      el número de época no puede ser anterior al origen del bloque padre
+* Desfase temporal máximo del secuenciador y otras comprobaciones del origen en L1:
+  * Nota: la desviación temporal máxima se aplica al *lote en su conjunto*, para limitar el número de posibles variantes de salida.
+  * Variables:
+    * `block_input`: un bloque L2 del span-batch,
+      con el origen L1 derivado de `origin_bits` y de la cadena L1 canónica ya establecida.
+    * `next_epoch`: el bloque L1 siguiente a `block_input.origin`.
+      Puede corresponder al siguiente origen, fuera de los orígenes L1 del span.
+  * Reglas:
+    * Para cada `block_input` cuya marca de tiempo sea mayor que `safe_head.timestamp`:
+      * `block_input.l1_origin.number < safe_head.l1_origin.number` -&gt; `drop`: exige que los orígenes L1 sean crecientes.
+      * `block_input.timestamp < block_input.origin.time` -&gt; `drop`: aplica la regla de marca de tiempo L2 mínima.
+      * `block_input.timestamp > block_input.origin.time + max_sequencer_drift`: aplica la regla de desviación de la marca de tiempo L2,
+        pero con excepciones para preservar el invariante de marca de tiempo L2 mínima descrito arriba:
+        * `len(block_input.transactions) == 0`:
+          * `origin_bits[i] == 0`: `i` es el índice de `block_input` en el span batch.
+            Esto implica que el block&#95;input no hizo avanzar el origen L1,
+            por lo que debe comprobarse con respecto a `next_epoch`.
+            * Si no se conoce `next_epoch` -&gt; `undecided`:
+              sin el siguiente origen L1 aún no podemos determinar si se podría haber mantenido el invariante temporal.
+            * Si `block_input.timestamp >= next_epoch.time` -&gt; `drop`:
+              el lote podría haber adoptado el siguiente origen L1 sin romper el invariante `L2 time >= L1 time`.
+        * `len(block_input.transactions) > 0`: -&gt; `drop`:
+          cuando se excede la desviación temporal del sequencer, nunca se permite que el sequencer incluya transacciones.
+* Y para todas las transacciones:
+  * `drop` si la lista `batch.tx_datas` contiene una transacción
+    que no es válida o que se obtiene exclusivamente por otros medios:
+    * cualquier transacción vacía (`tx_data` de longitud cero)
+    * cualquier [transacción depositada][g-deposit-tx-type] (identificada por el byte de prefijo del tipo de transacción en `tx_data`)
+    * cualquier transacción de un tipo futuro &gt; 2 (ten en cuenta que
+      [Isthmus añade compatibilidad](../isthmus/derivation#activation)
+      con las transacciones `SetCode` de tipo 4)
+* Comprobaciones de bloques superpuestos:
+  * Nota: si el span batch se superpone con la cadena segura L2 actual, debemos validar todos los bloques superpuestos.
+  * Variables:
+    * `block_input`: un bloque L2 derivado del span-batch.
+    * `safe_block`: un bloque L2 de la cadena segura L2 actual, con la misma marca de tiempo que `block_input`
+  * Reglas:
+    * Para cada `block_input` cuya marca de tiempo sea menor que `next_timestamp`:
+      * `block_input.l1_origin.number != safe_block.l1_origin.number` -&gt; `drop`
+      * `block_input.transactions != safe_block.transactions` -&gt; `drop`
+        * se comparan sin incluir las transacciones de depósito
+
+Una vez validado, el batch-queue emite una entrada de bloque (block-input) por cada uno de los bloques incluidos en el span-batch.
+Así, la siguiente etapa de derivación solo conoce entradas de bloque individuales, de forma similar al anterior lote V0,
+aunque ya no se trate estrictamente de un «lote v0».
+
+### Batcher {#batcher}
+
+En lugar de transformar los bloques de L2 en lotes,
+los bloques deben almacenarse en búfer para formar un span-batch.
+
+Lo ideal es que los bloques de L2 se almacenen en búfer como entradas de bloque, para maximizar el rango de bloques que cubre el span-batch:
+los span-batches de un solo bloque de L2 no mejoran la eficiencia tanto como los que abarcan rangos más amplios.
+
+Esto significa que la función `(c *channelBuilder) AddBlock` se modifica para
+que no llame directamente a `(co *ChannelOut) AddBatch`, sino que aplace esa llamada hasta que se haya almacenado en búfer un número mínimo de bloques.
+
+No es posible estimar el tamaño de salida de los bloques en cola hasta que el span-batch se escribe en el canal.
+A partir de cierto número de bloques, el canal puede escribirse para realizar la estimación y reescribirse después si llegan más bloques.
+
+Por lo demás, la [funcionalidad del batcher][batcher] no cambia: los bloques no seguros se transforman en lotes,
+se codifican en canales comprimidos y luego se dividen en tramas para enviarlos a L1.
+Las implementaciones del batcher pueden aplicar distintas heurísticas y reintentos para construir las transacciones de datos más eficientes en cuanto a gas.

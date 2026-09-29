@@ -1,0 +1,119 @@
+---
+title: 'eth_call'
+sidebarTitle: 'eth_call'
+description: 'Ejecuta una llamada de mensaje sin crear una transacción. Usa pending para simular sobre el estado preconfirmado.'
+---
+
+Ejecuta una llamada de mensaje de forma inmediata sin difundir ninguna transacción a la red. No consume gas on-chain. Se utiliza para leer el estado de un contrato o simular llamadas.
+
+<Tip>
+  **Flashblocks:** Consulta `https://mainnet.base.org` con `"pending"` para simular sobre el estado actual del bloque preconfirmado, que se actualiza cada ~200 ms.
+</Tip>
+
+<Note>
+  **Contexto de bloque de `eth_call "pending"` en nodos de Flashblocks:** Las propiedades del contexto de bloque (`block.number`, `block.timestamp`, `block.basefee`) pueden corresponder a un bloque varios bloques por detrás de la punta de la cadena, debido a la forma en que los nodos almacenan en caché los Flashblocks históricos. Consulta las [preguntas frecuentes](/es/specifications/flashblocks#why-does-eth_call-pending-report-a-block-number-several-blocks-behind-tip) para obtener más información.
+</Note>
+
+## Parámetros {#parameters}
+
+<ParamField body="transaction" type="object" required>
+  El objeto de llamada de la transacción.
+
+  <Expandable title="Campos de la transacción">
+    <ParamField body="from" type="string">
+      Dirección desde la que se envía la llamada. Opcional; por defecto es la dirección cero.
+    </ParamField>
+
+    <ParamField body="to" type="string" required>
+      Dirección a la que se dirige la llamada.
+    </ParamField>
+
+    <ParamField body="gas" type="string">
+      Gas proporcionado para la llamada, como entero hexadecimal. Si se omite, se usa un límite alto por defecto.
+    </ParamField>
+
+    <ParamField body="gasPrice" type="string">
+      Precio del gas en wei, como entero hexadecimal. Para transacciones legacy. Opcional.
+    </ParamField>
+
+    <ParamField body="maxFeePerGas" type="string">
+      Tarifa total máxima por unidad de gas (EIP-1559). Opcional.
+    </ParamField>
+
+    <ParamField body="maxPriorityFeePerGas" type="string">
+      Tarifa de prioridad máxima por unidad de gas (EIP-1559). Opcional.
+    </ParamField>
+
+    <ParamField body="value" type="string">
+      Valor transferido en wei, como entero hexadecimal. Opcional.
+    </ParamField>
+
+    <ParamField body="data" type="string">
+      Datos de la llamada codificados en ABI: el selector de función de 4 bytes seguido de los argumentos codificados. Opcional.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="block" type="string" required>
+  Número de bloque en hexadecimal, o `"latest"`, `"pending"`, `"safe"`, `"finalized"`, `"earliest"`. Usa `"pending"` para ejecutar la llamada sobre el estado preconfirmado.
+</ParamField>
+
+## Valor devuelto {#returns}
+
+<ResponseField name="result" type="string">
+  El valor devuelto por la llamada, como un arreglo de bytes codificado en hexadecimal.
+</ResponseField>
+
+## Códigos de error {#error-codes}
+
+| Código   | Mensaje            | Descripción                                                                                                                           |
+| -------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `-32000` | execution reverted | La llamada se revirtió. Si está disponible, el campo `data` del objeto de error contiene el motivo de la reversión codificado en ABI. |
+
+## Ejemplo {#example}
+
+<CodeGroup>
+  ```bash Estándar (latest) lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_call",
+      "params": [
+        {
+          "to": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "data": "0x70a082310000000000000000000000004200000000000000000000000000000000000006"
+        },
+        "latest"
+      ],
+      "id": 1
+    }'
+  ```
+
+  ```bash Flashblocks (pending, ~200ms) lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_call",
+      "params": [
+        {
+          "to": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "data": "0x70a082310000000000000000000000004200000000000000000000000000000000000006"
+        },
+        "pending"
+      ],
+      "id": 1
+    }'
+  ```
+
+  ```json Respuesta
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x0000000000000000000000000000000000000000000000000000000005f5e100"
+  }
+  ```
+</CodeGroup>

@@ -1,0 +1,53 @@
+---
+title: "ステーブルコインを発行する"
+keywords: ["Base でステーブルコインを発行", "B20 ステーブルコイン", "Base のステーブルコイン発行者", "Base の法定通貨担保型トークン"]
+description: "ミント、コンプライアンス、照合（リコンシリエーション）の機能をチェーンに組み込んだ形で、Base 上で法定通貨担保型ステーブルコインを運用します。"
+---
+
+import { StablecoinDemo } from "/snippets/StablecoinDemo.jsx"
+
+Base のネイティブトークン標準である [B20](/ja/specifications/b20) を使えば、Base 上で法定通貨担保型のステーブルコインを発行できます。ミント、償還、コンプライアンス管理、照合の機能はチェーンに標準で組み込まれているため、独自のコントラクトを構築・監査する必要はありません。さらに、ERC-20 とも完全な互換性があります。
+
+## デモ {#demo}
+
+<StablecoinDemo />
+
+<Tip>
+  このデモでは、ブラウザでローカルに生成したアカウントを使用して、**Base Vibenet** 上で実際のトランザクションを送信します。Vibenet またはその B20 機能が利用できない場合は、説明用のオフライン版に自動で切り替わります。
+</Tip>
+
+## ガイド {#guides}
+
+<CardGroup cols={2}>
+  <Card title="ステーブルコインを発行する" icon="coins" href="/ja/build-on-base/issue-stablecoins/issue-your-stablecoin">
+    1回の呼び出しで法定通貨担保型のトークンを作成します。
+  </Card>
+
+  <Card title="供給量をミントする" icon="plus" href="/ja/build-on-base/issue-stablecoins/mint-supply">
+    準備金の増加に合わせて新しいトークンを発行します。
+  </Card>
+
+  <Card title="供給量をバーンする" icon="fire" href="/ja/build-on-base/issue-stablecoins/burn-supply">
+    償還時にトークンを償却します。
+  </Card>
+
+  <Card title="保有者を制限する" icon="user-check" href="/ja/build-on-base/issue-stablecoins/restrict-who-can-hold">
+    送金を承認済みアカウントに限定します。
+  </Card>
+
+  <Card title="アカウントをブロックする" icon="ban" href="/ja/build-on-base/issue-stablecoins/block-an-account">
+    コンプライアンス上の保留措置として、特定のアドレスを凍結します。
+  </Card>
+
+  <Card title="資金を回収する" icon="arrow-rotate-left" href="/ja/build-on-base/issue-stablecoins/recover-funds">
+    ブロックされた残高を回収し、再発行します。
+  </Card>
+
+  <Card title="アクティビティを一時停止する" icon="pause" href="/ja/build-on-base/issue-stablecoins/pause-activity">
+    送金、ミント、バーンを一時停止します。
+  </Card>
+
+  <Card title="メモで照合する" icon="receipt" href="/ja/build-on-base/issue-stablecoins/reconcile-with-memos">
+    オンチェーンのアクティビティを自社の帳簿と照合します。
+  </Card>
+</CardGroup>

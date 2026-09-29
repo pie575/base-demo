@@ -1,0 +1,145 @@
+---
+title: "没收并注销份额"
+description: "使用 B20 seizeWithMemo 将不再符合资格的持有人名下的份额转入保管账户，再通过附带 Memo 的销毁操作予以注销。"
+keywords: ["没收代币化份额", "B20 seizeWithMemo", "注销份额", "被封禁的持有人", "SEIZE_EXEMPT_POLICY"]
+---
+
+import { AssetDemo } from "/snippets/AssetDemo.jsx"
+import RwaDisclaimer from "/snippets/zh/RwaDisclaimer.mdx"
+
+当持有人不再符合资格、法院下令没收，或某一持仓必须平仓时，可使用 `seizeWithMemo` 将相应份额转入托管账户，再决定后续如何处置。本指南会将份额没收至发行方的国库账户，然后使用 `burnWithMemo` 注销这些份额。&quot;冻结并重新发行&quot;的场景同样以此为第一步：先没收，再从国库账户转账至新地址。
+
+<RwaDisclaimer />
+
+## 演示 {#demo}
+
+<AssetDemo flow="cancel" />
+
+<Tip>
+  本演示使用浏览器本地生成的账户，在 **Base Vibenet** 上提交真实交易。如果 Vibenet 或其 B20 功能不可用，演示会自动切换为离线示意版本。
+</Tip>
+
+<Note>
+  初次接触 B20？请参阅 [B20 代币标准](/zh/build-on-base/issue-rwa/create-an-asset-token)，了解相关概念和完整的发行流程。这些示例基于 `base-std@1505323`、`viem@2.55.11` 和 Base Foundry `v1.1.1`。
+</Note>
+
+<Warning>
+  `seizeWithMemo` 属于 Cobalt B20 接口。该功能目前已在 Base Vibenet 上线，并将随 Cobalt 硬分叉登陆 Base 主网。在此之前，主网代币仅支持已弃用的 `burnBlocked` 路径。详见 [seize 变更日志条目](/zh/base-chain/specs/reference/b20/changelog/02-cobalt-b20-seize)。
+</Warning>
+
+## 开始之前 {#before-you-start}
+
+你需要准备好以下全部条件：
+
+* 一个由你管理的 B20 Asset，且你拥有 `DEFAULT_ADMIN_ROLE`，以便授予角色和关联策略。
+* 一个用于调用 `seizeWithMemo` 和 `burnWithMemo` 的账户，并为其授予 `SEIZE_ROLE` 和 `BURN_ROLE`。[创建资产代币](/zh/build-on-base/issue-rwa/create-an-asset-token)教程会在工厂调用中授予角色；如果当时没有授予这两个角色，请补充添加。
+* Policy Registry 中的一个黑名单策略，且该持有者已在名单中。如果你像[限制合格持有者](/zh/build-on-base/issue-rwa/restrict-eligible-holders)中那样用白名单控制持有资格，那么将持有者移出该白名单会冻结其转账，但**不会**使其可被没收。没收操作读取的是它自己的作用域。
+* `SEIZE` 和 `BURN` 未被暂停。暂停 `TRANSFER` 或 `MINT` 时，没收操作仍然可用。
+
+没收作用域的工作机制：
+
+| 作用域                     | 检查的账户  | 继续执行的条件                    | 未设置时的默认行为             |
+| ----------------------- | ------ | -------------------------- | --------------------- |
+| `SEIZE_EXEMPT_POLICY`   | `from` | `isAuthorized` 为 **false** | 所有人均已获授权，因此任何人都不可被没收。 |
+| `SEIZE_RECEIVER_POLICY` | `to`   | `isAuthorized` 为 **true**  | 允许任意目标地址。             |
+
+由于对持有者的检查逻辑是反向的，应将**黑名单**关联到 `SEIZE_EXEMPT_POLICY`。名单上的账户未获授权，因此可被没收；其他所有持有者则仍享有豁免。切勿将白名单或 `ALWAYS_BLOCK` 关联到此作用域：空白名单不授权任何人，会导致所有持有者都可被没收。
+
+## 没收、取消与验证 {#seize-cancel-and-verify}
+
+每个代币只需授予一次角色：
+
+```solidity Grant SEIZE_ROLE and BURN_ROLE
+asset.grantRole(asset.SEIZE_ROLE(), operator);
+asset.grantRole(asset.BURN_ROLE(), operator);
+```
+
+然后挂接黑名单，将资产罚没至调用者自己的账户，再从该账户销毁：
+
+<CodeGroup>
+  {/* sample: stock-seize-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={10,11,12}
+  import { parseUnits, stringToHex, type Address } from "viem";
+  import { account, publicClient } from "../../shared/clients.js";
+  import { b20Abi, scope } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function seizeAndCancelUnits(token: Address, blocklistId: bigint, holder: Address) {
+    const amount = parseUnits("100", 6);
+    const memo = stringToHex("cancel-2026-07", { size: 32 });
+    await sendContract({ address: token, abi: b20Abi, functionName: "updatePolicy", args: [scope("SEIZE_EXEMPT_POLICY"), blocklistId] });
+    await sendContract({ address: token, abi: b20Abi, functionName: "seizeWithMemo", args: [holder, account.address, amount, memo] });
+    await sendContract({ address: token, abi: b20Abi, functionName: "burnWithMemo", args: [amount, memo] });
+    return publicClient.readContract({ address: token, abi: b20Abi, functionName: "totalSupply" });
+  }
+  ```
+
+  {/* sample: stock-seize-solidity */}
+
+  ```solidity Solidity lines wrap expandable highlight={2,3,4}
+  function seizeAndCancelUnits(address token, uint64 blocklistId, address holder) public {
+      IB20(token).updatePolicy(B20Constants.SEIZE_EXEMPT_POLICY, blocklistId);
+      IB20(token).seizeWithMemo(holder, address(this), 100e6, bytes32("cancel-2026-07"));
+      IB20(token).burnWithMemo(100e6, bytes32("cancel-2026-07"));
+  }
+  ```
+
+  {/* sample: stock-seize-cli */}
+
+  ```bash CLI lines wrap expandable highlight={1,3,5}
+  base-cast send "$TOKEN_ADDRESS" "updatePolicy(bytes32,uint64)" "$(base-cast keccak SEIZE_EXEMPT_POLICY)" "$BLOCKLIST_ID" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  base-cast send "$TOKEN_ADDRESS" "seizeWithMemo(address,address,uint256,bytes32)" "$HOLDER" "$TREASURY" 100000000 \
+    "$(base-cast format-bytes32-string cancel-2026-07)" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  base-cast send "$TOKEN_ADDRESS" "burnWithMemo(uint256,bytes32)" 100000000 "$(base-cast format-bytes32-string cancel-2026-07)" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  base-cast call "$TOKEN_ADDRESS" "totalSupply()(uint256)" --rpc-url "$RPC_URL"
+  ```
+</CodeGroup>
+
+罚没操作会依次触发 `Transfer(holder, treasury, amount)`、`Memo(caller, memo)` 和 `Seized(caller, holder, treasury, amount)`，此时 `totalSupply` 保持不变。随后，销毁操作会触发 `Transfer(treasury, address(0), amount)` 和 `Memo`，`totalSupply` 随之减少。两次调用使用同一个 memo，对账时即可将这两个步骤归入同一案例。
+
+`burnWithMemo` 销毁的是调用者自身的余额，因此执行罚没的账户必须同时作为接收方；否则，需要先从国库账户将资产转给执行销毁的账户。之后如需重新发行，接收方与其他任何转账一样，都必须通过 `TRANSFER_RECEIVER_POLICY`。
+
+如需向持有者和索引器公告此次注销，请将 `burnWithMemo` 包装在 `announce` 中；详见[向持有者公告变更](/zh/build-on-base/issue-rwa/announce-a-distribution)。
+
+<Check>
+  第一笔交易中出现 `Seized` 事件，且持有者余额减少 100 EXM。销毁后，`totalSupply` 也减少 100 EXM。
+</Check>
+
+## 常见错误 {#common-errors}
+
+以下错误按 `seizeWithMemo` 的检查顺序排列，最后是销毁阶段的错误。
+
+| 错误                                                     | 原因                                                                 | 解决方法                                                             |
+| ------------------------------------------------------ | ------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| `ContractPaused(SEIZE)`                                | `SEIZE` 已暂停。                                                       | 以 `PausableFeature.SEIZE` 为参数调用 `unpause`。                       |
+| `AccessControlUnauthorizedAccount(caller, SEIZE_ROLE)` | 调用者未持有 `SEIZE_ROLE`。                                               | 授予 `SEIZE_ROLE`。                                                 |
+| `InvalidReceiver(to)`                                  | `to` 为 `address(0)`、代币自身的地址，或与 `from` 相同。                          | 使用另一个非零的托管地址。                                                    |
+| `InvalidSender(from)`                                  | `from` 为 `address(0)`。                                             | 传入持有者的地址。                                                        |
+| `AccountNotSeizable(from)`                             | `from` 在 `SEIZE_EXEMPT_POLICY` 下仍处于已授权状态，原因是该槽位未设置，或持有者不在所关联的黑名单中。 | 为 `SEIZE_EXEMPT_POLICY` 关联一个黑名单，并将 `from` 加入其中。仅将持有者移出转账白名单是不够的。 |
+| `PolicyForbids(SEIZE_RECEIVER_POLICY, policyId)`       | `to` 在 `SEIZE_RECEIVER_POLICY` 下未获授权。                              | 将 `to` 加入接收方白名单，或将作用域重设为 `0`。                                   |
+| `InsufficientBalance(from, balance, amount)`           | `from` 的持有量少于 `amount`。                                            | 没收数量不超过 `balanceOf(from)`。                                       |
+| `AccessControlUnauthorizedAccount(caller, BURN_ROLE)`  | 销毁者未持有 `BURN_ROLE`。                                                | 授予 `BURN_ROLE`。                                                  |
+| `ContractPaused(BURN)`                                 | `BURN` 已暂停。                                                        | 以 `PausableFeature.BURN` 为参数调用 `unpause`。                        |
+| `PolicyNotFound(policyId)`                             | 传给 `updatePolicy` 的 ID 既不是哨兵值，也不存在于注册表中。                           | 先创建策略，再关联返回的 ID。                                                 |
+| `Unauthorized()`                                       | 非管理员调用了 `updateBlocklist` 或 `updateAllowlist`。                     | 以该策略的 `policyAdmin` 身份调用。                                        |
+
+已位于代币自身地址上的余额仍可追回：`seizeWithMemo(address(token), treasury, amount, memo)` 是允许的。但不允许没收*到*代币自身的地址。
+
+<Warning>
+  `burnBlocked` 已弃用。它会直接销毁在 `TRANSFER_SENDER_POLICY` 下被拒绝的持有者的代币单位，且不会发出 `Seized` 事件，因此链上无从记录这些单位是被没收而非被赎回的。建议改为先没收、再销毁。
+</Warning>
+
+## 另请参阅 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="限制合格持有人" icon="user-check" href="/zh/build-on-base/issue-rwa/restrict-eligible-holders">
+    通过策略限定可持有代币的对象。
+  </Card>
+
+  <Card title="向持有人公告变更" icon="bullhorn" href="/zh/build-on-base/issue-rwa/announce-a-distribution">
+    披露国库账户销毁或其他影响持有人的操作。
+  </Card>
+</CardGroup>

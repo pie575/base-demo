@@ -1,0 +1,80 @@
+---
+title: "验证支付"
+keywords: ["验证 Commerce Payments", "验证 PaymentCharged", "paymentInfoHash", "防止支付重放"]
+description: "在履约前验证已确认的托管事件，并确保每笔结算只被认领一次。"
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+切勿依据钱包签名、已提交的交易哈希或客户端状态来履约。应解码已确认的 `AuthCaptureEscrow` 事件，将其 `paymentInfoHash` 与订单匹配，并通过持久化存储确保每笔结算只被认领一次。
+
+<Info>
+  本指南中的支付流程基于 [Commerce Payments Protocol](https://github.com/base/commerce-payments)。
+</Info>
+
+## 演示 {#demo}
+
+<PaymentsDemo flow="verify" />
+
+<Tip>
+  上方演示仅为模拟效果。如需查看 Vibenet 上的链上演示，请前往 [Base 链演示](https://chain.base.org/demos)。
+</Tip>
+
+## 验证协议结算 {#verify-a-protocol-settlement}
+
+请将 v1.1.0 的托管合约地址与 ABI 搭配使用。`PaymentCharged` 和 `PaymentCaptured` 事件包含一个表示绝对金额的 `uint256 feeAmount` 字段；而 v1.0 的事件使用的是不同的字段类型和事件主题 (topic) 。
+
+{/* sample: verify-token-payment-ts */}
+
+```typescript Backend lines wrap expandable highlight={12,18-19,22-23}
+export async function verifyPayment(args: {
+  hash: Hash;
+  paymentInfoHash: Hash;
+  orderId: string;
+  store: PaymentStore;
+}) {
+  const receipt = await publicClient.waitForTransactionReceipt({ hash: args.hash, confirmations: 2 });
+  if (receipt.status !== "success") throw new Error("Payment transaction reverted");
+  const events = parseEventLogs({
+    abi: authCaptureEscrowAbi,
+    logs: receipt.logs.filter(
+      (log) => log.address.toLowerCase() === AUTH_CAPTURE_ESCROW.toLowerCase(),
+    ),
+    strict: true,
+  });
+  const settlement = events.find(
+    (event) =>
+      (event.eventName === "PaymentCharged" || event.eventName === "PaymentCaptured") &&
+      event.args.paymentInfoHash === args.paymentInfoHash,
+  );
+  if (!settlement) throw new Error("Expected protocol settlement was not found");
+  if (!(await args.store.claimOnce(args.paymentInfoHash, args.orderId))) {
+    throw new Error("Payment was already used");
+  }
+  return settlement;
+}
+```
+
+`PaymentAuthorized` 和 `PaymentCharged` 包含完整的 `PaymentInfo`。后续生命周期事件仅包含哈希，因此需要将其与创建订单时存储的不可变条款关联起来。
+
+<Check>
+  只有第一个与预期的链、托管地址、支付哈希、操作、金额和费用均匹配的已确认事件才会进入履约环节。
+</Check>
+
+<Warning>
+  `claimOnce` 必须使用数据库唯一性约束，并与履约处于同一个持久化工作流中。进程内的 `Set` 无法跨重启或跨工作进程防止重放。
+</Warning>
+
+请根据履约的价值及其可逆程度选择合适的确认深度。参见[交易最终性](/zh/specifications/transactions/transaction-finality)。
+
+## 另请参阅 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="发起付款请求" icon="credit-card" href="/zh/build-on-base/accept-payments/request-a-payment">
+    创建一笔即时的协议扣款。
+  </Card>
+
+  <Card title="监听付款" icon="eye" href="/zh/build-on-base/accept-payments/watch-for-payments">
+    回填并处理已确认的托管事件。
+  </Card>
+</CardGroup>

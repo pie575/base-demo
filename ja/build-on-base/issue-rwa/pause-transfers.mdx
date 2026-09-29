@@ -1,0 +1,79 @@
+---
+title: "転送の一時停止"
+description: "インシデント発生時に、ミントとバーンは引き続き利用可能にしたまま、B20 Asset トークンの転送を一時停止します。"
+keywords: ["トークン化資産の転送の一時停止", "B20 一時停止", "トークンのインシデント対応", "トークンの機能別一時停止"]
+---
+
+import { AssetDemo } from "/snippets/AssetDemo.jsx"
+import RwaDisclaimer from "/snippets/ja/RwaDisclaimer.mdx"
+
+インシデント発生時には、発行や取り消しを止めずに `TRANSFER` 機能だけを一時停止できます。B20 では一時停止と再開の権限が別々のロールに付与されるため、緊急対応の権限と復旧の権限を分離できます。
+
+<RwaDisclaimer />
+
+## デモ {#demo}
+
+<AssetDemo flow="pause" />
+
+<Tip>
+  このデモでは、ブラウザ上でローカルに生成したアカウントを使って、**Base Vibenet** に実際のトランザクションを送信します。Vibenet またはその B20 機能が利用できない場合は、説明用のオフライン版に自動で切り替わります。
+</Tip>
+
+<Note>
+  B20 を初めて使う方は、[B20 トークン標準](/ja/build-on-base/issue-rwa/create-an-asset-token)で基本的な概念とローンチ手順の全体を確認してください。これらのサンプルは `base-std@1505323`、`viem@2.55.11`、Base Foundry `v1.1.1` を対象としています。
+</Note>
+
+## 株式トークンの転送の一時停止と再開 {#pause-and-resume-stock-transfers}
+
+<CodeGroup>
+  {/* sample: stock-pause-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={7}
+  import { type Address } from "viem";
+  import { publicClient } from "../../shared/clients.js";
+  import { b20Abi } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function setStockTransfersPaused(token: Address, paused: boolean) {
+    await sendContract({ address: token, abi: b20Abi, functionName: paused ? "pause" : "unpause", args: [[0]] });
+    const current = await publicClient.readContract({ address: token, abi: b20Abi, functionName: "isPaused", args: [0] });
+    if (current !== paused) throw new Error("Unexpected transfer pause state");
+  }
+  ```
+
+  {/* sample: stock-pause-cli */}
+
+  ```bash CLI lines wrap expandable highlight={1,4}
+  base-cast send "$TOKEN_ADDRESS" "pause(uint8[])" "[0]" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  base-cast call "$TOKEN_ADDRESS" "isPaused(uint8)(bool)" 0 --rpc-url "$RPC_URL"
+  base-cast send "$TOKEN_ADDRESS" "unpause(uint8[])" "[0]" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  ```
+</CodeGroup>
+
+`pause` と `unpause` はいずれも `PausableFeature[]` 配列を引数に取ります。`TRANSFER` だけを対象にするには `[0]` を渡します。一時停止できる機能は `TRANSFER` (0)、`MINT` (1)、`BURN` (2)、`SEIZE` (3) の4つです。ある機能を一時停止しても、他の機能には影響しません。`MINT` の一時停止中も保有者は転送でき、`TRANSFER` の一時停止中もミンターはミントできます。
+
+空の配列を渡すと `EmptyFeatureSet` でリバートします。すでに指定した状態になっている機能に対しては何も行われず、呼び出しもリバートしません。呼び出し後は `isPaused(feature)` を読み取って現在の状態を確認してください。発行されるイベント (`Paused` または `Unpaused`) に含まれるのは渡した配列そのものであり、結果として一時停止中となった機能の集合ではありません。
+
+一時停止中の機能に対応する操作を呼び出し元が実行しようとすると、呼び出しは `ContractPaused(feature)` でリバートします。
+
+<Check>
+  ミントやバーンは一時停止されず、転送の一時停止状態だけが変更されます。
+</Check>
+
+<Note>
+  `pause` には `PAUSE_ROLE` が、`unpause` には `UNPAUSE_ROLE` が必要です。両者は別々のロールであるため、復旧の権限は緊急停止の権限よりも対象を絞って付与してください。
+</Note>
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="保有者の資格を制限する" icon="user-check" href="/ja/build-on-base/issue-rwa/restrict-eligible-holders">
+    ポリシーを使って、保有できるアカウントを制限します。
+  </Card>
+
+  <Card title="ユニットの差し押さえと取り消し" icon="ban" href="/ja/build-on-base/issue-rwa/seize-and-cancel-units">
+    資格のない保有者からユニットを保管用アドレスに移し、その後取り消します。
+  </Card>
+</CardGroup>

@@ -1,0 +1,71 @@
+---
+title: "Especificación"
+description: "Especificación del nodo de rollup de Base: sus componentes y su función en la derivación de bloques de L2 y en el consenso."
+---
+
+[g-rollup-node]: /specifications/reference/glossary#rollup-node
+
+[g-derivation]: /specifications/reference/glossary#L2-chain-derivation
+
+[g-payload-attr]: /specifications/reference/glossary#payload-attributes
+
+[g-block]: /specifications/reference/glossary#block
+
+[g-exec-engine]: /specifications/reference/glossary#execution-engine
+
+[g-reorg]: /specifications/reference/glossary#re-organization
+
+[g-rollup-driver]: /specifications/reference/glossary#rollup-driver
+
+[g-receipts]: /specifications/reference/glossary#receipt
+
+## Descripción general {#overview}
+
+El [nodo de rollup][g-rollup-node] es el componente encargado de [derivar la cadena L2][g-derivation] a partir de los bloques de L1
+(y sus [recibos][g-receipts] asociados).
+
+La parte del nodo de rollup que deriva la cadena L2 se denomina [driver de rollup][g-rollup-driver]. Por ahora, este documento
+se centra únicamente en la especificación del driver de rollup.
+
+## Driver {#driver}
+
+La función del [driver][g-rollup-driver] en el [nodo de rollup][g-rollup-node]
+es gestionar el proceso de [derivación][g-derivation]:
+
+* Hacer un seguimiento del bloque head de L1
+* Hacer un seguimiento del progreso de sincronización de la cadena L2
+* Iterar por los pasos de derivación a medida que haya nuevas entradas disponibles
+
+### Derivación {#derivation}
+
+Este proceso se lleva a cabo en tres pasos:
+
+1. Seleccionar entradas de la cadena L1, a partir del último bloque L2:
+   una lista de bloques, con transacciones y sus datos y recibos asociados.
+2. Leer la información de L1, los depósitos y los lotes de secuenciación para generar [atributos de payload][g-payload-attr]
+   (en esencia, [un bloque sin propiedades de salida][g-block]).
+3. Pasar los atributos de payload al [motor de ejecución][g-exec-engine] para que pueda calcularse el bloque L2 (incluidas las [propiedades
+   de salida del bloque][g-block]).
+
+Aunque conceptualmente este proceso es una función pura de la cadena L1 a la cadena L2, en la práctica es incremental. La
+cadena L2 se extiende cada vez que se añaden nuevos bloques L1 a la cadena L1. Del mismo modo, la cadena L2 se reorganiza cada vez que la
+cadena L1 [se reorganiza][g-reorg].
+
+Para ver la especificación completa de la derivación de bloques L2, consulta el [documento de derivación de bloques L2](/es/specifications/base-protocol/consensus/derivation).
+
+La interfaz RPC del nodo de rollup se especifica en el documento de [RPC](/es/specifications/base-protocol/consensus/rpc).
+
+## Seguimiento de la versión del protocolo {#protocol-version-tracking}
+
+El rollup-node debería supervisar la versión del protocolo recomendada y la requerida a través
+del contrato Protocol Versions en L1.
+
+Esto puede implementarse mediante sondeo en el bucle del [Driver](#driver).
+Tras consultar la versión del protocolo, el nodo de rollup DEBERÍA (SHOULD) comunicarla al motor de ejecución mediante una
+llamada a [`engine_signalSuperchainV1`](/es/specifications/base-protocol/execution/l2-execution-engine).
+
+El nodo de rollup DEBERÍA (SHOULD) advertir al usuario cuando la versión recomendada sea más reciente que
+la versión actual que admite el nodo de rollup.
+
+El nodo de rollup DEBERÍA (SHOULD) tomar precauciones de seguridad si no cumple la versión del protocolo requerida.
+Esto puede incluir detener el motor, con el consentimiento del operador del nodo de rollup.

@@ -1,0 +1,163 @@
+---
+title: "原生账户抽象"
+sidebarTitle: "原生账户抽象"
+description: "Base 上的 EIP-8130 参考文档：vibenet 链信息、客户端设置、交易结构、账户配置、验证器（authenticator）和付款方（payer）。"
+tag: "Vibenet"
+---
+
+本文是 Base 上 EIP-8130 的技术参考。如需了解什么是原生账户抽象以及协议为何要实现它，请先阅读“原生账户抽象”。
+
+[EIP-8130](https://eip.tools/eip/8130) 将账户抽象直接内置于协议中。账户在链上系统合约中登记哪些主体可以代表其操作，以及如何校验其签名。链会根据这一配置验证每笔交易，因此智能账户无需 bundler、中继或独立的 mempool 即可运行。
+
+<Warning>
+  EIP-8130 目前仍处于实验阶段，仅在 [vibenet 开发网](https://chain.base.org/vibenet)上运行。如需了解更多信息，请参阅[连接到 vibenet](/base-chain/quickstart/connecting-to-base#vibenet) 指南。
+</Warning>
+
+## 网络详情 {#network-details}
+
+| 字段   | 值                                                         |
+| ---- | --------------------------------------------------------- |
+| 网络   | vibenet 开发网                                               |
+| 链 ID | `84538453`                                                |
+| RPC  | `https://rpc.vibes.base.org`                              |
+| 水龙头  | `POST https://api.vibes.base.org/api/vibenet/faucet/drip` |
+
+## 客户端设置 {#client-setup}
+
+客户端支持目前由一个实验性的 viem 分叉版本提供：
+
+```bash Terminal
+bun add "viem@github:chunter-cb/viem#feat/eip-8130"
+```
+
+## 创建账户并发送批量调用 {#create-an-account-and-send-a-batch}
+
+以下示例演示了完整流程：
+
+1. 创建账户。
+2. 通过水龙头为账户注资。
+3. 发送一批调用，这些调用要么全部成功，要么全部回滚。
+4. 验证每个阶段均已成功。
+
+```ts create-and-send.ts lines wrap expandable highlight={19,30-40,43-44}
+import { createPublicClient, http, parseEther } from "viem";
+import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
+import {
+  newSmartAccount8130, sendCalls8130, estimateGas8130,
+  encodeWalletCalls, waitForTransactionReceipt8130, allPhasesSucceeded,
+} from "viem/experimental/eip8130";
+
+const RPC_URL = "https://rpc.vibes.base.org";
+const chain = {
+  id: 84538453,
+  name: "vibenet",
+  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: { default: { http: [RPC_URL] } },
+};
+const client = createPublicClient({ chain, transport: http(RPC_URL) });
+
+// 账户地址是确定性的，在部署之前就已存在
+const signer = privateKeyToAccount(generatePrivateKey());
+const account = newSmartAccount8130({ signer });
+
+// 从 Vibenet 水龙头为该账户充值
+await fetch("https://api.vibes.base.org/api/vibenet/faucet/drip", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ address: account.address }),
+});
+
+// 先估算 gas，再批量发送调用。账户创建会在同一笔交易中一并完成
+const calls = [{ to: "0x…recipient", value: parseEther("0.001") }];
+const gas = await estimateGas8130(client, {
+  sender: account.address,
+  accountChanges: [account.createChange],
+  calls: encodeWalletCalls({ account: account.address, calls: [calls] }),
+});
+const hash = await sendCalls8130(client, {
+  account,
+  accountChanges: [account.createChange],
+  calls,
+  gas: (gas * 120n) / 100n,
+});
+
+// 8130 收据会分阶段报告结果，因此需要逐一检查
+const receipt = await waitForTransactionReceipt8130(client, { hash });
+if (!allPhasesSucceeded(receipt)) throw new Error("a phase reverted");
+```
+
+只需一笔交易，即可完成账户创建、批量操作执行和 gas 费支付。
+
+## 交易结构 {#transaction-structure}
+
+一笔 8130 交易会指定一个发送方账户，证明发送方已获授权代表该账户执行操作，并携带一批调用。
+
+| 字段               | 用途                  |
+| ---------------- | ------------------- |
+| `sender`         | 交易所代表的账户。           |
+| `accountChanges` | 在执行前应用的配置变更，包括创建账户。 |
+| `calls`          | 需以原子方式执行的一批调用。      |
+| `payer`          | 可选，代发送方支付 gas 的账户。  |
+
+收据按阶段分别报告结果，而不是只给出单一状态，因此可能出现交易整体成功、但其中某个阶段回滚的情况。请务必检查每个阶段；参考客户端中的 `allPhasesSucceeded` 即用于执行此检查。
+
+## 账户 {#accounts}
+
+账户地址通过 `CREATE2` 派生，因此客户端可以在本地计算出地址，且该地址在任何部署发生之前就已存在。正因如此，`account.address` 可以立即使用，`account.createChange` 也可以随第一笔交易一并提交。
+
+每个账户都是一个小型代理合约，负责将调用转发给共享的实现合约。
+
+| 实现               | 说明                                     |
+| ---------------- | -------------------------------------- |
+| `DefaultAccount` | 最基础的构建模块，同时也为通过 EIP-7702 升级的 EOA 提供支持。 |
+| 高速率变体            | 在执行期间锁定转出的 ETH，以换取更高的 mempool 速率限制。    |
+
+## 账户配置 {#account-configuration}
+
+授权信息存储在 `AccountConfiguration` 系统合约中。该合约记录账户所授权的**参与者 (actor)&#x20;**，即签名者的授权最终解析到的链上身份。一个账户可以授权多个参与者，并可逐一独立撤销。
+
+每个参与者条目包含：
+
+| 元素    | 用途                                              |
+| ----- | ----------------------------------------------- |
+| 作用域标志 | 通过 `SCOPE_NONCE` 和 `SCOPE_POLICY` 限定该参与者可执行的操作。 |
+| 策略绑定  | 可选的链上策略：按代币设置的支出限额，以及允许调用的合约和函数。                |
+| 验证器   | 负责验证该参与者签名的合约。                                  |
+
+将参与者绑定到策略，就构成了原生的会话密钥模型：应用获得的参与者恰好具备其所需的权限，并且可随时撤销。
+
+## 验证器 (Authenticators) {#authenticators} 
+
+签名验证采用可插拔设计。验证器合约需实现以下接口：
+
+```solidity IAuthenticator.sol
+interface IAuthenticator {
+    function authenticate(bytes32 hash, bytes calldata data) external view returns (bool);
+}
+```
+
+参考实现集涵盖以下验证器：
+
+| 验证器       | 密钥                    |
+| --------- | --------------------- |
+| secp256k1 | 标准 EVM 密钥             |
+| P-256     | NIST P-256            |
+| WebAuthn  | 通行密钥 (Passkey) 和平台验证器 |
+
+因此，通行密钥直接在协议层完成验证，无需借助包装合约。
+
+## 付款方 {#payers}
+
+交易可以指定一个**付款方** (payer) ，由其代发送方支付 gas，全程无需 paymaster 合约参与。ERC 草案 [ERC-8168](https://eip.tools/eip/8168) 对付款方服务流程进行了标准化，即应用如何发现付款方并请求赞助。
+
+## 深入了解 {#go-deeper}
+
+<CardGroup cols={2}>
+  <Card title="参考合约" href="https://github.com/base/eip-8130" icon="github">
+    包含 `AccountConfiguration`、账户实现和验证器，并附有 Foundry 测试。
+  </Card>
+
+  <Card title="规范" href="https://eip.tools/eip/8130" icon="file-lines">
+    EIP-8130 草案，以及面向付款方服务的配套草案 [ERC-8168](https://eip.tools/eip/8168)。
+  </Card>
+</CardGroup>

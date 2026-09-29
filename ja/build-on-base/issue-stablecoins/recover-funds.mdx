@@ -1,0 +1,141 @@
+---
+title: "資金の回収"
+keywords: ["ステーブルコイン資金の回収", "B20 seizeWithMemo", "ステーブルコインの差し押さえ", "ステーブルコインの法的保全", "Base でのトークン回収"]
+description: "鍵の紛失や法的保全が生じた場合に、総供給量を変えずに、ブロックされたアカウントのステーブルコイン残高を Base 上の保管用アカウントへ移します。"
+---
+
+import { StablecoinDemo } from "/snippets/StablecoinDemo.jsx"
+
+ブロックしたアカウントから残高を移動しなければならない場合があります。たとえば、保有者が鍵を紛失した場合、裁判所命令が出た場合、制裁に基づく凍結措置が必要な場合などです。`seizeWithMemo` を使えば、1 回の管理者呼び出しでトークンを保有者から保管用アカウントへ移動できます。これはバーンでもミントでもありません。`totalSupply` は変化せず、案件の参照情報はメモとしてオンチェーンに記録されます。さらに、トークンは専用の `Seized` イベントを発行するため、監査人やインデクサーはこのイベントを追跡できます。
+
+## デモ {#demo}
+
+<StablecoinDemo flow="recover" />
+
+<Tip>
+  このデモでは、ブラウザ上でローカルに生成したアカウントを使い、**Base Vibenet** 上で実際のトランザクションを送信します。Vibenet またはその B20 機能が利用できない場合は、説明用のオフライン版に自動で切り替わります。
+</Tip>
+
+<Note>
+  B20 を初めて利用する場合は、[B20 Token Standard](/ja/specifications/b20) で基本概念とローンチまでの一連の手順をご確認ください。これらのサンプルは `base-std@1505323`、`viem@2.55.11`、Base Foundry `v1.1.1` を対象としています。
+</Note>
+
+<Warning>
+  `seizeWithMemo` は Cobalt B20 の機能の一部です。現在 Base Vibenet で稼働しており、Base Mainnet では Cobalt ハードフォークで利用可能になります。それまでは、メインネットのトークンで使えるのは非推奨の `burnBlocked` パスのみです。このパスは残高を破棄するため、再発行するには別途ミントが必要です。詳しくは [seize の変更履歴エントリ](/ja/base-chain/specs/reference/b20/changelog/02-cobalt-b20-seize)を参照してください。
+</Warning>
+
+## 始める前に {#before-you-start}
+
+以下のすべてが必要です。
+
+* 自身が管理する B20 Stablecoin。ロールの付与やポリシーのアタッチを行うため、`DEFAULT_ADMIN_ROLE` を保持している必要があります。
+* `seizeWithMemo` を呼び出すアカウント (差し押さえ実行者) 。このアカウントに `SEIZE_ROLE` を付与してください。
+* [アカウントをブロックする](/ja/build-on-base/issue-stablecoins/block-an-account)で作成したブロックリストのポリシー ID。対象の保有者がすでに登録されている必要があります。
+* ゼロアドレス以外の保管先。保有者自身やトークン自体のアドレスは指定できません。通常はトレジャリーを指定します。
+* `SEIZE` が一時停止されていないこと。`pause([SEIZE])` を実行すると、`unpause([SEIZE])` を実行するまですべての差し押さえがブロックされます。`TRANSFER`、`MINT`、`BURN` を一時停止しても、差し押さえは引き続き実行できます。
+
+差し押さえを実行できるかどうかは、次の 3 つの制御によって、この順序で判定されます。
+
+| 制御                      | 確認内容                                                                | 未設定時のデフォルト                          |
+| ----------------------- | ------------------------------------------------------------------- | ----------------------------------- |
+| `SEIZE_ROLE`            | 呼び出し元が差し押さえを実行できること。                                                | 誰も差し押さえを実行できません。                    |
+| `SEIZE_EXEMPT_POLICY`   | 保有者 (`from`) がアタッチされたポリシーで承認**されていない**こと。承認されたアカウントは差し押さえの対象外になります。 | すべてのアカウントが承認されるため、誰も差し押さえの対象になりません。 |
+| `SEIZE_RECEIVER_POLICY` | 送付先 (`to`) がアタッチされたポリシーで承認されていること。                                  | どの送付先も許可されます。                       |
+
+`SEIZE_EXEMPT_POLICY` は、転送スコープとは判定が逆になります。**ブロックリスト**をアタッチしてください。リストに登録されたアカウントは未承認となるため差し押さえの対象となり、それ以外のアカウントは引き続き対象外となります。許可リストや `ALWAYS_BLOCK` はアタッチしないでください。空の許可リストは誰も承認しないため、すべての保有者が差し押さえの対象になってしまいます。
+
+差し押さえは転送スコープを参照しません。`TRANSFER_SENDER_POLICY` で保有者をブロックすると、その保有者からの送金は凍結されますが、同じブロックリスト (または別のブロックリスト) を `SEIZE_EXEMPT_POLICY` にアタッチするまでは差し押さえの対象になりません。
+
+## ブロックされた残高を差し押さえて確認する {#seize-and-verify-the-blocked-balance}
+
+まず、差し押さえを実行するアカウントに `SEIZE_ROLE` を付与します。この設定はトークンごとに一度だけ必要です。
+
+```solidity Grant SEIZE_ROLE
+token.grantRole(token.SEIZE_ROLE(), seizer);
+```
+
+次に、ブロックリストを `SEIZE_EXEMPT_POLICY` にアタッチし、残高を移動します。
+
+<CodeGroup>
+  {/* sample: stablecoin-recover-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={10,11}
+  import { parseUnits, stringToHex, type Address } from "viem";
+  import { publicClient } from "../../shared/clients.js";
+  import { b20Abi, scope } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function recoverBlockedFunds(token: Address, blocklistId: bigint, blocked: Address, treasury: Address) {
+    const amount = parseUnits("50", 6);
+    const memo = stringToHex("legal-hold-2026-118", { size: 32 });
+    await sendContract({ address: token, abi: b20Abi, functionName: "updatePolicy", args: [scope("SEIZE_EXEMPT_POLICY"), blocklistId] });
+    await sendContract({ address: token, abi: b20Abi, functionName: "seizeWithMemo", args: [blocked, treasury, amount, memo] });
+    const balance = await publicClient.readContract({ address: token, abi: b20Abi, functionName: "balanceOf", args: [treasury] });
+    if (balance < amount) throw new Error("Seized balance did not reach the treasury");
+  }
+  ```
+
+  {/* sample: stablecoin-recover-solidity */}
+
+  ```solidity Solidity lines wrap expandable highlight={2,3}
+  function recoverStablecoin(address token, uint64 blocklistId, address blocked, address treasury) public {
+      IB20(token).updatePolicy(B20Constants.SEIZE_EXEMPT_POLICY, blocklistId);
+      IB20(token).seizeWithMemo(blocked, treasury, 50e6, bytes32("legal-hold-2026-118"));
+      require(IB20(token).balanceOf(treasury) >= 50e6, "treasury not funded");
+  }
+  ```
+
+  {/* sample: stablecoin-recover-cli */}
+
+  ```bash CLI lines wrap expandable highlight={1,3}
+  base-cast send "$TOKEN_ADDRESS" "updatePolicy(bytes32,uint64)" "$(base-cast keccak SEIZE_EXEMPT_POLICY)" "$BLOCKLIST_ID" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  base-cast send "$TOKEN_ADDRESS" "seizeWithMemo(address,address,uint256,bytes32)" "$BLOCKED" "$TREASURY" 50000000 \
+    "$(base-cast format-bytes32-string legal-hold-2026-118)" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  base-cast call "$TOKEN_ADDRESS" "balanceOf(address)(uint256)" "$TREASURY" --rpc-url "$RPC_URL"
+  ```
+</CodeGroup>
+
+ポリシーをアタッチすると `PolicyUpdated` が発行され、次回の `seizeWithMemo` から適用されます。複数のトークンから同じブロックリストを参照させることもできます。差し押さえ処理では、`Transfer(from, to, amount)`、`Memo(caller, memo)`、`Seized(caller, from, to, amount)` の順にイベントが発行されます。
+
+トレジャリーに移った残高は、通常の残高と変わりません。通常の `transfer` で保有者の新しいアドレスに再発行するか、案件が完了するまでそのまま保持します。
+
+送付先も制限する場合は、トレジャリーを含む許可リストを作成し、`SEIZE_RECEIVER_POLICY` にアタッチします。保管先のアドレスを限定する必要がなければ、この手順は省略できます。スコープが未設定の状態では、すべての `to` がすでに許可されています。
+
+<Check>
+  トランザクションに `Seized(caller, from, to, amount)` が記録されていること。ブロックされたアドレスの残高が減少し、トレジャリーの残高が同額増加し、`totalSupply` が変化していないこと。
+</Check>
+
+## よくあるエラー {#common-errors}
+
+以下のエラーは、`seizeWithMemo` がチェックする順に並んでいます。
+
+| エラー                                                    | 原因                                                                                     | 対処法                                                   |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| `ContractPaused(SEIZE)`                                | `SEIZE` が一時停止されています。                                                                   | `PausableFeature.SEIZE` を指定して `unpause` を呼び出します。      |
+| `AccessControlUnauthorizedAccount(caller, SEIZE_ROLE)` | 呼び出し元が `SEIZE_ROLE` を保持していません。                                                         | 差し押さえを実行するアカウントに `SEIZE_ROLE` を付与します。                 |
+| `InvalidReceiver(to)`                                  | `to` が `address(0)`、トークン自身のアドレス、または `from` と同一です。                                      | これらとは異なる、ゼロ以外の保管用アドレスを使用します。                          |
+| `InvalidSender(from)`                                  | `from` が `address(0)` です。                                                              | 保有者のアドレスを渡します。                                        |
+| `AccountNotSeizable(from)`                             | `from` が依然として `SEIZE_EXEMPT_POLICY` で承認されています。スロットが未設定であるか、保有者がアタッチされたブロックリストに含まれていません。 | `SEIZE_EXEMPT_POLICY` にブロックリストをアタッチし、そこに `from` を追加します。 |
+| `PolicyForbids(SEIZE_RECEIVER_POLICY, policyId)`       | `to` が `SEIZE_RECEIVER_POLICY` で承認されていません。                                             | `to` を受取人の許可リストに追加するか、スコープを `0` に戻します。                |
+| `InsufficientBalance(from, balance, amount)`           | `from` の保有量が `amount` に満たません。                                                          | `balanceOf(from)` 以下の量を差し押さえます。                       |
+| `PolicyNotFound(policyId)`                             | `updatePolicy` に、レジストリに存在しない ID が渡されました。                                               | 先にポリシーを作成し、返された ID をアタッチします。                            |
+| `Unauthorized()`                                       | 管理者以外が `updateBlocklist` または `updateAllowlist` を呼び出しました。                               | ポリシーの `policyAdmin` として呼び出します。                        |
+
+トークン自身のアドレスにすでにある残高は回収できます。`seizeWithMemo(address(token), treasury, amount, memo)` は許可されています。ただし、トークンのアドレス*を宛先として*差し押さえることはできません。
+
+<Warning>
+  非推奨の `burnBlocked` を使った回避策ではなく、この方法を使用してください。回避策はブロックされた残高をバーンし、代わりの残高をミントするため、`totalSupply` が一時的に減少してから元に戻るうえ、`Seized` イベントも発行されません。さらに照合作業では、追跡可能な 1 件の移動ではなく、互いに関連のない 2 件のトランザクションを扱うことになります。
+</Warning>
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="アカウントをブロックする" icon="user-lock" href="/ja/build-on-base/issue-stablecoins/block-an-account">
+    特定のアドレスを拒否リストに登録し、差し押さえ可能な状態にします。
+  </Card>
+
+  <Card title="Memo で照合する" icon="receipt" href="/ja/build-on-base/issue-stablecoins/reconcile-with-memos">
+    オンチェーンの Memo を使って操作を照合します。
+  </Card>
+</CardGroup>

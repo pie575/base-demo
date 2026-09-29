@@ -1,0 +1,215 @@
+---
+title: "プリインストール"
+description: "Base にプリインストールされているスマートコントラクトの仕様。ジェネシス状態でデプロイされ、EVM 上で直接実行されるユーティリティコントラクトなどについて説明します。"
+---
+
+## 概要 {#overview}
+
+[プリインストール済みスマートコントラクト](/ja/specifications/reference/glossary#preinstalled-contract-preinstall)は、Base のジェネシス状態において
+あらかじめ定められたアドレスに配置されています。プリコンパイルに似ていますが、EVM の外部でネイティブコードを実行するのではなく、
+EVM 内で直接実行される点が異なります。また、Base とは無関係のサードパーティによって
+開発されています。
+
+これらのプリインストールは、広く利用されているスマートコントラクトを、利便性のためにジェネシス時点で配置したものです。
+なお、これらのコントラクトには、[プリデプロイ済みスマートコントラクト](/ja/specifications/reference/glossary#predeployed-contract-predeploy)と同等の
+セキュリティ保証はない点に注意してください。
+
+各プリインストールを以下の表に示します。
+
+| 名前                                            | アドレス                                       |
+| --------------------------------------------- | ------------------------------------------ |
+| Safe                                          | 0x69f4D1788e39c87893C980c06EdF4b7f686e2938 |
+| SafeL2                                        | 0xfb1bffC9d739B8D520DaF37dF666da4C687191EA |
+| MultiSend                                     | 0x998739BFdAAdde7C933B942a68053933098f9EDa |
+| MultiSendCallOnly                             | 0xA1dabEF33b3B82c7814B6D82A79e50F4AC44102B |
+| SafeSingletonFactory                          | 0x914d7Fec6aaC8cd542e72Bca78B30650d45643d7 |
+| Multicall3                                    | 0xcA11bde05977b3631167028862bE2a173976CA11 |
+| Create2Deployer                               | 0x13b0D85CcB8bf860b6b79AF3029fCA081AE9beF2 |
+| CreateX                                       | 0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed |
+| Arachnid&#39;s Deterministic Deployment Proxy | 0x4e59b44847b379578588920cA78FbF26c0B4956C |
+| Permit2                                       | 0x000000000022D473030F116dDEE9F6B43aC78BA3 |
+| ERC-4337 v0.6.0 EntryPoint                    | 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789 |
+| ERC-4337 v0.6.0 SenderCreator                 | 0x7fc98430eaedbb6070b35b39d798725049088348 |
+| ERC-4337 v0.7.0 EntryPoint                    | 0x0000000071727De22E5E9d8BAf0edAc6f37da032 |
+| ERC-4337 v0.7.0 SenderCreator                 | 0xEFC2c1444eBCC4Db75e7613d20C6a62fF67A167C |
+
+## Safe {#safe}
+
+[実装](https://github.com/safe-global/safe-contracts/blob/v1.3.0/contracts/GnosisSafe.sol)
+
+アドレス: `0x69f4D1788e39c87893C980c06EdF4b7f686e2938`
+
+ERC191ベースの署名付きメッセージによる承認に対応したマルチシグウォレットです。
+[SafeL2](#safel2)とは異なり、ガスを節約するためにイベントを発行しません。
+
+## SafeL2 {#safel2}
+
+[実装](https://github.com/safe-global/safe-contracts/blob/v1.3.0/contracts/GnosisSafeL2.sol)
+
+アドレス: `0xfb1bffC9d739B8D520DaF37dF666da4C687191EA`
+
+ERC191に基づく署名付きメッセージによる承認をサポートするマルチシグウォレットです。
+[Safe](#safe)とは、イベントを発行する点が異なります。
+
+## MultiSend {#multisend}
+
+[実装](https://github.com/safe-global/safe-contracts/blob/v1.3.0/contracts/libraries/MultiSend.sol)
+
+アドレス: `0x998739BFdAAdde7C933B942a68053933098f9EDa`
+
+複数のトランザクションを1つにまとめてバッチ処理できます。
+
+## MultiSendCallOnly {#multisendcallonly}
+
+[実装](https://github.com/safe-global/safe-contracts/blob/v1.3.0/contracts/libraries/MultiSendCallOnly.sol)
+
+アドレス: `0xA1dabEF33b3B82c7814B6D82A79e50F4AC44102B`
+
+複数のトランザクションを1つにまとめてバッチ処理できます (ただし、対象はコールのみ) 。
+
+## SafeSingletonFactory {#safesingletonfactory}
+
+[実装](https://github.com/safe-global/safe-singleton-factory/blob/v1.0.17/source/deterministic-deployment-proxy.yul)
+
+アドレス: `0x914d7Fec6aaC8cd542e72Bca78B30650d45643d7`
+
+Safe 関連のコントラクトで使用されるシングルトンファクトリーです。
+[Arachnid&#39;s Deterministic Deployment Proxy](#arachnids-deterministic-deployment-proxy) をベースにしています。
+
+元のライブラリでは、複数のチェーンにデプロイできるよう、チェーン ID を含まない事前署名済みトランザクションを使用していました。
+しかし、チェーンによってはこうしたトランザクションの送信が許可されていません。そのため、このコントラクトは、チェーン ID を含む事前署名済みトランザクションでデプロイできる同一のファクトリーを提供します。署名に使用する鍵は
+Safe チームが管理しています。
+
+## Multicall3 {#multicall3}
+
+[実装](https://github.com/mds1/multicall/blob/v3.1.0/src/Multicall3.sol)
+
+アドレス: `0xcA11bde05977b3631167028862bE2a173976CA11`
+
+`Multicall3` の主なユースケースは次の 2 つです。
+
+* 複数のコントラクト読み取りの結果を 1 回の JSON-RPC リクエストにまとめる。
+* 状態を変更する複数の呼び出しを 1 つのトランザクションで実行する。
+
+## Create2Deployer {#create2deployer}
+
+[実装](https://github.com/mdehoog/create2deployer/blob/69b9a8e112b15f9257ce8c62b70a09914e7be29c/contracts/Create2Deployer.sol)
+
+`create2Deployer` は、CREATE2 オペコードを手軽に扱えるようにする Solidity ラッパーです。次の ABI を提供します。
+
+```solidity Create2Deployer.sol lines wrap expandable
+    /**
+     * @dev `CREATE2` を使用してコントラクトをデプロイします。コントラクトの
+     * デプロイ先アドレスは、{computeAddress} で事前に確認できます。
+     *
+     * コントラクトのバイトコードは、Solidity の
+     * `type(contractName).creationCode` で取得できます。
+     *
+     * 要件:
+     * - `bytecode` は空であってはなりません。
+     * - `salt` は、その `bytecode` に対して未使用でなければなりません。
+     * - ファクトリーは `value` 以上の残高を保有していなければなりません。
+     * - `value` がゼロでない場合、`bytecode` は `payable` なコンストラクタを持っていなければなりません。
+     */
+    function deploy(uint256 value, bytes32 salt, bytes memory code) public;
+    /**
+     * @dev {ERC1820Implementer} をデプロイします。
+     * 詳細: https://eips.ethereum.org/EIPS/eip-1820
+     */
+    function deployERC1820Implementer(uint256 value, bytes32 salt);
+    /**
+     * @dev {deploy} でデプロイした場合にコントラクトが格納されるアドレスを返します。
+     * `bytecodeHash` または `salt` が少しでも変わると、デプロイ先アドレスも変わります。
+     */
+    function computeAddress(bytes32 salt, bytes32 codeHash) public view returns (address);
+    /**
+     * @dev `deployer` にあるコントラクトから {deploy} でデプロイした場合に、
+     * コントラクトが格納されるアドレスを返します。`deployer` がこのコントラクトのアドレスである場合は、
+     * {computeAddress} と同じ値を返します。
+     */
+    function computeAddressWithDeployer(
+        bytes32 salt,
+        bytes32 codeHash,
+        address deployer
+    ) public pure returns (address);
+```
+
+アドレス: `0x13b0D85CcB8bf860b6b79AF3029fCA081AE9beF2`
+
+Canyon の有効化時に、`0x13b0D85CcB8bf860b6b79AF3029fCA081AE9beF2` のコントラクトコードは次の値に設定されます:
+`0x6080604052600436106100435760003560e01c8063076c37b21461004f578063481286e61461007157806356299481146100ba57806366cfa057146100da57600080fd5b3661004a57005b600080fd5b34801561005b57600080fd5b5061006f61006a366004610327565b6100fa565b005b34801561007d57600080fd5b5061009161008c366004610327565b61014a565b60405173ffffffffffffffffffffffffffffffffffffffff909116815260200160405180910390f35b3480156100c657600080fd5b506100916100d5366004610349565b61015d565b3480156100e657600080fd5b5061006f6100f53660046103ca565b610172565b61014582826040518060200161010f9061031a565b7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe082820381018352601f90910116604052610183565b505050565b600061015683836102e7565b9392505050565b600061016a8484846102f0565b949350505050565b61017d838383610183565b50505050565b6000834710156101f4576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820152601d60248201527f437265617465323a20696e73756666696369656e742062616c616e636500000060448201526064015b60405180910390fd5b815160000361025f576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820181905260248201527f437265617465323a2062797465636f6465206c656e677468206973207a65726f60448201526064016101eb565b8282516020840186f5905073ffffffffffffffffffffffffffffffffffffffff8116610156576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820152601960248201527f437265617465323a204661696c6564206f6e206465706c6f790000000000000060448201526064016101eb565b60006101568383305b6000604051836040820152846020820152828152600b8101905060ff815360559020949350505050565b61014e806104ad83390190565b6000806040838503121561033a57600080fd5b50508035926020909101359150565b60008060006060848603121561035e57600080fd5b8335925060208401359150604084013573ffffffffffffffffffffffffffffffffffffffff8116811461039057600080fd5b809150509250925092565b7f4e487b7100000000000000000000000000000000000000000000000000000000600052604160045260246000fd5b6000806000606084860312156103df57600080fd5b8335925060208401359150604084013567ffffffffffffffff8082111561040557600080fd5b818601915086601f83011261041957600080fd5b81358181111561042b5761042b61039b565b604051601f82017fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe0908116603f011681019083821181831017156104715761047161039b565b8160405282815289602084870101111561048a57600080fd5b826020860160208301376000602084830101528095505050505050925092509256fe608060405234801561001057600080fd5b5061012e806100206000396000f3fe6080604052348015600f57600080fd5b506004361060285760003560e01c8063249cb3fa14602d575b600080fd5b603c603836600460b1565b604e565b60405190815260200160405180910390f35b60008281526020818152604080832073ffffffffffffffffffffffffffffffffffffffff8516845290915281205460ff16608857600060aa565b7fa2ef4600d742022d532d4747cb3547474667d6f13804902513b2ec01c848f4b45b9392505050565b6000806040838503121560c357600080fd5b82359150602083013573ffffffffffffffffffffffffffffffffffffffff8116811460ed57600080fd5b80915050925092905056fea26469706673582212205ffd4e6cede7d06a5daf93d48d0541fc68189eeb16608c1999a82063b666eb1164736f6c63430008130033a2646970667358221220fdc4a0fe96e3b21c108ca155438d37c9143fb01278a3c1d274948bad89c564ba64736f6c63430008130033`.
+
+## CreateX {#createx}
+
+[実装](https://github.com/pcaversaccio/createx/blob/main/src/CreateX.sol)
+
+アドレス: `0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed`
+
+CreateX は、`CREATE`、`CREATE2`、`CREATE3` によるコントラクトのデプロイに追加のロジックを提供します。
+送信者と chainID に対する [ソルト保護](https://github.com/pcaversaccio/createx#special-features)を備え、
+一連のヘルパー関数も含まれています。
+
+CreateX のバイトコードの `keccak256` は `0xbd8a7ea8cfca7b4e5f5041d7d4b17bc317c5ce42cfbc42066a00cf26b43eb53f` です。
+
+## Arachnid&#39;s Deterministic Deployment Proxy {#arachnids-deterministic-deployment-proxy}
+
+[実装](https://github.com/Arachnid/deterministic-deployment-proxy/blob/v1.0.0/source/deterministic-deployment-proxy.yul)
+
+アドレス: `0x4e59b44847b379578588920cA78FbF26c0B4956C`
+
+このコントラクトは、`CREATE2` を使用して、任意のチェーン上で決定論的なアドレスに他のコントラクトをデプロイできます。`CREATE2`
+呼び出しは (`CREATE` オペコードと同様に) コントラクトをデプロイしますが、アドレスの算出に
+`keccak256(rlp([deployer_address, nonce]))` ではなく、コントラクトのバイトコードのハッシュとソルトを使用します。
+そのため、特定のデプロイヤーアドレスからは、いつどこでデプロイを実行しても、
+同じコードが同じアドレスにデプロイされます。デプロイヤー自体は
+使い捨てのアカウントからデプロイされるため、どのチェーン上でもアドレスは常に同じになります。つまり、
+コントラクトのアドレスを決める変数は、バイトコードハッシュと指定したソルトの 2 つだけです。
+
+`CREATE2` オペコードとデプロイヤー用の使い捨てアカウントを組み合わせることで、このコントラクトは、
+特定のコントラクトがすべてのチェーン上でまったく同じアドレスに存在することを保証します。しかも、毎回
+同じガス価格やガスリミットを使う必要はありません。
+
+## Permit2 {#permit2}
+
+[実装](https://github.com/Uniswap/permit2/blob/0x000000000022D473030F116dDEE9F6B43aC78BA3/src/Permit2.sol)
+
+アドレス: `0x000000000022D473030F116dDEE9F6B43aC78BA3`
+
+Permit2 は、オーバーヘッドの少ない次世代のトークン承認／メタトランザクションの仕組みを提供し、トークン承認をより簡単かつ安全にするとともに、
+アプリケーション間での一貫性を高めます。
+
+## ERC-4337 v0.6.0 EntryPoint {#erc-4337-v060-entrypoint}
+
+[実装](https://github.com/eth-infinitism/account-abstraction/blob/v0.6.0/contracts/core/EntryPoint.sol)
+
+アドレス: `0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789`
+
+このコントラクトは、送信されてきたERC-4337 v0.6.0の
+[UserOperations](https://www.erc4337.io/docs/understanding-ERC-4337/user-operation)のバンドルを検証して実行します。
+
+## ERC-4337 v0.6.0 SenderCreator {#erc-4337-v060-sendercreator}
+
+[実装](https://github.com/eth-infinitism/account-abstraction/blob/v0.6.0/contracts/core/SenderCreator.sol)
+
+アドレス: `0x7fc98430eaedbb6070b35b39d798725049088348`
+
+EntryPoint v0.6.0 用のヘルパーコントラクトです。`EntryPoint` 自体とは明確に区別された「中立的な」アドレスから
+`userOp.initCode` を呼び出すために使用されます。
+
+## ERC-4337 v0.7.0 EntryPoint {#erc-4337-v070-entrypoint}
+
+[実装](https://github.com/eth-infinitism/account-abstraction/blob/v0.7.0/contracts/core/EntryPoint.sol)
+
+アドレス: `0x0000000071727De22E5E9d8BAf0edAc6f37da032`
+
+このコントラクトは、送信されてきたERC-4337 v0.7.0の
+[UserOperations](https://www.erc4337.io/docs/understanding-ERC-4337/user-operation)のバンドルを検証して実行します。
+
+## ERC-4337 v0.7.0 SenderCreator {#erc-4337-v070-sendercreator}
+
+[実装](https://github.com/eth-infinitism/account-abstraction/blob/v0.7.0/contracts/core/SenderCreator.sol)
+
+アドレス: `0xEFC2c1444eBCC4Db75e7613d20C6a62fF67A167C`
+
+EntryPoint v0.7.0 用のヘルパーコントラクトです。`EntryPoint` 自体とは明確に異なる「中立的な」アドレスから、
+`userOp.initCode` を呼び出すために使用されます。

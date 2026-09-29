@@ -1,0 +1,81 @@
+---
+title: "Base へのブリッジ"
+description: "Coinbase アカウント、Ethereum、Solana、Bitcoin と Base の間で、ETH、ステーブルコイン、トークンを移動します。"
+---
+
+以下のルートを使って、Base との間で資産を移動できます。現在資産を保有している場所に応じて、適切なルートを選んでください。
+
+## ルートを選択する {#choose-a-route}
+
+| 送金元            | 推奨ルート                                                                                                                                   | 主な資産            |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| Coinbase アカウント | Base へ直接出金 (ブリッジ不要)                                                                                                                     | ETH、USDC、cbBTC  |
+| Ethereum (L1)  | [Superbridge](https://superbridge.app/?fromChainId=1\&toChainId=8453) または [Brid.gg](https://www.brid.gg/?fromChainId=1\&toChainId=8453) | ETH、ERC-20 トークン |
+| Solana         | [Base–Solana ブリッジ](/ja/specifications/base-protocol/bridging/base-solana-bridge)                                                           | SOL、SPL トークン    |
+| Bitcoin        | [Garden](https://app.garden.finance/?output-chain=base\&output-asset=cbBTC)                                                             | BTC → cbBTC     |
+
+<Note>
+  Coinbase アカウントに資金がある場合、多くの資産を Base ネットワークへ直接出金できます。出金時のネットワークで **Base** を選択するだけでよく、ブリッジは必要ありません。USDC や ETH であれば、たいていこれが最も手早い方法です。
+</Note>
+
+## Ethereumから {#from-ethereum}
+
+Ethereumメインネット (L1) とBaseの間で、ETHや対応するERC-20トークンをブリッジできます。どちらのプロバイダーもメインネットとSepoliaテストネットに対応しています。
+
+<CardGroup cols={2}>
+  <Card title="Superbridge" icon="bridge" href="https://superbridge.app/?fromChainId=1&toChainId=8453">
+    ETHや対応資産をL1からBaseへブリッジできます。[テストネット](https://superbridge.app/?fromChainId=11155111\&toChainId=84532)
+  </Card>
+
+  <Card title="Brid.gg" icon="bridge" href="https://www.brid.gg/?fromChainId=1&toChainId=8453">
+    L1 ↔ Base間のもう一つのブリッジです。[テストネット](https://testnet.brid.gg/?fromChainId=11155111\&toChainId=84532)
+  </Card>
+</CardGroup>
+
+### プログラムによるブリッジ {#programmatic-bridging}
+
+コードから ETH や ERC-20 トークンを Ethereum から Base へブリッジするには、[サンプルリポジトリ](https://github.com/base-org/guides/tree/main/bridge/native)を参考にしてください。
+
+<Warning>
+  **ERC-20 トークンの場合は、トークンアドレスを必ず再確認してください。** [Superchain トークンリスト](https://github.com/ethereum-optimism/ethereum-optimism.github.io/tree/master/data)に対象トークンの `base` エントリがあることを確認し ([例](https://github.com/ethereum-optimism/ethereum-optimism.github.io/blob/master/data/WETH/data.json#L16-L18)) 、まずは少額でテストしてください。このサンプルは Base **への**ブリッジ専用です。出金用に改変しないでください。
+</Warning>
+
+### トークン発行者向け {#for-token-issuers}
+
+Ethereum 上で発行した ERC-20 トークンを Base にブリッジできるようにしたい場合は、上記のサンプルリポジトリをベースに標準ブリッジコントラクトを実装し、その後トークンを Superchain トークンリストに登録してください。
+
+## Solana から {#from-solana}
+
+Base–Solana ブリッジを使うと、Base と Solana の間で双方向のトークン転送とメッセージのやり取りができます。SOL や SPL トークンの移動、クロスチェーンメッセージの送信、どちらのチェーンへのラップドトークンのデプロイも可能で、必要に応じて自動リレーによる即時実行も利用できます。
+
+<CardGroup cols={2}>
+  <Card title="完全なドキュメント" icon="book" href="/ja/specifications/base-protocol/bridging/base-solana-bridge">
+    コード例とコントラクトアドレスを掲載した包括的なガイド
+  </Card>
+
+  <Card title="Terminally Onchain" icon="terminal" href="https://terminallyonchain.com/">
+    ブリッジやコントラクト呼び出しに使える本番環境向けのターミナル UI
+  </Card>
+</CardGroup>
+
+| ネットワーク         | コントラクト       | アドレス                                           |
+| -------------- | ------------ | ---------------------------------------------- |
+| Base Mainnet   | Bridge       | `0x3eff766C76a1be2Ce1aCF2B69c78bCae257D5188`   |
+| Base Mainnet   | SOL トークン     | `0x311935Cd80B76769bF2ecC9D8Ab7635b2139cf82`   |
+| Solana Mainnet | Bridge プログラム | `HNCne2FkVaNghhjKXapxJzPaBvAKDG1Ge3gqhZyfVWLM` |
+
+<Info>
+  テストネットのアドレスや実装の詳細については、[Base–Solana ブリッジのドキュメント](/ja/specifications/base-protocol/bridging/base-solana-bridge#contract-addresses)を参照してください。
+</Info>
+
+## Bitcoin から {#from-bitcoin}
+
+[Garden](https://app.garden.finance/?output-chain=base\&output-asset=cbBTC) は、BTC やその他の対応資産を Base に移動できる、高速なノンカストディアル型ブリッジです。[メインネット](https://app.garden.finance/?output-chain=base\&output-asset=cbBTC)と [Sepolia テストネット](https://testnet.garden.finance/?output-chain=base_sepolia\&output-asset=USDT)で利用できます。
+
+<Note>
+  以前 bridge.base.org で提供されていたブリッジは非推奨になりました。代わりに上記のルートをご利用ください。
+</Note>
+
+## 免責事項 {#disclaimer}
+
+Coinbase Technologies, Inc. は、ユーザーの便宜のためにこれらの独立したサービスプロバイダーへのリンクを掲載していますが、各プロバイダーの運営について一切の責任を負いません。これらのプロバイダーとのやり取りは、すべてお客様と当該プロバイダーとの間でのみ行われるものとします。

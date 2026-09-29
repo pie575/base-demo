@@ -1,0 +1,124 @@
+---
+title: "Base Builder Codes"
+sidebarTitle: "概览"
+description: "借助 Builder Codes，将链上活动归属到你的应用、钱包或智能体。"
+---
+
+Base Builder Codes 是一个 ERC-721 NFT 合集，其中铸造的每个唯一代码 (例如“abc123”) 都可用于在链上识别构建者。
+
+每个代码都附带元数据。链上元数据主要包含一个“收款地址”，用于声明该代码可能获得的奖励应发送到哪里。链下元数据则包含应用的更多信息，例如应用名称和网站。
+
+<Tip>
+  在 [base.dev](https://base.dev/) 上注册即可获取你的 Builder Code。你可以在 **Settings** → **Builder Code** 中找到自己的代码。
+</Tip>
+
+## 集成指南 {#integration-guides}
+
+<CardGroup cols={3}>
+  <Card title="面向应用开发者" icon="code" href="/zh/specifications/builder-codes/for-app-developers">
+    使用 Wagmi 或 Viem 集成 Builder Codes
+  </Card>
+
+  <Card title="面向钱包开发者" icon="wallet" href="/zh/specifications/builder-codes/for-wallet-developers">
+    实现 dataSuffix 功能
+  </Card>
+
+  <Card title="面向智能体开发者" icon="robot" href="/zh/specifications/builder-codes/for-agent-developers">
+    通过 API 为您的 AI 智能体发起的交易进行归因
+  </Card>
+</CardGroup>
+
+## 优势 {#benefits}
+
+* **奖励：** 如果你的应用带来了交易，Builder Codes 能让 Base 自动将这些使用量归属于你；随着计划的扩展，你还可以借此解锁奖励。
+* **分析：** 在 Base.dev 中可靠地追踪链上使用情况、用户获取和转化指标。
+* **曝光：** 使用 Builder Codes 的应用有机会出现在 App Leaderboards、Base App 商店和生态系统焦点推荐等发现渠道中。
+
+## 常见问题 {#faq}
+
+### 我需要修改智能合约吗？ {#do-i-need-to-modify-my-smart-contracts}
+
+**不需要。** 归因后缀会附加在交易 calldata 的末尾。智能合约照常执行，并会忽略这些额外数据。归因信息由链下索引器事后提取。
+
+这意味着：
+
+* 任何现有智能合约都自动支持 ERC-8021
+* 无需升级或重新部署
+* 完全不影响合约执行
+
+### Builder Codes 会额外消耗多少 Gas？ {#how-much-additional-gas-do-builder-codes-cost}
+
+ERC-8021 后缀为每笔交易额外增加的 gas 微乎其微，每个非零字节仅需 16 gas。
+
+### Builder Codes 会暴露我的身份吗？ {#will-builder-codes-expose-my-identity}
+
+**不会。** Builder Codes 只是将交易与您的应用关联起来，不会暴露任何链上尚未公开的钱包信息。
+
+### 外部账户 (EOA) 可以使用 ERC-8021 吗？ {#can-i-use-erc-8021-with-externally-owned-accounts-eoas}
+
+**可以。** ERC-8021 既适用于 EOA，也适用于智能合约钱包。
+
+### 如何验证我的交易是否已正确归因？ {#how-do-i-verify-that-my-transaction-was-properly-attributed}
+
+**1. 查看 base.dev**
+
+* 访问 [base.dev](https://base.dev)
+* 在交易类型下拉菜单中选择 **Onchain**
+* 在 Total Transactions 部分中，每当包含您代码的交易被处理，归因计数就会随之增加
+
+**2. 使用区块浏览器 (Basescan、Etherscan 等)&#x20;**
+
+* 找到您的交易哈希
+* 查看 input data 字段
+* 确认最后 16 个字节为重复的 `8021`
+* 解码后缀，确认其中包含您的 Builder Code
+
+**3. 开源工具**
+
+* 使用 [Builder Code Validation](https://builder-code-checker.vercel.app/) 工具
+* 选择交易类型
+* 输入交易哈希或 UserOperation 哈希
+* 点击 **Check Attribution** 按钮
+
+### 目前哪些钱包支持 ERC-8021？ {#which-wallets-currently-support-erc-8021}
+
+**EOA：**
+
+所有 EOA 钱包默认支持 `dataSuffix`。
+
+**智能钱包：**
+
+支持 ERC-5792 的钱包可以使用 `DataSuffixCapability` 便捷地附加后缀。
+
+<Accordion title="示例代码">
+  ```javascript Wallet send calls with attribution lines expandable wrap
+  await wallet.sendCalls({
+    calls: [
+      // 你的交易调用
+    ],
+    capabilities: {
+      dataSuffix: {
+        value: "0x07626173656170700080218021802180218021802180218021",
+        optional: true
+      }
+    }
+  });
+  ```
+</Accordion>
+
+**嵌入式钱包：**
+
+* **Privy** - 支持 ERC-8021 的嵌入式钱包解决方案
+* **Turnkey** - 面向程序化钱包的基础设施
+
+## 更多资源 {#additional-resources}
+
+* [ERC-8021 官方提案](https://eip.tools/eip/8021)
+* [Builder Code Validation 工具](https://builder-code-checker.vercel.app/)
+
+## 欢迎反馈！ {#give-feedback}
+
+<Note>
+  Base 一直在持续改进 Builder Codes 的使用体验。如果您有任何意见或建议，
+  欢迎[向团队反馈](https://t.co/zwvtmXXzGz)。
+</Note>

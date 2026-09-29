@@ -1,0 +1,31 @@
+---
+title: "概述"
+description: "Beryl 借助 B20 代币让 Base 成为一流的发行平台，通过缩短提款延迟提升资本效率，并依托 Reth V2 进一步增强可扩展性。"
+---
+
+|         | 状态  | 日期              |
+| ------- | --- | --------------- |
+| Sepolia | 已上线 | 2026 年 6 月 18 日 |
+| 主网      | 已上线 | 2026 年 6 月 25 日 |
+
+## 功能 {#features}
+
+<AccordionGroup>
+  <Accordion title="Reth V2">
+    **Base** · 执行层
+
+    将 Reth V2 作为 Base 节点的参考执行客户端推出，大幅提升同步速度和吞吐量。
+  </Accordion>
+
+  <Accordion title="更快的提款">
+    **Base** · 证明
+
+    单证明争议博弈的最终确认窗口从 7 天缩短至 5 天。Azul 中引入的双证明快速路径 (TEE + ZK) 仍为 1 天。缩短单证明窗口后，快速跨链桥的流动性提供者可以更快释放资金。
+  </Accordion>
+
+  <Accordion title="B20">
+    **Base** · 预编译
+
+    B20 实现了 ERC-20 规范，因此可与所有基于 ERC-20 构建的现有系统互操作，例如钱包、交易所、数据索引器和链上协议。区别在于运行方式：B20 代币无需部署 Solidity 合约，而是以 Rust 预编译的形式在节点内部执行。
+  </Accordion>
+</AccordionGroup>

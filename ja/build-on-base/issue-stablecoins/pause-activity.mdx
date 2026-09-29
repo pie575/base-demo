@@ -1,0 +1,90 @@
+---
+title: "アクティビティの一時停止"
+keywords: ["ステーブルコインの一時停止", "B20 一時停止", "Base での転送停止", "ステーブルコインのインシデント対応"]
+description: "インシデント発生時にステーブルコインの転送、ミント、バーンを個別に停止し、解決後に再開します。"
+---
+
+import { StablecoinDemo } from "/snippets/StablecoinDemo.jsx"
+
+問題が発生した場合は、速やかにアクティビティを停止してください。B20 の一時停止は**きめ細かく**制御でき、転送、ミント、バーンをそれぞれ個別に停止できます。`PAUSE_ROLE` と `UNPAUSE_ROLE` は別々のロールであるため、トークンを停止する権限は、再開する権限よりも広い範囲に付与できます。
+
+一時停止可能な機能は `TRANSFER`、`MINT`、`BURN`、`SEIZE` の 4 つです (列挙値は `0`～`3`) 。各機能は独立しており、`MINT` と `BURN` を一時停止しても `TRANSFER` は有効なままです。また、`MINT_ROLE` を持つ呼び出し元であっても、`MINT` の一時停止中はミントできません。
+
+## デモ {#demo}
+
+<StablecoinDemo flow="pause" />
+
+<Tip>
+  このデモでは、ブラウザで生成したローカルアカウントを使用して、**Base Vibenet** 上で実際のトランザクションを送信します。Vibenet またはその B20 機能が利用できない場合は、説明用のオフライン版に自動で切り替わります。
+</Tip>
+
+<Note>
+  B20 を初めて使う場合は、[B20 トークン標準](/ja/specifications/b20)で基本概念とローンチ手順の詳細を確認してください。これらのサンプルは `base-std@1505323`、`viem@2.55.11`、Base Foundry `v1.1.1` を対象としています。
+</Note>
+
+## 転送の一時停止と再開 {#pause-and-resume-transfers}
+
+<CodeGroup>
+  {/* sample: stablecoin-pause-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={7}
+  import { type Address } from "viem";
+  import { publicClient } from "../../shared/clients.js";
+  import { b20Abi } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function setTransfersPaused(token: Address, paused: boolean) {
+    await sendContract({
+      address: token,
+      abi: b20Abi,
+      functionName: paused ? "pause" : "unpause",
+      args: [[0]],
+    });
+    const current = await publicClient.readContract({ address: token, abi: b20Abi, functionName: "isPaused", args: [0] });
+    if (current !== paused) throw new Error("Pause state did not change");
+  }
+  ```
+
+  {/* sample: stablecoin-pause-cli */}
+
+  ```bash CLI lines wrap expandable highlight={1,4}
+  base-cast send "$TOKEN_ADDRESS" "pause(uint8[])" "[0]" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  base-cast call "$TOKEN_ADDRESS" "isPaused(uint8)(bool)" 0 --rpc-url "$RPC_URL"
+  base-cast send "$TOKEN_ADDRESS" "unpause(uint8[])" "[0]" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  ```
+</CodeGroup>
+
+インターフェース、ロール、ポリシーの全容については、[B20 トークン標準](/ja/specifications/b20)を参照してください。
+
+<Check>
+  `isPaused(0)` は、一時停止後は `true` を、再開後は `false` を返します。
+</Check>
+
+<Warning>
+  `pause` と `unpause` は `PausableFeature[]` 配列を引数に取ります。空の配列を渡すと `EmptyFeatureSet` でリバートします。転送を表す enum 値は `0` です。`keccak256("TRANSFER")` のようなハッシュは絶対に渡さないでください。すでに指定した状態になっている機能に対しては何も実行されず (no-op) 、呼び出しもリバートしません。
+</Warning>
+
+## 一時停止可能な機能 {#pausable-features}
+
+| 機能         | Enum 値 | 制御対象                                           |
+| ---------- | ------ | ---------------------------------------------- |
+| `TRANSFER` | `0`    | `transfer`、`transferFrom`、およびそれらの memo 付きバリアント |
+| `MINT`     | `1`    | `mint`、`mintWithMemo`                          |
+| `BURN`     | `2`    | `burn`、`burnWithMemo`、`burnBlocked`            |
+| `SEIZE`    | `3`    | `seizeWithMemo`                                |
+
+一時停止中の機能によって呼び出しがブロックされると、トランザクションは `ContractPaused(feature)` でリバートします。このエラーに示されるのは、呼び出しをブロックした機能 1 つのみです。
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="アカウントをブロックする" icon="user-lock" href="/ja/build-on-base/issue-stablecoins/block-an-account">
+    特定のアドレスを拒否リストに追加します。
+  </Card>
+
+  <Card title="一時停止（B20 標準）" icon="book" href="/ja/specifications/b20/concepts/roles-and-pause#3-pause">
+    B20 標準における一時停止制御について説明します。
+  </Card>
+</CardGroup>

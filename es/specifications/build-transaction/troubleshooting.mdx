@@ -1,0 +1,36 @@
+---
+title: "Solución de problemas"
+description: "Diagnostica problemas con el envío y la inclusión de transacciones de validez."
+---
+
+Usa [`eth_getTransactionReceipt`](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionReceipt) para confirmar la inclusión onchain.
+
+## El método RPC no está disponible {#rpc-method-is-unavailable}
+
+Usa un endpoint compatible con `base_sendRawTransactionValidity`. Por ahora, el método solo está disponible en Vibenet.
+
+## Falla el envío {#submission-fails}
+
+Comprueba que el primer parámetro sea una transacción firmada de tipo legacy, EIP-2930 o EIP-1559, y que el segundo parámetro incluya un array `validity` no vacío.
+
+Revisa el tipo de predicado, el operador y los valores hexadecimales con el prefijo `0x`. Consulta [Validity Transaction RPC](/es/specifications/build-transaction/base_sendRawTransactionValidity) para ver el formato de la solicitud.
+
+Si escalas una incidencia, incluye el error JSON-RPC completo.
+
+## La transacción no se incluyó {#transaction-was-not-included}
+
+Una transacción puede quedar pendiente porque un predicado es falso, porque otra transacción tiene mayor prioridad, porque se ha reemplazado o porque ya se superó su bloque máximo o su posición máxima de Flashblock.
+
+## Transacción caducada {#transaction-expired}
+
+Envía una nueva transacción firmada con condiciones de `block_number` o `flashblock_index` posteriores.
+
+## El precio de reemplazo es insuficiente {#replacement-is-underpriced}
+
+Aumenta los campos de comisión, vuelve a firmar y reintenta con el mismo remitente y el mismo nonce.
+
+## Obtener ayuda {#get-help}
+
+Incluye la red, el proveedor de RPC, el hash de la transacción, el tipo de predicado, la hora de envío y el error de JSON-RPC. No compartas claves privadas, datos de autenticación ni transacciones firmadas completas en canales de soporte públicos.
+
+Para recibir ayuda de la comunidad, usa el canal `#developer-chat` del [Discord de Base](https://base.org/discord).

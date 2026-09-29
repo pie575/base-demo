@@ -1,0 +1,242 @@
+---
+title: "アプリ開発者向け Builder Codes"
+sidebarTitle: "アプリ開発者向け"
+description: "Wagmi または Viem を使ってアプリに Builder Codes を統合し、オンチェーンアクティビティのアトリビューションを行います。"
+---
+
+## Base での自動アトリビューション {#automatic-attribution-on-base}
+
+アプリを [base.dev](http://base.dev/) に登録すると、ユーザーがアプリ内で行うトランザクション (アプリ経由や Base App のブラウザ経由など) に、Base App が Builder Code を自動的に付加します。これにより [base.dev](http://base.dev/) でオンチェーン分析を利用できるようになるほか、将来提供される可能性のある報酬の対象にもなります。
+
+## Base App 以外での統合 {#integrating-outside-the-base-app}
+
+ユーザーがウェブや他のクライアントからもアプリにアクセスする場合、そのアクティビティを計測するには `dataSuffix` パラメーターを組み込む必要があります。
+
+[base.dev](https://base.dev/) に登録すると、**Builder Code** が発行されます。これはアトリビューション用サフィックスの生成に使用するランダムな文字列 (例：`bc_b7k3p9da`) です。推奨されるのは、クライアントレベルで `dataSuffix` を設定する方法です。これにより、すべてのトランザクションに Builder Code が付加されます。
+
+<Tip>
+  コードは **Settings** → **Builder Code** からいつでも確認できます。
+</Tip>
+
+## Wagmi によるクイックセットアップ {#quick-setup-with-wagmi}
+
+<Steps>
+  <Step title="依存関係をインストールする">
+    必要なパッケージをインストールします。viem `2.45.0` 以上が必要です。
+
+    ```bash Install Wagmi attribution dependencies
+    npm i ox wagmi viem
+    ```
+  </Step>
+
+  <Step title="Wagmi クライアントを設定する">
+    Wagmi の設定に `dataSuffix` オプションを追加します。これにより、すべてのトランザクションに Builder Code が自動的に付加されます。
+
+    ```typescript config.ts lines expandable wrap
+    import { createConfig, http } from "wagmi";
+    import { base } from "wagmi/chains";
+    import { Attribution } from "ox/erc8021";
+
+    // base.dev > Settings > Builder Codes から Builder Code を取得します
+    const DATA_SUFFIX = Attribution.toDataSuffix({
+      codes: ["YOUR-BUILDER-CODE"],
+    });
+
+    export const config = createConfig({
+      chains: [base],
+      transports: {
+        [base.id]: http(),
+      },
+      dataSuffix: DATA_SUFFIX,
+    });
+    ```
+  </Step>
+
+  <Step title="Wagmi フックを通常どおり使用する">
+    設定が完了すれば、フックやコンポーネントに手を加えなくても、すべてのトランザクションに Builder Code が自動的に含まれます。`useSendTransaction` と `useSendCalls` のどちらでも利用できます。
+
+    ```tsx App.tsx lines expandable wrap
+    import { useSendTransaction } from "wagmi";
+    import { parseEther } from "viem";
+
+    function SendButton() {
+      const { sendTransaction } = useSendTransaction();
+
+      return (
+        <button
+          onClick={() =>
+            sendTransaction({
+              to: "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+              value: parseEther("0.01"),
+            })
+          }
+        >
+          Send ETH
+        </button>
+      );
+    }
+    ```
+  </Step>
+</Steps>
+
+## Viem を使ったクイックセットアップ {#quick-setup-with-viem}
+
+<Steps>
+  <Step title="依存関係をインストールする">
+    必要なパッケージをインストールします。viem のバージョン `2.45.0` 以上が必要です。
+
+    ```bash Install Viem attribution dependencies
+    npm i ox viem
+    ```
+  </Step>
+
+  <Step title="ウォレットクライアントを設定する">
+    ウォレットクライアントの作成時に `dataSuffix` オプションを追加します。その他の設定オプションについては、[viem のウォレットクライアントに関するドキュメント](https://viem.sh/docs/clients/wallet)を参照してください。
+
+    ```typescript client.ts lines expandable wrap
+    import { createWalletClient, http } from "viem";
+    import { base } from "viem/chains";
+    import { Attribution } from "ox/erc8021";
+
+    // Builder Code は base.dev > Settings > Builder Codes から取得してください
+    const DATA_SUFFIX = Attribution.toDataSuffix({
+      codes: ["YOUR-BUILDER-CODE"],
+    });
+
+    export const walletClient = createWalletClient({
+      chain: base,
+      transport: http(),
+      dataSuffix: DATA_SUFFIX,
+    });
+    ```
+  </Step>
+
+  <Step title="通常どおりトランザクションを送信する">
+    このクライアントから送信するトランザクションには、すべて自動的に Builder Code が含まれます。
+
+    ```typescript send-transaction.ts lines expandable wrap
+    import { parseEther } from "viem";
+    import { walletClient } from "./client";
+
+    const hash = await walletClient.sendTransaction({
+      to: "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+      value: parseEther("0.01"),
+    });
+    ```
+  </Step>
+</Steps>
+
+## CDP Walletsを使用する {#using-cdp-wallets}
+
+[Coinbase Developer Platform (CDP) Wallets](https://docs.cdp.coinbase.com/wallets/non-custodial-wallets/overview)は、スマートアカウントから送信するユーザーオペレーションでBuilder Codesに対応しています。ユーザーオペレーションの送信時に`dataSuffix`を渡すだけで、Builder Codeが付加されます。コントラクトを変更する必要はありません。この方法は、Reactフック (`useSendUserOperation`) 、Node (TypeScript) 、Python SDKのいずれでも利用できます。
+
+セットアップ手順 (`ox/erc8021`の`Attribution.toDataSuffix`を使ったサフィックスの生成方法を含む) については、CDP Walletsドキュメントの[Builder Codes](https://docs.cdp.coinbase.com/wallets/using-wallets/smart-accounts#builder-codes)を参照してください。
+
+## Privy を使用する {#using-privy}
+
+Privy には `dataSuffix` プラグインが用意されており、EOA トランザクションと ERC-4337 スマートウォレットのユーザーオペレーションを含むすべてのトランザクションに、Builder Code を自動的に付加できます。
+
+セットアップ手順については、[Privy Builder Codes 統合ガイド](https://docs.privy.io/recipes/evm/base-builder-codes)を参照してください。
+
+## レガシー: トランザクション単位のアプローチ {#legacy-per-transaction-approach}
+
+<Accordion title="トランザクション単位で dataSuffix を付加する">
+  クライアントレベルではなくトランザクション単位でサフィックスを付加したい場合は、`dataSuffix` をトランザクションに直接渡せます。
+
+  <Tabs>
+    <Tab title="useSendTransaction">
+      ```tsx App.tsx lines expandable wrap
+      import { useSendTransaction } from "wagmi";
+      import { parseEther } from "viem";
+      import { Attribution } from "ox/erc8021";
+
+      const DATA_SUFFIX = Attribution.toDataSuffix({
+        codes: ["YOUR-BUILDER-CODE"],
+      });
+
+      function App() {
+        const { sendTransaction } = useSendTransaction();
+
+        return (
+          <button
+            onClick={() =>
+              sendTransaction({
+                to: "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+                value: parseEther("0.01"),
+                dataSuffix: DATA_SUFFIX,
+              })
+            }
+          >
+            Send ETH
+          </button>
+        );
+      }
+      ```
+    </Tab>
+
+    <Tab title="useSendCalls">
+      `useSendCalls` を使用する場合は、`capabilities` オブジェクト経由でサフィックスを渡します。この方法を使うには、接続先のウォレットが `dataSuffix` ケイパビリティに対応している必要があります。
+
+      ```tsx App.tsx lines expandable wrap
+      import { useSendCalls } from "wagmi";
+      import { parseEther } from "viem";
+      import { Attribution } from "ox/erc8021";
+
+      const DATA_SUFFIX = Attribution.toDataSuffix({
+        codes: ["YOUR-BUILDER-CODE"],
+      });
+
+      function App() {
+        const { sendCalls } = useSendCalls();
+
+        return (
+          <button
+            onClick={() =>
+              sendCalls({
+                calls: [
+                  {
+                    to: "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+                    value: parseEther("1"),
+                  },
+                ],
+                capabilities: {
+                  dataSuffix: {
+                    value: DATA_SUFFIX,
+                    optional: true,
+                  },
+                },
+              })
+            }
+          >
+            Send calls
+          </button>
+        );
+      }
+      ```
+    </Tab>
+  </Tabs>
+</Accordion>
+
+## アトリビューションを検証する {#verify-attribution}
+
+Builder Code が正しく付加されているかどうかは、次の方法で確認できます。
+
+**1. base.dev で確認する**
+
+* [base.dev](https://base.dev) にアクセスします
+* トランザクションタイプのドロップダウンから **Onchain** を選択します
+* Total Transactions セクションでは、自分のコードを含むトランザクションが処理されるたびにアトリビューション数が増えていきます
+
+**2. ブロックエクスプローラー (Basescan、Etherscan など) を使用する**
+
+* 対象のトランザクションハッシュを探します
+* input data フィールドを表示します
+* 末尾の 16 バイトが `8021` の繰り返しになっていることを確認します
+* サフィックスをデコードし、Builder Code が含まれていることを確認します
+
+**3. オープンソースツールを使用する**
+
+* [Builder Code Validation](https://builder-code-checker.vercel.app/) ツールを開きます
+* トランザクションタイプを選択します
+* トランザクションハッシュまたは UserOperation ハッシュを入力します
+* **Check Attribution** ボタンをクリックします

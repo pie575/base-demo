@@ -1,0 +1,25 @@
+---
+title: "Fjord"
+sidebarTitle: "概要"
+description: "Fjord ハードフォークの概要です。このハードフォークでは、FastLZ ベースの L1 手数料推定、RIP-7212 secp256r1 プリコンパイル、brotli によるチャネル圧縮が導入されます。"
+---
+
+## 有効化タイムスタンプ {#activation-timestamps}
+
+| ネットワーク    | 有効化タイムスタンプ                              |
+| --------- | --------------------------------------- |
+| `mainnet` | `1720627201` (2024-07-10 16:00:01 UTC)  |
+| `sepolia` | `1716998400` (2024-05-29 16:00:00 UTC)  |
+
+## 実行レイヤー {#execution-layer}
+
+* [RIP-7212: secp256r1 曲線をサポートするプリコンパイル](/ja/specifications/base-protocol/execution/precompiles#P256VERIFY)
+* [L1 データ手数料の計算への FastLZ 圧縮の導入](/ja/upgrades/fjord/exec-engine#fees)
+* [`GasPriceOracle` コントラクトの `getL1GasUsed` メソッドを非推奨化](/ja/upgrades/fjord/predeploys#l1-gas-usage-estimation)
+* [トランザクションレシートの `L1GasUsed` フィールドを非推奨化](/ja/upgrades/fjord/exec-engine#l1-gas-usage-estimation)
+
+## コンセンサスレイヤー {#consensus-layer}
+
+* [シーケンサーの最大ドリフトの定数化](/ja/upgrades/fjord/derivation#constant-maximum-sequencer-drift)
+* [Brotli によるチャネル圧縮](/ja/upgrades/fjord/derivation#brotli-channel-compression)
+* [チャネルあたりの最大バイト数とチャネルバンクの最大サイズの引き上げ](/ja/upgrades/fjord/derivation#increasing-max_rlp_bytes_per_channel-and-max_channel_bank_size)

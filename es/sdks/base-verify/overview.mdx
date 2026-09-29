@@ -1,0 +1,43 @@
+---
+title: "API de Base Verify"
+sidebarTitle: "Descripción general"
+description: "Usa las API y los contratos de Base Verify para demostrar la titularidad de cuentas verificadas, evitar la participación duplicada y aplicar políticas de elegibilidad."
+---
+
+Base Verify permite que los usuarios demuestren que controlan cuentas verificadas sin exponer sus credenciales a tu aplicación. Úsalo para añadir resistencia a ataques Sybil, evitar que una misma persona participe varias veces con distintas billeteras y restringir acciones en función de atributos verificados.
+
+## Elige una integración {#choose-an-integration}
+
+<CardGroup cols={2}>
+  <Card title="Verificar cuentas sociales" icon="user-check" href="/es/sdks/base-verify/verify-social-accounts">
+    Comprueba la titularidad de cuentas verificadas y sus atributos desde el backend de tu aplicación.
+  </Card>
+
+  <Card title="Verificar usuarios onchain" icon="shield-check" href="/es/sdks/base-verify/verify-users-onchain">
+    Aplica la deduplicación de identidades y las políticas de elegibilidad directamente en un contrato inteligente.
+  </Card>
+</CardGroup>
+
+## Diferencias entre las integraciones {#how-the-integrations-differ}
+
+|                          | Verificar cuentas sociales                                                                                    | Verificar usuarios onchain                                                                           |
+| ------------------------ | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Aplicación de las reglas | El backend de tu aplicación                                                                               | Tu contrato inteligente                                                                        |
+| Componentes de Base      | API REST de Base Verify                                                                                   | API REST de Base Verify y contratos onchain                                                    |
+| Resultado                | Token de verificación y atributos                                                                         | `identityHash` firmado, vencimiento y firma                                                    |
+| Ideal para               | Experiencias de aplicación con acceso restringido, recompensas y reclamaciones controladas por el backend | Reclamaciones a nivel de contrato, depósitos, acuñaciones, votaciones y otras acciones onchain |
+| Backend de la aplicación | Obligatorio                                                                                               | No es necesario en el momento de la reclamación                                                |
+
+Ambas integraciones utilizan un mensaje SIWE firmado con la billetera para demostrar que el solicitante la controla. Base Verify evalúa el proveedor o la política solicitados y devuelve únicamente los datos de verificación necesarios para el flujo seleccionado.
+
+## Recursos relacionados {#related-resources}
+
+<CardGroup cols={2}>
+  <Card title="Autenticar usuarios" icon="key" href="https://docs.cdp.coinbase.com/coinbase-wallet/guides/authenticate-users">
+    Conecta Coinbase Wallet y autentica a los usuarios.
+  </Card>
+
+  <Card title="Firmar y verificar datos tipados" icon="signature" href="https://docs.cdp.coinbase.com/coinbase-wallet/guides/sign-and-verify-typed-data">
+    Recopila y valida firmas de billetera en tu aplicación.
+  </Card>
+</CardGroup>

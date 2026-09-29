@@ -1,0 +1,90 @@
+---
+title: "Cobrar por una API"
+keywords: ["x402 exact payment", "charge API USDC", "x402 seller Base", "agent payment endpoint"]
+description: "Protege una ruta de API de precio fijo con el esquema exact de x402 en Base."
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+Cobra un importe conocido antes de devolver una respuesta de la API. En el flujo de USDC en Base que se utiliza aquí, x402 transmite una autorización EIP-3009 mediante el intercambio HTTP `402 Payment Required` y, a continuación, un facilitador la verifica y la liquida.
+
+## Demostración {#demo}
+
+<PaymentsDemo flow="x402" />
+
+<Tip>
+  La demostración anterior es solo una simulación. Si quieres ver demostraciones onchain en Vibenet, visita [demostraciones de la cadena Base](https://chain.base.org/demos).
+</Tip>
+
+Estos ejemplos están orientados a Base Sepolia (`eip155:84532`) y al facilitador público de pruebas. Antes de hacer una prueba real, confirma la red, el activo y los contratos de liquidación que admite el facilitador.
+
+<Steps>
+  <Step title="Devolver los requisitos de pago">La solicitud no pagada recibe una respuesta 402 con el esquema, la red, el token, el precio y el destinatario.</Step>
+  <Step title="Firmar y reintentar">El comprador aplica su política de gasto, firma el pago indicado y vuelve a enviar la solicitud con `PAYMENT-SIGNATURE`.</Step>
+  <Step title="Verificar antes de procesar">El middleware del vendedor verifica la carga útil antes de que se ejecute tu controlador protegido.</Step>
+  <Step title="Liquidar">El facilitador envía el pago y devuelve los detalles de la liquidación junto con la respuesta.</Step>
+</Steps>
+
+## Asignar un precio fijo a una ruta {#price-a-fixed-route}
+
+<CodeGroup>
+  {/* sample: x402-exact-ts */}
+
+  ```typescript TypeScript · Express lines wrap expandable highlight={1,3}
+  app.use(paymentMiddleware({
+    "GET /fixed": {
+      accepts: [{ scheme: "exact", price: "$0.01", network, payTo }],
+      description: "Fixed-price market report",
+      mimeType: "application/json",
+    },
+  }, resourceServer));
+  app.get("/fixed", (_request, response) => response.json({ report: "Base market summary" }));
+  ```
+
+  {/* sample: x402-exact-go */}
+
+  ```go Go · net/http lines wrap expandable highlight={3}
+  routes := x402http.RoutesConfig{
+  	"GET /fixed": {
+  		Accepts: x402http.PaymentOptions{{Scheme: "exact", Price: "$0.01", Network: network, PayTo: payTo}},
+  		Description: "Fixed-price market report", MimeType: "application/json",
+  	},
+  }
+  mux := http.NewServeMux()
+  mux.HandleFunc("GET /fixed", func(w http.ResponseWriter, _ *http.Request) {
+  	_ = json.NewEncoder(w).Encode(map[string]string{"report": "Base market summary"})
+  })
+  ```
+
+  {/* sample: x402-exact-python */}
+
+  ```python Python · FastAPI lines wrap expandable highlight={3}
+  routes = {
+      "GET /fixed": RouteConfig(
+          accepts=[PaymentOption(scheme="exact", price="$0.01", network=network, pay_to=pay_to)],
+          description="Fixed-price market report",
+          mime_type="application/json",
+      )
+  }
+
+
+  @app.get("/fixed")
+  async def fixed() -> dict[str, str]:
+      return {"report": "Base market summary"}
+  ```
+</CodeGroup>
+
+<Check>
+  Una solicitud no pagada recibe un 402; un reintento con un pago válido llega al controlador y devuelve el recurso una sola vez.
+</Check>
+
+<Warning>
+  Trata la respuesta del facilitador y tu propio registro de entregas como comprobaciones independientes. Haz que la ruta sea idempotente para que, si se reintenta una solicitud pagada, no se entregue dos veces el mismo recurso de un solo uso.
+</Warning>
+
+## Consulta también {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="Liquidar pagos basados en el uso" icon="gauge" href="/es/build-on-base/accept-payments/settle-usage-based-payments">Fija el cargo final una vez completado el trabajo correctamente.</Card>
+  <Card title="Llamar a un servicio de pago" icon="robot" href="/es/build-on-base/accept-payments/call-a-paid-service">Configura la red, el activo y la política de gasto en el comprador.</Card>
+</CardGroup>

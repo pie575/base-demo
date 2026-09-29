@@ -1,0 +1,236 @@
+---
+title: "Fjord L2 链派生变更"
+description: "Fjord 升级中的派生变更：更新了最大 sequencer 漂移、channel bank 大小等协议参数，并新增了对 brotli 压缩的支持。"
+---
+
+## 协议参数变更 {#protocol-parameter-changes}
+
+下表概述了各项参数的变更情况。
+
+| 参数                          | Fjord 之前的 (默认) 值 | Fjord 值       | 备注                        |
+| --------------------------- | ---------------- | ------------- | ------------------------- |
+| `max_sequencer_drift`       | 600              | 1800          | 自 Bedrock 起一直是协议参数，现改为常量。 |
+| `MAX_RLP_BYTES_PER_CHANNEL` | 10,000,000       | 100,000,000   | 协议常量值提高。                  |
+| `MAX_CHANNEL_BANK_SIZE`     | 100,000,000      | 1,000,000,000 | 协议常量值提高。                  |
+
+## 基于时间戳的激活 {#timestamp-activation}
+
+与其他网络升级一样，Fjord 在指定时间戳激活。
+当 `L2 Timestamp >= activation time` 时，L2 区块执行规则的变更开始生效。
+当派生过程处理的数据来自时间戳
+大于或等于激活时间戳的 L1 区块时，派生相关的变更开始生效。
+`max_sequencer_drift` 参数的变更以 L1 origin 区块时间戳为准激活。
+
+如果 Fjord 未在创世时激活，则其激活时间必须至少比 Ecotone
+激活区块晚一个区块，以确保两次网络升级的交易不会发生冲突。
+
+## 固定的最大 sequencer 漂移 {#constant-maximum-sequencer-drift}
+
+自 Fjord 起，`max_sequencer_drift` 参数变为常量，值为 `1800` *秒*，
+即最大 sequencer 漂移固定为 30 分钟。
+
+在 Fjord 之前，该参数是一个链参数，仅在创建链时设置一次，默认
+值为 `600` 秒，即 10 分钟。目前大多数链都采用这一值。
+
+### 设计依据 {#rationale}
+
+各链运营方经讨论后一致认为，采用比当前默认值更大的值会更便于操作。如果 sequencer 与 L1 的连接中断，该漂移值决定了它在不违反时间戳漂移派生规则的前提下还能继续出块多长时间。
+
+此外，各方还一致认为，调大该值后，可配置性已无关紧要，因此将其改为常量。另一种正在考虑纳入未来硬分叉的方案是：通过 `SystemConfig` 更新机制，将其改为可在 L1 上配置的协议参数。
+
+### 安全考量 {#security-considerations}
+
+激活时间相关的规则被刻意保持简单，因此除了将该参数改为常量之外，无需应用任何其他逻辑。理论上，第一个 Fjord 区块
+可以接受比其前一个区块更早的 L1 origin 时间戳。但由于 L1 origin 时间戳还必须
+递增，唯一值得注意的情况是：前几个 Fjord 区块会与最后几个 Fjord 之前的区块位于同一 epoch 中，
+即便按照 Fjord 之前的规则，这些区块本不允许
+使用这些 L1 origin 时间戳。因此，在一个横跨 Fjord 前后的混合 epoch 内，各区块将
+共享同一个 L1 时间戳。这被视为一项特性，而非
+安全问题。
+
+## 增大 `MAX_RLP_BYTES_PER_CHANNEL` 和 `MAX_CHANNEL_BANK_SIZE` {#increasing-max_rlp_bytes_per_channel-and-max_channel_bank_size}
+
+Fjord 升级后，`MAX_RLP_BYTES_PER_CHANNEL` 将从 10,000,000 字节增加到 100,000,000 字节，
+`MAX_CHANNEL_BANK_SIZE` 将从 100,000,000 字节增加到 1,000,000,000 字节。
+
+`MAX_RLP_BYTES_PER_CHANNEL` 的用法定义见[通道格式](/zh/specifications/base-protocol/consensus/derivation#channel-format)。
+`MAX_CHANNEL_BANK_SIZE` 的用法定义见[Channel Bank 修剪](/zh/specifications/base-protocol/consensus/derivation#pruning)。
+
+跨度批次此前有一项限制 `MAX_SPAN_BATCH_SIZE`，其值等于 `MAX_RLP_BYTES_PER_CHANNEL`。
+Fjord 新增了常量 `MAX_SPAN_BATCH_ELEMENT_COUNT` 用于限制元素数量，并移除了
+`MAX_SPAN_BATCH_SIZE`。通道大小仍按 `MAX_RLP_BYTES_PER_CHANNEL` 进行检查。
+
+当派生管道的 L1 origin 时间戳 &gt;= Fjord 激活
+时间戳时，将采用新值。
+
+### 设计依据 {#rationale-2}
+
+对于 gas 上限为 3000 万 gas 的区块，如果完全用只包含零字节的交易填满，其理论最大大小为 7.5 MB。
+目前，值为 `0` 的字节消耗 4 gas。
+如果将区块 gas 上限提高到 4000 万 gas 以上，就可能产生大于
+`MAX_RLP_BYTES_PER_CHANNEL` 的区块。
+L2 区块无法跨多个通道拆分，因此大于 `MAX_RLP_BYTES_PER_CHANNEL` 的区块
+将无法批量提交。
+将此上限提高到 100,000,000 字节后，我们便能批量提交 gas 上限最高达 4 亿 gas 的区块。
+此外，增加单个通道可写入的数据量，还能进一步提高
+压缩率。
+按 6 个 blob、33% 的压缩率计算，我们目前每个通道提交 2.2 MB 压缩数据，对应 0.77 MB 未压缩
+数据。
+这样一来，每个通道最多可使用约 275 个 blob。
+
+提高 `MAX_CHANNEL_BANK_SIZE` 可确保我们能够处理这些更大的通道。我们仍保持
+`MAX_RLP_BYTES_PER_CHANNEL` 与 `MAX_CHANNEL_BANK_SIZE` 之间 10 倍的比例不变。
+
+### 安全考量 {#security-considerations-2}
+
+提高这些限制会增加 rollup 节点所需的资源量。
+具体而言，节点可能需要为单个通道分配大块内存，还可能需要为 channel bank 分配更多
+内存。
+`MAX_RLP_BYTES_PER_CHANNEL` 最初是为了防范 zip 炸弹攻击而引入的。
+系统仍会受到此类攻击，但节点可以很容易地处理这些限制。
+
+故障证明 (Fault Proof) 环境比普通节点受到的约束更多，提高这些限制将需要比当前更多的
+资源。
+`MAX_CHANNEL_BANK_SIZE` 的变更与故障证明的首个实现无关，因为该限制
+仅用于告知节点何时开始修剪，而 FPVM 中的内存一旦分配便不会被垃圾回收。
+因此，提高 `MAX_CHANNEL_BANK_SIZE` 不会增加 FPP 的最大资源使用量。
+
+提高 `MAX_RLP_BYTES_PER_CHANNEL` 可能会导致 FPVM 的资源使用量增加；不过，我们认为这一
+增幅是合理的，因为增加的是单次处理的数据量，而非程序处理的数据
+总量。在此变更之前，batcher 也可以不使用单个通道，而是提交 10 个通道，
+这同样会使故障证明程序 (Fault Proof Program) 消耗几乎相同的资源量。
+
+## Brotli 通道压缩 {#brotli-channel-compression}
+
+[legacy-channel-format]: /specifications/base-protocol/consensus/derivation#channel-format
+
+Fjord 引入了一种新的版本化通道编码格式，以支持其他压缩算法，同时仍兼容[旧版通道格式][legacy-channel-format]。版本化格式如下：
+
+```text Versioned Channel Encoding
+channel_encoding = channel_version_byte ++ compress(rlp_batches)
+```
+
+`channel_version_byte` 的低 4 位绝不能为 `0b1000 = 8` 或 `0b1111 =
+15`，这两个值保留给 zlib 编码数据的头部字节使用 (参见
+[RFC-1950][rfc1950] 第 5 页) 。据此，通道解码器只需检测这些位值，即可判断通道编码采用的是旧版格式还是
+版本化格式。若判定通道编码为版本化格式，则唯一有效的 `channel_version_byte` 为 `1`，表示 `compress()` 为
+不带自定义字典的 Brotli 压缩算法 (详见 [RFC-7932][rfc7932]) 。
+
+[rfc7932]: https://datatracker.ietf.org/doc/html/rfc7932
+
+[rfc1950]: https://www.rfc-editor.org/rfc/rfc1950.html
+
+## 网络升级自动化交易 {#network-upgrade-automation-transactions}
+
+Fjord 硬分叉激活区块依次包含以下交易：
+
+* L1 属性交易
+* 来自 L1 的用户存款
+* 网络升级交易
+  * GasPriceOracle 部署
+  * 更新 GasPriceOracle Proxy 的 ERC-1967 实现槽
+  * GasPriceOracle Enable Fjord
+
+为避免改变或中断与 gas 计算相关的系统行为，该区块将设置 `noTxPool: true`，
+从而不包含任何经排序器排序的交易。
+
+## GasPriceOracle 部署 {#gaspriceoracle-deployment}
+
+`GasPriceOracle` 合约将进行升级，以支持新的 Fjord L1 数据费用计算方式。分叉后，该合约
+将使用 FastLZ 计算 L1 数据费用。
+
+为执行此次升级，将派生一笔具有以下属性的存款交易：
+
+* `from`: `0x4210000000000000000000000000000000000002`
+* `to`: `null`,
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `1,450,000`
+* `data`: `0x60806040523...`
+* `sourceHash`: `0x86122c533fdcb89b16d8713174625e44578a89751d96c098ec19ab40a51a8ea3`
+  使用 &quot;Upgrade-deposited&quot; 类型计算，其中 &#96;intent = &quot;Fjord: Gas Price Oracle Deployment&quot;
+
+执行后，Fjord GasPriceOracle 合约将部署到 `0xa919894851548179A0750865e7974DA599C0Fac7`。
+验证方法如下：
+
+```bash Terminal
+cast compute-address --nonce=0 0x4210000000000000000000000000000000000002
+Computed Address: 0xa919894851548179A0750865e7974DA599C0Fac7
+```
+
+验证 `sourceHash`：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Fjord: Gas Price Oracle Deployment"))
+# 0x86122c533fdcb89b16d8713174625e44578a89751d96c098ec19ab40a51a8ea3
+```
+
+验证 `data`：
+
+```bash Terminal
+git checkout 52abfb507342191ae1f960b443ae8aec7598755c
+pnpm clean && pnpm install && pnpm build
+jq -r ".bytecode.object" packages/contracts-bedrock/forge-artifacts/GasPriceOracle.sol/GasPriceOracle.json
+```
+
+此交易 MUST 部署一个合约，其代码哈希为
+`0xa88fa50a2745b15e6794247614b5298483070661adacb8d32d716434ed24c6b2`。
+
+## GasPriceOracle Proxy 更新 {#gaspriceoracle-proxy-update}
+
+此交易会更新 GasPriceOracle Proxy 的 ERC-1967 实现槽，使其指向新部署的 GasPriceOracle
+合约。
+
+派生出的存款交易具有以下属性：
+
+* `from`: `0x0000000000000000000000000000000000000000`
+* `to`: `0x420000000000000000000000000000000000000F` (Gas Price Oracle Proxy)
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `50,000`
+* `data`: `0x3659cfe6000000000000000000000000a919894851548179a0750865e7974da599c0fac7`
+* `sourceHash`: `0x1e6bb0c28bfab3dc9b36ffb0f721f00d6937f33577606325692db0965a7d58c6`
+  使用 &quot;Upgrade-deposited&quot; 类型计算得出，其中 `intent = "Fjord: Gas Price Oracle Proxy Update"`
+
+验证数据：
+
+```bash Terminal
+cast concat-hex $(cast sig "upgradeTo(address)") $(cast abi-encode "upgradeTo(address)" 0xa919894851548179A0750865e7974DA599C0Fac7)
+# 0x3659cfe6000000000000000000000000a919894851548179a0750865e7974da599c0fac7
+```
+
+验证 `sourceHash`：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Fjord: Gas Price Oracle Proxy Update"))
+# 0x1e6bb0c28bfab3dc9b36ffb0f721f00d6937f33577606325692db0965a7d58c6
+```
+
+## GasPriceOracle Enable Fjord {#gaspriceoracle-enable-fjord}
+
+此交易通知 GasPriceOracle 开始使用 Fjord 的 gas 计算公式。
+
+由此派生出一笔具有以下属性的存款交易：
+
+* `from`: `0xDeaDDEaDDeAdDeAdDEAdDEaddeAddEAdDEAd0001` (Depositer 账户)
+* `to`: `0x420000000000000000000000000000000000000F` (Gas Price Oracle 代理合约)
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `90,000`
+* `data`: `0x8e98b106`
+* `sourceHash`: `0xbac7bb0d5961cad209a345408b0280a0d4686b1b20665e1b0f9cdafd73b19b6b`，
+  使用 &quot;Upgrade-deposited&quot; 类型计算，其中 &#96;intent = &quot;Fjord: Gas Price Oracle Set Fjord&quot;
+
+验证数据：
+
+```bash Terminal
+cast sig "setFjord()"
+0x8e98b106
+```
+
+验证 `sourceHash`：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Fjord: Gas Price Oracle Set Fjord"))
+# 0xbac7bb0d5961cad209a345408b0280a0d4686b1b20665e1b0f9cdafd73b19b6b
+```

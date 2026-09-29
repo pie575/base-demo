@@ -1,0 +1,149 @@
+---
+title: "Guía de actualización de nodos"
+sidebarTitle: "Guía de actualización de nodos"
+description: "Migra tu nodo de Base a base-reth-node y base-consensus para Azul."
+---
+
+<Check>
+  Azul se activó en mainnet el **28 de mayo de 2026 a las 18:00 UTC** (`1779991200`). Consulta las [versiones de software requeridas](/es/upgrades/azul/overview#required-software) y las [marcas de tiempo de activación completas](/es/upgrades/azul/overview#activation-timestamps) en la descripción general de Azul.
+</Check>
+
+Solo `base-reth-node` (EL) y `base-consensus` (CL) son compatibles con Azul. Los nodos que ejecuten `op-node`, `op-geth`, `op-reth`, `nethermind` o `kona` deben migrarse siguiendo las instrucciones que se indican a continuación.
+
+<Note>
+  Ahora ambos clientes se publican desde el repositorio [base/base](https://github.com/base/base/releases), que aloja el `docker-compose.yml` raíz y las plantillas `.env.mainnet` / `.env.sepolia` que los operadores antes obtenían de `base/node`. La mayor parte de la configuración viene predefinida y se puede sobrescribir mediante variables de entorno; consulta esos archivos `.env` para ver la lista completa de opciones.
+
+  `docker compose up` descarga la imagen publicada `ghcr.io/base/node`; pasa `--build` para compilar el árbol actual o establece `NODE_TAG=vX.Y.Z` para fijar una imagen publicada concreta sin compilar desde el código fuente.
+</Note>
+
+## Migración de la capa de ejecución {#migrating-execution-layer}
+
+### Migrar desde OP Reth {#migrating-from-op-reth}
+
+Si ya ejecutas OP Reth con la configuración de compose para operadores, actualiza a la versión más reciente y tu nodo pasará a usar `base-reth-node` automáticamente. Tu directorio `./reth-data` actual es totalmente compatible: no hace falta volver a sincronizar ni restaurar una instantánea.
+
+1. Detén tu nodo:
+
+   ```bash
+   docker compose down
+   ```
+
+2. Cambia a [base/base](https://github.com/base/base) (el nodo para operadores ya no se publica desde `base/node`) y actualiza a la versión más reciente:
+
+   ```bash
+   # Si antes clonaste base/node, clona base/base junto a él y copia tu archivo .env:
+   git clone https://github.com/base/base.git
+   cp ../node/.env.mainnet ./base/.env.mainnet   # o .env.sepolia
+
+   # Si ya trabajas con base/base:
+   git pull origin main
+   ```
+
+3. Inicia tu nodo:
+
+   ```bash
+   docker compose up
+   ```
+
+4. Verifica la versión del cliente: `web3_clientVersion` debe incluir `base` en la cadena de versión (p. ej., `reth/v1.11.3-.../base/v0.9.0`)
+
+### Migración desde otro cliente {#migrating-from-another-client}
+
+`op-geth` y `nethermind` ya no son compatibles. Tendrás que empezar desde cero con `base-reth-node`.
+
+1. Detén tu nodo:
+
+   ```bash
+   docker compose down
+   ```
+
+2. Clona o actualiza [base/base](https://github.com/base/base):
+
+   ```bash
+   git clone https://github.com/base/base.git
+   # o, si ya lo clonaste:
+   git pull origin main
+   ```
+
+3. Elimina tu antiguo directorio de datos (p. ej., `./geth-data` o `./nethermind-data`).
+
+4. Edita el archivo `.env.mainnet` o `.env.sepolia` según tus preferencias.
+
+5. Arranca a partir de una [instantánea de Reth](/es/specifications/node-operators/snapshots) para no tener que hacer una sincronización completa.
+
+6. Inicia tu nodo:
+
+   ```bash
+   docker compose up
+   ```
+
+## Migración de la capa de consenso {#migrating-consensus-layer}
+
+Para reemplazar `op-node` por `base-consensus`, actualiza tus variables de entorno.
+
+1. Establece `USE_BASE_CONSENSUS=true` en tu archivo `.env`.
+
+2. Actualiza tu archivo `.env` con las nuevas variables de entorno `BASE_NODE_*` (consulta las tablas más abajo).
+
+3. Reinicia tu nodo:
+
+   ```bash
+   docker compose up
+   ```
+
+4. Verifica:
+   * Revisa los registros de consenso: `docker compose logs -f node`
+   * Comprueba el estado de sincronización: `optimism_syncStatus` sigue funcionando
+
+### Correspondencia de variables de entorno {#environment-variable-mapping}
+
+La mayoría de las variables ya están definidas en las plantillas `.env.mainnet` y `.env.sepolia` de [base/base](https://github.com/base/base). Si vas a migrar una configuración personalizada de `op-node`, consulta la siguiente tabla para ver a qué variable de `base-consensus` corresponde cada una de tus variables de entorno de `op-node`. La mayoría son opcionales. Ejecuta `base-consensus node --help` para ver la lista completa.
+
+| `op-node`                               | `base-consensus`                   |
+| --------------------------------------- | ---------------------------------- |
+| `OP_NODE_NETWORK`                       | `BASE_NODE_NETWORK`                |
+| `OP_NODE_ROLLUP_CONFIG`                 | `BASE_NODE_ROLLUP_CONFIG`          |
+| —                                       | `BASE_NODE_LOG_VERBOSITY`          |
+| —                                       | `BASE_NODE_LOG_FORMAT`             |
+| `OP_NODE_L1_ETH_RPC`                    | `BASE_NODE_L1_ETH_RPC`             |
+| `OP_NODE_L1_BEACON`                     | `BASE_NODE_L1_BEACON`              |
+| `OP_NODE_L1_TRUST_RPC`                  | `BASE_NODE_L1_TRUST_RPC`           |
+| `OP_NODE_L2_ENGINE_RPC`                 | `BASE_NODE_L2_ENGINE_RPC`          |
+| `OP_NODE_L2_ENGINE_AUTH`                | `BASE_NODE_L2_ENGINE_AUTH`         |
+| —                                       | `BASE_NODE_L2_ENGINE_AUTH_ENCODED` |
+| `OP_NODE_P2P_BOOTNODES`                 | `BASE_NODE_P2P_BOOTNODES`          |
+| `OP_NODE_P2P_LISTEN_IP`                 | `BASE_NODE_P2P_LISTEN_IP`          |
+| `OP_NODE_P2P_LISTEN_TCP_PORT`           | `BASE_NODE_P2P_LISTEN_TCP_PORT`    |
+| `OP_NODE_P2P_LISTEN_UDP_PORT`           | `BASE_NODE_P2P_LISTEN_UDP_PORT`    |
+| `OP_NODE_P2P_ADVERTISE_IP`              | `BASE_NODE_P2P_ADVERTISE_IP`       |
+| `OP_NODE_P2P_ADVERTISE_TCP`             | `BASE_NODE_P2P_ADVERTISE_TCP_PORT` |
+| `OP_NODE_P2P_ADVERTISE_UDP`             | `BASE_NODE_P2P_ADVERTISE_UDP_PORT` |
+| `OP_NODE_P2P_PRIV_PATH`                 | `BASE_NODE_P2P_PRIV_PATH`          |
+| `OP_NODE_P2P_PEER_SCORING`              | `BASE_NODE_P2P_SCORING`            |
+| `OP_NODE_P2P_PEER_BANNING`              | `BASE_NODE_P2P_BAN_PEERS`          |
+| `OP_NODE_P2P_PEER_BANNING_THRESHOLD`    | `BASE_NODE_P2P_BAN_THRESHOLD`      |
+| `OP_NODE_P2P_PEER_BANNING_DURATION`     | `BASE_NODE_P2P_BAN_DURATION`       |
+| `OP_NODE_METRICS_ENABLED`               | `BASE_NODE_METRICS_ENABLED`        |
+| `OP_NODE_METRICS_ADDR`                  | `BASE_NODE_METRICS_ADDR`           |
+| `OP_NODE_METRICS_PORT`                  | `BASE_NODE_METRICS_PORT`           |
+| `OP_NODE_RPC_ADDR`                      | `BASE_NODE_RPC_ADDR`               |
+| `OP_NODE_RPC_PORT`                      | `BASE_NODE_RPC_PORT`               |
+| `OP_NODE_RPC_ENABLE_ADMIN`              | `BASE_NODE_RPC_ENABLE_ADMIN`       |
+| `OP_NODE_RPC_ADMIN_STATE`               | `BASE_NODE_RPC_ADMIN_STATE`        |
+| `OP_NODE_SAFEDB_PATH`                   | `BASE_NODE_SAFEDB_PATH`            |
+| `OP_NODE_SYNCMODE`                      | —                                  |
+| `OP_NODE_VERIFIER_L1_CONFS`             | —                                  |
+| `OP_NODE_L2_ENGINE_KIND`                | —                                  |
+| `OP_NODE_L1_RPC_KIND`                   | —                                  |
+| `OP_NODE_L1_BEACON_FETCH_ALL_SIDECARS`  | —                                  |
+| `OP_NODE_L1_BEACON_FALLBACKS`           | —                                  |
+| `OP_NODE_ROLLUP_LOAD_PROTOCOL_VERSIONS` | —                                  |
+| `OP_NODE_P2P_STATIC`                    | —                                  |
+| `OP_NODE_P2P_DISABLE`                   | —                                  |
+| `OP_NODE_P2P_NAT`                       | —                                  |
+
+## Preguntas frecuentes {#faq}
+
+* **¿Tengo que volver a sincronizar?** No, si ya ejecutas OP Reth. Los datos existentes son compatibles.
+* **¿Qué pasa si uso `op-geth` o `nethermind`?** Debes migrar a `base-reth-node`. Usa una [instantánea de Reth](/es/specifications/node-operators/snapshots) para la sincronización inicial.
+* **¿Siguen funcionando las RPC del espacio de nombres OP?** Sí, todas las RPC existentes siguen siendo compatibles.

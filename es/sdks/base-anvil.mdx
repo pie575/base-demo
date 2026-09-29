@@ -1,0 +1,50 @@
+---
+title: "CLI de base-anvil"
+description: "La compilación de Foundry de Base: instala base-forge, base-cast y base-anvil, que permiten a Foundry reconocer los precompilados nativos de Base."
+---
+
+[base-anvil](https://github.com/base/base-anvil) es un fork de Foundry que permite a `forge`, `cast`, `anvil` y `chisel` reconocer los precompilados nativos de Base: la [fábrica de tokens B20](/es/build-on-base/issue-rwa/create-an-asset-token), los tokens B20, el PolicyRegistry y el ActivationRegistry. Foundry estándar no puede acceder a las direcciones de estos precompilados y se detiene con el error `call to non-contract address`; base-anvil los registra en su EVM para que puedas compilar y probar aplicaciones de Base en local.
+
+## Instalación {#install}
+
+Se instala junto a tu Foundry actual sin sobrescribir el `foundryup` original ni tus `forge`/`cast`/`anvil`/`chisel`:
+
+```bash Terminal
+curl -L https://raw.githubusercontent.com/base/base-anvil/HEAD/foundryup/install | bash
+base-foundryup
+```
+
+Esto instala `base-foundryup` y los comandos con espacio de nombres `base-forge`, `base-cast`, `base-anvil` y `base-chisel`, que habilitan de forma predeterminada los precompilados de Base.
+
+## Elige una versión de Base {#pick-a-base-version}
+
+Las versiones de base-anvil llevan el nombre de la versión de la cadena Base para la que están diseñadas. Fija una versión con:
+
+```bash Terminal
+base-foundryup --install <version>
+```
+
+{/* TODO(verify): confirmar con el equipo de ingeniería qué versión de base-anvil corresponde a la versión actual de Base (según la documentación de base-anvil, Beryl corresponde a v1.1.0). */}
+
+## Comandos {#commands}
+
+| Comando       | Sustituye a | Propósito                                                                              |
+| ------------- | ----------- | -------------------------------------------------------------------------------------- |
+| `base-forge`  | `forge`     | Compilar, probar y desplegar contratos con los precompilados de Base                   |
+| `base-cast`   | `cast`      | Enviar transacciones y leer datos de la cadena, incluidas las llamadas a precompilados |
+| `base-anvil`  | `anvil`     | Ejecutar un nodo local de Base con los precompilados habilitados                       |
+| `base-chisel` | `chisel`    | REPL de Solidity con los precompilados de Base                                         |
+
+Todo lo demás se hereda del proyecto original de [Foundry](https://book.getfoundry.sh/) y funciona sin cambios; solo las incorporaciones de Base indicadas arriba son exclusivas de este fork.
+
+## Próximos pasos {#next-steps}
+
+<CardGroup cols={2}>
+  <Card title="Contratos inteligentes" icon="file-contract" href="/es/specifications/reference/smart-contracts">
+    Despliega un contrato en Base Sepolia con base-anvil, paso a paso y de principio a fin.
+  </Card>
+
+  <Card title="Estándar de tokens B20" icon="coins" href="/es/build-on-base/issue-rwa/create-an-asset-token">
+    Lanza un token con el estándar nativo de Base desde la línea de comandos.
+  </Card>
+</CardGroup>

@@ -1,0 +1,65 @@
+---
+title: "定数"
+description: "B20 のプリコンパイルアドレス、ロール識別子、ポリシースコープ、検証の境界値。"
+---
+
+*ロール識別子、ポリシータイプ識別子、プリコンパイルアドレスなどの固定定数です。詳細は [`B20Constants`](https://github.com/base/base-std/blob/main/src/lib/B20Constants.sol) および [`StdPrecompiles`](https://github.com/base/base-std/blob/main/src/StdPrecompiles.sol) を参照してください。*
+
+## プリコンパイルのアドレス {#precompile-addresses}
+
+*Base のシングルトンプリコンパイルの固定アドレスです。詳細は [`StdPrecompiles`](https://github.com/base/base-std/blob/main/src/StdPrecompiles.sol) を参照してください。*
+
+| 名前                            | 値                                            | 用途                                                                                                                                            |
+| ----------------------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `B20_FACTORY_ADDRESS`         | `0xB20f000000000000000000000000000000000000` | B-20 トークンのデプロイと検索を行います。アセットおよびステーブルコインのインスタンスはすべて、このアドレスにある [`IB20Factory`](/ja/specifications/b20/reference/interfaces#ib20factory) を通じて作成されます。 |
+| `POLICY_REGISTRY_ADDRESS`     | `0x8453000000000000000000000000000000000002` | 許可リスト/ブロックリスト/複合ポリシーを保存し、各ポリシースコープから参照される `isAuthorized` チェックに応答します ([ポリシー](/ja/specifications/b20/concepts/policies)を参照) 。                      |
+| `ACTIVATION_REGISTRY_ADDRESS` | `0x8453000000000000000000000000000000000001` | 特定のチェーン上で B-20 のバリアントや機能が有効化されているかどうかを制御します。ファクトリーは、該当するバリアントを作成する前にこのレジストリを確認します。                                                            |
+
+## ロール {#roles}
+
+*ロール識別子は `hasRole` で確認されます。[`B20Constants`](https://github.com/base/base-std/blob/main/src/lib/B20Constants.sol) および [`IB20`](/ja/specifications/b20/reference/interfaces#ib20) を参照してください。16進値はロール名の `keccak256` ハッシュで、`cast keccak "<NAME>"` で検証し、`chisel` でも照合済みです。*
+
+| 名前                   | 値                                                                                                          | 用途                                                                                                            |
+| -------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `DEFAULT_ADMIN_ROLE` | `bytes32(0)`                                                                                               | `grantRole`、`revokeRole`、`setRoleAdmin`、`updatePolicy`、`updateSupplyCap` の呼び出しに必要です。                          |
+| `MINT_ROLE`          | `keccak256("MINT_ROLE")`<br />`0x154c00819833dac601ee5ddded6fda79d9d8b506b911b3dbd54cdb95fe6c3686`         | `mint` および `mintWithMemo` の呼び出しに必要です。                                                                         |
+| `BURN_ROLE`          | `keccak256("BURN_ROLE")`<br />`0xe97b137254058bd94f28d2f3eb79e2d34074ffb488d042e3bc958e0a57d2fa22`         | `burn` および `burnWithMemo` の呼び出しに必要です。                                                                         |
+| `BURN_BLOCKED_ROLE`  | `keccak256("BURN_BLOCKED_ROLE")`<br />`0x7408fdc0d31c7bcb349eab611f5d1168acd4303574993f8cdc98b1cd18c41cae` | 非推奨の `burnBlocked` の呼び出しに必要です。                                                                                |
+| `SEIZE_ROLE`         | `keccak256("SEIZE_ROLE")`<br />`0x3469b8b0d89e9604f8510ed143f74a8336d22955d4f83e23bf53d9414e27f432`        | `seizeWithMemo` の呼び出しに必要です。                                                                                   |
+| `PAUSE_ROLE`         | `keccak256("PAUSE_ROLE")`<br />`0x139c2898040ef16910dc9f44dc697df79363da767d8bc92f2e310312b816e46d`        | `pause` の呼び出しに必要です。                                                                                           |
+| `UNPAUSE_ROLE`       | `keccak256("UNPAUSE_ROLE")`<br />`0x265b220c5a8891efdd9e1b1b7fa72f257bd5169f8d87e319cf3dad6ff52b94ae`      | `unpause` の呼び出しに必要です。                                                                                         |
+| `METADATA_ROLE`      | `keccak256("METADATA_ROLE")`<br />`0x6bd6b5318a46e5fff572d5e4258a20774aab40cc35ac7680654b9081fcc82f80`     | `updateName`、`updateSymbol`、`updateContractURI`、`updateExtraMetadata` の呼び出しに必要です。                             |
+| `OPERATOR_ROLE`      | `keccak256("OPERATOR_ROLE")`<br />`0x97667070c54ef182b0f5858b034beac1b6f3089aa2d3188bb1e8929f4fa9b929`     | B20Asset 専用。`announce`、`updateUIMultiplier`、`cancelUIMultiplierUpdate`、および非推奨の `updateMultiplier` の呼び出しに必要です。 |
+
+## ポリシータイプ {#policy-types}
+
+*PolicyRegistry が参照するポリシースコープです。[`B20Constants`](https://github.com/base/base-std/blob/main/src/lib/B20Constants.sol) および [Policies](/ja/specifications/b20/concepts/policies) を参照してください。16進値はポリシー名の `keccak256` ハッシュであり、`cast keccak "<NAME>"` で検証し、`chisel` でも照合済みです。*
+
+| 名前                         | 値                                                                                                                 | 用途                                                                                                                                                     |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `TRANSFER_SENDER_POLICY`   | `keccak256("TRANSFER_SENDER_POLICY")`<br />`0xb81736c875ab819dd97f59f2a6542cfb731ad52b4ae15a6f24df2fb02b0327f5`   | `transfer` および `transferFrom` で `from` の判定に参照されます。                                                                                                     |
+| `TRANSFER_RECEIVER_POLICY` | `keccak256("TRANSFER_RECEIVER_POLICY")`<br />`0x8a4b3fa2d8b921852bc0089c6ef0958aa6961897be36fd731330fe2cd23f8363` | `transfer` および `transferFrom` で `to` の判定に参照されます。                                                                                                       |
+| `TRANSFER_EXECUTOR_POLICY` | `keccak256("TRANSFER_EXECUTOR_POLICY")`<br />`0x10be5173aff2a44e748bd9acd8b19fe34689581398a9db7ba2fb671e786ff7d8` | すべての転送エントリポイント (`transfer`、`transferFrom`、およびメモ付きバリアント) で `msg.sender` の判定に参照されます。                                                                     |
+| `MINT_RECEIVER_POLICY`     | `keccak256("MINT_RECEIVER_POLICY")`<br />`0xa0d5ae037e66a09119acf080a1d807abb9b6d03b6b9130eb19f7c1e6bdb8ffc8`     | `mint` で `to` の判定に参照されます。                                                                                                                              |
+| `SEIZE_EXEMPT_POLICY`      | `keccak256("SEIZE_EXEMPT_POLICY")`<br />`0xedb5da348cfb67af08746d3afd1be81034b50d5c8576f31aff688f39dfd540ed`      | `seizeWithMemo` で `from` の判定に参照されます。認可された `from` は差し押さえが免除されるため、`from` を差し押さえできるのは、このポリシーで認可されていない場合に限られます。Cobalt より前は `SEIZE_HOLDER_POLICY` という名前でした。 |
+| `SEIZE_RECEIVER_POLICY`    | `keccak256("SEIZE_RECEIVER_POLICY")`<br />`0xbf15b19caf5c77422c038bc25f26b8b815c3a14f6d04c6616076b81bcfe07b3d`    | `seizeWithMemo` で `to` の判定に参照されます。                                                                                                                     |
+
+## 機能および検証の境界値 {#feature-and-validation-bounds}
+
+*一時停止機能と B20Asset 作成時の検証に使用されるビットマスクと、境界値 (いずれもその値を含む) です。[`B20Constants`](https://github.com/base/base-std/blob/main/src/lib/B20Constants.sol) を参照してください。*
+
+| 名前                    | 値                   | 目的                                                                                                      |
+| --------------------- | ------------------- | ------------------------------------------------------------------------------------------------------- |
+| `ALL_FEATURES_PAUSED` | `15` (`0b1111`)     | すべての `PausableFeature` ビットがセットされたビットマスク (`TRANSFER \| MINT \| BURN \| SEIZE`) 。                         |
+| `MIN_ASSET_DECIMALS`  | `6`                 | `B20AssetCreateParams.decimals` の下限 (この値を含む) 。ステーブルコイン水準のインテグレーションの多くが想定する最小値です。                        |
+| `MAX_ASSET_DECIMALS`  | `18`                | `B20AssetCreateParams.decimals` の上限 (この値を含む) 。一般的なウォレットやインデクサーであれば正しく表示できる、ERC-20 コミュニティで慣例となっている上限値です。 |
+| `MAX_SUPPLY_CAP`      | `type(uint128).max` | 供給上限 (ひいては `totalSupply`) の上限 (この値を含む) 。上限なし (「キャップなし」) を表す番兵値も兼ねます。                                    |
+
+## アセットバリアントの精度定数 {#asset-variant-precision-constants}
+
+*乗数/リベース関連の機能で使用される固定小数点定数です。詳細は [`IB20Asset`](/ja/specifications/b20/reference/interfaces#ib20asset) を参照してください。*
+
+| 名前                  | 値                   | 用途                                                                                                                                            |
+| ------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WAD_PRECISION`     | `1e18`              | `multiplier` のスケーリングに使用される固定小数点精度です。`multiplier`、`toUIAmount`、`fromUIAmount` はいずれもこの値で除算/乗算を行います。                                             |
+| `MAX_UI_MULTIPLIER` | `type(uint128).max` | セッターが受け付ける乗数の最大値です。`updateMultiplier` および `updateUIMultiplier` が適用するオーバーフロー防止の上限にあたります。呼び出し元が `InvalidMultiplier` を発生させずに上限値を参照できるよう公開されています。 |

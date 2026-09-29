@@ -1,0 +1,76 @@
+---
+title: "Batcher"
+description: "batcher（批次提交器）规范。batcher 负责将 L2 sequencer 数据发布到 L1，以保证数据可用性。"
+---
+
+[derivation spec]: consensus/derivation.md
+
+## 概述 {#overview}
+
+batcher (也称为批次提交器) 是负责将 L2 sequencer 数据发布到 L1 的实体，供验证者运行的派生管道使用。batcher 交易的格式 (即其中包含的 channel、frame 和批次) 由 [derivation spec] 定义：数据由 L2 区块构建而成，构建顺序与推导回 L2 区块的顺序恰好相反。从验证者的角度来看，只有符合这些规则的数据才会被视为有效。
+
+batcher 会监测 unsafe L2 头 (最新排序的区块) 与 safe L2 头 (经推导在 L1 上确认的最新区块) 之间的差距。所有尚未确认的 unsafe L2 区块都必须经过编码并提交。batcher 将 L2 区块编码为 channel，将 channel 拆分为 frame，再将 frame 作为 L1 交易发布。随后，派生管道读取这些 frame，重新组装 channel，解码批次，并重建出原始 L2 区块。
+
+提交时机和交易签名方式取决于具体实现：数据可以随时提交，但从验证者的角度来看，只有符合 [derivation spec] 规则的数据才有效。数据在 L1 上提交或确认后，L2 对 safe 和 unsafe 状态的视图并不会立即更新，因此 batcher 实现必须注意避免重复提交数据。
+
+## Channel 生命周期 {#channel-lifecycle}
+
+channel 是 batcher 使用的编码单元，由经过 RLP 编码的 L2 区块批次按顺序组成并经过压缩。当有 L2 区块等待提交且当前没有处于打开状态的 channel 时，便会打开一个新的 channel。任何时刻最多只能有一个 channel 处于打开状态；在前一个 channel 完全关闭且其所有 frame 均已提交到 L1 之前，不得打开新的 channel。
+
+channel 按区块号严格递增的顺序累积 L2 区块批次，直到满足以下任一关闭条件。如果添加下一个批次会使压缩输出大小超过 blob 的最大数据容量，则 channel 必须关闭，从而确保任何 frame 承载的负载都不会超出其数据可用性目标的容量。如果继续累积会使其批次的未压缩 RLP 字节总长度超过 `max_rlp_bytes_per_channel`，channel 同样必须关闭；这一协议限制用于防范针对验证者的解压放大攻击。在这两种情况下，会引发溢出的批次都不会纳入当前 channel：当前 channel 关闭，该批次则成为下一个 channel 的第一个条目。
+
+此外，channel 超时后也必须关闭：如果 L1 链自 channel 打开时所在的区块起前进了超过 `max_channel_duration` 个 L1 区块，则必须关闭该 channel 并立即发布其 frame。这样可以避免 channel 无限期保持打开状态，并确保验证者 (它们会丢弃任何未在 `channel_timeout` 窗口内完成的 channel) 不会丢弃这些数据。
+
+channel 关闭时，其压缩数据会被切分为固定大小的 frame。每个 frame 最多承载 `max_frame_size` 字节的压缩载荷，外加每个 frame 自身的 header 开销。生成的 frame 会按顺序排队，等待提交到 L1。channel 的区块范围 (即其覆盖的连续 L2 区块号区间) 在关闭时即已确定，不得更改。
+
+## frame 的生成与排序 {#frame-production-and-ordering}
+
+每个 frame 都带有一个头部，其中包含以下信息：用于标识所属 channel 的 16 字节 channel ID；表示该 frame 在 channel 中位置的 frame 编号 (16 位，从零开始单调递增) ；压缩载荷的长度；以及一个布尔标志，用于指示该 frame 是否为 channel 中的最后一个 frame。每个 channel 的第一个 frame 还额外带有一个版本字节，用于标识压缩编解码器；后续所有 frame 则完全由压缩载荷构成，不含此类前缀。
+
+同一 channel 内的 frame 必须按顺序提交到 L1。frame `N` 在 L1 上出现的时间不得晚于 frame `N+1`。在某些配置下，派生管道可以容忍 frame 乱序到达，但自 Holocene 硬分叉起，对于任何非首 frame，若其 frame 编号并非恰好比该 channel 上一个已接收 frame 的编号大一，派生管道会将其丢弃；对于任何新的首 frame，若其前一个 channel 尚未关闭，同样会将其丢弃。Holocene 激活后，必须严格按顺序交付才能确保正确性。
+
+`is_last` 标志必须且只能在 channel 的最后一个 frame 上设为 true，之前的所有 frame 均须设为 false。验证者只有在收到设置了 `is_last` 的 frame 后，才会认为该 channel 已完整。若某个 channel 在 `channel_timeout` 窗口内始终未收到最后一个 frame，验证者会将其丢弃。
+
+## 数据可用性 {#data-availability}
+
+batcher 以 batcher 交易的形式将 frame 发布到 L1，这些交易发往 batcher inbox 地址，该地址是一个指定的 EOA，而非合约。每笔 batcher 交易都必须使用 batcher 的签名密钥签名，且恢复出的发送方地址必须与该 L1 交易被打包时 L2 系统配置中记录的 `batcherAddress` 一致。派生管道依据该地址对 batcher 交易进行认证；来自其他任何发送方的交易，无论内容如何，一律忽略。
+
+自 Cancun L1 升级起，主要的数据可用性机制为 EIP-4844 blob 交易。每个 blob 承载一个 frame 的压缩 channel 数据。每个 blob 的最大可用负载为 130,044 字节，这决定了实际的 `max_frame_size`。batcher 不得生成压缩载荷超出此限制的 frame。
+
+同一 channel 的所有 frame 必须在该 channel 首个 frame 被打包的区块之后的 `channel_timeout` 个 L1 区块内上链到 L1。如果 channel 未能在此窗口内完成，派生管道将丢弃该 channel 所有已缓冲的 frame，受影响的 L2 区块必须通过新的 channel 重新提交。batcher 必须合理设定 channel 大小并控制提交吞吐量，确保 frame 在此期限内发布。
+
+## 区块连续性 {#block-continuity}
+
+batcher 按区块号严格递增的顺序对 L2 区块进行编码。添加到当前打开的 channel 中的每个区块都必须是上一个已编码区块的直接子区块，即其父哈希必须等于最近一个已编码区块的哈希。这一不变量确保 channel 所代表的是规范 L2 链中连续且无歧义的一段。
+
+如果 L2 链发生重组 (表现为某个区块的父哈希与此前观察到的链头不匹配，或区块源发出明确的重组信号) ，batcher 必须丢弃所有待处理的编码状态，包括当前打开的 channel、已排队等待提交但尚未完全确认的所有 channel，以及所有进行中的提交跟踪状态。重组之后，batcher 从新的规范链头重新开始。重组发生时仍在传输中的 L1 交易将被放弃；即使这些交易最终被打包进 L1，派生管道也会因其与新链不一致而将其忽略。
+
+每个 channel 覆盖一段连续且互不重叠的 L2 区块号范围。后一个 channel 的区块范围必须紧接前一个 channel 的区块范围结束处开始。任何 L2 区块都不得出现在多个 channel 中，相邻 channel 之间也不得遗漏任何区块。
+
+## Sequencer 漂移与限流 {#sequencer-drift-and-throttling}
+
+派生规范限制了 L2 时间戳相对于其 origin 区块的 L1 时间戳最多能超前多少。L2 区块的时间戳不得超过 L1 origin 时间戳加上 `max_sequencer_drift`。在 Fjord 硬分叉之前，`max_sequencer_drift` 是按链配置的参数；自 Fjord 起，该值固定为 1800 秒。一旦超出此限制，派生管道将仅接受交易列表为空的批次 (即 deposit-only 区块) 。因此，如果某个区块的时间戳会超出漂移限制，batcher 就不得在其中包含用户交易，并且必须据此与 sequencer 协调。
+
+为防止 sequencer 的出块速度超出 batcher 向 L1 提交数据的能力，batcher 会衡量自身的数据可用性积压量，即已完成排序、但数据尚未在 L1 上确认的 L2 区块的编码总大小。当积压量超过配置的阈值时，batcher 会通知 sequencer 降低出块速率。限流可以分级进行：积压较少时，可请求适度放缓；积压较多时，则可完全暂停出块，直到 batcher 赶上进度。这一反馈机制对派生管道透明，也不会体现在任何链上数据中。
+
+## 压缩 {#compression}
+
+channel 数据在划分为 frame 之前会先经过压缩。在 Fjord 硬分叉之前，channel 使用 zlib 压缩 (RFC 1950，无字典) ，且不带版本前缀；解压器可通过数据流中的 zlib 魔数字节识别格式。从 Fjord 起，channel 改用 Brotli 压缩 (RFC 7932) ，每个 channel 的第一个 frame 会在压缩载荷前紧跟一个值为 `0x01` 的版本字节，用于标识编解码器。版本字节的低半字节不得为 `0x08` 或 `0x0f`，因为这些值会与 zlib 魔数头字节冲突，导致早期的解压器误判。
+
+由于压缩率随输入内容而变化，batcher 在将批次编码进 channel 时，必须提前预估压缩后的输出大小。channel 必须在压缩输出即将超过 `max_frame_size` 时关闭，而不能等到超出之后。一种常见做法是在真实压缩器之外并行维护一个影子压缩器，并以影子压缩器的输出大小作为上界；当影子输出达到上限时即关闭 channel。这样可确保 batcher 绝不会生成大到无法放入 blob 的 frame。
+
+每个 channel 的最大未压缩 RLP 大小 `max_rlp_bytes_per_channel` 独立于压缩大小限制单独执行。该限制用于防范针对验证者的解压放大攻击：一个很小的压缩载荷若膨胀为无限大的未压缩数据流，可能耗尽内存。验证者在解码 channel 时，一旦未压缩输出达到该限制便停止处理，剩余的批次将被丢弃。batcher 必须确保其批次的未压缩大小不超过此上限，一方面保证验证者能看到所有批次，另一方面也确保不超出协议规定的限制。
+
+## 确认与区块修剪 {#confirmation-and-block-pruning}
+
+batcher 会持续跟踪每个已提交的 frame，直到其被打包进 L1 区块。当 batcher 观察到某个 L1 区块中包含承载该 frame 的 L1 交易时，该 frame 即视为已确认。当一个 channel 的所有 frame 均已在 L1 上确认后，该 channel 即视为完全确认。
+
+在包含这些 L2 区块的 channel 完全确认之前，不得将这些区块从 batcher 的待处理集合中丢弃。在确认之前，必须保留这些区块，以便在 frame 丢失时 (例如 L1 重组导致该交易不再被包含) 能够重建并重新提交。只有在 channel 完全确认后，batcher 才可以释放该 channel 所涵盖的 L2 区块。
+
+如果某个已提交 frame 的 L1 交易未能被打包，batcher 必须重新提交该 frame 以及同一 channel 中所有后续的 frame。重新提交的 frame 必须与原始 frame 逐字节一致：派生管道依据 channel ID 和 frame 编号来识别 frame，如果重新提交的 frame 内容不同，就会被视为损坏数据，而不是重试。
+
+## 硬分叉规则 {#hardfork-rules}
+
+Fjord 硬分叉更改了 channel 的编码格式。在 Fjord 激活之后打开的 channel 必须使用 Brotli 压缩，并在第一个 frame 的载荷前加上版本字节 `0x01` 作为前缀。协议限制 `max_rlp_bytes_per_channel` 在 Fjord 激活时大幅提高，放宽了对 channel 大小的约束。在 Fjord 激活之前打开的 channel，其所有 frame 都必须使用 Fjord 之前的格式，无论这些 frame 何时提交。
+
+Holocene 硬分叉在 frame 层和批次层均施加了严格的排序要求。在 frame 层，同一 channel 的 frame 必须连续且按顺序传递给派生管道：如果某个非首 frame 不是该 channel 上一个已接收 frame 的直接后继，则会被立即丢弃；如果某个未完成的 channel 在收到最终 frame 之前又收到了新的首 frame，则该 channel 会被丢弃。在批次层，同一 channel 内的批次必须按 L2 时间戳严格递增排序，且不得出现重复时间戳；若某个批次的时间戳不严格大于同一 channel 中前一批次的时间戳，该 channel 即告失效，其中剩余的所有批次都将被丢弃。这些规则不会带来新的链上义务，但意味着在 Holocene 激活之后，batcher 对 frame 传递中的缺口或乱序零容忍。

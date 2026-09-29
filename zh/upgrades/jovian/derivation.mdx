@@ -1,0 +1,221 @@
+---
+title: "派生"
+description: "Jovian 升级中的派生变更，规定了硬分叉激活时的激活区块规则以及 gas 计算行为。"
+---
+
+## 激活区块规则 {#activation-block-rules}
+
+时间戳等于或晚于 Jovian 激活时间的第一个区块被视为 *Jovian 激活区块*。
+
+为避免修改或中断与 gas 计算相关的系统行为，激活区块不得包含任何
+非存款交易。Sequencer 必须在 payload 属性中将 `noTxPool` 设置为 `true`，以强制执行此要求。此
+规则必须在派生过程的批次验证阶段进行检查；如果激活区块的批次
+包含任何交易，则必须将其 `DROP` (丢弃) 。
+
+在 Jovian 激活区块中，除了 L1 属性存款交易以及可能存在的来自 L1 的用户存款之外，派生管道还会按以下顺序确定性地生成
+一组基于存款交易的升级交易：
+
+* L1 属性交易 (仍调用旧的 `L1Block.setL1BlockValuesIsthmus()`) 
+* 来自 L1 的用户存款 (如有) 
+* 网络升级交易
+  * 部署 L1Block
+  * 更新 L1Block Proxy 的 ERC-1967 实现
+  * 部署 GasPriceOracle
+  * 更新 GasPriceOracle Proxy 的 ERC-1967 实现
+  * 调用 GasPriceOracle 以启用 Jovian
+
+下一节将详细说明这些网络升级交易。
+
+## 网络升级交易 {#network-upgrade-transactions}
+
+以下升级交易详情基于 monorepo 中提交哈希为
+`b3299e0ddb55442e6496512084d16c439ea2da77` 的版本，待合约正式发布后将相应更新。
+
+### L1Block 部署 {#l1block-deployment}
+
+部署 `L1Block` 合约。
+
+派生一笔具有以下属性的存款交易：
+
+* `from`: `0x4210000000000000000000000000000000000006`
+* `to`: `null`
+* `mint`: `0`
+* `value`: `0`
+* `nonce`: `0`
+* `gasLimit`: `447315`
+* `data`: `0x0x608060405234801561001057600080...`
+* `sourceHash`: `0x98faf23b9795967bc0b1c543144739d50dba3ea40420e77ad6ca9848dbfb62e8`，
+  使用 &quot;Upgrade-deposited&quot; 类型计算，其中 `intent = "Jovian: L1Block Deployment"`
+
+最终，Jovian L1Block 合约将部署到
+`0x3Ba4007f5C922FBb33C454B41ea7a1f11E83df2C`。验证方法如下：
+
+```bash Terminal
+cast compute-address --nonce=0 0x4210000000000000000000000000000000000006
+Computed Address: 0x3Ba4007f5C922FBb33C454B41ea7a1f11E83df2C
+```
+
+验证 `sourceHash`：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Jovian: L1Block Deployment"))
+# 0x98faf23b9795967bc0b1c543144739d50dba3ea40420e77ad6ca9848dbfb62e8
+```
+
+验证 `data`：
+
+```bash Terminal
+git checkout 773798a67678ab28c3ef7ee3405f25c04616af19
+make build-contracts
+jq -r ".bytecode.object" packages/contracts-bedrock/forge-artifacts/L1Block.sol/L1Block.json
+```
+
+此交易 MUST 部署一个代码哈希为以下值的合约：
+`0x5f885ca815d2cf27a203123e50b8ae204fdca910b6995d90b2d7700cbb9240d1`。
+
+验证代码哈希的方法如下：
+
+```bash Terminal
+git checkout 773798a67678ab28c3ef7ee3405f25c04616af19
+make build-contracts
+cast k $(jq -r ".deployedBytecode.object" packages/contracts-bedrock/forge-artifacts/L1Block.sol/L1Block.json)
+```
+
+### L1Block Proxy 更新 {#l1block-proxy-update}
+
+此交易会更新 L1Block Proxy 的 ERC-1967
+实现槽，使其指向新的 L1Block 部署。
+
+将派生出一笔具有以下属性的存款交易：
+
+* `from`: `0x0000000000000000000000000000000000000000`
+* `to`: `0x4200000000000000000000000000000000000015` (L1Block Proxy) 
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `50,000`
+* `data`: `0x3659cfe60000000000000000000000003ba4007f5c922fbb33c454b41ea7a1f11e83df2c`
+* `sourceHash`: `0x08447273a4fbce97bc8c515f97ac74efc461f6a4001553712f31ebc11288bad2`
+  使用 &quot;Upgrade-deposited&quot; 类型计算得出，其中 `intent = "Jovian: L1Block Proxy Update"`
+
+验证数据：
+
+```bash Terminal
+cast concat-hex $(cast sig "upgradeTo(address)") $(cast abi-encode "upgradeTo(address)" 0x3Ba4007f5C922FBb33C454B41ea7a1f11E83df2C)
+# 0x3659cfe60000000000000000000000003ba4007f5c922fbb33c454b41ea7a1f11e83df2c
+```
+
+验证 `sourceHash`：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Jovian: L1Block Proxy Update"))
+# 0x08447273a4fbce97bc8c515f97ac74efc461f6a4001553712f31ebc11288bad2
+```
+
+### GasPriceOracle 部署 {#gaspriceoracle-deployment}
+
+部署 `GasPriceOracle` 合约。
+
+派生一笔具有以下属性的存款交易：
+
+* `from`: `0x4210000000000000000000000000000000000007`
+* `to`: `null`
+* `mint`: `0`
+* `value`: `0`
+* `nonce`: `0`
+* `gasLimit`: `1750714`
+* `data`: `0x0x608060405234801561001057600080...`
+* `sourceHash`: `0xd939cca6eca7bd0ee0c7e89f7e5b5cf7bf6f7afe7b6966bb45dfb95344b31545`，
+  使用 &quot;Upgrade-deposited&quot; 类型计算，其中 `intent = "Jovian: GasPriceOracle Deployment"`
+
+该交易会将 Jovian GasPriceOracle 合约部署到
+`0x4f1db3c6AbD250ba86E0928471A8F7DB3AFd88F1`，可通过以下方式验证：
+
+```bash Terminal
+cast compute-address --nonce=0 0x4210000000000000000000000000000000000007
+Computed Address: 0x4f1db3c6AbD250ba86E0928471A8F7DB3AFd88F1
+```
+
+验证 `sourceHash`：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Jovian: GasPriceOracle Deployment"))
+# 0xd939cca6eca7bd0ee0c7e89f7e5b5cf7bf6f7afe7b6966bb45dfb95344b31545
+```
+
+验证 `data`：
+
+```bash Terminal
+git checkout 773798a67678ab28c3ef7ee3405f25c04616af19
+make build-contracts
+jq -r ".bytecode.object" packages/contracts-bedrock/forge-artifacts/GasPriceOracle.sol/GasPriceOracle.json
+```
+
+此交易 MUST 部署一个代码哈希为以下值的合约：
+`0xe9fc7c96c4db0d6078e3d359d7e8c982c350a513cb2c31121adf5e1e8a446614`。
+
+验证代码哈希的步骤如下：
+
+```bash Terminal
+git checkout 773798a67678ab28c3ef7ee3405f25c04616af19
+make build-contracts
+cast k $(jq -r ".deployedBytecode.object" packages/contracts-bedrock/forge-artifacts/GasPriceOracle.sol/GasPriceOracle.json)
+```
+
+### GasPriceOracle Proxy 更新 {#gaspriceoracle-proxy-update}
+
+此交易将 GasPriceOracle Proxy 的 ERC-1967
+实现槽更新为指向新的 GasPriceOracle 部署。
+
+由此派生的存款交易具有以下属性：
+
+* `from`: `0x0000000000000000000000000000000000000000`
+* `to`: `0x420000000000000000000000000000000000000F` (GasPriceOracle Proxy) 
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `50,000`
+* `data`: `0x3659cfe60000000000000000000000004f1db3c6abd250ba86e0928471a8f7db3afd88f1`
+* `sourceHash`: `0x46b597e2d8346ed7749b46734074361e0b41a0ab9af7afda5bb4e367e072bcb8`
+  使用 &quot;Upgrade-deposited&quot; 类型计算，其中 `intent = "Jovian: GasPriceOracle Proxy Update"`
+
+验证数据：
+
+```bash Terminal
+cast concat-hex $(cast sig "upgradeTo(address)") $(cast abi-encode "upgradeTo(address)" 0x4f1db3c6AbD250ba86E0928471A8F7DB3AFd88F1)
+# 0x3659cfe60000000000000000000000004f1db3c6abd250ba86e0928471a8f7db3afd88f1
+```
+
+验证 `sourceHash`：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Jovian: GasPriceOracle Proxy Update"))
+# 0x46b597e2d8346ed7749b46734074361e0b41a0ab9af7afda5bb4e367e072bcb8
+```
+
+### GasPriceOracle Enable Jovian {#gaspriceoracle-enable-jovian}
+
+此交易通知 GasPriceOracle 开始采用 Jovian 的 operator fee (运营方费用) 计算公式。
+
+派生出的存款交易具有以下属性：
+
+* `from`：`0xDeaDDEaDDeAdDeAdDEAdDEaddeAddEAdDEAd0001` (Depositer 账户) 
+* `to`：`0x420000000000000000000000000000000000000F` (Gas Price Oracle 代理合约) 
+* `mint`：`0`
+* `value`：`0`
+* `gasLimit`：`90,000`
+* `data`：`0xb3d72079`
+* `sourceHash`：`0xe836db6a959371756f8941be3e962d000f7e12a32e49e2c9ca42ba177a92716c`，
+  使用 &quot;Upgrade-deposited&quot; 类型计算，其中 `intent = "Jovian: Gas Price Oracle Set Jovian"`
+
+验证数据：
+
+```bash Terminal
+cast sig "setJovian()"
+# 0xb3d72079
+```
+
+验证 `sourceHash`：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Jovian: Gas Price Oracle Set Jovian"))
+# 0xe836db6a959371756f8941be3e962d000f7e12a32e49e2c9ca42ba177a92716c
+```

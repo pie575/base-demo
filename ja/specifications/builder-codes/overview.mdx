@@ -1,0 +1,124 @@
+---
+title: "Base Builder Codes"
+sidebarTitle: "概要"
+description: "Builder Codes を使って、オンチェーンアクティビティをあなたのアプリ、ウォレット、エージェントに紐付けます。"
+---
+
+Base Builder Codes は ERC-721 の NFT コレクションです。固有のコード (例: 「abc123」) をミントすることで、オンチェーン上でビルダーを識別できるようにします。
+
+各コードにはメタデータが関連付けられています。オンチェーンメタデータには主に「支払先アドレス」が含まれており、各コードはこのアドレスで、報酬が発生した場合の送付先を指定します。オフチェーンメタデータには、アプリの名前やサイトなど、アプリに関する詳細情報が含まれます。
+
+<Tip>
+  [base.dev](https://base.dev/) で登録すると Builder Code を取得できます。コードは **Settings** → **Builder Code** で確認できます。
+</Tip>
+
+## 統合ガイド {#integration-guides}
+
+<CardGroup cols={3}>
+  <Card title="アプリ開発者向け" icon="code" href="/ja/specifications/builder-codes/for-app-developers">
+    Wagmi または Viem を使って Builder Codes を統合する
+  </Card>
+
+  <Card title="ウォレット開発者向け" icon="wallet" href="/ja/specifications/builder-codes/for-wallet-developers">
+    dataSuffix ケイパビリティを実装する
+  </Card>
+
+  <Card title="エージェント開発者向け" icon="robot" href="/ja/specifications/builder-codes/for-agent-developers">
+    API 経由で AI エージェントのトランザクションにアトリビューションを付与する
+  </Card>
+</CardGroup>
+
+## メリット {#benefits}
+
+* **報酬：** アプリがトランザクションを生み出している場合、Builder Codes を使えば Base がその利用実績を自動的にあなたのものとして紐づけるため、プログラムの拡大に伴って報酬を受け取れるようになります。
+* **分析：** オンチェーンでの利用状況、ユーザー獲得、コンバージョン指標を Base.dev で確実に追跡できます。
+* **露出：** Builder Codes を導入したアプリは、App Leaderboards、Base App ストア、エコシステムの注目アプリ紹介など、ユーザーがアプリを見つける場に掲載される可能性があります。
+
+## よくある質問 {#faq}
+
+### スマートコントラクトを変更する必要はありますか？ {#do-i-need-to-modify-my-smart-contracts}
+
+**いいえ。** アトリビューションサフィックスは、トランザクションの calldata の末尾に付加されます。スマートコントラクトは通常どおり実行され、追加データは無視されます。アトリビューションは、トランザクションの実行後にオフチェーンのインデクサーによって抽出されます。
+
+つまり、次のことを意味します。
+
+* 既存のスマートコントラクトはすべて、そのまま ERC-8021 に対応します
+* アップグレードや再デプロイは不要です
+* コントラクトの実行には一切影響しません
+
+### Builder Codes によって追加されるガスはどのくらいですか？ {#how-much-additional-gas-do-builder-codes-cost}
+
+ERC-8021 サフィックスによる各トランザクションのガス増加はごくわずかで、非ゼロバイト 1 つあたり 16 gas です。
+
+### Builder Codes によって自分の身元が明らかになることはありますか？ {#will-builder-codes-expose-my-identity}
+
+**いいえ。** Builder Codes はトランザクションをアプリケーションに紐付けるだけです。オンチェーンですでに公開されている情報以外に、ウォレット情報が明らかになることはありません。
+
+### ERC-8021 は外部所有アカウント (EOA) でも使用できますか？ {#can-i-use-erc-8021-with-externally-owned-accounts-eoas}
+
+**はい。** ERC-8021 は EOA とスマートコントラクトウォレットのどちらでも動作します。
+
+### トランザクションが正しくアトリビューションされたかを確認するにはどうすればよいですか？ {#how-do-i-verify-that-my-transaction-was-properly-attributed}
+
+**1. base.dev で確認する**
+
+* [base.dev](https://base.dev) にアクセスします
+* トランザクションタイプのドロップダウンから **Onchain** を選択します
+* Total Transactions セクションでは、自分のコードを含むトランザクションが処理されるたびにアトリビューション数が増えます
+
+**2. ブロックエクスプローラー (Basescan、Etherscan など) を使用する**
+
+* 対象のトランザクションハッシュを探します
+* input data フィールドを表示します
+* 末尾の 16 バイトが `8021` の繰り返しになっていることを確認します
+* サフィックスをデコードし、Builder Code が含まれていることを確認します
+
+**3. オープンソースツールを使用する**
+
+* [Builder Code 検証](https://builder-code-checker.vercel.app/) ツールを開きます
+* トランザクションタイプを選択します
+* トランザクションまたは UserOperation のハッシュを入力します
+* **Check Attribution** ボタンをクリックします
+
+### 現在ERC-8021に対応しているウォレットはどれですか？ {#which-wallets-currently-support-erc-8021}
+
+**EOA：**
+
+すべてのEOAウォレットは、デフォルトで`dataSuffix`に対応しています。
+
+**スマートウォレット：**
+
+ERC-5792に対応したウォレットでは、`DataSuffixCapability`を使用してサフィックスをすっきりと付加できます。
+
+<Accordion title="コード例">
+  ```javascript Wallet send calls with attribution lines expandable wrap
+  await wallet.sendCalls({
+    calls: [
+      // トランザクションの呼び出し
+    ],
+    capabilities: {
+      dataSuffix: {
+        value: "0x07626173656170700080218021802180218021802180218021",
+        optional: true
+      }
+    }
+  });
+  ```
+</Accordion>
+
+**組み込みウォレット：**
+
+* **Privy** - ERC-8021に対応した組み込みウォレットソリューション
+* **Turnkey** - プログラマティックウォレット向けのインフラストラクチャ
+
+## その他のリソース {#additional-resources}
+
+* [ERC-8021 公式提案](https://eip.tools/eip/8021)
+* [Builder Code 検証ツール](https://builder-code-checker.vercel.app/)
+
+## フィードバックをお寄せください！ {#give-feedback}
+
+<Note>
+  Base は Builder Codes の使い勝手の向上に継続的に取り組んでいます。ご意見・ご要望が
+  ありましたら、[チームまでフィードバックをお送りください](https://t.co/zwvtmXXzGz)。
+</Note>

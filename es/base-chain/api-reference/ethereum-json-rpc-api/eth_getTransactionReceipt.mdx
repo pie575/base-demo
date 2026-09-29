@@ -1,0 +1,110 @@
+---
+title: 'eth_getTransactionReceipt'
+sidebarTitle: 'eth_getTransactionReceipt'
+description: 'Devuelve el recibo de una transacción minada. Los recibos solo están disponibles una vez que la transacción se ha incluido en un bloque.'
+---
+
+Devuelve el recibo de una transacción a partir de su hash. Devuelve `null` para las transacciones pendientes o que aún no se han minado.
+
+<Note>
+  Los recibos solo están disponibles para transacciones minadas. Para supervisar una transacción antes de que se selle el bloque, usa [`base_transactionStatus`](/es/base-chain/api-reference/flashblocks-api/base_transactionStatus) para confirmar que está en la mempool, o suscríbete a [`newFlashblockTransactions`](/es/base-chain/api-reference/flashblocks-api/newFlashblockTransactions) para detectar su preconfirmación en un Flashblock.
+</Note>
+
+## Parámetros {#parameters}
+
+<ParamField body="transactionHash" type="string" required>
+  El hash de 32 bytes de la transacción.
+</ParamField>
+
+## Valores devueltos {#returns}
+
+<ResponseField name="result" type="object | null">
+  El objeto de recibo de la transacción, o `null` si la transacción aún no se ha minado.
+
+  <Expandable title="Campos del recibo">
+    <ResponseField name="transactionHash" type="string">Hash de 32 bytes de la transacción.</ResponseField>
+    <ResponseField name="transactionIndex" type="string">Índice de la transacción en el bloque (hex).</ResponseField>
+    <ResponseField name="blockHash" type="string">Hash de 32 bytes del bloque que contiene esta transacción.</ResponseField>
+    <ResponseField name="blockNumber" type="string">Número de bloque (hex).</ResponseField>
+    <ResponseField name="from" type="string">Dirección de 20 bytes del remitente.</ResponseField>
+    <ResponseField name="to" type="string">Dirección de 20 bytes del destinatario. `null` en despliegues de contratos.</ResponseField>
+    <ResponseField name="cumulativeGasUsed" type="string">Gas total usado en el bloque hasta esta transacción inclusive (hex).</ResponseField>
+    <ResponseField name="effectiveGasPrice" type="string">Precio real pagado por unidad de gas en esta transacción (hex).</ResponseField>
+    <ResponseField name="gasUsed" type="string">Gas usado únicamente por esta transacción (hex).</ResponseField>
+    <ResponseField name="contractAddress" type="string | null">Dirección del contrato creado, o `null` si no se trata de un despliegue.</ResponseField>
+    <ResponseField name="logs" type="array">Array de objetos de log emitidos por esta transacción.</ResponseField>
+    <ResponseField name="logsBloom" type="string">Filtro de Bloom de 256 bytes para los logs de este recibo.</ResponseField>
+    <ResponseField name="type" type="string">Tipo de transacción: `"0x0"` legacy, `"0x1"` Access List, `"0x2"` EIP-1559, `"0x7e"` Deposit (L1→L2).</ResponseField>
+    <ResponseField name="status" type="string">`"0x1"` si tiene éxito, `"0x0"` si falla (revert).</ResponseField>
+    <ResponseField name="blobGasUsed" type="string">Gas de blob consumido por esta transacción (EIP-4844). `null` en transacciones sin blobs.</ResponseField>
+    <ResponseField name="l1Fee" type="string">Tarifa total de datos de L1 pagada por esta transacción (hex). Campo de Base L2.</ResponseField>
+    <ResponseField name="l1GasUsed" type="string">Cantidad de gas de L1 usada para la parte de datos de L1 de esta transacción (hex). Campo de Base L2.</ResponseField>
+    <ResponseField name="l1GasPrice" type="string">Precio del gas de L1 en el momento de la inclusión (hex). Campo de Base L2.</ResponseField>
+    <ResponseField name="l1BlobBaseFee" type="string">Tarifa base de blob en L1 en el momento de la inclusión (hex). Campo de Base L2.</ResponseField>
+    <ResponseField name="l1BlobBaseFeeScalar" type="string">Escalar aplicado a la tarifa base de blob para calcular la tarifa de L1 (hex). Campo de Base L2.</ResponseField>
+    <ResponseField name="l1BaseFeeScalar" type="string">Escalar aplicado a la tarifa base de L1 para calcular la tarifa de L1 (hex). Campo de Base L2.</ResponseField>
+    <ResponseField name="daFootprintGasScalar" type="string">Escalar de huella de DA específico de Base (hex).</ResponseField>
+    <ResponseField name="depositNonce" type="string">Nonce usado en la transacción de depósito (hex). Solo presente en transacciones de tipo `0x7e`.</ResponseField>
+    <ResponseField name="depositReceiptVersion" type="string">Versión del recibo de depósito (hex). Solo presente en transacciones de tipo `0x7e`.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Códigos de error {#error-codes}
+
+| Código   | Mensaje                             | Descripción                                                                                            |
+| -------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `-32000` | transaction indexing is in progress | El nodo aún está indexando transacciones. Vuelve a intentarlo cuando el nodo termine de sincronizarse. |
+
+## Ejemplo {#example}
+
+<CodeGroup>
+  ```json Solicitud
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_getTransactionReceipt",
+    "params": ["0xb903239f8543d04b5dc1ba6579132b143087c68db1b2168786408fcbce568238"],
+    "id": 1
+  }
+  ```
+
+  ```json Respuesta (depósito tipo 0x7e) lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "blobGasUsed": null,
+      "blockHash": "0x491bca01d4bc076d60833dbd973fe031a74e7ae31866bf70d077619e09edb6ff",
+      "blockNumber": "0x2c31b0b",
+      "contractAddress": null,
+      "cumulativeGasUsed": "0xb48a",
+      "daFootprintGasScalar": "0x94",
+      "depositNonce": "0x2c31b0e",
+      "depositReceiptVersion": "0x1",
+      "effectiveGasPrice": "0x0",
+      "from": "0xdeaddeaddeaddeaddeaddeaddeaddeaddead0001",
+      "gasUsed": "0xb48a",
+      "l1BaseFeeScalar": "0x8dd",
+      "l1BlobBaseFee": "0x582765",
+      "l1BlobBaseFeeScalar": "0x101c12",
+      "l1Fee": "0x0",
+      "l1GasPrice": "0x6bdbf6f",
+      "l1GasUsed": "0x71d",
+      "logs": [],
+      "logsBloom": "0x000...000",
+      "status": "0x1",
+      "to": "0x4200000000000000000000000000000000000015",
+      "transactionHash": "0x03c8f106f18ad94190e763e21b584c5825b2f4c61f1274c0e8abe65b4476cd51",
+      "transactionIndex": "0x0",
+      "type": "0x7e"
+    }
+  }
+  ```
+
+  ```json No encontrado
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": null
+  }
+  ```
+</CodeGroup>

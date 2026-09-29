@@ -1,0 +1,98 @@
+---
+title: "Jovian：系统配置"
+description: "Jovian 升级对 SystemConfig 的变更：为 EIP-1559 费用市场新增最低基础费用配置变量。"
+---
+
+## 最低基础费用配置 {#minimum-base-fee-configuration}
+
+Jovian 在 `SystemConfig` 中新增了一个配置值，用于控制 Base 上 EIP-1559 费用市场的最低基础费用。
+该值以 wei 为单位。
+
+| 名称           | 类型       | 默认值 | 含义               |
+| ------------ | -------- | --- | ---------------- |
+| `minBaseFee` | `uint64` | `0` | 最低基础费用 (单位：wei)  |
+
+该配置通过 `SystemConfig` 上新增的方法进行更新：
+
+```solidity SystemConfig.sol
+function setMinBaseFee(uint64 minBaseFee) external onlyOwner;
+```
+
+### `ConfigUpdate` {#configupdate}
+
+配置更新时，MUST 发出带有以下参数的 [`ConfigUpdate`](/zh/specifications/base-protocol/consensus/derivation#system-config-updates) 事件：
+
+| `version`    | `updateType` | `data`                            | 用途                 |
+| ------------ | ------------ | --------------------------------- | ------------------ |
+| `uint256(0)` | `uint8(6)`   | `abi.encode(uint64(_minBaseFee))` | 修改最低基础费用 (单位：wei)  |
+
+### 初始化 {#initialization}
+
+在 `SystemConfig` 初始化期间，应执行以下操作：
+
+* `emit ConfigUpdate.BATCHER`
+* `emit ConfigUpdate.FEE_SCALARS`
+* `emit ConfigUpdate.GAS_LIMIT`
+* `emit ConfigUpdate.UNSAFE_BLOCK_SIGNER`
+
+此处有意省略了 `emit ConfigUpdate.EIP_1559_PARAMS` 和 `emit ConfigUpdate.MIN_BASE_FEE`。
+只要这些值尚未设置，就会使用默认值。
+如果要求在初始化期间设置这些参数，就相当于强制规定
+L2 必须先于 L1 合约升级完成硬分叉，而在多链并存的环境中，这一点
+很难协调管理。
+
+### 修改最低基础费用 {#modifying-minimum-base-fee}
+
+更新时，合约会发出上述 `ConfigUpdate` 事件，以便节点
+从 L1 日志中推导出该配置。
+
+实现 MUST 按照 `./exec-engine.md` 中的规定，将所配置的值写入区块头的 `extraData` 字段。
+在首个此类事件发出之前，应使用默认值 `0`。
+
+### 接口 {#interface}
+
+#### 最低基础费用参数 {#minimum-base-fee-parameters}
+
+##### `minBaseFee` {#minbasefee}
+
+该函数返回当前配置的最低基础费用 (base fee) ，单位为 wei。
+
+```solidity SystemConfig.sol
+function minBaseFee() external view returns (uint64);
+```
+
+## DA 足迹配置 {#da-footprint-configuration}
+
+Jovian 在 `SystemConfig` 中新增了一个 `uint16` 类型的配置值，用于控制 [`daFootprintGasScalar`](./derivation)。
+
+该配置通过 `SystemConfig` 中新增的一个方法进行更新：
+
+```solidity SystemConfig.sol
+function setDAFootprintGasScalar(uint16 daFootprintGasScalar) external onlyOwner;
+```
+
+### `ConfigUpdate` {#configupdate-2}
+
+配置更新时，MUST 发出 [`ConfigUpdate`](/zh/specifications/base-protocol/consensus/derivation#system-config-updates) 事件，
+参数如下：
+
+| `version`    | `updateType` | `data`                                      | 用途              |
+| ------------ | ------------ | ------------------------------------------- | --------------- |
+| `uint256(0)` | `uint8(7)`   | `abi.encode(uint16(_daFootprintGasScalar))` | 修改 DA 足迹 gas 标量 |
+
+### 修改 DA 足迹 Gas 标量 {#modifying-da-footprint-gas-scalar}
+
+更新时，合约会发出上述 `ConfigUpdate` 事件，以便节点
+从 L1 日志中推导出该配置。
+
+### 接口 {#interface-2}
+
+#### DA 足迹 Gas Scalar 参数 {#da-footprint-gas-scalar-parameters}
+
+##### `daFootprintGasScalar` {#dafootprintgasscalar}
+
+该函数返回当前配置的 DA 足迹 gas 标量。
+
+```solidity SystemConfig.sol
+function daFootprintGasScalar() external view returns (uint16);
+```

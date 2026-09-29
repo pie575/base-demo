@@ -1,0 +1,119 @@
+---
+title: 'eth_call'
+sidebarTitle: 'eth_call'
+description: '执行消息调用，但不创建交易。使用 pending 可基于预确认状态进行模拟。'
+---
+
+立即执行消息调用，但不会向网络广播交易，也不会在链上消耗 gas。可用于读取合约状态或模拟调用。
+
+<Tip>
+  **Flashblocks：** 使用 `"pending"` 查询 `https://mainnet.base.org`，即可基于当前预确认的区块状态进行模拟，该状态约每 200ms 更新一次。
+</Tip>
+
+<Note>
+  **Flashblocks 节点上 `eth_call "pending"` 的区块上下文：** 受节点缓存历史 Flashblocks 方式的影响，区块上下文属性 (`block.number`、`block.timestamp`、`block.basefee`) 反映的可能是落后链头若干个区块的状态。详情请参阅 [FAQ](/zh/specifications/flashblocks#why-does-eth_call-pending-report-a-block-number-several-blocks-behind-tip)。
+</Note>
+
+## 参数 {#parameters}
+
+<ParamField body="transaction" type="object" required>
+  交易调用对象。
+
+  <Expandable title="交易字段">
+    <ParamField body="from" type="string">
+      发起调用的地址。可选；默认为零地址。
+    </ParamField>
+
+    <ParamField body="to" type="string" required>
+      调用的目标地址。
+    </ParamField>
+
+    <ParamField body="gas" type="string">
+      为本次调用提供的 gas，以十六进制整数表示。若省略，则默认使用较高的上限。
+    </ParamField>
+
+    <ParamField body="gasPrice" type="string">
+      gas 价格 (以 wei 为单位) ，以十六进制整数表示。适用于 legacy 交易。可选。
+    </ParamField>
+
+    <ParamField body="maxFeePerGas" type="string">
+      EIP-1559 每单位 gas 的最高总费用。可选。
+    </ParamField>
+
+    <ParamField body="maxPriorityFeePerGas" type="string">
+      EIP-1559 每单位 gas 的最高优先费。可选。
+    </ParamField>
+
+    <ParamField body="value" type="string">
+      转账金额 (以 wei 为单位) ，以十六进制整数表示。可选。
+    </ParamField>
+
+    <ParamField body="data" type="string">
+      ABI 编码的调用数据：4 字节函数选择器，后跟编码后的参数。可选。
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="block" type="string" required>
+  十六进制区块号，或 `"latest"`、`"pending"`、`"safe"`、`"finalized"`、`"earliest"` 之一。使用 `"pending"` 可基于预确认 (pre-confirmed) 状态执行调用。
+</ParamField>
+
+## 返回值 {#returns}
+
+<ResponseField name="result" type="string">
+  调用的返回值，以十六进制编码的字节数组表示。
+</ResponseField>
+
+## 错误码 {#error-codes}
+
+| 代码       | 消息                 | 说明                                         |
+| -------- | ------------------ | ------------------------------------------ |
+| `-32000` | execution reverted | 调用被回滚。若有回滚原因，错误对象的 `data` 字段中会包含其 ABI 编码值。 |
+
+## 示例 {#example}
+
+<CodeGroup>
+  ```bash 标准 (latest) lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_call",
+      "params": [
+        {
+          "to": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "data": "0x70a082310000000000000000000000004200000000000000000000000000000000000006"
+        },
+        "latest"
+      ],
+      "id": 1
+    }'
+  ```
+
+  ```bash Flashblocks (pending，约 200ms) lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_call",
+      "params": [
+        {
+          "to": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "data": "0x70a082310000000000000000000000004200000000000000000000000000000000000006"
+        },
+        "pending"
+      ],
+      "id": 1
+    }'
+  ```
+
+  ```json 响应
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x0000000000000000000000000000000000000000000000000000000005f5e100"
+  }
+  ```
+</CodeGroup>

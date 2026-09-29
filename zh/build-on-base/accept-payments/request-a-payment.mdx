@@ -1,0 +1,86 @@
+---
+title: "请求付款"
+keywords: ["Commerce Payments charge", "request USDC payment", "onchain checkout Base", "PaymentCharged"]
+description: "在 Base 上发起并结算一笔基于托管的即时扣款。"
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+使用 `charge` 操作发起即时支付。付款方批准支付条款并授权收取代币后，你的运营方会在单笔交易中完成款项的收取和结算，并将该金额记录为可退款。
+
+<Info>
+  本指南中的支付流程基于 [Commerce Payments Protocol](https://github.com/base/commerce-payments)。
+</Info>
+
+## 演示 {#demo}
+
+<PaymentsDemo flow="accept" />
+
+<Tip>
+  上方演示仅为模拟效果。如需查看 Vibenet 上的链上演示，请前往 [Base 链演示](https://chain.base.org/demos)。
+</Tip>
+
+<Note>
+  这些示例使用 v1.1.0 版 `AuthCaptureEscrow`，合约地址为 `0xf96815976523E00e65Be8f34cA5e64b4f41EB19c`。该合约通过 CREATE2 以相同地址部署在 Base 和 Base Sepolia 上。
+</Note>
+
+## 扣款并验证付款 {#charge-and-verify-the-payment}
+
+完整的测试夹具会创建一个唯一的 `PaymentInfo`，派生出与付款方无关的哈希，并请求付款方针对已部署的收款器签署 ERC-3009 `ReceiveWithAuthorization`。随后，由运营方提交 `charge`。
+
+| 收款器      | 适用场景                            |
+| -------- | ------------------------------- |
+| ERC-3009 | USDC 及其他原生支持转账授权的代币             |
+| Permit2  | 付款方授权 Permit2 后，可支持更多 ERC-20 代币 |
+| 预授权      | 标准 ERC-20 授权额度，外加针对特定付款的预授权     |
+| 支出权限     | 基于钱包的周期性扣费工作流                   |
+
+对于 B20 及其他 ERC-20 代币，只要其转账策略允许收款器、运营方代币存储、收款方和手续费收款方参与，即可使用 Permit2 或预授权收款器。
+
+{/* sample: usdc-accept-ts */}
+
+```typescript TypeScript lines wrap expandable highlight={2,7,11-12}
+export async function requestPayment(receiver: Address, orderId: string) {
+  const payment = await prepareErc3009Payment(receiver, orderId, "5.00");
+  const simulation = await publicClient.simulateContract({
+    account,
+    address: AUTH_CAPTURE_ESCROW,
+    abi: authCaptureEscrowAbi,
+    functionName: "charge",
+    args: [
+      payment.paymentInfo,
+      payment.paymentInfo.maxAmount,
+      ERC3009_PAYMENT_COLLECTOR,
+      payment.collectorData,
+      0n,
+      zeroAddress,
+    ],
+  });
+  const hash = await operatorWallet.writeContract(simulation.request);
+  const receipt = await publicClient.waitForTransactionReceipt({ hash, confirmations: 2 });
+  if (receipt.status !== "success") throw new Error("Payment charge reverted");
+  return { hash, paymentInfoHash: payment.paymentInfoHash };
+}
+```
+
+协议会将 `amount - feeAmount` 发送至 `paymentInfo.receiver`，另行发送手续费，并将 `refundableAmount` 增加本次扣款的全额。
+
+<Check>
+  确认已触发 `PaymentCharged` 事件，将其 `paymentInfoHash` 与订单进行匹配，并在履约前以原子方式认领该事件。
+</Check>
+
+<Warning>
+  付款方签名并不等于结算完成。只有成功的 `charge` 交易回执才能证明资金的收取和分配均已完成。请将 `maxFeeBps` 限制在较小范围内，并固定 `feeReceiver`；除非你的运营方需要替换已被列入拒绝名单的接收方。
+</Warning>
+
+## 另请参阅 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="授权付款" icon="signature" href="/zh/build-on-base/accept-payments/authorize-a-payment">
+    将资金预留至托管账户，履约后再行扣款。
+  </Card>
+
+  <Card title="验证付款" icon="shield-check" href="/zh/build-on-base/accept-payments/verify-a-payment">
+    履约前先确认协议事件。
+  </Card>
+</CardGroup>

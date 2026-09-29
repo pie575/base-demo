@@ -1,0 +1,213 @@
+---
+title: "Bloques nativos de 200ms"
+description: "Especificación de los bloques canónicos de 200ms de Denim, incluidos BaseTime, la derivación, la validación y el comportamiento del RPC."
+tag: "Vibenet"
+---
+
+<Warning>
+  Los bloques nativos de 200ms ya están disponibles en [Vibenet](/es/build-on-base/test-on-vibenet) para que los desarrolladores realicen pruebas experimentales. Este despliegue puede cambiar, así que no debes basarte en él para tomar decisiones de producción.
+
+  Está previsto que Denim llegue a Base Sepolia y Base Mainnet en octubre de 2026; aún no se han definido los momentos exactos de activación ni las versiones de cliente requeridas.
+
+  Denim cambia la velocidad a la que avanza `block.number`. Si tus contratos miden el tiempo en bloques, lee [Lógica de contratos basada en el número de bloque](#block-number-based-contract-logic) antes de la activación.
+</Warning>
+
+## Resumen {#summary}
+
+Denim cambia la producción de bloques de Base: pasa de un bloque canónico cada dos segundos a cinco bloques canónicos completos por segundo. Cada bloque de 200 ms tiene su propio número de bloque, hash, raíz de estado, recibos, actualizaciones de forkchoice y ciclo de vida unsafe, safe y finalized.
+
+Denim reemplaza a [Flashblocks](/es/specifications/flashblocks), que publican actualizaciones incrementales del estado pendiente de un único bloque. Como parte del despliegue de Denim, Base dejará de producir Flashblocks y, en su lugar, producirá un bloque canónico cada 200 ms. Las aplicaciones que usan Flashblocks deben migrar a los flujos de bloques canónicos y de RPC.
+
+Denim mantiene sin cambios el encabezado de bloque de Ethereum y su `timestamp` expresado en segundos. Un depósito de metadatos BaseTime aporta la fracción de segundo. Juntos, estos valores determinan la marca de tiempo completa, en milisegundos, de un bloque canónico.
+
+<Info>
+  Si tu aplicación usa Flashblocks, consulta [Migrar desde Flashblocks](/es/upgrades/denim/migrate-from-flashblocks) para conocer los cambios de API necesarios.
+</Info>
+
+## Disponibilidad por red {#network-availability}
+
+| Red       | Estado                                 | Marca de tiempo de activación | Versiones de cliente requeridas |
+| --------- | -------------------------------------- | ----------------------------- | ------------------------------- |
+| `vibenet` | Disponible para pruebas experimentales | —                             | —                               |
+| `sepolia` | Prevista para octubre de 2026          | `TBD`                         | `TBD`                           |
+| `mainnet` | Prevista para octubre de 2026          | `TBD`                         | `TBD`                           |
+
+Aún no se han programado las marcas de tiempo de activación de Base Sepolia y Base Mainnet. Cuando se definan, esta página indicará las marcas de tiempo de activación y las versiones de cliente requeridas.
+
+## Lógica de contratos basada en el número de bloque {#block-number-based-contract-logic}
+
+<Warning>
+  Denim hace que Base pase de un bloque cada dos segundos a cinco bloques por segundo. `block.number` avanza diez veces más rápido en tiempo real, mientras que `block.timestamp` sigue avanzando en segundos enteros. Cualquier contrato o sistema offchain que trate un recuento de bloques como una duración verá que esa duración se reduce a una décima parte de la prevista tras la activación. Las constantes de recuento de bloques fijadas en contratos inmutables o no actualizables no podrán reajustarse después de la activación.
+</Warning>
+
+Antes de la activación de Denim, audita tus contratos en busca de lógica que convierta recuentos de bloques en tiempo:
+
+| Patrón                                                                                                                                                 | Efecto tras Denim                                                                                                                                                                                                                                                                |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Timelocks, periodos de espera y retrasos de salida medidos como `block.number - start >= N`                                                            | Transcurren en una décima parte del tiempo real previsto.                                                                                                                                                                                                                        |
+| Calendarios de vesting, emisión o dificultad medidos en bloques                                                                                        | Se completan o reajustan diez veces más rápido en tiempo real.                                                                                                                                                                                                                   |
+| Límites de tasa o topes por bloque que se reinician cuando cambia `block.number`                                                                       | Se reinician cinco veces por segundo en lugar de una vez cada dos segundos, lo que multiplica por diez el límite efectivo por segundo.                                                                                                                                           |
+| Plazos definidos como `expirationBlock = block.number + N`                                                                                             | Vencen en una décima parte del tiempo real previsto.                                                                                                                                                                                                                             |
+| Retraso y periodo de votación de gobernanza expresados en bloques, incluido `ERC20Votes` con el `clock()` predeterminado basado en el número de bloque | Las ventanas de votación son diez veces más cortas. Los checkpoints almacenados siguen siendo correctos.                                                                                                                                                                         |
+| Oráculos TWAP al estilo de Uniswap V3                                                                                                                  | Los valores TWAP siguen siendo correctos porque los acumuladores se ponderan por segundos. Una cardinalidad de observación fija cubre aproximadamente la mitad del historial en tiempo real, por lo que las consultas `observe()` que miran muy atrás revierten con `OLD` antes. |
+
+La lógica que mide el tiempo con `block.timestamp` no se ve afectada.
+
+Para prepararte:
+
+* Sustituye las duraciones basadas en recuentos de bloques por comparaciones con `block.timestamp` siempre que puedas volver a desplegar o actualizar el contrato.
+* Si un recuento de bloques se puede ajustar mediante gobernanza, prevé dividirlo entre diez en el momento de la activación.
+* Si un recuento de bloques es inmutable y no puede cambiarse, evalúa el impacto y planifica una migración antes de la activación.
+* Prueba el nuevo comportamiento en [Vibenet](/es/build-on-base/test-on-vibenet), que ya produce bloques de 200 ms.
+
+## Ejecución {#execution}
+
+### Marca de tiempo completa del bloque {#full-block-timestamp}
+
+Denim mantiene `block.header.timestamp` como tiempo Unix en segundos enteros. Para un bloque activado `b`, su marca de tiempo completa es:
+
+$$
+T&#95;{ms}(b) = 1000 \times b.header.timestamp + b.tx[1].timestamp&#95;millis&#95;part
+$$
+
+El depósito BaseTime en `tx[1]` contiene `timestamp_millis_part`. Los únicos valores válidos son `0`, `200`, `400`, `600` y `800`. Los bloques activados consecutivos cumplen:
+
+$$
+T&#95;{ms}(child) = T&#95;{ms}(parent) + 200
+$$
+
+Los bloques no pueden saltarse slots. Los segundos del encabezado y la parte de milisegundos deben provenir de la misma marca de tiempo programada: la hora real del reloj determina cuándo el secuenciador empieza a construir un bloque, pero no la marca de tiempo que se le asigna. En la EVM, `block.timestamp` sigue siendo el valor del encabezado en segundos enteros.
+
+### Depósito de metadatos de BaseTime {#basetime-metadata-deposit}
+
+Tras la activación, cada bloque contiene la actualización canónica de BaseTime en `tx[1]`, inmediatamente después del depósito de información de L1 en `tx[0]` y antes de las transacciones de los usuarios. El depósito queda vinculado al número de bloque actual mediante el dominio de hash de origen `3`.
+
+| Campo                  | Valor                                                                                                                  |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Tipo de transacción    | Depósito (`0x7e`)                                                                                                      |
+| Hash de origen         | Dominio `3`, vinculado al número de bloque actual                                                                      |
+| From                   | `0xDeaDDEaDDeAdDeAdDEAdDEaddeAddEAdDEAd0001`                                                                           |
+| To                     | `0x4200000000000000000000000000000000000030`                                                                           |
+| Mint                   | `0`                                                                                                                    |
+| Value                  | `0`                                                                                                                    |
+| Límite de gas          | `1,000,000`                                                                                                            |
+| Transacción de sistema | `false`                                                                                                                |
+| Calldata               | `setTimestampMillisPart(uint16)` con el selector `0x86bdf394` y la parte de milisegundos codificada en ABI en 32 bytes |
+
+Antes de la activación, los bloques no deben contener esta transacción de metadatos ni el campo de milisegundos de Engine. Tras la activación, las implementaciones validan la posición de la transacción, el hash de origen, el remitente, el destinatario, el mint, el valor, el límite de gas, el indicador de sistema, la estructura del calldata y el valor del retículo.
+
+### Predeploy BaseTime {#basetime-predeploy}
+
+El diseño inicial expone a los contratos la parte de milisegundos del bloque actual mediante un predeploy.
+
+| Propiedad                             | Valor                                         |
+| ------------------------------------- | --------------------------------------------- |
+| Proxy                                 | `0x4200000000000000000000000000000000000030`  |
+| Implementación                        | `0xc0D3C0d3C0d3C0D3c0d3C0d3c0D3C0d3c0d30030`  |
+| Almacenamiento                        | Parte de milisegundos `uint16` en el slot `0` |
+| Setter                                | `setTimestampMillisPart(uint16)`              |
+| Getter de la parte de milisegundos    | `timestampMillisPart()`                       |
+| Getter de la marca de tiempo completa | `timestampMs()`                               |
+
+El depósito de BaseTime se ejecuta antes que los depósitos de usuario de L1 y que las transacciones de usuario, por lo que todas las transacciones posteriores pueden leer el valor actualizado.
+
+Las cadenas nuevas instalan el predeploy BaseTime vinculado en el génesis. En las cadenas existentes, la dirección reservada ya contiene el código de runtime del proxy canónico y usa el ProxyAdmin de Base, pero su slot de implementación no está definido. Por eso, las llamadas revierten hasta la activación.
+
+En la activación, antes de ejecutar las transacciones, el protocolo instala la implementación canónica de BaseTime y la vincula al proxy existente. Se conservan el administrador del proxy y cualquier implementación que ya se haya establecido mediante la gobernanza.
+
+### Atributos de payload del Engine {#engine-payload-attributes}
+
+La Engine API utiliza `BasePayloadAttributes`, que combina en un mismo nivel los campos estándar de `PayloadAttributes` y los campos específicos de Base.
+
+Para los payloads a partir de la activación de Denim, `BasePayloadAttributes.timestampMillisPart` **DEBE** estar presente y ser igual a `0`, `200`, `400`, `600` u `800`. Antes de la activación, **NO DEBE** estar presente.
+
+`BasePayloadAttributes.transactions[1]` **DEBE** contener el depósito de metadatos de BaseTime. El depósito **DEBE** enviarlo el depositante del protocolo al predeploy de BaseTime, y su calldata **DEBE** contener la codificación canónica de `setTimestampMillisPart(uint16)`. El valor codificado **DEBE** ser igual a `timestampMillisPart`.
+
+Un cliente de ejecución **DEBE** rechazar los atributos de payload de `forkchoiceUpdated` mal formados con el error JSON-RPC `Invalid params` (`-32602`). Asimismo, **DEBE** marcar como inválido, durante la validación de `newPayload`, cualquier payload de ejecución cuyo depósito de BaseTime falte o no sea válido.
+
+El ID del payload incluye `timestampMillisPart`, de modo que las construcciones que solo difieren en la parte de milisegundos reciben IDs distintos. Cuando el campo está ausente, el cálculo heredado del ID del payload no se modifica.
+
+Todos los campos de marca de tiempo existentes del Engine siguen expresándose en segundos.
+
+### Validación {#validation}
+
+Al procesar `forkchoiceUpdated`, el cliente de ejecución realiza comprobaciones que no requieren leer el estado de los contratos. Antes de Denim, `timestampMillisPart` debe estar ausente. A partir de Denim, debe estar presente y ser igual a `0`, `200`, `400`, `600` u `800`. La marca de tiempo del bloque en segundos enteros no debe ser anterior a la de su bloque padre. Como los encabezados de bloque no almacenan milisegundos, el cliente comprueba la progresión exacta de 200 ms después de la ejecución.
+
+Tras la ejecución, el cliente **DEBE** verificar que la marca de tiempo completa del bloque sea exactamente 200 ms posterior a la de su bloque padre. Los bloques que no cumplan este requisito no son válidos.
+
+## Derivación {#derivation}
+
+### Marcas de tiempo programadas {#scheduled-timestamps}
+
+Tras la activación, el pipeline de derivación calcula la marca de tiempo de cada bloque a partir del calendario de activación de Denim y del número absoluto de bloque de L2. No lee la parte de milisegundos de los datos del lote ni la deriva del reloj local del sistema. La secuencia es:
+
+`p (.000)` → `child (.200)` → `child (.400)` → `child (.600)` → `child (.800)` → `child (.000 in the next second)`
+
+El pipeline divide la marca de tiempo programada en la marca de tiempo del encabezado, expresada en segundos, y la parte de milisegundos de BaseTime; a continuación, reconstruye el depósito de BaseTime en `tx[1]`.
+
+### Ciclo de vida del bloque {#block-lifecycle}
+
+El secuenciador construye y ejecuta un bloque completo para cada slot de 200 ms seleccionado. Cada bloque tiene su propio hash, raíz de estado, recibos, payload de Engine, actualización de forkchoice y ciclo de vida unsafe → safe → finalized.
+
+El bloque comienza con el depósito de información de L1 en `tx[0]` y el depósito de metadatos de BaseTime en `tx[1]`. A continuación van las transacciones de usuario y las demás transacciones aplicables. El diseño prevé que el atributo del payload, `tx[1]` y el valor escrito en el predeploy de BaseTime representen la misma parte de milisegundos planificada.
+
+## RPC {#rpc}
+
+<Note>
+  El comportamiento de RPC que se describe a continuación está previsto para Denim y aún no está disponible en los endpoints de producción.
+</Note>
+
+### Compatibilidad con segundos {#seconds-compatibility}
+
+Denim mantiene en segundos Unix el campo JSON-RPC `timestamp` existente. Las marcas de tiempo del Engine, las marcas de tiempo de validez de las transacciones, las marcas de tiempo de `eth_call` y el `block.timestamp` de la EVM también siguen expresándose en segundos. Las respuestas RPC no exponen el campo interno `timestampMillisPart`.
+
+Tras el despliegue de Denim, utiliza las respuestas de bloques canónicos y suscripciones como `eth_subscribe("newHeads")` para recibir actualizaciones en menos de un segundo. Los flujos de Flashblocks dejarán de estar disponibles.
+
+### Marcas de tiempo de bloques y encabezados {#block-and-header-timestamps}
+
+Las siguientes respuestas añadirán el campo opcional `timestampMs`, codificado como una cantidad JSON-RPC que contiene la marca de tiempo Unix completa en milisegundos:
+
+* `eth_getBlockByHash`
+* `eth_getBlockByNumber`
+* `eth_getHeaderByHash`
+* `eth_getHeaderByNumber`
+* `eth_subscribe("newHeads")`
+
+Por ejemplo, un bloque con marca de tiempo de 42,200 segundos tiene:
+
+| Campo         | Valor    |
+| ------------- | -------- |
+| `timestamp`   | `0x2a`   |
+| `timestampMs` | `0xa4d8` |
+
+Los clientes derivarán `timestampMs` de los metadatos autenticados de BaseTime, en lugar de estimarlo a partir del campo de segundos. Si el cuerpo de un bloque histórico o sus metadatos de BaseTime se han podado o no están disponibles por cualquier otro motivo, la respuesta omitirá `timestampMs`.
+
+### Marcas de tiempo de las transacciones {#transaction-timestamps}
+
+Los objetos de transacciones minadas incluirán el campo opcional `blockTimestampMs` en estos métodos:
+
+* `eth_getTransactionByHash`
+* `eth_getTransactionByBlockHashAndIndex`
+* `eth_getTransactionByBlockNumberAndIndex`
+
+Los objetos de transacción completos anidados en las respuestas de bloques se comportarán igual que las transacciones minadas. Las transacciones pendientes omitirán `blockTimestampMs`, ya que aún no pertenecen a un bloque canónico.
+
+### Marcas de tiempo de logs y recibos {#log-and-receipt-timestamps}
+
+Los objetos de log minados incluirán el campo opcional `blockTimestampMs` cuando se devuelvan mediante:
+
+* `eth_getLogs`
+* `eth_getFilterChanges`
+* `eth_getFilterLogs`
+* `eth_getTransactionReceipt`
+* `eth_getBlockReceipts`
+* `eth_subscribe("logs")`
+* `eth_subscribe("transactionReceipts")`
+
+Los recibos expondrán el campo en sus logs anidados, no en el nivel superior del recibo. Un log eliminado conservará la marca de tiempo de su bloque original, junto con la procedencia de dicho bloque. Si los metadatos autenticados de BaseTime del bloque de origen no están disponibles, el log omitirá el campo en lugar de estimarlo.
+
+Al igual que en las respuestas de bloques, los datos de transacciones y logs podados o sin procedencia omitirán `blockTimestampMs`. Los campos son opcionales para que el historial anterior a Denim y los clientes que no disponen de los datos de cuerpo necesarios sigan siendo representables.
+
+### Herramientas {#tooling}
+
+Las rutas `AnyRpcBlock` y `OtherFields` de Foundry pueden conservar un campo `timestampMs` desconocido a nivel de bloque, mientras que la ejecución de la EVM sigue usando segundos. El tipo `AnyRpcHeader` de Alloy, por sí solo, descarta los campos desconocidos; los consumidores que necesiten las marcas de tiempo de Denim pueden usar `WithOtherFields<AnyRpcHeader>` o una respuesta tipada de Base. En el despliegue inicial, no se espera que los bloques minados localmente con Anvil generen metadatos de BaseTime.

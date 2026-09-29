@@ -1,0 +1,131 @@
+---
+title: "Restringir quién puede iniciar transferencias"
+description: "Controla qué cuenta puede iniciar una transferencia B20, con independencia de quién pueda enviar o recibir, vinculando una lista de permitidos a TRANSFER_EXECUTOR_POLICY. Por ejemplo, puedes hacer que todas las transferencias pasen por un agente de transferencias."
+keywords: ["TRANSFER_EXECUTOR_POLICY", "agente de transferencias", "política de ejecutor B20", "restringir iniciador de transferencias", "lista de permitidos de transferFrom"]
+---
+
+import RwaDisclaimer from "/snippets/es/RwaDisclaimer.mdx"
+
+Algunos emisores necesitan que todas las transferencias las inicie una cuenta designada, incluso cuando tanto el remitente como el destinatario son titulares habilitados. `TRANSFER_EXECUTOR_POLICY` restringe `msg.sender` en todas las rutas de transferencia (`transfer`, `transferFrom` y sus variantes con memo), con independencia de los ámbitos del remitente y del destinatario. Un ejemplo es el modelo de agente de transferencias: los titulares aprueban al agente, el agente mueve las unidades con `transferFrom` y se rechaza cualquier `transfer` directa del propio titular. El mismo control sirve para cualquier configuración en la que un contrato operador, un sistema de liquidación o un custodio deba ser quien pulse el botón.
+
+<RwaDisclaimer />
+
+<Note>
+  ¿Es la primera vez que usas B20? Consulta el [estándar de tokens B20](/es/build-on-base/issue-rwa/create-an-asset-token) para conocer los conceptos y seguir una guía completa de lanzamiento. Estos ejemplos están pensados para `base-std@1505323`, `viem@2.55.11` y Base Foundry `v1.1.1`. Esta funcionalidad está disponible tanto en B20 Asset como en B20 Stablecoin.
+</Note>
+
+## Antes de empezar {#before-you-start}
+
+Necesitas todo lo siguiente:
+
+* Un token B20 que administres, con `DEFAULT_ADMIN_ROLE` para poder llamar a `updatePolicy`.
+* Un administrador de políticas que pueda crear y gestionar una política en el Policy Registry. El administrador del token y el administrador de políticas son roles distintos, aunque una misma cuenta puede tener ambos.
+* La dirección de cada iniciador previsto; por ejemplo, el contrato del agente de transferencias.
+* `TRANSFER` sin pausar.
+
+### Qué cuenta se verifica {#which-account-is-checked}
+
+Las transferencias tienen tres ámbitos de política independientes, todos aplicados en la misma ruta compartida:
+
+| Ámbito                     | Cuenta verificada | Valor predeterminado si no se establece |
+| -------------------------- | ----------------- | --------------------------------------- |
+| `TRANSFER_SENDER_POLICY`   | `from`            | Permitir siempre                        |
+| `TRANSFER_RECEIVER_POLICY` | `to`              | Permitir siempre                        |
+| `TRANSFER_EXECUTOR_POLICY` | `msg.sender`      | Permitir siempre                        |
+
+El ámbito del ejecutor verifica al iniciador, no al titular. En `transfer`, el iniciador también es `from`. En `transferFrom`, el iniciador es quien realiza la llamada, que puede ser una cuenta distinta. No hay ninguna excepción para el titular que actúa en su propio nombre: en cuanto asocias una política de ejecutor restrictiva, el titular debe figurar en ella para llamar a `transfer` o para llamar a `transferFrom` indicándose a sí mismo como `from`.
+
+### La asignación es un control independiente {#allowance-is-a-separate-gate}
+
+`transferFrom` sigue requiriendo una asignación ERC-20 otorgada por `from`. La asignación indica «este llamador puede gastar hasta esta cantidad»; la política de ejecutores indica «este llamador puede iniciar transferencias». Un agente de transferencias necesita ambas cosas: una asignación de cada titular cuyas unidades mueve y un lugar en la lista de ejecutores permitidos. Tener una no implica tener la otra.
+
+## Crear y vincular la lista de permitidos de iniciadores {#create-and-bind-the-initiator-allowlist}
+
+Crea una lista de permitidos que incluya inicialmente al iniciador y, luego, vincúlala a `TRANSFER_EXECUTOR_POLICY`:
+
+<CodeGroup>
+  {/* sample: stock-executor-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={8,10}
+  import { parseEventLogs, type Address } from "viem";
+  import { account } from "../../shared/clients.js";
+  import { POLICY_REGISTRY, b20Abi, policyRegistryAbi, scope } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function restrictTransferInitiators(token: Address, transferAgent: Address) {
+    const receipt = await sendContract({ address: POLICY_REGISTRY, abi: policyRegistryAbi, functionName: "createPolicyWithAccounts", args: [account.address, 1, [transferAgent]] });
+    const [created] = parseEventLogs({ abi: policyRegistryAbi, logs: receipt.logs, eventName: "PolicyCreated" });
+    await sendContract({ address: token, abi: b20Abi, functionName: "updatePolicy", args: [scope("TRANSFER_EXECUTOR_POLICY"), created.args.policyId] });
+    return created.args.policyId;
+  }
+  ```
+
+  {/* sample: stock-executor-solidity */}
+
+  ```solidity Solidity lines wrap expandable highlight={4,7}
+  function restrictTransferInitiators(address token, address admin, address transferAgent) public returns (uint64 id) {
+      address[] memory initiators = new address[](1);
+      initiators[0] = transferAgent;
+      id = StdPrecompiles.POLICY_REGISTRY.createPolicyWithAccounts(
+          admin, IPolicyRegistry.PolicyType.ALLOWLIST, initiators
+      );
+      IB20(token).updatePolicy(B20Constants.TRANSFER_EXECUTOR_POLICY, id);
+  }
+  ```
+
+  {/* sample: stock-executor-cli */}
+
+  ```bash CLI lines wrap expandable highlight={2,6}
+  CREATE_TX=$(base-cast send "$POLICY_REGISTRY" \
+    "createPolicyWithAccounts(address,uint8,address[])" "$ADMIN" 1 "[$TRANSFER_AGENT]" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" --json | jq -r .transactionHash)
+  POLICY_TOPIC=$(base-cast receipt "$CREATE_TX" --rpc-url "$RPC_URL" --json | jq -r '.logs[0].topics[1]')
+  EXECUTOR_ID=$(base-cast to-dec "$POLICY_TOPIC")
+  base-cast send "$TOKEN_ADDRESS" "updatePolicy(bytes32,uint64)" "$(base-cast keccak TRANSFER_EXECUTOR_POLICY)" "$EXECUTOR_ID" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  ```
+</CodeGroup>
+
+A partir de la llamada a `updatePolicy`, cada `transfer` y `transferFrom` de este token verifica `msg.sender` contra la lista de permitidos. Crear la política no tiene ningún efecto por sí solo; solo cuenta al vincularla. Los lotes admiten un máximo de 64 cuentas, y solo el administrador de la política puede modificar los miembros con `updateAllowlist`.
+
+A continuación, cada titular aprueba al iniciador por el importe que este moverá en su nombre:
+
+```solidity Holder approves the transfer agent
+token.approve(transferAgent, amount);
+```
+
+El iniciador mueve unidades con `transferFrom(holder, recipient, amount)`. Si el propio titular llama a `transfer(recipient, amount)`, la llamada revierte con `PolicyForbids(TRANSFER_EXECUTOR_POLICY, executorId)` antes de que se compruebe el saldo.
+
+<Check>
+  `Transfer(from, to, amount)` se emite en el `transferFrom` del iniciador. Una llamada directa del titular a `transfer` revierte con `PolicyForbids(TRANSFER_EXECUTOR_POLICY, executorId)`; esa reversión confirma que la restricción está activa, no que haya algún error de configuración. `isAuthorized(executorId, account)` en el Policy Registry devuelve `true` para el iniciador y `false` para el titular.
+</Check>
+
+<Warning>
+  Agrega todos los iniciadores previstos antes de vincular la lista de permitidos. Una vez vinculada, ninguna cuenta que no figure en ella, incluido el emisor, podrá iniciar transferencias hasta que se agregue a la lista.
+</Warning>
+
+## Errores comunes {#common-errors}
+
+Estos errores aparecen en el mismo orden en que los comprueba la ruta de transferencia compartida.
+
+| Error                                               | Causa                                                                                                                                                             | Solución                                                                                            |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `PolicyForbids(TRANSFER_EXECUTOR_POLICY, policyId)` | El llamador no está en la lista de permitidos de ejecutores. Se produce con `transfer`, `transferFrom` y cuando un titular llama a `transferFrom` sobre sí mismo. | Añade el llamador a la lista de permitidos o enruta la llamada a través de un iniciador autorizado. |
+| `InsufficientAllowance(spender, allowance, needed)` | `transferFrom` se ejecutó con una asignación inferior a `needed`. Superar la comprobación del ejecutor no otorga derechos de gasto.                               | Haz que `from` llame a `approve(spender, amount)`.                                                  |
+| `PolicyForbids(TRANSFER_SENDER_POLICY, policyId)`   | `from` no está autorizado según la política de remitentes. Es independiente de la comprobación del ejecutor.                                                      | Añade `from` a la lista de permitidos de remitentes o restablece ese ámbito a `0`.                  |
+| `PolicyForbids(TRANSFER_RECEIVER_POLICY, policyId)` | `to` no está autorizado según la política de destinatarios. Es independiente de la comprobación del ejecutor.                                                     | Añade `to` a la lista de permitidos de destinatarios o restablece ese ámbito a `0`.                 |
+| `InsufficientBalance(sender, balance, needed)`      | El saldo de `from` es inferior a `needed`.                                                                                                                        | Transfiere `balanceOf(from)` o menos.                                                               |
+| `PolicyNotFound(policyId)`                          | `updatePolicy` recibió un ID que no existe en el registro.                                                                                                        | Crea primero la política y luego asocia el ID devuelto.                                             |
+| `Unauthorized()`                                    | Una cuenta sin permisos de administrador llamó a `updateAllowlist`.                                                                                               | Realiza la llamada como administrador de la política.                                               |
+
+## Ver también {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="Restringir los titulares elegibles" icon="user-check" href="/es/build-on-base/issue-rwa/restrict-eligible-holders">
+    Controla quién puede enviar y recibir mediante los ámbitos de remitente y destinatario.
+  </Card>
+
+  <Card title="Políticas" icon="shield-check" href="/es/specifications/b20/concepts/policies">
+    Cómo funcionan los ámbitos de las políticas, las listas de permitidos y las listas de bloqueo.
+  </Card>
+</CardGroup>

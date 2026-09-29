@@ -1,0 +1,56 @@
+---
+title: "Canyon"
+description: "Descripción general del hardfork Canyon, que incorpora las EIP de Shanghai de Ethereum (EIP-3651, EIP-3855, EIP-3860) a la capa de ejecución de Base."
+---
+
+## Marcas de tiempo de activación {#activation-timestamps}
+
+| Red       | Marca de tiempo de activación          |
+| --------- | -------------------------------------- |
+| `mainnet` | `1704992401` (2024-01-11 17:00:01 UTC) |
+| `sepolia` | `1699981200` (2023-11-14 17:00:00 UTC) |
+
+[eip3651]: https://eips.ethereum.org/EIPS/eip-3651
+
+[eip3855]: https://eips.ethereum.org/EIPS/eip-3855
+
+[eip3860]: https://eips.ethereum.org/EIPS/eip-3860
+
+[eip4895]: https://eips.ethereum.org/EIPS/eip-4895
+
+[eip6049]: https://eips.ethereum.org/EIPS/eip-6049
+
+[block-validation]: /specifications/base-protocol/consensus/p2p#block-validation
+
+[payload-attributes]: /specifications/base-protocol/consensus/derivation#building-individual-payload-attributes
+
+[1559-params]: /specifications/base-protocol/execution/l2-execution-engine#1559-parameters
+
+[channel-reading]: /specifications/base-protocol/consensus/derivation#reading
+
+[deposit-reading]: /specifications/base-protocol/bridging/deposits#deposit-receipt
+
+[create2deployer]: /specifications/base-protocol/execution/predeploys#create2deployer
+
+La actualización Canyon incluye la actualización Shapella de L1 y algunas correcciones menores del protocolo.
+La actualización Canyon utiliza una regla de activación basada en la *marca de tiempo del bloque de L2* y se especifica tanto en el
+rollup-node (`canyon_time`) como en el motor de ejecución (`config.canyonTime`). La hora de activación de Shanghai en el
+motor de ejecución debe configurarse con el mismo valor que la de Canyon.
+
+## Capa de ejecución {#execution-layer}
+
+* Actualización Shapella
+  * [EIP-3651: COINBASE precalentado][eip3651]
+  * [EIP-3855: Instrucción PUSH0][eip3855]
+  * [EIP-3860: Limitar y medir el initcode][eip3860]
+  * [EIP-4895: Retiros de la beacon chain enviados como operaciones][eip4895]
+    * [Los retiros están prohibidos en los bloques P2P][block-validation]
+    * [Con Canyon, los retiros deben establecerse como un arreglo vacío][payload-attributes]
+  * [EIP-6049: Declarar obsoleto SELFDESTRUCT][eip6049]
+* [Modifica el denominador de EIP-1559][1559-params]
+* [Añade el nonce de depósito y la versión del nonce de depósito al hash del recibo de depósito][deposit-reading]
+* [Despliega el create2Deployer en `0x13b0D85CcB8bf860b6b79AF3029fCA081AE9beF2`][create2deployer]
+
+## Capa de consenso {#consensus-layer}
+
+* [Corrección del orden de canales][channel-reading]

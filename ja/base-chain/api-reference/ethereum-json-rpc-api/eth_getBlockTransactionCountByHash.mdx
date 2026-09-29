@@ -1,0 +1,40 @@
+---
+title: 'eth_getBlockTransactionCountByHash'
+sidebarTitle: 'eth_getBlockTransactionCountByHash'
+description: 'ブロックハッシュで指定したブロック内のトランザクション数を返します。'
+---
+
+指定したブロックハッシュに一致するブロックに含まれるトランザクション数を返します。
+
+## パラメーター {#parameters}
+
+<ParamField body="blockHash" type="string" required>
+  32バイトのブロックハッシュ。
+</ParamField>
+
+## 戻り値 {#returns}
+
+<ResponseField name="result" type="string">
+  ブロック内のトランザクション数を表す16進数の整数。ブロックが見つからなかった場合は `null`。
+</ResponseField>
+
+## 例 {#example}
+
+<CodeGroup>
+  ```json Request
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_getBlockTransactionCountByHash",
+    "params": ["0x5c330e55a190f82ea486b61e5b12e27dfb4fb3cecfc5746886ef38ca1281bce8"],
+    "id": 1
+  }
+  ```
+
+  ```json Response
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x1f"
+  }
+  ```
+</CodeGroup>

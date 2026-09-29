@@ -1,0 +1,65 @@
+---
+title: "Constantes"
+description: "Direcciones de los precompilados de B20, identificadores de roles, ámbitos de políticas y límites de validación."
+---
+
+*Identificadores de roles, identificadores de tipos de políticas, direcciones de precompilados y otras constantes fijas. Consulta [`B20Constants`](https://github.com/base/base-std/blob/main/src/lib/B20Constants.sol) y [`StdPrecompiles`](https://github.com/base/base-std/blob/main/src/StdPrecompiles.sol).*
+
+## Direcciones de precompilados {#precompile-addresses}
+
+*Direcciones fijas de los precompilados singleton de Base. Consulta [`StdPrecompiles`](https://github.com/base/base-std/blob/main/src/StdPrecompiles.sol).*
+
+| Nombre                        | Valor                                        | Propósito                                                                                                                                                                                                                                 |
+| ----------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `B20_FACTORY_ADDRESS`         | `0xB20f000000000000000000000000000000000000` | Despliega y localiza tokens B-20; todas las instancias de activo y de stablecoin se crean a través de [`IB20Factory`](/es/specifications/b20/reference/interfaces#ib20factory) en esta dirección.                                            |
+| `POLICY_REGISTRY_ADDRESS`     | `0x8453000000000000000000000000000000000002` | Almacena políticas de lista de permitidos, de lista de bloqueados y compuestas, y responde a las comprobaciones `isAuthorized` que consultan todos los ámbitos de política (consulta [Políticas](/es/specifications/b20/concepts/policies)). |
+| `ACTIVATION_REGISTRY_ADDRESS` | `0x8453000000000000000000000000000000000001` | Controla si una variante o funcionalidad de B-20 está activa en una cadena concreta; la factory lo comprueba antes de crear dicha variante.                                                                                               |
+
+## Roles {#roles}
+
+*Identificadores de rol que se comprueban mediante `hasRole`. Consulta [`B20Constants`](https://github.com/base/base-std/blob/main/src/lib/B20Constants.sol) e [`IB20`](/es/specifications/b20/reference/interfaces#ib20). Los valores hexadecimales corresponden al `keccak256` del nombre del rol, verificados con `cast keccak "<NAME>"` y contrastados en `chisel`.*
+
+| Nombre               | Valor                                                                                                      | Finalidad                                                                                                                                               |
+| -------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DEFAULT_ADMIN_ROLE` | `bytes32(0)`                                                                                               | Necesario para llamar a `grantRole`, `revokeRole`, `setRoleAdmin`, `updatePolicy` y `updateSupplyCap`.                                                  |
+| `MINT_ROLE`          | `keccak256("MINT_ROLE")`<br />`0x154c00819833dac601ee5ddded6fda79d9d8b506b911b3dbd54cdb95fe6c3686`         | Necesario para llamar a `mint` y `mintWithMemo`.                                                                                                        |
+| `BURN_ROLE`          | `keccak256("BURN_ROLE")`<br />`0xe97b137254058bd94f28d2f3eb79e2d34074ffb488d042e3bc958e0a57d2fa22`         | Necesario para llamar a `burn` y `burnWithMemo`.                                                                                                        |
+| `BURN_BLOCKED_ROLE`  | `keccak256("BURN_BLOCKED_ROLE")`<br />`0x7408fdc0d31c7bcb349eab611f5d1168acd4303574993f8cdc98b1cd18c41cae` | Necesario para llamar a la función obsoleta `burnBlocked`.                                                                                              |
+| `SEIZE_ROLE`         | `keccak256("SEIZE_ROLE")`<br />`0x3469b8b0d89e9604f8510ed143f74a8336d22955d4f83e23bf53d9414e27f432`        | Necesario para llamar a `seizeWithMemo`.                                                                                                                |
+| `PAUSE_ROLE`         | `keccak256("PAUSE_ROLE")`<br />`0x139c2898040ef16910dc9f44dc697df79363da767d8bc92f2e310312b816e46d`        | Necesario para llamar a `pause`.                                                                                                                        |
+| `UNPAUSE_ROLE`       | `keccak256("UNPAUSE_ROLE")`<br />`0x265b220c5a8891efdd9e1b1b7fa72f257bd5169f8d87e319cf3dad6ff52b94ae`      | Necesario para llamar a `unpause`.                                                                                                                      |
+| `METADATA_ROLE`      | `keccak256("METADATA_ROLE")`<br />`0x6bd6b5318a46e5fff572d5e4258a20774aab40cc35ac7680654b9081fcc82f80`     | Necesario para llamar a `updateName`, `updateSymbol`, `updateContractURI` y `updateExtraMetadata`.                                                      |
+| `OPERATOR_ROLE`      | `keccak256("OPERATOR_ROLE")`<br />`0x97667070c54ef182b0f5858b034beac1b6f3089aa2d3188bb1e8929f4fa9b929`     | Exclusivo de B20Asset. Necesario para llamar a `announce`, `updateUIMultiplier`, `cancelUIMultiplierUpdate` y a la función obsoleta `updateMultiplier`. |
+
+## Tipos de políticas {#policy-types}
+
+*Ámbitos de políticas que consulta el PolicyRegistry. Consulta [`B20Constants`](https://github.com/base/base-std/blob/main/src/lib/B20Constants.sol) y [Políticas](/es/specifications/b20/concepts/policies). Los valores hexadecimales corresponden al `keccak256` del nombre de la política, verificados con `cast keccak "<NAME>"` y contrastados en `chisel`.*
+
+| Nombre                     | Valor                                                                                                             | Propósito                                                                                                                                                                                                                                            |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TRANSFER_SENDER_POLICY`   | `keccak256("TRANSFER_SENDER_POLICY")`<br />`0xb81736c875ab819dd97f59f2a6542cfb731ad52b4ae15a6f24df2fb02b0327f5`   | Se consulta para `from` en `transfer` y `transferFrom`.                                                                                                                                                                                              |
+| `TRANSFER_RECEIVER_POLICY` | `keccak256("TRANSFER_RECEIVER_POLICY")`<br />`0x8a4b3fa2d8b921852bc0089c6ef0958aa6961897be36fd731330fe2cd23f8363` | Se consulta para `to` en `transfer` y `transferFrom`.                                                                                                                                                                                                |
+| `TRANSFER_EXECUTOR_POLICY` | `keccak256("TRANSFER_EXECUTOR_POLICY")`<br />`0x10be5173aff2a44e748bd9acd8b19fe34689581398a9db7ba2fb671e786ff7d8` | Se consulta para `msg.sender` en todos los puntos de entrada de transferencia (`transfer`, `transferFrom` y sus variantes con memo).                                                                                                                 |
+| `MINT_RECEIVER_POLICY`     | `keccak256("MINT_RECEIVER_POLICY")`<br />`0xa0d5ae037e66a09119acf080a1d807abb9b6d03b6b9130eb19f7c1e6bdb8ffc8`     | Se consulta para `to` en `mint`.                                                                                                                                                                                                                     |
+| `SEIZE_EXEMPT_POLICY`      | `keccak256("SEIZE_EXEMPT_POLICY")`<br />`0xedb5da348cfb67af08746d3afd1be81034b50d5c8576f31aff688f39dfd540ed`      | Se consulta para `from` en `seizeWithMemo`; un `from` autorizado está exento de incautación, por lo que solo se pueden incautar fondos de `from` cuando no está autorizado según esta política. Antes de Cobalt se denominaba `SEIZE_HOLDER_POLICY`. |
+| `SEIZE_RECEIVER_POLICY`    | `keccak256("SEIZE_RECEIVER_POLICY")`<br />`0xbf15b19caf5c77422c038bc25f26b8b815c3a14f6d04c6616076b81bcfe07b3d`    | Se consulta para `to` en `seizeWithMemo`.                                                                                                                                                                                                            |
+
+## Límites de funcionalidades y validación {#feature-and-validation-bounds}
+
+*Máscaras de bits y límites inclusivos que se usan para las funcionalidades pausables y para validar la creación de B20Asset. Consulta [`B20Constants`](https://github.com/base/base-std/blob/main/src/lib/B20Constants.sol).*
+
+| Nombre                | Valor               | Propósito                                                                                                                                                                             |
+| --------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ALL_FEATURES_PAUSED` | `15` (`0b1111`)     | Máscara de bits con todos los bits de `PausableFeature` activados (`TRANSFER \| MINT \| BURN \| SEIZE`).                                                                              |
+| `MIN_ASSET_DECIMALS`  | `6`                 | Límite inferior inclusivo para `B20AssetCreateParams.decimals`; el mínimo que espera la mayoría de las integraciones de nivel stablecoin.                                             |
+| `MAX_ASSET_DECIMALS`  | `18`                | Límite superior inclusivo para `B20AssetCreateParams.decimals`; el máximo aceptado por la comunidad ERC-20, que todas las billeteras e indexadores habituales muestran correctamente. |
+| `MAX_SUPPLY_CAP`      | `type(uint128).max` | Límite superior inclusivo para el tope de suministro (y, por tanto, para `totalSupply`); también sirve como valor centinela de suministro ilimitado («sin tope»).                     |
+
+## Constantes de precisión de la variante de activo {#asset-variant-precision-constants}
+
+*Constantes de punto fijo que utiliza la superficie de multiplicador/rebasing. Consulta [`IB20Asset`](/es/specifications/b20/reference/interfaces#ib20asset).*
+
+| Nombre              | Valor               | Propósito                                                                                                                                                                                                                                  |
+| ------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `WAD_PRECISION`     | `1e18`              | Precisión de punto fijo con la que se escala `multiplier`; `multiplier`, `toUIAmount` y `fromUIAmount` dividen o multiplican por este valor.                                                                                               |
+| `MAX_UI_MULTIPLIER` | `type(uint128).max` | Multiplicador máximo que aceptan los setters; es la protección contra desbordamiento que aplican `updateMultiplier` y `updateUIMultiplier`. Se expone para que los llamadores puedan consultar el límite sin provocar `InvalidMultiplier`. |

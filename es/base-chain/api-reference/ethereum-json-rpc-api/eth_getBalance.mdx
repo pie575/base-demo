@@ -1,0 +1,63 @@
+---
+title: 'eth_getBalance'
+sidebarTitle: 'eth_getBalance'
+description: 'Devuelve el saldo de ETH de una cuenta en un bloque determinado. Usa la etiqueta pending para obtener saldos preconfirmados cada 200 ms.'
+---
+
+Devuelve el saldo de ETH de una dirección en un bloque determinado.
+
+<Tip>
+  **Flashblocks:** Consulta `https://mainnet.base.org` con `"pending"` para leer saldos que se actualizan cada ~200 ms, antes de que se selle el bloque.
+</Tip>
+
+## Parámetros {#parameters}
+
+<ParamField body="address" type="string" required>
+  La dirección de 20 bytes que se va a consultar.
+</ParamField>
+
+<ParamField body="block" type="string" required>
+  Número de bloque en hexadecimal, o bien `"latest"`, `"pending"`, `"safe"`, `"finalized"` o `"earliest"`. Usa `"pending"` para obtener el saldo preconfirmado.
+</ParamField>
+
+## Valor devuelto {#returns}
+
+<ResponseField name="result" type="string">
+  El saldo en wei, expresado como cadena hexadecimal.
+</ResponseField>
+
+## Ejemplo {#example}
+
+<CodeGroup>
+  ```bash Estándar (latest) lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_getBalance",
+      "params": ["0x742d35Cc6634C0532925a3b8D4C9dD0b4f3BaEa", "latest"],
+      "id": 1
+    }'
+  ```
+
+  ```bash Flashblocks (pending, ~200ms) lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_getBalance",
+      "params": ["0x742d35Cc6634C0532925a3b8D4C9dD0b4f3BaEa", "pending"],
+      "id": 1
+    }'
+  ```
+
+  ```json Respuesta
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x1a055690d9db80000"
+  }
+  ```
+</CodeGroup>

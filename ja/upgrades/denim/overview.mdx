@@ -1,0 +1,31 @@
+---
+title: "概要"
+description: "Denim では、200ms 間隔のネイティブブロック、BaseTime によるオンチェーンでのミリ秒単位の時刻、およびミリ秒精度の RPC タイムスタンプが導入されます。"
+---
+
+|         | ステータス | 日付       |
+| ------- | ----- | -------- |
+| Sepolia | 計画中   | 2026年10月 |
+| Mainnet | 計画中   | 2026年10月 |
+
+## 機能 {#features}
+
+<AccordionGroup>
+  <Accordion title="200ms ネイティブブロック">
+    **Base** · RPC
+
+    Denim により、Base のブロック生成は 2 秒ごとに 1 つの正規ブロックを生成する方式から、1 秒あたり 5 つの完全な正規ブロックを生成する方式へ移行します。各ブロックは独自のハッシュ、ステートルート、レシート、フォークチョイスのライフサイクルを持ちます。Denim は Flashblocks に代わるものであるため、Flashblocks を使用しているアプリケーションは正規ブロックおよび RPC ストリームへ移行する必要があります。詳しくは [200ms ネイティブブロック](/ja/upgrades/denim/200ms-blocks) および [Flashblocks からの移行](/ja/upgrades/denim/migrate-from-flashblocks) を参照してください。
+  </Accordion>
+
+  <Accordion title="BaseTime">
+    **Base** · Predeploy
+
+    Denim では、BaseTime プリデプロイによってオンチェーンでミリ秒単位の時刻を扱えるようになります。BaseTime メタデータのデポジットが各ブロックのタイムスタンプの 1 秒未満の部分を供給するため、EVM の `block.timestamp` は秒単位のまま、コントラクトから現在のブロックのミリ秒部分を読み取れます。
+  </Accordion>
+
+  <Accordion title="ミリ秒単位の RPC タイムスタンプ">
+    **Base** · RPC
+
+    ブロック、ヘッダー、トランザクション、ログ、レシートのレスポンスに、ミリ秒精度のタイムスタンプフィールド (`timestampMs`、`blockTimestampMs`) がオプションとして追加されます。これらは認証済みの BaseTime メタデータから導出されます。後方互換性を保つため、既存の秒単位の `timestamp` フィールドは変更されません。
+  </Accordion>
+</AccordionGroup>

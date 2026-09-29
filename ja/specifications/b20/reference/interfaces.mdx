@@ -1,0 +1,78 @@
+---
+title: "インターフェース"
+description: "B20 の正規 Solidity インターフェース、ソースへのリンク、コピー＆ペーストで使えるインポート文。"
+---
+
+B20 インターフェースは、トークン、ファクトリー、レジストリの各プリコンパイルが公開するインターフェースを定義します。関数ごとの動作については、リンク先のリファレンスを参照してください。正規の Solidity ファイルは [`base-std`](https://github.com/base/base-std/tree/main/src/interfaces) にあります。
+
+## 利用可能なインターフェース {#available-interfaces}
+
+| インターフェース              | ドキュメント                                                                                       | 正規の Solidity ソース                                                                                             |
+| --------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `IB20`                | [IB20 リファレンス](/specifications/b20/reference/interfaces/ib20)                                 | [IB20.sol](https://github.com/base/base-std/blob/main/src/interfaces/IB20.sol)                               |
+| `IB20Asset`           | [IB20Asset リファレンス](/specifications/b20/reference/interfaces/ib20-asset)                      | [IB20Asset.sol](https://github.com/base/base-std/blob/main/src/interfaces/IB20Asset.sol)                     |
+| `IB20Stablecoin`      | [IB20Stablecoin リファレンス](/specifications/b20/reference/interfaces/ib20-stablecoin)            | [IB20Stablecoin.sol](https://github.com/base/base-std/blob/main/src/interfaces/IB20Stablecoin.sol)           |
+| `IB20Factory`         | [IB20Factory リファレンス](/specifications/b20/reference/interfaces/ib20-factory)                  | [IB20Factory.sol](https://github.com/base/base-std/blob/main/src/interfaces/IB20Factory.sol)                 |
+| `IPolicyRegistry`     | [IPolicyRegistry リファレンス](/specifications/b20/reference/interfaces/i-policy-registry)         | [IPolicyRegistry.sol](https://github.com/base/base-std/blob/main/src/interfaces/IPolicyRegistry.sol)         |
+| `IActivationRegistry` | [IActivationRegistry リファレンス](/specifications/b20/reference/interfaces/i-activation-registry) | [IActivationRegistry.sol](https://github.com/base/base-std/blob/main/src/interfaces/IActivationRegistry.sol) |
+| `IERC8056`            | Asset の乗数関連インターフェース                                                                          | [IERC8056.sol](https://github.com/base/base-std/blob/main/src/interfaces/IERC8056.sol)                       |
+| `IERC165`             | Asset のインターフェース検出                                                                            | [IERC165.sol](https://github.com/base/base-std/blob/main/src/interfaces/IERC165.sol)                         |
+
+## コピー＆ペースト用のインポート {#copy-and-paste-imports}
+
+以下のインポートは、Foundry のリマッピング `base-std/=src/` と組み合わせて使用してください。
+
+### IB20 {#ib20}
+
+```solidity filename="IB20.sol"
+import {IB20} from "base-std/interfaces/IB20.sol";
+```
+
+### IB20Asset {#ib20asset}
+
+```solidity filename="IB20Asset.sol"
+import {IB20Asset} from "base-std/interfaces/IB20Asset.sol";
+```
+
+### IB20Stablecoin {#ib20stablecoin}
+
+```solidity filename="IB20Stablecoin.sol"
+import {IB20Stablecoin} from "base-std/interfaces/IB20Stablecoin.sol";
+```
+
+### IB20Factory {#ib20factory}
+
+```solidity filename="IB20Factory.sol"
+import {IB20Factory} from "base-std/interfaces/IB20Factory.sol";
+```
+
+### IPolicyRegistry {#ipolicyregistry}
+
+```solidity filename="IPolicyRegistry.sol"
+import {IPolicyRegistry} from "base-std/interfaces/IPolicyRegistry.sol";
+```
+
+### IActivationRegistry {#iactivationregistry}
+
+```solidity filename="IActivationRegistry.sol"
+import {IActivationRegistry} from "base-std/interfaces/IActivationRegistry.sol";
+```
+
+### IERC8056 {#ierc8056}
+
+```solidity filename="IERC8056.sol"
+import {
+    IScaledUIAmount,
+    IScaledUIAmountBalances,
+    IScaledUIAmountConversion,
+    IScaledUIAmountNewUIMultiplier
+} from "base-std/interfaces/IERC8056.sol";
+```
+
+### IERC165 {#ierc165}
+
+```solidity filename="IERC165.sol"
+import {IERC165} from "base-std/interfaces/IERC165.sol";
+```
+
+正規のプリコンパイルアドレスについては、[`StdPrecompiles`](https://github.com/base/base-std/blob/main/src/StdPrecompiles.sol) を参照してください。

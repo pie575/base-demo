@@ -1,0 +1,94 @@
+---
+title: Tarifas de red
+description: Documentación sobre las tarifas de red en Base. Esta página explica en detalle el sistema de costos de dos componentes, formado por las tarifas de ejecución de L2 y las tarifas de seguridad de L1, y ofrece información sobre cómo varían las tarifas y estrategias para reducir costos.
+---
+
+## ¿Cómo funcionan las tarifas de red en Base? {#how-do-network-fees-on-base-work}
+
+Cada transacción en Base tiene dos costos: una tarifa de L2 (ejecución) y una tarifa de L1
+(seguridad). La tarifa de L2 es el costo de ejecutar tu transacción en la L2,
+y la tarifa de L1 es el costo estimado de publicar la transacción en la L1.
+Por lo general, la tarifa de seguridad de L1 es más alta que la tarifa de ejecución de L2.
+
+La tarifa de L1 varía según el volumen de transacciones en la L1. Si tienes
+flexibilidad en cuanto al momento de enviar tu transacción, puedes ahorrar costos enviando
+transacciones en periodos en los que el gas de la L1 es más bajo (por ejemplo, durante el
+fin de semana).
+
+Del mismo modo, la tarifa de L2 puede subir o bajar según la cantidad de
+transacciones que se envíen a la L2. Este mecanismo de ajuste se implementa
+igual que en la L1; puedes obtener más información en la
+[guía de Coinbase sobre EIP-1559](https://help.coinbase.com/en/coinbase/getting-started/crypto-education/eip-1559).
+
+Para obtener más detalles sobre el cálculo de tarifas en Base, consulta la
+[especificación de tarifas de red](/es/specifications/base-protocol/execution/predeploys#gaspriceoracle).
+
+## Tarifa base mínima {#minimum-base-fee}
+
+Como parte de la [Jovian upgrade], Base introdujo una tarifa base mínima. Esta funcionalidad fija un límite inferior para la tarifa base de L2 y evita que caiga a niveles extremadamente bajos en periodos de poca actividad en la red.
+
+La tarifa base mínima de Base Mainnet es de 5,000,000 wei (0.005 gwei). Este valor podría ajustarse periódicamente a medida que recopilemos datos sobre su efecto en la cadena. Como referencia, con una tarifa base mínima de 0.005 gwei, una transacción típica de 200,000 unidades de gas cuesta aproximadamente $0.002 con un precio de ETH de $2000.
+
+### Beneficios {#benefits}
+
+* **Inclusión más rápida de transacciones**: Antes, cuando la baja actividad hacía que la tarifa base cayera a niveles muy bajos, los picos de demanda podían provocar periodos prolongados de congestión hasta que las tarifas subían lo suficiente como para despejar la acumulación de transacciones pendientes. Con una tarifa base mínima, las transacciones suelen incluirse más rápido sin que los usuarios tengan que ajustar manualmente las tarifas de prioridad.
+* **Tarifas más predecibles**: En condiciones normales, la tarifa base se mantendrá en el mínimo o cerca de él. En periodos de congestión, la tarifa base sube por encima del mínimo. Esto da lugar a una estructura de tarifas más predecible, similar a los precios dinámicos.
+* **Prevención de spam**: Las tarifas extremadamente bajas pueden incentivar transacciones de spam que no aportan valor a la red. La tarifa base mínima ayuda a encarecer este tipo de actividad hasta hacerla inviable, sin que las tarifas dejen de ser asequibles para el uso legítimo.
+
+### Configuración actual {#current-configuration}
+
+| Red          | Tarifa base mínima         |
+| ------------ | -------------------------- |
+| Base Mainnet | 5,000,000 wei (0.005 gwei) |
+| Base Sepolia | 5,000,000 wei (0.005 gwei) |
+
+Consulta el [Registro de cambios de configuración](/es/base-chain/network-information/configuration-changelog) para ver el historial de cambios en la tarifa base mínima y en otros parámetros de la red.
+
+## Parámetros de comisiones de EIP-1559 {#eip-1559-fee-parameters}
+
+Base utiliza su propia implementación de EIP-1559, que determina cómo se ajusta la tarifa base de L2 según la demanda de la red. Este comportamiento se rige por dos parámetros clave:
+
+### Multiplicador de elasticidad {#elasticity-multiplier}
+
+El **multiplicador de elasticidad** (Elasticity Multiplier) determina la capacidad máxima de gas de un bloque con respecto al uso de gas objetivo. Con una elasticidad de 6, los bloques pueden contener hasta 6 veces el gas objetivo, lo que permite a la red absorber picos repentinos de demanda.
+
+### Denominador de cambio de la tarifa base {#base-fee-change-denominator}
+
+El **denominador de cambio de la tarifa base** (Base Fee Change Denominator) controla la rapidez con la que se ajusta la tarifa base. Cuanto mayor es el denominador, más lentos y graduales son los cambios de tarifa. Con un denominador de 125, la tarifa base varía de forma más suave que con valores más bajos.
+
+### Tasa máxima de variación {#maximum-rate-of-change}
+
+La tasa máxima de variación de la tarifa base por bloque se calcula de la siguiente manera:
+
+**Aumento máximo por bloque = (Elasticidad - 1) / Denominador**
+
+Con los parámetros actuales (Elasticidad = 6, Denominador = 125):
+
+* Aumento máximo por bloque: (6 - 1) / 125 = **4 %**
+* Tiempo mínimo para duplicar la tarifa base: 18 bloques × 2 segundos = **36 segundos**
+
+Este ajuste gradual ayuda a evitar una volatilidad extrema de las tarifas durante los picos de tráfico, sin impedir que la red responda ante una demanda sostenida.
+
+### Configuración actual {#current-configuration-2}
+
+| Red          | Elasticidad | Denominador | Cambio máx./bloque |
+| ------------ | ----------- | ----------- | ------------------ |
+| Base Mainnet | 6           | 125         | 4%                 |
+| Base Sepolia | 6           | 125         | 4%                 |
+
+## Consultar la tarifa de L1 {#querying-the-l1-fee}
+
+El contrato predesplegado **GasPriceOracle** en `0x420000000000000000000000000000000000000F` (que figura en [Direcciones de contratos](/es/specifications/reference/base-contracts)) te permite estimar mediante programación el componente de la tarifa de L1 antes de firmar y enviar una transacción.
+
+| Método                               | Devuelve                                                                                                        |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `getL1Fee(bytes)`                    | Tarifa de L1 exacta para una transacción completamente serializada (codificada en RLP)                          |
+| `getL1FeeUpperBound(uint256 txSize)` | Estimación del límite superior de la tarifa de L1 a partir de la longitud aproximada de la transacción en bytes |
+| `l1BaseFee()`                        | Tarifa base actual de L1 de Ethereum, tal como la ve Base                                                       |
+| `blobBaseFee()`                      | Tarifa base de blob actual (EIP-4844)                                                                           |
+| `baseFeeScalar()`                    | Escalar aplicado al componente de la tarifa base de L1                                                          |
+| `blobBaseFeeScalar()`                | Escalar aplicado al componente de la tarifa base de blob                                                        |
+
+Usa `getL1FeeUpperBound` cuando necesites una estimación rápida antes de terminar de construir la transacción. Usa `getL1Fee` con la transacción serializada completa para obtener un valor exacto antes de firmar.
+
+[Jovian upgrade]: /upgrades/jovian/overview

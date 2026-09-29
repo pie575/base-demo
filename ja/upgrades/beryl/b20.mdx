@@ -1,0 +1,268 @@
+---
+title: "B20 ネイティブトークン規格"
+description: "Base のネイティブトークン規格である B20 が、ステーブルコイン発行者、現実資産（RWA）や株式の発行者、ロングテールのトークン作成者にどのように役立つかを解説します。"
+---
+
+B20 は、Base エコシステム独自の [ERC-20](https://eips.ethereum.org/EIPS/eip-20) です。転送ポリシー、凍結・再発行の制御、ロールベースのアクセス制御、メモ、供給上限といったコンプライアンス機能を標準で備えています。リリース済みの Beryl インターフェースは [Base Standard Library v1.0.0](https://github.com/base/base-std/tree/v1.0.0) で入手できます。
+
+最初の B20 トークンをデプロイするには、クイックスタート「[B20 トークンをローンチする](/ja/build-on-base/issue-rwa/create-an-asset-token)」を参照してください。
+
+<Warning>
+  デプロイする前に、[Activation Registry が有効になっていることを確認してください](/ja/build-on-base/issue-rwa/create-an-asset-token)。
+</Warning>
+
+B20 には 2 つのバリアントがあります。
+
+| バリアント          | 小数点以下の桁数         | 追加機能                      |
+| -------------- | ------------ | ------------------------- |
+| **Asset**      | 6～18 (設定可能)  | リベース乗数、オンチェーンでのアナウンス、一括発行 |
+| **Stablecoin** | 6 (固定)       | 自己申告による法定通貨コード            |
+
+## ERC-20 互換性 {#erc-20-compatibility}
+
+B20 トークンは EVM スマートコントラクトではなく **Rust プリコンパイル**として実装されているため、より高速かつ低コストで、チェーンとネイティブに統合されています。すべてのトークンは、シングルトンの B20Factory プリコンパイルを通じてデプロイされます。
+
+<Check>
+  B20 は ERC-20 のスーパーセットです。すべての ERC-20 呼び出し (`transfer`、`transferFrom`、`approve`、`balanceOf`、`allowance`、および標準イベント) は規格の定めどおりに動作するため、既存の ERC-20 ツールやインテグレーションを変更せずにそのまま B20 で利用できます。
+</Check>
+
+B20 には、ERC-20 にはない次のメソッドが追加されています：メモ、ミント/バーン、ポリシーによるゲーティング、きめ細かな一時停止、ERC-2612 `permit`。これらは ERC-20 に変更を加えることなく機能を拡張するものです。つまり、ERC-20 のメソッドはすべて B20 に存在しますが、その逆は成り立ちません。Beryl の ABI 全体については、[v1.0.0 インターフェース定義](https://github.com/base/base-std/tree/v1.0.0/src/interfaces)を参照してください。
+
+## ロールモデル {#roles-model}
+
+B20 のロールベースアクセス制御は OpenZeppelin の `AccessControl` を拡張したもので、固定のロールセットに加え、管理者権限の放棄に関する動作を 1 点だけオーバーライドしています。
+
+| ロール                  | 制御対象                                            |
+| -------------------- | ----------------------------------------------- |
+| `DEFAULT_ADMIN_ROLE` | すべての管理操作：ロールの付与、ポリシーの更新、供給上限の変更                 |
+| `MINT_ROLE`          | `mint`、`mintWithMemo`                           |
+| `BURN_ROLE`          | 呼び出し元自身によるバーン：`burn`、`burnWithMemo`             |
+| `BURN_BLOCKED_ROLE`  | ポリシーでブロックされたアカウントに対する第三者によるバーン：`burnBlocked`    |
+| `PAUSE_ROLE`         | `pause`                                         |
+| `UNPAUSE_ROLE`       | `unpause`                                       |
+| `METADATA_ROLE`      | `updateName`、`updateSymbol`、`updateContractURI` |
+
+`setRoleAdmin` と `grantRole` を使用して、ユーザー定義のロールを作成することもできます。ただし、これらのロールには組み込みの効果はなく、B20 がアクセス制御を適用するのは上記 7 つの基本ロールのみです。Asset バリアントでは、8 つ目のロールとして `OPERATOR_ROLE` が追加されます ([バリアント](#variants)を参照) 。
+
+### 管理者権限の放棄 {#admin-renunciation}
+
+最後の `DEFAULT_ADMIN_ROLE` 保持者は、`renounceRole` や `revokeRole` では削除できません (いずれも `LastAdminCannotRenounce` でリバートします) 。トークンを恒久的に管理者不在の状態へ移行するには、専用の `renounceLastAdmin()` を使用するしかありません。
+
+最初から管理者不在でローンチするトークンは、作成時に `initialAdmin == address(0)` を渡します。この場合、ロールは一切付与されず、`renounceLastAdmin` のステップも完全に不要になります。
+
+`renounceLastAdmin()` の実行後 (または `initialAdmin == address(0)` でデプロイされたトークンの場合) :
+
+* `DEFAULT_ADMIN_ROLE` で制限された操作は、恒久的に呼び出せなくなります。
+* 他のアドレスにすでに付与されているロール (`MINT_ROLE`、`BURN_ROLE` など) は、引き続き独立して機能します。
+* 管理者を復活させることはできません。呼び出し元がカスタムロールを保持している場合でも、`grantRole`、`revokeRole`、`setRoleAdmin` はすべて `AccessControlUnauthorizedAccount` でリバートします。
+
+## Policy Registry {#policy-registry}
+
+PolicyRegistry は、許可リストとブロックリストを管理するシングルトンのプリコンパイルです。B20 トークンは `uint64` の ID でポリシーを参照します。ポリシーは誰でも作成でき、その管理者を指名することもできます。
+
+<Note>
+  PolicyRegistry の状態を変更する関数は、ActivationRegistry によって制御されます。ActivationRegistry は、どの Base 機能が有効になっているかを管理しています。読み取り関数 (`isAuthorized`、`policyExists`、`policyAdmin`、`pendingPolicyAdmin`) はいつでも呼び出せます。
+</Note>
+
+### ポリシーの種類 {#policy-types}
+
+| 種類          | デフォルト | 動作                                                |
+| ----------- | ----- | ------------------------------------------------- |
+| `BLOCKLIST` | 認可    | デフォルトではすべてのアカウントが認可され、明示的にリストに登録されたアカウントのみ拒否されます。 |
+| `ALLOWLIST` | 拒否    | デフォルトではすべてのアカウントが拒否され、明示的にリストに登録されたアカウントのみ認可されます。 |
+
+### ポリシーID {#policy-ids}
+
+ポリシーIDは `uint64` 値です。最上位バイトで `PolicyType` をエンコードし、下位56ビットは `2` から始まるグローバルカウンターです。
+
+作成不要な組み込みIDが2つあります。
+
+| 定数             | ID                               | 動作                                               |
+| -------------- | -------------------------------- | ------------------------------------------------ |
+| `ALWAYS_ALLOW` | `0`                              | すべてのアカウントを無条件に認可します。新しいB20トークンにおけるスコープのデフォルト値です。 |
+| `ALWAYS_BLOCK` | `(uint64(ALLOWLIST) << 56) \| 1` | すべてのアカウントを無条件に拒否します。                             |
+
+`isAuthorized` は存在しないポリシーIDに対してもリバートせず、メンバーセットが空の場合と同じセマンティクスとして扱います (存在しない `BLOCKLIST` は全員を認可し、存在しない `ALLOWLIST` は全員を拒否します) 。
+
+<Warning>
+  ポリシーIDを書き込むコンシューマー (例: `updatePolicy`) は、意図しない空セットのポリシーに気付かないうちに紐付けられることのないよう、書き込み時に `policyExists(policyId)` を検証しなければなりません (MUST) 。
+</Warning>
+
+### 管理者モデル {#admin-model}
+
+各ポリシーの管理者は1人です。管理者の移管は2段階で行われます。まず現在の管理者が `stageUpdateAdmin(policyId, newAdmin)` を呼び出し、続いて移管先として保留中の管理者が `finalizeUpdateAdmin(policyId)` を呼び出します。`renounceAdmin(policyId)` を呼び出すとポリシーは恒久的に凍結され、以降メンバーシップは一切変更できなくなります。
+
+### ポリシーの作成と管理 {#creating-and-managing-policies}
+
+```solidity Policy Management Example lines wrap expandable
+// ポリシーを作成（引数は管理者、タイプの順）
+uint64 policyId = policyRegistry.createPolicy(adminAddress, PolicyType.BLOCKLIST);
+// または、1 回の呼び出しで初期メンバーもまとめて登録：
+// uint64 policyId = policyRegistry.createPolicyWithAccounts(adminAddress, PolicyType.BLOCKLIST, accounts);
+
+// メンバーシップを一括更新。セッターはポリシータイプごとに異なり、bool 値でメンバーシップの状態を指定する。
+policyRegistry.updateBlocklist(policyId, true, accounts);   // これらのアカウントをブロック
+policyRegistry.updateBlocklist(policyId, false, accounts);  // これらのアカウントのブロックを解除
+// ALLOWLIST ポリシーの場合： policyRegistry.updateAllowlist(policyId, allowed, accounts)
+```
+
+### 読み取りインターフェース {#read-interface}
+
+| メソッド                              | 説明                                                          |
+| --------------------------------- | ----------------------------------------------------------- |
+| `isAuthorized(policyId, account)` | `account` が `policyId` のもとで認可されているかどうかを返します。リバートすることはありません。 |
+| `policyExists(policyId)`          | この ID のポリシーが作成済みかどうかを返します。                                  |
+| `policyAdmin(policyId)`           | 現在の管理者アドレスを返します。                                            |
+| `pendingPolicyAdmin(policyId)`    | 2 段階の権限移譲中における承認待ちの管理者を返します。                                |
+
+## ポリシーの統合 {#policy-integration}
+
+B20 は、固定されたポリシースコープのセットを宣言します。各スコープは、PolicyRegistry 内のポリシーを指す `uint64` のポリシー ID を保持します。制限対象の操作が実行されるたびに、B20 は該当するスコープに対して `isAuthorized` を呼び出し、アカウントが認可されていなければ `PolicyForbids` でリバートします。
+
+| スコープ                       | 制限対象                                                                  |
+| -------------------------- | --------------------------------------------------------------------- |
+| `TRANSFER_SENDER_POLICY`   | `transfer` / `transferFrom` の `from`                                  |
+| `TRANSFER_RECEIVER_POLICY` | `transfer` / `transferFrom` の `to`                                    |
+| `TRANSFER_EXECUTOR_POLICY` | `transferFrom` の `msg.sender` (`from` と異なる場合。`transfer` ではチェックされません)  |
+| `MINT_RECEIVER_POLICY`     | `mint` の `to`                                                         |
+
+`approve` はポリシーによる制限を受けません。チェック対象となるのは、`transfer` / `transferFrom` による実際の残高移動のみです。
+
+<Warning>
+  ブートストラップの `initCalls` で上書きしない限り、トークン作成時にはすべてのスコープがデフォルトで `ALWAYS_ALLOW` になります。何も設定せずに B20 をデプロイすると完全にオープンな状態になるため、トークンの動作は明示的に制限する必要があります。
+</Warning>
+
+スコープは `policyId(scope)` で読み取り、`updatePolicy(scope, policyId)` で書き込みます。`updatePolicy` は管理者のみが実行でき、認識されないスコープを指定するとリバートします。
+
+## Mint {#mint}
+
+新規供給は `mint` / `mintWithMemo` によって発行され、実行には `MINT_ROLE` が必要です。受取人は `MINT_RECEIVER_POLICY` に基づいてポリシーチェックされます。この操作によって `totalSupply` が上限を超える場合は、`SupplyCapExceeded` でリバートします。
+
+## バーン {#burn}
+
+バーンには 2 つの経路があります。
+
+* **`burn` / `burnWithMemo`** - 呼び出し元が自身の残高からバーンします。`BURN_ROLE` が必要です。
+* **`burnBlocked`** - 第三者の残高からバーンします。`BURN_BLOCKED_ROLE` が必要です。対象アカウントは `TRANSFER_SENDER_POLICY` によって拒否されていなければなりません (MUST) 。これは、規制対象の発行体が資産の凍結・差し押さえを行うための経路です。
+
+## 供給上限 {#supply-cap}
+
+供給上限の設定は任意です。センチネル値 `type(uint128).max` は上限なしを表します (作成時のデフォルト) 。この値は設定可能な上限の最大値でもあるため、`totalSupply` がこれを超えることはありません。`updateSupplyCap(newCap)` は管理者のみが呼び出すことができ、`SupplyCapUpdated` イベントを発行します。`newCap` が現在の `totalSupply` を下回る場合、または `type(uint128).max` を上回る場合は、`InvalidSupplyCap` でリバートします。
+
+## Memo {#memos}
+
+Memo は、オフチェーンでの参照を目的としてトークン操作に付加される、任意の `bytes32` ペイロードです。Memo を発行する操作はいずれも、その操作の主要イベントの直後に `Memo(address indexed caller, bytes32 indexed memo)` を発行します。インデクサーは `(transactionHash, logIndex − 1)` をキーにして両イベントを結合します。
+
+Memo を発行するエントリポイントは、`transferWithMemo`、`transferFromWithMemo`、`mintWithMemo`、`burnWithMemo` です。
+
+## 一時停止 {#pause}
+
+一時停止は細かい粒度で制御できます。`PausableFeature` enum は、トークンが提供する操作を、それぞれ独立して一時停止できる操作 (`TRANSFER`、`MINT`、`BURN`) に分割します。この enum には値を追加することしかできません。`pause(features)` と `unpause(features)` は、意図的に別々のロール (`PAUSE_ROLE` と `UNPAUSE_ROLE`) で制御される設計になっています。
+
+## ERC-2612 Permit / EIP-712 {#erc-2612-permit-eip-712}
+
+B20 は、`(name, version, chainId, verifyingContract)` の形式の EIP-712 ドメインを用いて ERC-2612 (署名による承認) を実装しており、`version` は `"1"` に固定されています。`updateName` を呼び出すとドメインセパレーターが更新され、`EIP712DomainChanged` (ERC-5267) が発行されます。ERC-1271 によるコントラクト署名には対応しておらず、ECDSA 署名のみ受け付けます。
+
+## Contract URI (ERC-7572) {#contract-uri-erc-7572}
+
+`contractURI()` は、ERC-7572 に準拠し、オフチェーンのメタデータを指す文字列を返します。`updateContractURI(newUri)` を呼び出せるのは、`METADATA_ROLE` を持つアカウントのみです。
+
+## メタデータの更新 {#metadata-updates}
+
+`METADATA_ROLE` を持つアカウントのみが、以下の関数を実行できます:
+
+* `updateName(newName)` - `name` を更新し、EIP-712 ドメインセパレーターをローテーションします。`NameUpdated` および `EIP712DomainChanged` イベントを発行します。
+* `updateSymbol(newSymbol)` - `symbol` のみを更新します。`SymbolUpdated` イベントを発行します。
+
+## Factory {#factory}
+
+すべての B20 トークンは、シングルトンの B20Factory プリコンパイルの `createB20(variant, salt, params, initCalls)` を呼び出して作成します。`base-std` では `StdPrecompiles.B20_FACTORY` として公開されています。
+
+| パラメーター      | 説明                                                                                          |
+| ----------- | ------------------------------------------------------------------------------------------- |
+| `variant`   | `ASSET` または `STABLECOIN`                                                                    |
+| `salt`      | アドレス導出に使用する、呼び出し元が選んだエントロピー                                                                 |
+| `params`    | ABI エンコードされた、バリアント固有の作成用構造体(先頭バイトでバージョンを識別)                                                 |
+| `initCalls` | 作成直後にディスパッチされる、ABI エンコード済み呼び出しの配列(省略可)。この間、ファクトリーから発行された呼び出しは、ロールゲートと転送側のポリシーゲートをバイパスします |
+
+要求されたバリアントに対応する機能がチェーン上でまだ有効化されていない場合、`createB20` は `IActivationRegistry.FeatureNotActivated` でリバートします。
+
+### アドレスの導出 {#address-derivation}
+
+B20 アドレスは決定論的に生成され、バリアントがアドレス自体に直接エンコードされます:
+
+```text Address Derivation
+[10-byte B20 prefix][1-byte variant][9-byte keccak256(deployer, salt)]
+```
+
+バリアントはRPC呼び出しを行わずに、アドレスだけから特定できます。バイト10 (0始まり) を確認すれば、トークンの種類を識別できます。ファクトリーには、ヘルパー関数 `getB20Address(variant, deployer, salt)`、`isB20(addr)`、`isB20Initialized(addr)` が用意されています。
+
+### initCalls のセマンティクス {#initcalls-semantics}
+
+`initCalls` はトークンの作成後にディスパッチされます。このブートストラップ期間中、ファクトリーを発信元とする呼び出しは、トークンのロールゲートおよび転送側のポリシーゲート (`TRANSFER_SENDER_POLICY`、`TRANSFER_RECEIVER_POLICY`、`TRANSFER_EXECUTOR_POLICY`) をバイパスします。これにより、管理者権限が必要な設定 (ポリシーの設定やロールの付与など) やブートストラップ用の転送を、デプロイと同じトランザクション内で実行できます。ただし、このバイパスは意図的に限定されています。
+
+* `MINT_RECEIVER_POLICY` は、`initCalls` の実行中であっても常に適用されます。
+* 一時停止状態がバイパスされることはありません。
+* トークンの不変条件 (供給上限など) がバイパスされることはありません。
+
+## バリアント {#variants}
+
+各バリアントは、トークンのアドレスに直接エンコードされた1バイトの値で識別されます ([アドレスの導出](#address-derivation)を参照) 。
+
+| バリアント        | バイト    |
+| ------------ | ------ |
+| `ASSET`      | `0x00` |
+| `STABLECOIN` | `0x01` |
+
+### Asset {#asset}
+
+あらゆる種類のアセットに対応する汎用バリアントです。小数点以下の桁数 (decimals) はデプロイ時に 6〜18 の範囲で設定でき、作成後は変更できません。
+
+Asset トークンには、B20 の基本機能に加えて、いくつかの機能が追加されています。乗数とアナウンスの操作は、新設の `OPERATOR_ROLE` によって制御されます。一括ミントと追加メタデータには、既存の `MINT_ROLE` と `METADATA_ROLE` がそれぞれ流用されます。
+
+#### Multiplier {#multiplier}
+
+すべての残高読み取りに適用される、WAD精度のリベース乗数です。生の残高はそのまま保存され、呼び出し元に返される値にのみ乗数が適用されます。
+
+| メソッド                              | 説明                                         |
+| --------------------------------- | ------------------------------------------ |
+| `multiplier()`                    | 現在のWAD精度の乗数                                |
+| `scaledBalanceOf(account)`        | 生の残高 × 乗数                                  |
+| `toScaledBalance(raw)`            | 生の金額をスケーリング後の金額に変換                         |
+| `toRawBalance(scaled)`            | スケーリング後の金額を生の金額に変換                         |
+| `updateMultiplier(newMultiplier)` | 乗数を更新します。`OPERATOR_ROLE` を持つアカウントのみ実行できます。 |
+
+#### Announcements {#announcements}
+
+機密性の高い操作 (一括ミントや乗数の更新など) を公開の告知期間で挟み込む、オンチェーンの開示ブラケットです。`OPERATOR_ROLE` によって制御されます。
+
+`announce(internalCalls, id, description, uri)` は `Announcement` イベントを発行し、`internalCalls` を実行した後、`EndAnnouncement` を発行します。`id` は一意である必要があり、この一意性は恒久的に強制されます。内部呼び出しがリバートした場合は `InternalCallFailed` でラップされます。
+
+#### 一括ミント {#batch-mint}
+
+`batchMint(recipients, amounts)` は、1 回の呼び出しで複数の受取人に対してミントを行います。実行には `MINT_ROLE` が必要です。透明性を確保するため、`announce()` でラップすることが推奨されます。
+
+#### 追加メタデータ {#extra-metadata}
+
+発行者が定義するオンチェーンメタデータを格納するための、汎用的なキー/値ストアです。
+
+| メソッド                              | 説明                                                      |
+| --------------------------------- | ------------------------------------------------------- |
+| `extraMetadata(key)`              | キーを指定して値を読み取ります                                         |
+| `updateExtraMetadata(key, value)` | 値を書き込みます。`METADATA_ROLE` が必要です。空の値を設定すると、そのエントリは削除されます。 |
+
+### Stablecoin {#stablecoin}
+
+小数点以下の桁数を固定した、法定通貨裏付け型の特例バリアントです。小数点以下の桁数は `6` に固定されており、変更できません。
+
+`currency()` が追加されます。これは ISO 形式の通貨コード文字列 (例: `"USD"`、`"EUR"`) を返します。コードは作成時に `B20StablecoinCreateParams.currency` で一度だけ設定され、使用できる文字は `A`〜`Z` に限られます。このコードは発行者による自己申告であり、外部のレジストリとの照合による検証は行われません。
+
+## プリコンパイルアドレス {#precompile-addresses}
+
+これらのアドレスは、B20 が有効なすべてのネットワーク (Mainnet、Base Sepolia、Vibenet、ローカルの `base-anvil`) で共通です。
+
+| プリコンパイル                             | アドレス                                         |
+| ----------------------------------- | -------------------------------------------- |
+| [B20Factory](#factory)              | `0xB20f000000000000000000000000000000000000` |
+| Activation Registry                 | `0x8453000000000000000000000000000000000001` |
+| [Policy Registry](#policy-registry) | `0x8453000000000000000000000000000000000002` |

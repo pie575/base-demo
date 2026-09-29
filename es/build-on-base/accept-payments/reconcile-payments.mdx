@@ -1,0 +1,99 @@
+---
+title: "Conciliar pagos"
+keywords: ["conciliación de Commerce Payments", "informe de paymentInfoHash", "libro mayor de liquidación de pagos", "contabilidad de AuthCaptureEscrow"]
+description: "Genera un informe de liquidación a partir de los cargos, capturas, comisiones, anulaciones, recuperaciones y reembolsos del depósito en garantía."
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+Convierte los registros confirmados del protocolo en filas del libro contable indexadas por `paymentInfoHash`. La autorización o el cobro inicial fija las condiciones de pago, que son inmutables; los eventos posteriores actualizan la contabilidad de los importes capturables y reembolsables.
+
+<Info>
+  El flujo de pago de esta guía se basa en el [Commerce Payments Protocol](https://github.com/base/commerce-payments).
+</Info>
+
+## Demostración {#demo}
+
+<PaymentsDemo flow="reconcile" />
+
+<Tip>
+  La demostración anterior es solo una simulación. Si quieres ver demostraciones onchain en Vibenet, visita [Demostraciones de la cadena Base](https://chain.base.org/demos).
+</Tip>
+
+## Crear un informe de liquidación {#build-a-settlement-report}
+
+Consulta el depósito en garantía (escrow) v1.1.0 y, después, crea filas de importe bruto, comisiones y reembolsos a partir de los eventos de su ciclo de vida.
+
+{/* sample: reconcile-payments-ts */}
+
+```typescript TypeScript backend lines wrap expandable highlight={5-10,14,22,30}
+export async function buildSettlementReport(
+  fromBlock: bigint,
+  toBlock: bigint,
+) {
+  const logs = await publicClient.getContractEvents({
+    address: AUTH_CAPTURE_ESCROW,
+    abi: authCaptureEscrowAbi,
+    fromBlock,
+    toBlock,
+    strict: true,
+  });
+  return logs.flatMap((log) => {
+    if (!log.transactionHash) return [];
+    if (log.eventName === "PaymentCharged") return [{
+      paymentInfoHash: log.args.paymentInfoHash,
+      transactionHash: log.transactionHash,
+      logIndex: log.logIndex,
+      operation: "charge",
+      grossAmount: log.args.amount,
+      feeAmount: log.args.feeAmount,
+    }];
+    if (log.eventName === "PaymentCaptured") return [{
+      paymentInfoHash: log.args.paymentInfoHash,
+      transactionHash: log.transactionHash,
+      logIndex: log.logIndex,
+      operation: "capture",
+      grossAmount: log.args.amount,
+      feeAmount: log.args.feeAmount,
+    }];
+    if (log.eventName === "PaymentRefunded") return [{
+      paymentInfoHash: log.args.paymentInfoHash,
+      transactionHash: log.transactionHash,
+      logIndex: log.logIndex,
+      operation: "refund",
+      grossAmount: -log.args.amount,
+      feeAmount: 0n,
+    }];
+    return [];
+  });
+}
+```
+
+Por cada cargo o captura:
+
+```text Accounting
+importe neto del comerciante = importe bruto - importe de la comisión
+saldo reembolsable += importe bruto
+```
+
+Por cada reembolso, reduce el saldo reembolsable en el importe bruto del reembolso. Una anulación o recuperación reduce únicamente el saldo capturable y no revierte las capturas anteriores.
+
+<Check>
+  Para cada autorización, concilia el importe autorizado con la suma de las capturas, el importe anulado o recuperado y el `capturableAmount` actual. Concilia el valor total cobrado y capturado con la suma de los reembolsos y el `refundableAmount` actual.
+</Check>
+
+<Warning>
+  Genera los informes financieros solo con rangos de bloques finalizados. Si muestras confirmaciones más recientes, márcalas como provisionales y reemplázalas si se produce una reorganización (reorg).
+</Warning>
+
+## Consulta también {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="Supervisar pagos" icon="eye" href="/es/build-on-base/accept-payments/watch-for-payments">
+    Mantén al día el índice subyacente de eventos de depósito en garantía.
+  </Card>
+
+  <Card title="Reembolsar un pago" icon="rotate-left" href="/es/build-on-base/accept-payments/refund-a-payment">
+    Entiende cómo se contabilizan los reembolsos brutos y cómo afectan a la liquidez.
+  </Card>
+</CardGroup>

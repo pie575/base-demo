@@ -1,0 +1,148 @@
+---
+title: "Actualizaciones"
+description: "Consulta las actualizaciones de la red Base, sus fechas de activación y los cambios de protocolo incluidos en cada versión."
+---
+
+Base evoluciona mediante actualizaciones de red con nombre propio. Cada versión introduce cambios de protocolo, nuevas funcionalidades o actualizaciones de parámetros que se activan en Base Sepolia y Base Mainnet.
+
+Si un mes no tiene una marca de tiempo de activación confirmada, se trata de un objetivo de planificación y puede cambiar.
+
+<Update label="Octubre de 2026" tags={["Planning"]}>
+  ## Denim {#denim}
+
+  Denim introduce bloques nativos con una cadencia de 200 ms, que sustituyen a Flashblocks por flujos canónicos de bloques y de RPC.
+
+  * **Base Sepolia:** Prevista para octubre de 2026
+  * **Base Mainnet:** Prevista para octubre de 2026
+
+  <a className="view-features-btn" href="/es/upgrades/denim/overview">Ver funcionalidades</a>
+</Update>
+
+<Update label="30 de septiembre de 2026" tags={["Planning"]}>
+  ## Cobalt {#cobalt}
+
+  Cobalt mejora el estándar de tokens B20, añade transacciones de validez, introduce actualizaciones dinámicas de nodos (solo métricas en Mainnet) y migra Base a un entorno de ejecución confiable (TEE).
+
+  * **Base Sepolia:** Activada el 23 de septiembre de 2026
+  * **Base Mainnet:** Prevista para el 30 de septiembre de 2026
+
+  <a className="view-features-btn" href="/es/upgrades/cobalt/overview">Ver funcionalidades</a>
+</Update>
+
+<Update label="25 de junio de 2026" tags={["Live"]}>
+  ## Beryl {#beryl}
+
+  Beryl convierte a Base en una plataforma de emisión de primer nivel con los tokens B20, reduce los plazos de retiro y adopta Reth V2 como cliente de ejecución de referencia.
+
+  * **Base Sepolia:** Activada el 18 de junio de 2026
+  * **Base Mainnet:** Activada el 25 de junio de 2026
+
+  <a className="view-features-btn" href="/es/upgrades/beryl/overview">Ver funcionalidades</a>
+</Update>
+
+<Update label="28 de mayo de 2026" tags={["Live"]}>
+  ## Azul {#azul}
+
+  Azul es la primera actualización de red independiente de Base. Refuerza la seguridad y la descentralización, avanza hacia el objetivo de 1 gigagas por segundo y mejora la experiencia de los desarrolladores.
+
+  * **Base Sepolia:** Activada el 20 de abril de 2026
+  * **Base Mainnet:** Activada el 28 de mayo de 2026
+
+  <a className="view-features-btn" href="/es/upgrades/azul/overview">Ver funcionalidades</a>
+</Update>
+
+## Hardforks upstream de OP Stack {#upstream-op-stack-hardforks}
+
+Base adoptó los siguientes hardforks upstream de OP Stack. Las entradas están ordenadas por fecha de activación en Base Mainnet.
+
+<Update label="2 de diciembre de 2025" tags={["Live"]}>
+  ## Jovian {#jovian}
+
+  Jovian introduce una tarifa base mínima configurable y un escalar de gas para la huella de disponibilidad de datos, con el fin de mejorar la estabilidad del mercado de tarifas.
+
+  * **Base Sepolia:** Activado el 19 de noviembre de 2025
+  * **Base Mainnet:** Activado el 2 de diciembre de 2025
+
+  <a className="view-features-btn" href="/es/upgrades/jovian/overview">Ver funcionalidades</a>
+</Update>
+
+<Update label="9 de mayo de 2025" tags={["Live"]}>
+  ## Isthmus {#isthmus}
+
+  Isthmus incorpora los EIP de Pectra de Ethereum e introduce el mecanismo de tarifa del operador para generar ingresos para el sequencer.
+
+  * **Base Sepolia:** Activado el 17 de abril de 2025
+  * **Base Mainnet:** Activado el 9 de mayo de 2025
+
+  <a className="view-features-btn" href="/es/upgrades/isthmus/overview">Ver funcionalidades</a>
+</Update>
+
+<Update label="9 de enero de 2025" tags={["Live"]}>
+  ## Holocene {#holocene}
+
+  Holocene introduce parámetros de EIP-1559 dinámicos, configurables mediante `SystemConfig`, y reglas de derivación de bloques más estrictas.
+
+  * **Base Sepolia:** Activado el 26 de noviembre de 2024
+  * **Base Mainnet:** Activado el 9 de enero de 2025
+
+  <a className="view-features-btn" href="/es/upgrades/holocene/overview">Ver funcionalidades</a>
+</Update>
+
+<Update label="11 de septiembre de 2024" tags={["Live"]}>
+  ## Granite {#granite}
+
+  Granite añade restricciones al tamaño de entrada del precompilado `bn256Pairing` y actualiza el parámetro de tiempo de espera del channel.
+
+  * **Base Sepolia:** Activado el 12 de agosto de 2024
+  * **Base Mainnet:** Activado el 11 de septiembre de 2024
+
+  <a className="view-features-btn" href="/es/upgrades/granite/overview">Ver funcionalidades</a>
+</Update>
+
+<Update label="10 de julio de 2024" tags={["Live"]}>
+  ## Fjord {#fjord}
+
+  Fjord introduce la estimación de la tarifa de L1 basada en FastLZ, el precompilado `secp256r1` de RIP-7212 y la compresión de channels con Brotli.
+
+  * **Base Sepolia:** Activado el 29 de mayo de 2024
+  * **Base Mainnet:** Activado el 10 de julio de 2024
+
+  <a className="view-features-btn" href="/es/upgrades/fjord/overview">Ver funcionalidades</a>
+</Update>
+
+<Update label="14 de marzo de 2024" tags={["Live"]}>
+  ## Ecotone {#ecotone}
+
+  Ecotone integra los cambios de Dencun de Ethereum, incluidas las transacciones con blobs de EIP-4844 y los beacon block roots de EIP-4788.
+
+  * **Base Sepolia:** Activado el 21 de febrero de 2024
+  * **Base Mainnet:** Activado el 14 de marzo de 2024
+
+  <a className="view-features-btn" href="/es/upgrades/ecotone/overview">Ver funcionalidades</a>
+</Update>
+
+<Update label="22 de febrero de 2024" tags={["Live"]}>
+  ## Delta {#delta}
+
+  Delta introduce los span batch, que reducen los costos de datos en L1 al comprimir varios bloques de L2 en una sola transacción del batcher.
+
+  * **Base Sepolia:** Activado el 22 de diciembre de 2023
+  * **Base Mainnet:** Activado el 22 de febrero de 2024
+
+  <a className="view-features-btn" href="/es/upgrades/delta/overview">Ver funcionalidades</a>
+</Update>
+
+<Update label="11 de enero de 2024" tags={["Live"]}>
+  ## Canyon {#canyon}
+
+  Canyon incorpora a la capa de ejecución de Base los EIP de Shanghai de Ethereum, entre ellos EIP-3651, EIP-3855 y EIP-3860.
+
+  * **Base Sepolia:** Activado el 14 de noviembre de 2023
+  * **Base Mainnet:** Activado el 11 de enero de 2024
+
+  <a className="view-features-btn" href="/es/upgrades/canyon/overview">Ver funcionalidades</a>
+</Update>
+
+## Otros cambios {#other-changes}
+
+El [registro de cambios de configuración](/es/base-chain/network-information/configuration-changelog) recoge los cambios en los parámetros de la red que no corresponden a ninguna actualización específica.

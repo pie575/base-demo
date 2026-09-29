@@ -1,0 +1,22 @@
+---
+title: "Comisiones, orden y ciclo de vida"
+description: "Descubre cómo funcionan las comisiones, el vencimiento y el reemplazo de las transacciones de validez."
+---
+
+## Comisiones {#fees}
+
+Las transacciones siguen las reglas de comisiones habituales de su tipo. En las transacciones EIP-1559, establece `maxFeePerGas` y `maxPriorityFeePerGas` en la transacción firmada.
+
+Una transacción que no se incluye no paga comisiones de ejecución onchain. Una transacción incluida paga las comisiones de ejecución habituales, aunque se revierta.
+
+## Orden {#ordering}
+
+Una transacción solo compite por su inclusión una vez que se cumplen todos los predicados. El hecho de que un predicado se cumpla no reserva espacio en el bloque.
+
+## Vencimiento {#expiry}
+
+Agrega un predicado `block_number` con un bloque máximo para limitar la vigencia de una transacción. Combínalo con `flashblock_index` para acotar aún más el límite de vencimiento a una posición concreta dentro de los Flashblocks de ese bloque.
+
+## Reemplazo {#replacement}
+
+Una transacción posterior con el mismo remitente y el mismo nonce puede reemplazar una transacción pendiente. Si el RPC devuelve un error de reemplazo con precio insuficiente (underpriced replacement), aumenta los campos de comisión, vuelve a firmarla y reintenta el envío.

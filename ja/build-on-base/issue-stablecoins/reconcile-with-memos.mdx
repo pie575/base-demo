@@ -1,0 +1,78 @@
+---
+title: "メモを使った照合"
+keywords: ["stablecoin memo", "B20 memo event", "reconcile onchain payments", "transferWithMemo B20"]
+description: "ステーブルコインの操作にオンチェーンの参照情報をタグ付けし、オフチェーンの記録と大規模に照合できるようにします。"
+---
+
+import { StablecoinDemo } from "/snippets/StablecoinDemo.jsx"
+
+オンチェーンのアクティビティを自社の帳簿と紐づけましょう。**メモ** は操作に `bytes32` の参照値を付与し、同時に `Memo` イベントを発行します。これにより、顧客ごとに入金アドレスを用意しなくても、ログをクエリするだけで照合できます。主要な呼び出しにはすべてメモ付きのバリアント (`mintWithMemo`、`burnWithMemo`、`transferWithMemo`、`transferFromWithMemo`) が用意されています。
+
+加盟店側を運営していて、キャプチャ、返金、ペイアウトを横断した決済レポートが必要な場合は、[決済を照合する](/ja/build-on-base/accept-payments/reconcile-payments)を参照してください。
+
+## デモ {#demo}
+
+<StablecoinDemo flow="reconcile" />
+
+<Tip>
+  このデモでは、ブラウザ上でローカルに生成したアカウントを使って、**Base Vibenet** 上で実際のトランザクションを送信します。Vibenet またはその B20 機能が利用できない場合は、説明用のオフライン版に自動で切り替わります。
+</Tip>
+
+<Note>
+  B20 を初めて使う方は、[B20 トークン標準](/ja/specifications/b20)で基本的な概念とローンチまでの詳しい手順を確認してください。これらのサンプルは `base-std@1505323`、`viem@2.55.11`、Base Foundry `v1.1.1` を対象としています。
+</Note>
+
+## 請求書メモの添付と読み取り {#attach-and-read-an-invoice-memo}
+
+<CodeGroup>
+  {/* sample: stablecoin-memo-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={7,10}
+  import { hexToString, parseEventLogs, parseUnits, stringToHex, type Address } from "viem";
+  import { b20Abi } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function payWithMemo(token: Address, merchant: Address) {
+    const memo = stringToHex("invoice-8842", { size: 32 });
+    const receipt = await sendContract({
+      address: token,
+      abi: b20Abi,
+      functionName: "transferWithMemo",
+      args: [merchant, parseUnits("25", 6), memo],
+    });
+    const [event] = parseEventLogs({ abi: b20Abi, logs: receipt.logs, eventName: "Memo" });
+    return hexToString(event.args.memo, { size: 32 }).replace(/\0+$/, "");
+  }
+  ```
+
+  {/* sample: stablecoin-memo-cli */}
+
+  ```bash CLI lines wrap expandable highlight={2}
+  MEMO=$(base-cast format-bytes32-string "invoice-8842")
+  TX=$(base-cast send "$TOKEN_ADDRESS" "transferWithMemo(address,uint256,bytes32)" \
+    "$MERCHANT" 25000000 "$MEMO" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" --json | jq -r .transactionHash)
+  base-cast receipt "$TX" --rpc-url "$RPC_URL"
+  ```
+</CodeGroup>
+
+インターフェース、ロール、ポリシーの詳細については、[B20 トークン標準](/ja/specifications/b20)を参照してください。
+
+<Check>
+  レシートには `Transfer` の直後に `Memo` が記録され、`invoice-8842` が `bytes32` としてエンコードされています。
+</Check>
+
+<Note>
+  メモは `(transactionHash, logIndex - 1)` をキーにして直前のオペレーションと突き合わせてください。オフチェーンの請求書 ID は重複しないようにしてください。
+</Note>
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="コマース決済をリクエストする" icon="credit-card" href="/ja/build-on-base/accept-payments/request-a-payment">
+    トークンポリシーでプロトコル決済による送金が許可されている場合は、互換性のあるコレクターを使用します。
+  </Card>
+
+  <Card title="B20 イベントをクエリする（CDP SQL API）" icon="database" href="https://docs.cdp.coinbase.com/data/sql-api/b20-events">
+    CDP SQL API を使用して、大規模な照合を行います。
+  </Card>
+</CardGroup>

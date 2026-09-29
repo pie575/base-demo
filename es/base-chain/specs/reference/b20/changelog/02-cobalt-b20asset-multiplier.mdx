@@ -1,0 +1,147 @@
+---
+title: "B20: migración de Beryl a Cobalt"
+description: "El multiplicador de B20 Asset pasa a cumplir con ERC-8056 en Cobalt e incorpora un setter de multiplicador programado para acciones corporativas. Todos los selectores de Beryl siguen siendo invocables."
+---
+
+> **Público:** equipos que ya se han integrado con la interfaz del multiplicador de B20 Asset en Beryl (disponible
+> actualmente). Esta nota solo abarca los cambios en el multiplicador y en ERC-8056 que llegan con el hardfork Cobalt.
+
+## Resumen {#summary}
+
+En Cobalt, la interfaz del multiplicador de B20 Asset pasa a cumplir con [ERC-8056 (&quot;Scaled UI Amount&quot;)](https://eips.ethereum.org/EIPS/eip-8056)
+e incorpora un setter de multiplicador programado para acciones corporativas. Nada de lo que llamas hoy
+deja de funcionar: cada selector, topic de evento y error de Beryl conserva exactamente su selector de 4 bytes o su topic0 y
+sigue siendo invocable en Cobalt. Las funciones obsoletas que se indican a continuación son una recomendación, no una restricción.
+
+Para migrar, adopta los nombres canónicos de ERC-8056 (`uiMultiplier`, `toUIAmount`/`fromUIAmount`,
+`balanceOfUI`, `totalSupplyUI`) y pasa los cambios habituales del multiplicador de la función instantánea
+`updateMultiplier(uint256)` a la función programada `updateUIMultiplier(uint256,uint256)`.
+
+Cobalt todavía no está activo. Hasta su activación, en la cadena solo existe la interfaz de Beryl.
+
+## Tabla de correspondencias {#mapping-table}
+
+Los selectores y los topic0 que aparecen a continuación son los valores reales de las ABI congeladas: `abi/v1.rs` para Beryl y
+`abi/v2.rs` para Cobalt. Todos los símbolos de Beryl mantienen su selector en Cobalt.
+
+### Funciones {#functions}
+
+| Símbolo en Beryl (selector)              | Canónico en Cobalt (selector)                      | Estado                              | Motivo                                                                                                           |
+| ---------------------------------------- | -------------------------------------------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `multiplier()` `0x1b3ed722`              | `uiMultiplier()` `0xa60bf13d`                      | deprecated-name-kept / new alias    | Nomenclatura principal de ERC-8056. Ambas devuelven el mismo multiplicador efectivo. `multiplier()` se mantiene. |
+| `toScaledBalance(uint256)` `0x04f04c99`  | `toUIAmount(uint256)` `0x3248d4ff`                 | deprecated-dialable / new           | Extensión Conversion de ERC-8056. Comportamiento idéntico byte a byte.                                           |
+| `toRawBalance(uint256)` `0x0ca06c44`     | `fromUIAmount(uint256)` `0x65cd9b3c`               | deprecated-dialable / new           | Extensión Conversion de ERC-8056. Comportamiento idéntico byte a byte.                                           |
+| `scaledBalanceOf(address)` `0x1da24f3e`  | `balanceOfUI(address)` `0x437a9958`                | deprecated-name-kept / new alias    | Extensión Balances de ERC-8056. Alias con el mismo valor.                                                        |
+| `updateMultiplier(uint256)` `0x5ffe6146` | `updateUIMultiplier(uint256,uint256)` `0x628e600f` | deprecated-dialable / new (not 1:1) | La vía canónica pasa a ser el setter programado. El setter instantáneo se conserva como mecanismo de emergencia. |
+| —                                        | `newUIMultiplier()` `0xdc767007`                   | new                                 | Lectura de la actualización programada pendiente de ERC-8056.                                                    |
+| —                                        | `effectiveAt()` `0x97a4064f`                       | new                                 | Lectura de la actualización programada pendiente de ERC-8056 (marca de tiempo en que se aplica el cambio).       |
+| —                                        | `totalSupplyUI()` `0x9bea6429`                     | new                                 | Extensión Balances de ERC-8056.                                                                                  |
+| —                                        | `cancelUIMultiplierUpdate()` `0x2c97a0f0`          | new                                 | Cancela la única actualización pendiente vigente.                                                                |
+| —                                        | `MAX_UI_MULTIPLIER()` `0x785c0cf0`                 | new                                 | Lee el valor máximo del multiplicador (`type(uint128).max`) sin riesgo de provocar un revert.                    |
+| —                                        | `supportsInterface(bytes4)` `0x01ffc9a7`           | new                                 | Detección de funcionalidades según ERC-165.                                                                      |
+
+`OPERATOR_ROLE()` `0xf5b541a6`, `WAD_PRECISION()` `0x664808a8`, `announce(...)` `0x595135dd`,
+`isAnnouncementIdUsed(string)` `0xc0da474e`, `batchMint(...)` `0x68573107`,
+`extraMetadata(string)` `0x4ddf9da0` y `updateExtraMetadata(string,string)` `0xb2851ef5` se
+mantienen sin cambios.
+
+### Eventos {#events}
+
+| Evento de Beryl (topic0)     | Canónico de Cobalt (topic0)                    | Estado                       | Motivo                                                                                                                       |
+| ---------------------------- | ---------------------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `MultiplierUpdated(uint256)` | `UIMultiplierUpdated(uint256,uint256,uint256)` | obsoleto-aún-emitido / nuevo | Evento canónico de ERC-8056. El setter inmediato emite ambos eventos. El setter programado solo emite `UIMultiplierUpdated`. |
+| —                            | `UIMultiplierUpdateCancelled(uint256,uint256)` | nuevo                        | Indica que se ha descartado una actualización pendiente.                                                                     |
+
+### Errores {#errors}
+
+| Error de Beryl (selector)          | Cobalt (selector)                                | Estado             | Motivo                                                                                                     |
+| ---------------------------------- | ------------------------------------------------ | ------------------ | ---------------------------------------------------------------------------------------------------------- |
+| `InvalidMultiplier()` `0x6f12f3dc` | `InvalidMultiplier()` `0x6f12f3dc`               | ya existe en Beryl | Protección contra valores cero o superiores al límite máximo. Ahora `updateUIMultiplier` también lo lanza. |
+| —                                  | `EffectiveAtInPast(uint256)` `0x14119cf6`        | nuevo              | Se lanza cuando `effectiveAt <= block.timestamp`.                                                          |
+| —                                  | `EffectiveAtTooFar(uint256)` `0x1ce214fa`        | nuevo              | Se lanza cuando `effectiveAt > type(uint64).max`.                                                          |
+| —                                  | `UIMultiplierUpdateExists(uint256)` `0x4481a68e` | nuevo              | Se lanza cuando ya existe una actualización pendiente vigente.                                             |
+| —                                  | `UIMultiplierUpdateDoesNotExist()` `0xa7d6a5ca`  | nuevo              | Se lanza al intentar cancelar sin que haya una actualización pendiente vigente.                            |
+
+## Novedades en Cobalt: adopta esto {#new-at-cobalt-adopt-these}
+
+### Ciclo de vida de las actualizaciones programadas {#scheduled-update-lifecycle}
+
+`updateUIMultiplier(newMultiplier, effectiveAt)` es la vía canónica para las acciones corporativas, como
+los desdoblamientos de acciones (*splits*) y los dividendos reinvertidos. Solo puede haber una actualización pendiente activa a la vez.
+
+1. **Programar**: llama a `updateUIMultiplier(newMultiplier, effectiveAt)`. Esto requiere
+   `OPERATOR_ROLE`, y `effectiveAt` debe ser estrictamente posterior al momento actual.
+2. **Leer la actualización pendiente**: mientras esté activa, `newUIMultiplier()` devuelve el valor objetivo programado,
+   `effectiveAt()` devuelve la marca de tiempo en la que se produce el cambio, y `uiMultiplier()` / `multiplier()` siguen devolviendo
+   el valor actual.
+3. **Dejar que venza**: en cuanto `block.timestamp >= effectiveAt`, `uiMultiplier()` / `multiplier()` pasan
+   al nuevo valor en la lectura. No se emite ningún evento al vencer.
+4. **O cancelarla**: `cancelUIMultiplierUpdate()` elimina la actualización pendiente activa y emite
+   `UIMultiplierUpdateCancelled(cancelledMultiplier, cancelledEffectiveAt)`.
+
+Para reordenar acciones que se solapan, cancela y vuelve a programar de forma atómica en un único anuncio:
+`announce([cancelUIMultiplierUpdate(), updateUIMultiplier(...)], ...)`.
+
+### Alias de funciones view de ERC-8056 {#erc-8056-view-aliases}
+
+* `uiMultiplier()` devuelve el mismo valor que `multiplier()`.
+* `toUIAmount(raw)` devuelve el mismo valor que `toScaledBalance(raw)`. `fromUIAmount(ui)` devuelve el
+  mismo valor que `toRawBalance(ui)`.
+* `balanceOfUI(account)` devuelve el mismo valor que `scaledBalanceOf(account)`.
+* `totalSupplyUI()` es igual a `totalSupply() * uiMultiplier() / WAD_PRECISION`.
+
+### Getter del límite {#bound-getter}
+
+`MAX_UI_MULTIPLIER()` devuelve `type(uint128).max`, el tope que imponen ambos setters. Es la
+protección contra desbordamiento que garantiza que `balance * multiplier` quepa en un `uint256`.
+
+## `updateMultiplier(uint256)` se mantiene como mecanismo de seguridad administrativo instantáneo {#updatemultiplieruint256-remains-as-an-instant-admin-failsafe}
+
+`updateMultiplier(uint256)` fija el multiplicador de inmediato y descarta cualquier actualización pendiente que siga activa. Es
+un mecanismo de seguridad administrativo obsoleto que se conserva por deuda técnica y para anulaciones de emergencia, no para el uso habitual: úselo para
+revertir al instante un error de planificación y, en la mayoría de los casos, acompáñelo de una pausa.
+
+## Garantías y casos límite {#guarantees-and-edge-cases}
+
+**P: Una actualización programada se puede cancelar. ¿Cómo detectan la cancelación los consumidores externos?**
+`cancelUIMultiplierUpdate()` emite `UIMultiplierUpdateCancelled(cancelledMultiplier,
+cancelledEffectiveAt)` (topic0 `0x8838…1cad`); el setter instantáneo también lo hace cuando reemplaza una actualización
+pendiente vigente. Monitoriza ese topic para retirar un cambio pendiente que hayas preparado previamente a partir de
+`UIMultiplierUpdated`.
+
+**P: Si el administrador usa el mecanismo de emergencia instantáneo, ¿cómo mantienen los indexadores off-chain un ciclo de vida del multiplicador de UI lineal y sin
+huecos?**
+La función instantánea `updateMultiplier(uint256)` emite tanto el evento obsoleto `MultiplierUpdated(uint256)` como
+el evento ERC-8056 `UIMultiplierUpdated(old, new, block.timestamp)` (y, si elimina una actualización pendiente
+vigente, emite antes `UIMultiplierUpdateCancelled`). Todo cambio del multiplicador, ya sea programado o de emergencia,
+aparece en un único flujo, `UIMultiplierUpdated`, así que basta con seguir ese evento para no perderse
+ningún cambio. El topic heredado `MultiplierUpdated` sigue disponible para los indexadores que aún no han migrado.
+
+**P: ¿Cómo distingo una actualización pendiente vigente de una que ya ha vencido, o de la ausencia de actualizaciones?**
+Una actualización pendiente está vigente si `effectiveAt() > block.timestamp`. Mientras lo está, `newUIMultiplier()`
+devuelve el objetivo programado, que difiere de `uiMultiplier()`. Tras el vencimiento,
+`uiMultiplier()` ya refleja el nuevo valor, `newUIMultiplier() == uiMultiplier()` y
+`effectiveAt()` conserva la marca de tiempo del cambio, ya pasada, hasta que la siguiente programación, actualización instantánea o
+cancelación la sobrescriba. Por tanto, un `effectiveAt()` distinto de cero que sea `<= block.timestamp` significa «ya
+aplicada», no «pendiente». Si nunca se ha programado ninguna actualización, `effectiveAt() == 0`.
+
+**P: ¿Qué ocurre si programo una actualización mientras ya hay una pendiente?**
+La llamada se revierte con `UIMultiplierUpdateExists(effectiveAt)`, pero solo la bloquea una actualización pendiente vigente.
+Una actualización pendiente vencida (obsoleta) se incorpora silenciosamente al multiplicador actual y se sobrescribe. Para
+reemplazar una programación vigente, llama a `cancelUIMultiplierUpdate()` y después a `updateUIMultiplier(...)`, de forma atómica,
+mediante `announce`.
+
+**P: ¿Cuáles son los límites de `effectiveAt`?**
+Debe estar estrictamente en el futuro: `effectiveAt <= block.timestamp` revierte con
+`EffectiveAtInPast(effectiveAt)`. También debe caber en el campo on-chain:
+`effectiveAt > type(uint64).max` revierte con `EffectiveAtTooFar(effectiveAt)`.
+
+**P: ¿Cuáles son los límites del multiplicador?**
+`0 < newMultiplier <= MAX_UI_MULTIPLIER()` (`type(uint128).max`). Un valor igual a cero o superior al máximo revierte con
+`InvalidMultiplier()`. Esto se aplica tanto a `updateUIMultiplier` como a `updateMultiplier`. Puedes
+consultar el límite superior en `MAX_UI_MULTIPLIER()` sin riesgo de provocar la reversión.
+
+**P: ¿Cambian los saldos brutos o la semántica de `Transfer`?**
+No. El multiplicador es puramente estético: solo reescala la vista de UI/escalada. `balanceOf`,
+`transfer`, `totalSupply` y `Transfer` siguen expresados en valores brutos, y ningún cambio del multiplicador, programado o instantáneo,
+los afecta. Solo varían las lecturas `*UI` / escaladas.

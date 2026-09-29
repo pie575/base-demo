@@ -1,0 +1,814 @@
+---
+title: "术语表"
+description: "Base Chain 协议规范中所用术语及其定义的汇总。"
+---
+
+## 通用术语 {#general-terms}
+
+### 第一层 (L1) {#layer-1-l1}
+
+[L1]: glossary#layer-1-L1
+
+指以太坊区块链，与[第二层][L2] (即 Base) 相对。
+
+### 第 2 层 (L2) {#layer-2-l2}
+
+[L2]: glossary#layer-2-L2
+
+指 Base Chain (由本仓库定义) ，与指代以太坊区块链的[第 1 层][L1]相对。
+
+### 区块 {#block}
+
+[block]: glossary#block
+
+可以指 [L1] 区块，也可以指 [L2] 区块，两者结构相似。
+
+区块是一个按顺序排列的交易列表，并附带若干存储在区块 *header* 中的属性。这些属性的
+说明可参见[此处][nano-header]的代码注释，或[以太坊黄皮书
+(pdf)][yellow] 第 4.3 节。
+
+有必要区分输入区块属性和输出区块属性：前者在执行区块中的交易之前即已确定，后者则在执行区块交易之后
+推导得出。输出属性包括各种
+[Merkle Patricia Trie 根][mpt]，其中尤为重要的是对 L2 状态以及执行期间所发出日志事件的承诺。
+
+### EOA {#eoa}
+
+[EOA]: glossary#EOA
+
+&quot;Externally Owned Account&quot; (外部账户) ，以太坊术语，指由用户控制的地址，与合约地址相对。
+
+### Merkle Patricia Trie {#merkle-patricia-trie}
+
+[mpt]: glossary#merkle-patricia-trie
+
+[Merkle Patricia Trie (MPT)][mpt-details] 是一种稀疏字典树 (trie) ，即一种将键映射到值的树状结构。
+MPT 的根哈希是对树中内容的承诺 (commitment) ，借助它，可以为树中编码的任意键值映射构造
+证明。这种证明称为 Merkle 证明，可以
+基于 Merkle 根进行验证。
+
+### 链重组 {#chain-re-organization}
+
+[reorg]: glossary#chain-re-organization
+
+重组 (re-organization，简称 re-org) 是指区块链的链头 (即最后一个区块) 按照
+[分叉选择规则][fork-choice-rule]切换到了一个并非前一链头子区块的区块上。
+
+L1 重组可能由网络状况或攻击引起。L2 重组则源于 L1 重组，经由
+[L2 链派生][derivation]传导而来。
+
+### 预部署合约 (“Predeploy”) {#predeployed-contract-predeploy}
+
+[predeploy]: glossary#predeployed-contract-predeploy
+
+在 L2 创世状态中 (即链启动时) 就已存在的合约。
+
+所有预部署合约均在[预部署规范](/zh/specifications/base-protocol/execution/predeploys)中定义。
+
+### 预装合约 (“Preinstall”) {#preinstalled-contract-preinstall}
+
+[preinstall]: glossary#preinstalled-contract-preinstall
+
+写入 L2 创世状态 (即链启动之初) 的合约。这些合约不具备与[预部署合约](#predeployed-contract-predeploy)同等的
+安全保证，而是为提升 L2 用户体验而提供的
+通用合约。
+
+所有预装合约均在[预装合约规范](/zh/specifications/base-protocol/execution/preinstalls)中定义。
+
+### 预编译合约 (“Precompile”) {#precompiled-contract-precompile}
+
+[precompile]: glossary#precompiled-contract-precompile
+
+一种在 EVM 中原生实现的合约，执行特定操作时比字节码 (例如 Solidity) 实现更高效。预编译合约部署在预定义的地址上，
+通过网络升级进行创建和修改。
+
+所有预编译合约均在[预编译合约规范](/zh/specifications/base-protocol/execution/precompiles)中定义。
+
+### 收据 (Receipt) {#receipt}
+
+[receipt]: glossary#receipt
+
+收据是交易执行后生成的输出，由状态码、已消耗的 gas 数量、日志条目列表，以及为这些条目建立索引的 [bloom filter] 组成。日志条目最主要的用途是编码 [Solidity events]。
+
+收据并不存储在区块中，但区块会存储一个 [Merkle Patricia Trie 根][mpt]，对应的树包含该区块中每笔交易的收据。
+
+收据的规范详见 [黄皮书 (pdf) ][yellow] 第 4.3.1 节。
+
+### 交易类型 {#transaction-type}
+
+[transaction-type]: glossary#transaction-type
+
+以太坊提供了一种定义不同交易类型的机制 (详见 [EIP-2718]) 。
+不同类型的交易可以包含不同的载荷，协议对它们的处理方式也各不相同。
+
+[EIP-2718]: https://eips.ethereum.org/EIPS/eip-2718
+
+### 分叉选择规则 {#fork-choice-rule}
+
+[fork-choice-rule]: glossary#fork-choice-rule
+
+分叉选择规则用于确定应将哪个区块视为区块链的头部。在 L1 上，
+这由权益证明规则决定。
+
+L2 同样有分叉选择规则，但具体规则因所需的是[安全 L2 头部][safe-l2-head]、
+[不安全 L2 头部][unsafe-l2-head]还是[最终确定 L2 头部][finalized-l2-head]而有所不同。
+
+### 优先 Gas 拍卖 (Priority Gas Auction) {#priority-gas-auction}
+
+以太坊中的交易按其支付给矿工的价格排序。当多方争相让自己的交易成为区块中的第一笔交易时，就会出现优先 Gas 拍卖
+(PGA) 。各方会不断
+提高其交易的 gas 价格。只要抢在其他方之前提交交易能带来收益 (例如成为第一笔存款，或在保证 gas 耗尽之前提交存款) ，
+就会出现 PGA。
+由于会在极短时间内提交大量交易，PGA 往往会给网络带来
+负外部性。
+
+## 排序 {#sequencing}
+
+[sequencing]: glossary#sequencing
+
+交易可以通过以下两种方式被纳入 rollup：
+
+* 通过[存款交易](#deposited-transaction)，由系统强制纳入
+* 通过常规交易，嵌入在 [排序器批次](#sequencer-batch)中
+
+将交易提交至批次中打包，可以减少开销、节省成本，还能让 排序器
+在 L1 确认数据之前对交易进行预确认。
+
+### 排序器 (Sequencer) {#sequencer}
+
+[sequencer]: glossary#sequencer
+
+排序器 (sequencer) 是指以排序器模式运行的 [rollup 节点][rollup-node]，或该 rollup 节点的运营者。
+
+排序器是一个特权参与者，负责接收 L2 用户发送的 L2 交易，将其打包成 L2 区块，再
+(通过 [batcher]) 提交给[数据可用性提供者][avail-provider]。此外，它还会向 L1 提交[输出
+根][l2-output]。
+
+### 排序窗口 {#sequencing-window}
+
+[sequencing-window]: glossary#sequencing-window
+
+排序窗口 (sequencing window) 是指一段 L1 区块范围，可据此推导出一个[排序纪元][sequencing-epoch]。
+
+若排序窗口的首个 L1 区块编号为 `N`，则该窗口包含纪元 `N` 的
+[batcher 交易][batcher-transaction]。该窗口涵盖区块 `[N, N + SWS)`，其中 `SWS` 为 排序器窗口大小。
+
+当前 `sws` 的默认值为 3600 个纪元。
+
+此外，窗口中的第一个区块定义了[存款交易][depositing-tx]，这些交易决定了该纪元第一个 L2 区块中应包含哪些
+[存款][deposits]。
+
+### 排序纪元 (Sequencing Epoch) {#sequencing-epoch}
+
+[sequencing-epoch]: glossary#sequencing-epoch
+
+排序纪元是由一个 L1 区块[排序窗口](#sequencing-window)派生出的一段连续 L2 区块。
+
+每个纪元都有一个纪元编号作为标识，其值等于排序窗口中第一个 L1 区块的
+区块号。
+
+纪元的大小可变，但须满足一定的约束条件。详情请参阅 [L2 链派生规范][derivation-spec]
+。
+
+### L1 起源 {#l1-origin}
+
+[l1-origin]: glossary#l1-origin
+
+L2 区块的 L1 起源是指其[排序纪元][sequencing-epoch]所对应的 L1 区块。
+
+## 存款 (Deposits) {#deposits}
+
+[deposits]: glossary#deposits
+
+一般而言，存款 (deposit) 是指 (由 [rollup driver]) 从 L1 区块派生出的 L2 交易。
+
+交易存款虽然主要 (但不仅限于) 用于将 ETH 和代币“存入” (跨链桥接到) L2，但 *deposit* 一词应理解为“从 L1 *存入* L2 的交易”。
+
+*deposit* 这一术语略有歧义，因为这类“交易”存在于多个层面。本节将逐一厘清所有与存款相关的术语。
+
+具体来说，*deposit* 可以指：
+
+* 属于存款区块的 (L2 上的) [存款交易][deposited]。
+* 触发派生[存款交易][deposited]的[存款调用][depositing-call]。
+* 由[存款调用][depositing-call]生成的事件/日志数据，[rollup driver] 正是通过读取这些数据来派生[存款交易][deposited]。
+
+有时我们也会提到 *用户存款* (user deposit) ，这一术语与之类似，但明确排除了 [L1 属性存款交易][l1-attr-deposit]。
+
+有关存款的详细规范，请参阅[存款规范][deposits-spec]。
+
+### 存款交易 {#deposited-transaction}
+
+[deposited]: glossary#deposited-transaction
+
+*存款交易* (deposited transaction) 是指从 L1 派生、并被纳入 L2 区块的 L2 交易。
+
+存款交易分为两类：
+
+* [L1 属性存款交易][l1-attr-deposit]，用于将 L1 区块的属性提交至 [L1 属性预部署合约][l1-attr-predeploy]。
+* [用户存款交易][user-deposited]，即由 L1 上对[存款合约][deposit-contract]的调用派生而来的交易。
+
+### L1 属性存款交易 {#l1-attributes-deposited-transaction}
+
+[l1-attr-deposit]: glossary#l1-attributes-deposited-transaction
+
+&#95;L1 属性存款交易&#95;是一种[存款交易][deposited]，它通过调用 [L1 属性预部署合约][l1-attr-predeploy]，将 L1 区块属性 (区块号、时间戳等) 登记到 L2 上。
+随后即可通过该合约读取当前 L2 区块所对应的 L1 区块的属性。
+
+有关 L1 属性存款交易的规范，请参阅存款规范中的 [L1 属性存款][l1-attributes-tx-spec]一节。
+
+[l1-attributes-tx-spec]: /specifications/base-protocol/bridging/deposits#l1-attributes-deposited-transaction
+
+### 用户存款交易 {#user-deposited-transaction}
+
+[user-deposited]: glossary#user-deposited-transaction
+
+*用户存款交易* 是一种[存款交易][deposited]，由对[存款合约][deposit-contract]发起的 L1 调用 (即[存款调用][depositing-call]) 派生而来。
+
+用户存款交易的规范详见存款规范中的[交易存款][tx-deposits-spec]一节。
+
+[tx-deposits-spec]: /specifications/base-protocol/bridging/deposits#user-deposited-transactions
+
+### 存款调用 (Depositing Call) {#depositing-call}
+
+[depositing-call]: glossary#depositing-call
+
+*存款调用* (depositing call) 是指向[存款合约][deposit-contract]发起的 L1 调用，[rollup driver] 会将其派生为一笔
+[用户存款交易][user-deposited]。
+
+该调用指定了存款交易所需的全部数据 (目标地址、转账金额、calldata 等) 。
+
+### 存款交易 {#depositing-transaction}
+
+[depositing-tx]: glossary#depositing-transaction
+
+*存款交易* (depositing transaction) 是指包含一个或多个[存款调用][depositing-call]的 L1 交易。
+
+### 存款方 {#depositor}
+
+[depositor]: glossary#depositor
+
+*存款方* (depositor) 是执行[存款调用][depositing-call]的 L1 账户 (合约或 [EOA]) ，即该调用的 `msg.sender`。*存款方***并非**存款交易的发起者 (即 `tx.origin`) 。
+
+### 存款交易类型 {#deposited-transaction-type}
+
+[deposit-tx-type]: glossary#deposited-transaction-type
+
+*存款交易类型* (deposited transaction type) 是一种 [EIP-2718] [交易类型][transaction-type]，用于规定[存款交易][deposited]的输入字段
+及其正确处理方式。
+
+更多信息请参阅存款规范中的[相应章节][spec-deposit-tx-type]。
+
+[spec-deposit-tx-type]: /specifications/base-protocol/bridging/deposits#the-deposited-transaction-type
+
+### 存款合约 {#deposit-contract}
+
+[deposit-contract]: glossary#deposit-contract
+
+*存款合约&#95;是一个 [L1] 合约，[EOA][EOA] 和合约都可以向其发送[存款][deposits]。这些存款以日志记录 (在 Solidity 中称为&#95;事件*) 的形式发出，
+供 [rollup 节点][rollup-node]读取使用。
+
+进阶说明：存款之所以不存储在 calldata 中，是因为存款可能由合约发送。在这种情况下，calldata
+属于合约之间&#95;内部&#95;执行的一部分，而这类中间 calldata 并不会被记录在 L1 区块所包含的任何一个
+[Merkle Patricia Trie 根][mpt]中。
+
+参见 [存款规范][deposits-spec]
+
+## 提款 {#withdrawals}
+
+[withdrawals]: glossary#withdrawals
+
+一般而言，提款是指从 L2 发送到 L1 的交易，可用于传输数据和/或价值。
+
+*提款* 一词含义有些模糊，因为这类“交易”涉及多个层级。为了区分提款在 L1 和 L2 上的组成部分，我们引入以下术语：
+
+* *提款发起交易* 专指在 L2 上发送至 Withdrawals 预部署合约的交易。
+* *提款完成交易* 专指在 L1 上完成并中继该提款的交易。
+
+### 中继者 (Relayer) {#relayer}
+
+[relayer]: glossary#relayer
+
+L1 上的 EOA，负责提交验证提款已包含在 L2 中所需的数据，从而完成该提款的最终确认。
+
+### 最终确认期 {#finalization-period}
+
+[finalization-period]: glossary#finalization-period
+
+最终确认期 (有时也称为&#95;提款延迟&#95;) 是指[提款][withdrawals]完成最终确认之前必须经过的最短时间 (以秒为单位) 。
+
+设置最终确认期，是为了给[验证者][validator]留出足够的时间来提交[故障证明][fault-proof]。
+
+## 配置 {#configuration}
+
+### Batch Inbox {#batch-inbox}
+
+[batch-inbox]: glossary#batch-inbox
+
+**Batch Inbox** 是 Sequencer 发布交易批次的目标地址。Sequencer 会发送一笔交易，将其 `to` 地址设为 Batch Inbox，并在该交易中以 calldata 或 blob 数据的形式携带批量 L2 交易，从而将交易发布到 Batch Inbox。
+
+### Batcher Hash {#batcher-hash}
+
+[batcher-hash]: glossary#batcher-hash
+
+**Batcher Hash** 用于标识特定 Base 链上的合法发送方：只有这些发送方发往 [Batch Inbox](#batch-inbox) 的交易，才会被 L2 客户端识别。
+
+Batcher Hash 以哈希的第一个字节标识版本。V0 Batcher Hash
+是一个 32 字节的哈希，其结构定义如下：
+
+| 1 字节       | 11 字节 | 20 字节 |
+| ---------- | ----- | ----- |
+| 版本 (0x00)  | 空     | 地址    |
+
+也可以理解为：
+
+```solidity Batcher Hash
+bytes32(address(batcher))
+```
+
+其中 `batcher` 是向 Batch Inbox 发送交易的账户地址。简而言之，
+V0 哈希标识的是*单个*地址，只有该地址发送的交易批次才会被
+L2 客户端认可。该哈希带有版本号，因此将来可以改作他用，例如用作对许可账户列表的承诺 (commitment) ，
+或作为其他形式的 batcher 标识。
+
+### 费用标量 (Fee Scalars) {#fee-scalars}
+
+[fee-scalars]: glossary#fee-scalars
+
+**费用标量 (Fee Scalars) **是用于计算 L2 交易中 L1 数据费用的参数，
+也称为 Gas Price Oracle (GPO) 参数。
+
+#### Ecotone 之前的参数 {#pre-ecotone-parameters}
+
+在 Ecotone 升级之前，这些参数包括：
+
+* **Scalar**：作用于 L1 基础费用的乘数，按大端序 `uint256` 解析
+* **Overhead**：固定的 gas 开销，按大端序 `uint256` 解析
+
+#### Ecotone 升级后的参数 {#post-ecotone-parameters}
+
+Ecotone 升级后：
+
+* **Scalar** 属性采用带版本号的编码方案，用于编码额外的标量信息
+* **Overhead** 值会被忽略，不影响 L2 状态转换的输出
+
+#### Ecotone 之后的 Scalar 编码 {#post-ecotone-scalar-encoding}
+
+Scalar 以大端序 `uint256` 编码，按 `bytes32` 解释，其结构如下：
+
+* 字节 `0`：scalar 版本字节
+* 字节 `[1, 32)`：取决于 scalar 版本：
+  * Scalar 版本 `0`：
+    * 字节 `[1, 28)`：填充，应为零
+    * 字节 `[28, 32)`：大端序 `uint32`，编码 L1 费用的 `baseFeeScalar`
+    * 此版本意味着 L1 费用的 `blobBaseFeeScalar` 设为 0
+    * 如果填充区域中存在非零字节，则 `baseFeeScalar` 必须设为 MaxUint32
+  * Scalar 版本 `1`：
+    * 字节 `[1, 24)`：填充，必须为零
+    * 字节 `[24, 28)`：大端序 `uint32`，编码 `blobBaseFeeScalar`
+    * 字节 `[28, 32)`：大端序 `uint32`，编码 `baseFeeScalar`
+
+`baseFeeScalar` 表示用户交易 (按字节计) 在批次提交者的数据交易所消耗的常规 L1 EVM gas
+总量中所占的份额。对于 blob
+交易，该值即为 L1 交易的固定内在 gas 成本。
+
+`blobBaseFeeScalar` 表示用户交易 (按字节计) 在批次提交者的数据交易所引入的 blob 数据
+总量中所占的份额。
+
+### Unsafe Block Signer (不安全区块签名者) {#unsafe-block-signer}
+
+[unsafe-block-signer]: glossary#unsafe-block-signer
+
+**Unsafe Block Signer** (不安全区块签名者) 是一个以太坊地址，其对应的私钥用于在“不安全”区块发布到 L1 之前为其签名。
+借助该签名，P2P 网络中的节点能够将这些区块识别为规范的不安全区块，从而防范针对
+P2P 层的拒绝服务攻击。
+
+为了能够以不依赖存储布局的方式通过存储证明获取该值，它被存储在一个特殊的存储槽中，该槽位对应于
+`keccak256("systemconfig.unsafeblocksigner")`。
+
+与其他系统配置参数不同，Unsafe Block Signer 仅作用于区块链策略层面，
+并不属于共识层面的参数。
+
+### L2 Gas 上限 {#l2-gas-limit}
+
+[l2-gas-limit]: glossary#l2-gas-limit
+
+**L2 Gas 上限** (L2 Gas Limit) 定义了单个 L2 区块中可使用的最大 gas 量。
+该参数用于确保 L2 区块的大小保持在合理范围内，以便处理和证明。
+
+L2 gas 上限的变更，会在以引入该变更的 L1 区块作为 L1 起源 (L1 origin) 的第一个 L2 区块中完全生效。
+
+gas 上限不得设置为超过
+[最大 gas 上限](/zh/specifications/base-protocol/consensus/derivation#system-configuration)的值。这是为了确保 L2 区块可被证明，并且能够由共识软件和执行软件处理。
+
+## 批次提交 {#batch-submission}
+
+[batch-submission]: glossary#batch-submission
+
+### 数据可用性 {#data-availability}
+
+[data-availability]: glossary#data-availability
+
+数据可用性是指保证某些数据在一段足够长的时间窗口内“可用” (即 *可检索*) 。就 Base 而言，这里所说的数据是 [sequencer 批次][sequencer-batch]，[验证者][validator]需要借助这些数据来验证 sequencer 的工作并校验 L2 链。
+
+应将[最终确认期][finalization-period]视为可用性窗口的下限，因为这一时期对数据可用性的要求最为关键：执行[故障证明][fault-proof]时需要用到这些数据。
+
+“可用性”**并不**意味着保证数据会被长期存储。
+
+### 数据可用性提供方 {#data-availability-provider}
+
+[avail-provider]: glossary#data-availability-provider
+
+数据可用性提供方是一种用于确保数据可用的服务。有关其具体含义，请参阅[数据
+可用性][data-availability]。
+
+理想情况下，优秀的数据可用性提供方应为数据可用性提供强有力的 *可验证* 保证
+
+目前，支持的数据可用性提供方包括以太坊 calldata 和 blob 数据。
+
+### Sequencer 批次 {#sequencer-batch}
+
+[sequencer-batch]: glossary#sequencer-batch
+
+Sequencer 批次是一组 (已提交给 sequencer 的) L2 交易，并标记了 [epoch
+编号](#sequencing-epoch)和 L2 区块时间戳 (由于区块时间固定，时间戳可以轻松换算为区块号) 。
+
+Sequencer 批次是 [L2 推导输入][deriv-inputs]的一部分。每个批次都包含 (在现有 L2 链状态的基础上) 构建**一个** L2 区块所需的输入，但每个 epoch 的第一个区块除外，该区块还需要存款相关信息 (参见 [L2 推导输入][deriv-inputs]一节) 。
+
+### 通道 (Channel) {#channel}
+
+[channel]: glossary#channel
+
+通道是由多个[sequencer 批次][sequencer-batch] (对应连续的区块) 压缩在一起形成的序列。将多个批次组合在一起，原因很简单：获得更高的压缩率，从而降低数据可用性成本。
+
+通道可以拆分为多个[帧][channel-frame]，以便通过[batcher
+交易][batcher-transaction]进行传输。之所以将通道拆分为帧，是因为单个通道可能过大，无法放入一笔 batcher 交易中。
+
+通道由其时间戳 (创建该通道时的 UNIX 时间) 和一个随机值唯一标识。详情请参阅
+L2 链派生规范中的[帧格式][frame-format]一节。
+
+[frame-format]: /specifications/base-protocol/consensus/derivation#frame-format
+
+在 [rollup 节点][rollup-node] (即通道的消费方) 一侧，如果通道的最后一帧 (会被显式标记为最后一帧) 尚未被读取，则该通道被视为处于
+*打开* 状态，否则视为已关闭。
+
+### 通道帧 (Channel Frame) {#channel-frame}
+
+[channel-frame]: glossary#channel-frame
+
+通道帧是属于某个[通道][channel]的一段数据。一笔 [batcher 交易][batcher-transaction]可携带一个或
+多个帧。之所以要将通道拆分为多个帧，是因为单个通道可能过大，无法放入一笔
+batcher 交易中。
+
+### Batcher {#batcher}
+
+[batcher]: glossary#batcher
+
+batcher 是一个软件组件 (独立程序) ，负责将通道 (channel) 发布到数据
+可用性提供方。batcher 通过与 rollup 节点通信来获取通道，然后
+借助 [batcher 交易][batcher-transaction]发布这些通道。
+
+### Batcher 交易 {#batcher-transaction}
+
+[batcher-transaction]: glossary#batcher-transaction
+
+Batcher 交易是由 [batcher] 提交给数据可用性提供方的交易，用于使通道 (channel) 可用。这类交易携带一个或多个完整的帧 (frame) ，这些帧可能属于不同的通道。同一
+通道的帧可以分散在多个 batcher 交易中。
+
+当提交到 Ethereum calldata 时，batcher 交易的接收方必须是 sequencer 收件箱地址。此外，该
+交易还必须由受认可的批次提交者账户签名。受认可的批次提交者账户
+存储在[系统配置][system-config]中。
+
+### 批次提交频率 {#batch-submission-frequency}
+
+在 [sequencing-window] 的约束范围内，协议允许 batcher 随时提交 L2 区块以实现
+数据可用性。batcher 软件支持由运营者动态配置提交策略。
+如果 batcher 未能在规定时间内提交数据，rollup 将通过排序窗口来保障安全性和活性。
+
+以更小的批量、更高的频率提交新的 L2 数据，可以缩短 L2 区块
+输入的确认延迟，使验证者能够更早地确保 L2 区块的安全性。同时，这也会缩短数据在 L1 上达到最终性的时间，
+进而缩短 L2 输入达到最终性的时间。
+
+以更大的批量、更低的频率提交新的 L2 数据，则有更多时间聚合更多 L2 数据，
+从而降低批次提交工作的固定开销。这有助于降低批次提交成本，对于
+吞吐量较低、无法较快填满数据交易 (通常为 128 KB 的 calldata，或 800 KB
+的 blob 数据) 的链而言尤其如此。
+
+### 通道超时 (Channel Timeout) {#channel-timeout}
+
+[channel-timeout]: glossary#channel-timeout
+
+通道超时是一段时长 (以 L1 区块数计) ，在此期间，[通道帧][channel-frame]可以通过
+[batcher 交易][batcher-transaction]上链至 L1。
+
+[通道][channel]的帧可接受的时间范围为 `[channel_id.timestamp, channel_id.timestamp +
+CHANNEL_TIMEOUT]`。凡是时间戳落在该时间范围内的 L1 区块，都属于这些帧可接受的 L1 区块范围。 (注意，`channel_id.timestamp` 必须小于任何包含该通道帧的 L1 区块的时间戳，
+否则这些帧将被忽略。)
+
+设置通道超时有两个目的：
+
+* 避免无限期保留旧的未关闭通道数据 (未关闭通道是指最后一帧尚未
+  发送的通道) 。
+* 限制从通道中解码 [sequencer 批次][sequencer-batch]时需要回溯的 L1 区块数量。这一点在 L1 重组期间尤为关键，详情请参阅 L2 链派生规范中的[重置通道缓冲][reset-channel-buffer]
+  一节。
+
+[reset-channel-buffer]: /specifications/base-protocol/consensus/derivation#resetting-channel-buffering
+
+## L2 输出根提案 {#l2-output-root-proposals}
+
+[l2-output-root-proposals]: glossary#l2-output-root-proposals
+
+### 提议者 {#proposer}
+
+[proposer]: glossary#proposer
+
+提议者负责构造输出根 (即对 L2 状态的承诺) ，并将其提交到 L1 (结算层) 上的
+L2OutputOracle 合约。为此，提议者会定期向 rollup 节点查询
+基于最新已最终确定的 L1 区块派生出的最新输出根，然后将该输出根提交到
+结算层 (L1) 上的 L2OutputOracle 合约。
+
+## L2 链派生 {#l2-chain-derivation}
+
+[derivation]: glossary#L2-chain-derivation
+
+L2 链派生是指从 L1 读取 [L2 推导输入][deriv-inputs]，进而推导出 L2 链的过程。
+
+更多详情请参阅 [L2 链派生规范][derivation-spec]。
+
+### L2 推导输入 {#l2-derivation-inputs}
+
+[deriv-inputs]: glossary#l2-derivation-inputs
+
+该术语指位于 L1 区块中、由 [rollup 节点][rollup-node]读取并用于构建[载荷
+属性][payload-attr]的数据。
+
+L2 推导输入包括：
+
+* L1 区块属性
+  * 区块号
+  * 时间戳
+  * basefee
+  * blob 基础费
+* [存款][deposits] (以日志数据形式)
+* [sequencer 批次][sequencer-batch] (以交易数据形式)
+* [系统配置][system-config]更新 (以日志数据形式)
+
+### 系统配置 {#system-configuration}
+
+该术语指一组可动态配置的 rollup 参数。这些参数由 L1 上的
+[`SystemConfig`](/zh/specifications/base-protocol/consensus/derivation#system-configuration) 合约维护，并由 L2 [derivation] 过程读取。
+借助这些参数，无需通过硬分叉进行网络升级，即可定期轮换密钥
+并调整外部成本参数，从而省去相应的升级开销。
+
+完整概述请参阅[系统配置](/zh/specifications/base-protocol/consensus/derivation#system-configuration)一节。
+
+### Payload Attributes (载荷属性) {#payload-attributes}
+
+[payload-attr]: glossary#payload-attributes
+
+该术语指一种对象，它可从 L1 上的 [L2 链派生输入][deriv-inputs]派生而来，随后传递给[执行引擎][execution-engine]，用于构建
+L2 区块。
+
+载荷属性对象本质上编码的是[一个不含输出属性的区块][block]。
+
+载荷属性最初定义于 [Ethereum Engine API 规范][engine-api]，我们在
+[执行引擎规范][exec-engine]中对其进行了扩展。
+
+另请参阅 rollup 节点规范中的[构建载荷属性][building-payload-attr]一节。
+
+[building-payload-attr]: /specifications/base-protocol/consensus/specification#building-the-payload-attributes
+
+### L2 创世区块 {#l2-genesis-block}
+
+[l2-genesis]: glossary#l2-genesis-block
+
+L2 创世区块是当前版本 L2 链的第一个区块。
+
+L2 创世区块的状态包括：
+
+* 从上一版本 L2 链继承的状态。
+  * 该状态可能经过“状态手术” (state surgery) 的修改。例如，迁移到 Bedrock 时，
+    原生 ETH 余额在存储树 (storage trie) 中的存储方式发生了变化。
+* [预部署合约][predeploy]
+
+L2 创世区块的时间戳必须是[区块时间][block-time]的整数倍 (由于区块时间为 2 秒，
+即必须为偶数) 。
+
+将 rollup 协议升级到新版本时，我们可能会执行 *squash fork* (压缩分叉) ，即创建
+一个新的 L2 创世区块。新 L2 创世区块的区块号为 `X + 1`，其中 `X` 是升级前
+最后一个 L2 区块的区块号。
+
+请勿将 squash fork 与 *re-genesis* (重新创世) 混淆。re-genesis 是我们过去采用的一种类似流程，它同样会
+重置 L2 区块号，使新的 L2 创世区块的区块号为 0。今后我们将不再采用 re-genesis。
+
+squash fork 优于 re-genesis，因为它不会造成 L2 区块号重复，而区块号重复会导致许多外部
+工具无法正常工作。
+
+### L2 链起始点 {#l2-chain-inception}
+
+[l2-chain-inception]: glossary#L2-chain-inception
+
+[创世区块][l2-genesis]的输出根被提议到[输出
+预言机][output-oracle]合约时所在的 L1 区块号。
+
+在当前实现中，即输出预言机合约部署或升级时所在的 L1 区块号。
+
+### 安全 L2 区块 {#safe-l2-block}
+
+[safe-l2-block]: glossary#safe-l2-block
+
+安全 L2 区块是指 [rollup 节点][rollup-node]能够完全从 L1 推导出的 L2 区块。由于各节点对 L1 链的视图不尽相同，
+不同节点所认定的安全 L2 区块可能有所差异。
+
+### 安全 L2 头部 {#safe-l2-head}
+
+[safe-l2-head]: glossary#safe-l2-head
+
+安全 L2 头部是 [rollup 节点][rollup-node]已知的最高[安全 L2 区块][safe-l2-block]。
+
+### 不安全 L2 区块 {#unsafe-l2-block}
+
+[unsafe-l2-block]: glossary#unsafe-l2-block
+
+不安全 L2 区块是指[rollup 节点][rollup-node]已知、但并非从 L1
+链派生而来的 L2 区块。在 sequencer 模式下，这类区块由 sequencer 自行排序生成；在验证者模式下，这类区块则是通过[不安全同步][unsafe-sync]从 sequencer
+获取的。
+
+### 不安全 L2 头部 {#unsafe-l2-head}
+
+[unsafe-l2-head]: glossary#unsafe-l2-head
+
+不安全 L2 头部是指 [rollup 节点][rollup-node]已知的最高[不安全 L2 区块][unsafe-l2-block]。
+
+### 不安全区块合并 {#unsafe-block-consolidation}
+
+[consolidation]: glossary#unsafe-block-consolidation
+
+不安全区块合并是指 [rollup 节点][rollup-node]尝试将[安全 L2
+头部][safe-l2-head]向前推进一个区块，使最早的[不安全 L2 区块][unsafe-l2-block]成为新的安全 L2 头部的过程。
+
+执行合并时，节点会验证从 L1
+链派生出的[载荷属性][payload-attr]是否与最早的不安全 L2 区块完全一致。
+
+更多信息请参阅 L2 链派生规范中的 [Engine Queue 章节][engine-queue]。
+
+[engine-queue]: /specifications/base-protocol/consensus/derivation#engine-queue
+
+### 已最终确定的 L2 头部 {#finalized-l2-head}
+
+[finalized-l2-head]: glossary#finalized-l2-head
+
+已最终确定的 L2 头部是指可从 *[已最终确定][finality]* 的 L1 区块派生出的最高 L2 区块。这里的已最终确定的 L1 区块，是指早于两个 L1 纪元 (64 个 L1
+[时隙][time-slot]) 的 L1 区块。
+
+[finality]: https://hackmd.io/@prysmaticlabs/finality
+
+## 其他 L2 链相关概念 {#other-l2-chain-concepts}
+
+### 地址别名 {#address-aliasing}
+
+[address-aliasing]: glossary#address-aliasing
+
+当合约从 L1 向 L2 提交[存款][deposits]时，其地址 (即 `ORIGIN` 和 `CALLER` 返回的地址) 将被
+替换为别名，即对该合约地址进行修改后得到的表示形式。
+
+* 参见[存款规范](/zh/specifications/base-protocol/bridging/deposits#address-aliasing)
+
+### Rollup 节点 {#rollup-node}
+
+[rollup-node]: glossary#rollup-node
+
+rollup 节点负责从 L1 链 (L1 [区块][block]及其关联的[收据][receipt]) [派生 L2 链][derivation]。
+
+rollup 节点可以运行在 *验证者* 模式或 *sequencer* 模式下。
+
+在 sequencer 模式下，rollup 节点接收用户提交的 L2 交易，并用这些交易构建 L2 区块。随后，这些区块通过[批次提交][batch-submission]提交给[数据可用性提供方][avail-provider]。在这种情况下，L2 链派生既起到健全性检查的作用，也可用于检测 L1 链[重组][reorg]。
+
+在验证者模式下，rollup 节点同样执行上述派生过程，但还可以直接从 sequencer 获取区块，从而“领先于” L1 链运行；此时，派生的作用是验证 sequencer 的行为。
+
+以验证者模式运行的 rollup 节点有时也称为 *副本 (replica)&#x20;*。
+
+更多信息请参阅 [rollup 节点规范][rollup-node-spec]。
+
+### Rollup 驱动器 {#rollup-driver}
+
+[rollup driver]: glossary#rollup-driver
+
+Rollup 驱动器是 [rollup 节点][rollup-node]的一个组件，负责从 L1 链 (L1 [区块][block]及其关联的[收据][receipt]) [推导出 L2 链][derivation]。
+
+### L1 属性预部署合约 {#l1-attributes-predeployed-contract}
+
+[l1-attr-predeploy]: glossary#l1-attributes-predeployed-contract
+
+L2 上的一个[预部署合约][predeploy]，可用于根据指定的区块号或区块哈希获取对应 L1 区块的区块属性。
+
+参见 [L1 属性预部署合约规范](/zh/specifications/base-protocol/bridging/deposits#l1-attributes-predeployed-contract)
+
+### L2 输出根 {#l2-output-root}
+
+[l2-output]: glossary#l2-output-root
+
+一个 32 字节的值，用作对 L2 链当前状态的承诺 (commitment) 。
+
+### L2 Output Oracle 合约 {#l2-output-oracle-contract}
+
+[output-oracle]: glossary#l2-output-oracle-contract
+
+一个 L1 合约，[sequencer][sequencer]会将 [L2 输出根][l2-output]发布到此合约。
+
+### 验证者 {#validator}
+
+[validator]: glossary#validator
+
+验证者是以验证者模式运行 [rollup 节点][rollup-node]的实体 (个人或组织) 。
+
+这样做能带来许多与运行 Ethereum 节点类似的好处，例如可以在本地模拟 L2 交易，
+且不受速率限制。
+
+验证者还可以借此核验 [sequencer] 的工作：重新推导[输出根][l2-output]，并将其与
+sequencer 提交的输出根进行比对。一旦两者不一致，验证者即可执行[故障证明][fault-proof]。
+
+### 故障证明 {#fault-proof}
+
+[fault-proof]: glossary#fault-proof
+
+一种由[验证者][validator]执行的链上*交互式*证明，用于证明[sequencer][sequencer]提交了错误的[输出根][l2-output]。
+
+### 时隙 {#time-slot}
+
+[time-slot]: glossary#time-slot
+
+在 L2 上，每 2 秒产生一个区块 (这一时长称为[出块时间][block-time]) 。
+
+我们将 [L2 创世区块][l2-genesis]时间戳之后每个 2 秒整数倍的时刻称为一个“时隙” (time slot) 。
+
+在 L1 上，[合并][merge]之后，时隙间隔为 12 秒。不过，即便只是出现轻微的共识问题，
+也可能导致某些时隙内没有产出 L1 区块。
+
+### 区块时间 {#block-time}
+
+[block-time]: glossary#block-time
+
+L2 区块时间为 2 秒，即每 2 秒的[时隙][time-slot]都会产生一个 L2 区块。
+
+[merge] 之后，由于 L1 的[时隙][time-slot]为 12 秒，可以说 L1 区块时间就是 12 秒。但实际上，由于部分时隙可能被跳过，区块时间并不固定。
+
+merge 之前，L1 区块时间并不固定，平均约为 13 秒。
+
+### 不安全同步 (Unsafe Sync) {#unsafe-sync}
+
+[unsafe-sync]: glossary#unsafe-sync
+
+不安全同步是指[验证者][validator]从[sequencer][sequencer]获取[不安全 L2 区块][unsafe-l2-block]的过程。
+
+这些不安全区块随后需要经由 L1 链确认 (通过[不安全区块合并][consolidation]) 。
+
+## 执行引擎概念 {#execution-engine-concepts}
+
+### 执行引擎 {#execution-engine}
+
+[execution-engine]: glossary#execution-engine
+
+执行引擎负责执行区块中的交易，并计算由此得出的状态根、收据根和区块哈希。
+
+L1 ([合并][merge]之后) 和 L2 都有执行引擎。
+
+在 L1 上，被执行的区块可以来自 L1 区块同步，也可以是执行引擎应 L1 共识层的请求、使用 L1 [内存池][mempool]中的交易新铸造的区块。
+
+在 L2 上，被执行的区块由执行引擎应 [rollup 节点][rollup-node]的请求新铸造，所用交易[派生自 L1 区块][derivation]。
+
+在本规范中，除非另有说明，“执行引擎”均指 L2 执行引擎。
+
+* 参见[执行引擎规范][exec-engine]
+
+[deposits-spec]: /specifications/base-protocol/bridging/deposits
+
+[system-config]: /specifications/base-protocol/consensus/derivation#system-configuration
+
+[exec-engine]: /specifications/base-protocol/execution/l2-execution-engine
+
+[derivation-spec]: /specifications/base-protocol/consensus/derivation
+
+[rollup-node-spec]: /specifications/base-protocol/consensus/specification
+
+[mpt-details]: https://github.com/norswap/nanoeth/blob/d4c0c89cc774d4225d16970aa44c74114c1cfa63/src/com/norswap/nanoeth/trees/patricia/README.md
+
+[trie]: https://en.wikipedia.org/wiki/Trie
+
+[bloom filter]: https://en.wikipedia.org/wiki/Bloom_filter
+
+[Solidity events]: https://docs.soliditylang.org/en/latest/contracts.html?highlight=events#events
+
+[nano-header]: https://github.com/norswap/nanoeth/blob/cc5d94a349c90627024f3cd629a2d830008fec72/src/com/norswap/nanoeth/blocks/BlockHeader.java#L22-L156
+
+[yellow]: https://ethereum.github.io/yellowpaper/paper.pdf
+
+[engine-api]: https://github.com/ethereum/execution-apis/blob/main/src/engine/shanghai.md#PayloadAttributesV2
+
+[merge]: https://ethereum.org/en/eth2/merge/
+
+[mempool]: https://www.quicknode.com/guides/defi/how-to-access-ethereum-mempool
+
+[L1 consensus layer]: https://github.com/ethereum/consensus-specs/#readme
+
+[cannon]: https://github.com/ethereum-optimism/cannon
+
+[eip4844]: https://www.eip4844.com/

@@ -1,0 +1,40 @@
+---
+title: "Isthmus"
+sidebarTitle: "Descripción general"
+description: "Descripción general del hardfork Isthmus, que incorpora las EIP de Pectra de Ethereum e introduce el mecanismo de tarifa del operador para generar ingresos para el secuenciador."
+---
+
+## Marcas de tiempo de activación {#activation-timestamps}
+
+| Red       | Marca de tiempo de activación          |
+| --------- | -------------------------------------- |
+| `mainnet` | `1746806401` (2025-05-09 16:00:01 UTC) |
+| `sepolia` | `1744905600` (2025-04-17 16:00:00 UTC) |
+
+## Capa de ejecución {#execution-layer}
+
+* [Pectra](https://eips.ethereum.org/EIPS/eip-7600) (capa de ejecución):
+  * [EIP-7702](https://eips.ethereum.org/EIPS/eip-7702)
+    * [Actualizaciones de span-batch](/es/upgrades/isthmus/derivation#span-batch-updates)
+  * [EIP-2537](https://eips.ethereum.org/EIPS/eip-2537)
+  * [EIP-2935](https://eips.ethereum.org/EIPS/eip-2935)
+    * [Despliegue del contrato de EIP-2935](/es/upgrades/isthmus/derivation#eip-2935-contract-deployment)
+  * [EIP-7002](https://eips.ethereum.org/EIPS/eip-7002)
+    * Base no adopta el contrato predesplegado ni la llamada al sistema de EIP-7002.
+  * [EIP-7251](https://eips.ethereum.org/EIPS/eip-7251)
+    * Base no adopta el contrato predesplegado ni la llamada al sistema de EIP-7251.
+  * [EIP-7623](https://eips.ethereum.org/EIPS/eip-7623)
+  * [EIP-6110](https://eips.ethereum.org/EIPS/eip-6110)
+  * [EIP-7685](https://eips.ethereum.org/EIPS/eip-7685)
+* [Raíz de almacenamiento de L2ToL1MessagePasser en el encabezado](/es/upgrades/isthmus/exec-engine#l2tol1messagepasser-storage-root-in-header)
+* [Tarifa del operador](/es/upgrades/isthmus/exec-engine#operator-fee)
+
+## Capa de consenso {#consensus-layer}
+
+* [Derivación de Isthmus](/es/upgrades/isthmus/derivation)
+
+## Contratos inteligentes {#smart-contracts}
+
+* [Predeploys](/es/upgrades/isthmus/predeploys)
+* [Atributos de bloque de L1](/es/upgrades/isthmus/l1-attributes)
+* [Configuración del sistema](/es/upgrades/isthmus/system-config)

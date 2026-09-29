@@ -1,0 +1,127 @@
+---
+title: "スマートコントラクト"
+description: "Base におけるスマートコントラクトの仕組み、Base に独自の Foundry ビルドが必要な理由、base-anvil を使って Base Sepolia にコントラクトをデプロイする方法について説明します。"
+---
+
+Base は EVM 等価な Ethereum L2 です。スマートコントラクトは Solidity または Vyper で記述し、Ethereum 上とまったく同じようにデプロイできます。バイトコード、ABI、ツールもそのまま使えます。
+
+## Base の相違点 {#how-base-differs}
+
+Base は固定アドレスに**ネイティブプリコンパイル**を追加しています。これはノード自体に組み込まれた機能で EVM を拡張するもので、[B20 トークン標準](/ja/build-on-base/issue-rwa/create-an-asset-token)、PolicyRegistry、B20 Factory などが含まれます。これらのアドレスにはコントラクトのバイトコードが存在しないため、標準の Foundry (`forge`、`cast`、`anvil`) ではこれらへの呼び出しをシミュレートできず、`call to non-contract address` というエラーで処理が中断されます。
+
+Base は [base-anvil](https://github.com/base/base-anvil) を公開しています。これは Foundry のフォークで、Base のプリコンパイルを EVM に登録しています。`base-forge`、`base-cast`、`base-anvil` は既存の Foundry ツールチェーンを上書きせずに併存する形でインストールされるため、コントラクトはローカルでも Base 上と同じように動作します。
+
+<Warning>
+  Base での開発には、標準の Foundry (`forge`、`cast`、`anvil`) ではなく、Base 向けの Foundry ビルド (`base-forge`、`base-cast`、`base-anvil`) を使用してください。Base のプリコンパイルを読み書きするコントラクト (たとえば [B20 トークン](/ja/build-on-base/issue-rwa/create-an-asset-token)をデプロイまたは呼び出すコントラクト) は、標準の Foundry では失敗します。
+</Warning>
+
+## 環境のセットアップ {#set-up-your-environment}
+
+1. 新しいプロジェクトディレクトリを作成します
+
+```bash Terminal
+mkdir my-base-project && cd my-base-project
+```
+
+2. Base 版 Foundry ビルドをインストールする
+
+```bash Terminal
+curl -L https://raw.githubusercontent.com/base/base-anvil/HEAD/foundryup/install | bash
+base-foundryup
+```
+
+これにより、既存の Foundry ツールチェーンに加えて `base-forge`、`base-cast`、`base-anvil` がインストールされます。
+
+3. 新しい Solidity プロジェクトを初期化する
+
+```bash Terminal
+base-forge init
+```
+
+プロジェクトの準備が整いました。`src/Counter.sol` にサンプルの `Counter` コントラクトが含まれているので、必要に応じて独自のコントラクトに置き換えてください。
+
+<Tip>
+  Base 向けの Foundry ビルドは、標準の Foundry と同じツールに Base のプリコンパイルを組み込んだものです。`base-forge` (ビルドとテスト) 、`base-cast` (チェーンとのやり取り) 、`base-anvil` (ローカル Base ノードの実行) が含まれます。詳しくは、[base-anvil](https://github.com/base/base-anvil) と、そのベースとなる [Foundry](https://book.getfoundry.sh/) ツールチェーンのドキュメントをご覧ください。
+</Tip>
+
+## ノード接続とデプロイヤーキーを設定する {#configure-a-node-connection-and-deployer-key}
+
+1. プロジェクトのルートディレクトリに `.env` ファイルを作成し、Base の RPC URL を追加します
+
+```bash .env
+BASE_RPC_URL="https://mainnet.base.org"
+BASE_SEPOLIA_RPC_URL="https://sepolia.base.org"
+```
+
+2. 変数を読み込む
+
+```bash Terminal
+source .env
+```
+
+3. デプロイ用の秘密鍵を Foundry のセキュアなキーストアに保存します
+
+```bash Terminal
+base-cast wallet import deployer --interactive
+```
+
+プロンプトが表示されたら、秘密鍵とパスワードを入力します。鍵は `~/.foundry/keystores` に保存され、git の追跡対象にはなりません。
+
+<Warning>
+  秘密鍵は絶対に共有したり、コミットしたりしないでください。常に安全に保管し、取り扱いには十分注意してください。
+</Warning>
+
+<Tip>
+  Base Sepolia は Base のテストネットワークで、本ガイドではこれ以降 Base Sepolia を使用します。無料の Base Sepolia ETH は、[こちらに掲載されているフォーセット](/base-chain/network-information/network-faucets)のいずれかから入手できます。
+</Tip>
+
+## コントラクトをデプロイする {#deploy-a-contract}
+
+1. (任意) デプロイのドライランを実行して、設定内容を確認します：
+
+```bash Terminal
+base-forge create ./src/Counter.sol:Counter --rpc-url $BASE_SEPOLIA_RPC_URL --account deployer
+```
+
+このコマンドは、ブロードキャストせずにデプロイをシミュレートします。トランザクションの詳細とコントラクトのABIが表示されますが、実際には何もデプロイされません。
+
+2. `--broadcast` フラグを追加してデプロイします：
+
+```bash Terminal
+base-forge create ./src/Counter.sol:Counter --rpc-url $BASE_SEPOLIA_RPC_URL --account deployer --broadcast
+```
+
+コントラクトパスの形式は `<contract-path>:<contract-name>` です。
+
+3. デプロイに成功すると、デプロイ先のアドレスが表示されます。
+
+```text Example Output
+Deployer: 0x...
+Deployed to: 0x...  <-- デプロイしたコントラクトのアドレス
+Transaction hash: 0x...
+```
+
+## デプロイを確認する {#verify-your-deployment}
+
+1. トランザクションハッシュを使って、[Sepolia Basescan](https://sepolia.basescan.org/) でトランザクションを確認します。
+2. コマンドラインからコントラクトの状態を読み取ります：
+
+```bash Terminal
+base-cast call <CONTRACT_ADDRESS> "number()(uint256)" --rpc-url $BASE_SEPOLIA_RPC_URL
+```
+
+`Counter` コントラクトの `number` 変数の初期値である `0` が返されます。
+
+## 次のステップ {#next-steps}
+
+<CardGroup cols={2}>
+  <Card title="B20 トークン標準" icon="coins" href="/ja/build-on-base/issue-rwa/create-an-asset-token">
+    プリコンパイルレベルで組み込まれた、Base ネイティブのトークン標準でトークンを発行します。
+  </Card>
+
+  <Card title="Base に接続する" icon="plug" href="/base-chain/quickstart/connecting-to-base">
+    ネットワークの詳細、RPC エンドポイント、ウォレットの設定について説明します。
+  </Card>
+</CardGroup>
+
+フロントエンドとコントラクトの接続には [wagmi](https://wagmi.sh) または [viem](https://viem.sh) を使用してください。コマンドラインから操作する場合は、[Foundry スクリプトガイド](https://www.getfoundry.sh/forge/scripting)を参照してください。

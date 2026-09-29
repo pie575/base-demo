@@ -1,0 +1,225 @@
+---
+title: "Retiros"
+description: "Cómo funcionan los retiros en Base: el flujo estándar de 3 pasos, el período de impugnación de 7 días, las opciones más rápidas y la especificación completa del protocolo."
+---
+
+[g-deposits]: /specifications/reference/glossary#deposits
+
+[g-withdrawal]: /specifications/reference/glossary#withdrawal
+
+[g-relayer]: /specifications/reference/glossary#withdrawals
+
+[g-execution-engine]: /specifications/reference/glossary#execution-engine
+
+Un retiro estándar es una transacción entre dominios que se inicia en Base y se finaliza en Ethereum. Los retiros estándar permiten transferir ETH, enviar tokens ERC-20 compatibles a través del puente o enviar un mensaje desde Base a un contrato de L1. El flujo consta de tres etapas:
+
+1. **Iniciar en Base:** la transacción de retiro se envía en Base, lo que registra el mensaje de retiro en el contrato `L2ToL1MessagePasser`.
+2. **Probar en Ethereum:** una vez que el estado correspondiente de Base se ha publicado en Ethereum, cualquiera puede enviar al contrato `OptimismPortal` una prueba que demuestre que el mensaje de retiro existe en Base.
+3. **Finalizar en Ethereum:** una vez transcurrido el período de impugnación de 7 días, cualquiera puede finalizar el retiro en Ethereum. La finalización libera los activos o retransmite el mensaje al contrato de destino.
+
+<Note>
+  Los retiros estándar a Ethereum deben esperar 7 días antes de poder finalizarse. Base utiliza pruebas de fallo para proteger los retiros: el período de impugnación da a los participantes de la red tiempo para disputar un output root no válido antes de que puedan finalizarse los retiros que dependen de él. Consulta [Finalidad de las transacciones](/es/specifications/transactions/transaction-finality#finality-for-withdrawal-transactions) para saber en qué se diferencia la finalidad de los retiros de la de las transacciones ordinarias de Base.
+</Note>
+
+Algunos proveedores de puentes ofrecen retiros más rápidos recurriendo a liquidez, retransmisores o creadores de mercado para entregar los fondos a los usuarios antes de que el retiro estándar haya finalizado por completo. Consulta [Puentear a Base](/es/base-chain/network-information/ecosystem-bridges) para ver las rutas disponibles.
+
+## Descripción general {#overview}
+
+Los [retiros][g-withdrawal] son transacciones entre dominios que se inician en L2 y se finalizan mediante una transacción
+ejecutada en L1. En particular, una cuenta de L2 puede usar los retiros para llamar a un contrato de L1 o para transferir ETH desde
+una cuenta de L2 a una cuenta de L1.
+
+**Nota sobre la terminología**: *retiro* puede referirse a la transacción en distintas etapas del proceso, pero introducimos
+términos más específicos para diferenciarlas:
+
+* Una *transacción de inicio de retiro* es, concretamente, una transacción en L2 enviada al contrato predesplegado Withdrawals.
+* Una *transacción de prueba de retiro* es, concretamente, una transacción de L1
+  que demuestra que el retiro es correcto (es decir, que se ha incluido en un árbol de Merkle
+  cuya raíz está disponible en L1).
+* Una *transacción de finalización de retiro* es, concretamente, una transacción de L1 que finaliza y retransmite el
+  retiro.
+
+Los retiros se inician en L2 mediante una llamada al contrato predesplegado Message Passer, que registra en su almacenamiento las propiedades
+importantes del mensaje.
+Los retiros se prueban en L1 mediante una llamada a `OptimismPortal`, que demuestra la inclusión de este mensaje de retiro.
+Los retiros se finalizan en L1 mediante una llamada al contrato `OptimismPortal`,
+que verifica que haya transcurrido el período de impugnación de fallos desde que se probó el mensaje de retiro.
+
+En este sentido, los retiros se diferencian de los [depósitos][g-deposits], que utilizan un tipo de transacción especial en el
+cliente del [motor de ejecución][g-execution-engine]. Por el contrario, las transacciones de retiro deben recurrir a contratos inteligentes en L1 para
+su finalización.
+
+## Flujo de retiro {#withdrawal-flow}
+
+En primer lugar, describimos el flujo completo para iniciar y finalizar un retiro:
+
+### En L2 {#on-l2}
+
+Una cuenta de L2 envía un mensaje de retiro (y, posiblemente, también ETH) al contrato predesplegado `L2ToL1MessagePasser`.
+Se trata de un contrato muy sencillo que almacena el hash de los datos del retiro.
+
+### En L1 {#on-l1}
+
+1. Un [retransmisor][g-relayer] envía una transacción de prueba de retiro con las entradas requeridas
+   al contrato `OptimismPortal`.
+   El retransmisor no es necesariamente la misma entidad que inició el retiro en L2.
+   Estas entradas incluyen los datos de la transacción de retiro, las pruebas de inclusión y un número de bloque. El número de bloque
+   debe corresponder a uno para el que exista un output root de L2, el cual constituye un compromiso con el retiro tal como se registró en L2.
+2. El contrato `OptimismPortal` obtiene el output root correspondiente al número de bloque indicado mediante la función
+   `getL2Output()` del `L2OutputOracle` y realiza internamente el resto del proceso de verificación.
+3. Si la verificación de la prueba falla, la llamada se revierte. De lo contrario, el hash se registra para evitar que se vuelva a probar.
+   Ten en cuenta que el retiro puede probarse más de una vez si cambia el output root correspondiente.
+4. Una vez probado el retiro, comienza un período de impugnación de 7 días, que da tiempo a otros participantes de la red
+   para impugnar la integridad del output root correspondiente.
+5. Una vez transcurrido el período de impugnación, un retransmisor envía una transacción de finalización del retiro al
+   contrato `OptimismPortal`.
+   El retransmisor no tiene por qué ser la misma entidad que inició el retiro en L2.
+6. El contrato `OptimismPortal` recibe los datos de la transacción de retiro y verifica que el retiro
+   se haya probado y que haya superado el período de impugnación.
+7. Si no se cumplen los requisitos, la llamada se revierte. De lo contrario, la llamada se reenvía y el hash se registra para
+   evitar que se vuelva a ejecutar (replay).
+
+## El contrato L2ToL1MessagePasser {#the-l2tol1messagepasser-contract}
+
+Para iniciar un retiro, se llama a la función `initiateWithdrawal` del contrato L2ToL1MessagePasser.
+L2ToL1MessagePasser es un contrato predesplegado sencillo, ubicado en `0x4200000000000000000000000000000000000016`,
+que almacena los mensajes que se van a retirar.
+
+```js L2ToL1MessagePasser.sol lines wrap expandable
+interface L2ToL1MessagePasser {
+    event MessagePassed(
+        uint256 indexed nonce, // valor de nonce global compartido por todos los mensajes de retiro
+        address indexed sender,
+        address indexed target,
+        uint256 value,
+        uint256 gasLimit,
+        bytes data,
+        bytes32 withdrawalHash
+    );
+
+    event WithdrawerBalanceBurnt(uint256 indexed amount);
+
+    function burn() external;
+
+    function initiateWithdrawal(address _target, uint256 _gasLimit, bytes memory _data) payable external;
+
+    function messageNonce() public view returns (uint256);
+
+    function sentMessages(bytes32) view external returns (bool);
+}
+
+```
+
+El evento `MessagePassed` incluye todos los datos que se hashean y
+almacenan en el mapping `sentMessages`, además del propio hash.
+
+### Las direcciones no reciben alias en los retiros {#addresses-are-not-aliased-on-withdrawals}
+
+Cuando un contrato realiza un depósito, se aplica un [alias](/es/specifications/base-protocol/bridging/deposits#address-aliasing) a la dirección del remitente. No ocurre lo mismo
+con los retiros, que no modifican la dirección del remitente. La diferencia es que:
+
+* en L2, el opcode `CALLER` devuelve la dirección del remitente del depósito, por lo que un contrato no puede saber fácilmente si la
+  llamada se originó en L1 o en L2, mientras que
+* en L1, la dirección del remitente del retiro se obtiene llamando a la función `l2Sender()` del contrato
+  `OptimismPortal`.
+
+Llamar a `l2Sender()` elimina cualquier ambigüedad sobre el dominio en el que se originó la llamada. Aun así, los desarrolladores deben
+tener en cuenta que compartir la misma dirección no implica que un contrato en L2 se comporte igual que un contrato en L1.
+
+## El contrato Optimism Portal {#the-optimism-portal-contract}
+
+El Optimism Portal actúa como punto de entrada y salida de la L2 de Base. Es un contrato que hereda del
+contrato [OptimismPortal](/es/specifications/base-protocol/bridging/deposits#deposit-contract) y que, además, ofrece la siguiente interfaz para
+los retiros:
+
+* [`WithdrawalTransaction` type]
+* [`OutputRootProof` type]
+
+```js OptimismPortal.sol lines wrap expandable
+interface OptimismPortal {
+
+    event WithdrawalFinalized(bytes32 indexed withdrawalHash, bool success);
+
+
+    function l2Sender() returns(address) external;
+
+    function proveWithdrawalTransaction(
+        Types.WithdrawalTransaction memory _tx,
+        uint256 _l2OutputIndex,
+        Types.OutputRootProof calldata _outputRootProof,
+        bytes[] calldata _withdrawalProof
+    ) external;
+
+    function finalizeWithdrawalTransaction(
+        Types.WithdrawalTransaction memory _tx
+    ) external;
+}
+```
+
+## Verificación y finalización de retiros {#withdrawal-verification-and-finalization}
+
+Para probar y finalizar un retiro se requieren las siguientes entradas:
+
+* Datos de la transacción de retiro:
+  * `nonce`: nonce del mensaje proporcionado.
+  * `sender`: dirección del remitente del mensaje en L2.
+  * `target`: dirección de destino en L1.
+  * `value`: ETH que se enviará al destino.
+  * `data`: datos que se enviarán al destino.
+  * `gasLimit`: gas que se reenviará al destino.
+* Datos de prueba y verificación:
+  * `l2OutputIndex`: índice dentro de los outputs de L2 donde se encuentra el output root correspondiente.
+  * `outputRootProof`: cuatro valores `bytes32` que se utilizan para derivar el output root.
+  * `withdrawalProof`: prueba de inclusión del retiro en cuestión en el contrato L2ToL1MessagePasser.
+
+Estas entradas deben cumplir las siguientes condiciones:
+
+1. `l2OutputIndex` debe ser el índice dentro de los outputs de L2 que contiene el output root correspondiente.
+2. `L2OutputOracle.getL2Output(l2OutputIndex)` devuelve un `OutputProposal` distinto de cero.
+3. El hash keccak256 de los valores de `outputRootProof` es igual a `outputRoot`.
+4. `withdrawalProof` es una prueba de inclusión válida que demuestra que un hash de los datos de la transacción de retiro
+   se encuentra en el almacenamiento del contrato L2ToL1MessagePasser en L2.
+
+## Consideraciones de seguridad {#security-considerations}
+
+### Propiedades clave de la verificación de retiros {#key-properties-of-withdrawal-verification}
+
+1. No debería ser posible hacer un «doble gasto» de un retiro, es decir, retransmitir en L1 un retiro que no
+   corresponda a un mensaje iniciado en L2. Como referencia, consulta [este análisis][polygon-dbl-spend] de una vulnerabilidad
+   de este tipo detectada en Polygon.
+
+   [polygon-dbl-spend]: https://gerhard-wagner.medium.com/double-spending-bug-in-polygons-plasma-bridge-2e0954ccadf1
+
+2. Para cada retiro iniciado en L2 (es decir, con un `messageNonce()` único), deben cumplirse las siguientes propiedades:
+   1. Solo debería ser posible probar el retiro una vez, a menos que el outputRoot del retiro
+      haya cambiado.
+   2. Solo debería ser posible finalizar el retiro una vez.
+   3. No debería ser posible retransmitir el mensaje con ninguno de sus campos modificado, es decir:
+      1. Modificar el campo `sender` permitiría un ataque de «suplantación» (spoofing).
+      2. Modificar los campos `target`, `data` o `value` permitiría a un atacante alterar peligrosamente el
+         resultado previsto del retiro.
+      3. Modificar el `gasLimit` podría encarecer demasiado la retransmisión, o permitir que el retransmisor haga que la ejecución
+         falle (por falta de gas) en el `target`.
+
+### Gestión de mensajes verificados correctamente que fallan al retransmitirse {#handling-successfully-verified-messages-that-fail-when-relayed}
+
+Si la ejecución de la llamada retransmitida falla en el contrato `target`, lamentablemente no es posible determinar
+si «debía» fallar o no, ni si debería poder «reejecutarse». Por este motivo, y para
+minimizar la complejidad, no ofrecemos ninguna funcionalidad de reejecución; si se desea, puede implementarse en contratos
+de utilidad externos.
+
+[`WithdrawalTransaction` type]: https://github.com/ethereum-optimism/optimism/blob/08daf8dbd38c9ffdbd18fc9a211c227606cdb0ad/packages/contracts-bedrock/src/libraries/Types.sol#L62-L69
+
+[`OutputRootProof` type]: https://github.com/ethereum-optimism/optimism/blob/08daf8dbd38c9ffdbd18fc9a211c227606cdb0ad/packages/contracts-bedrock/src/libraries/Types.sol#L25-L30
+
+### OptimismPortal puede enviar mensajes arbitrarios en L1 {#optimismportal-can-send-arbitrary-messages-on-l1}
+
+La función `initiateWithdrawal` del contrato `L2ToL1MessagePasser` acepta una dirección `_target` y bytes `_data`,
+que se pasan a un opcode `CALL` en L1 cuando se llama a `finalizeWithdrawalTransaction` una vez transcurrido el período
+de impugnación. Esto significa que, por diseño, el contrato `OptimismPortal` puede utilizarse para enviar transacciones arbitrarias en
+L1, con `OptimismPortal` como `msg.sender`.
+
+Por lo tanto, los usuarios del contrato `OptimismPortal` deben tener cuidado con los permisos que conceden al portal.
+Por ejemplo, cualquier token ERC20 enviado por error al contrato `OptimismPortal` se da prácticamente por perdido, ya que
+cualquiera puede reclamarlo si aprueba previamente transferencias de ese token desde el portal, usando L2 para iniciar la
+aprobación y L1 para probarla y finalizarla (tras el período de impugnación).

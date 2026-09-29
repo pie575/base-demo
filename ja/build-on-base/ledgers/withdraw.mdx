@@ -1,0 +1,40 @@
+---
+title: "レジャーから出金する"
+keywords: ["Base レジャー 出金", "Portal コントラクト 出金", "Base プライベート出金", "オペレーター署名付き出金"]
+description: "出金元のアカウントを秘匿したまま、Portal コントラクトを介してレジャーから Base へ資金を戻します。"
+---
+
+import { LedgersDemo } from "/snippets/LedgersDemo.jsx"
+
+資金は、Base 上の `Portal` コントラクトを通じてレジャーから出金されます。Portal による出金の検証方法 (署名チェックから完全な状態遷移証明まで) は自由に選択でき、その背後にあるアカウントは非公開のままとなるため、入金と出金が紐付けられることはありません。詳しくは [Private Transactions](/ja/get-started/private-transactions) を参照してください。
+
+## デモ {#demo}
+
+<LedgersDemo flow="withdraw" />
+
+<Tip>
+  上記のデモはモックです。Vibenet 上で動作するオンチェーンデモをご覧になりたい場合は、[Base チェーンのデモ](https://chain.base.org/demos)にアクセスしてください。
+</Tip>
+
+## オンチェーンで公開される情報 {#whats-exposed-onchain}
+
+| データ  | 公開の有無 | 理由                     |
+| ---- | ----- | ---------------------- |
+| アセット | 公開    | Base での決済に必要なため。       |
+| 金額   | 公開    | Base での決済に必要なため。       |
+| 送信者  | 非公開   | レジャーの Portal では開示されないため。 |
+| 受信者  | 公開    | Base での決済に必要なため。       |
+
+`withdraw()` は通常の Base コントラクト呼び出しであるため、他の Base 上の操作とまとめて 1 つのアトミックなトランザクションとして実行できます。これらの操作はすべてまとめて決済されるか、いずれも決済されないかのどちらかです。
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="レジャーへの入金" icon="download" href="/ja/build-on-base/ledgers/deposit">
+    Base からレジャーに資金を移動します。
+  </Card>
+
+  <Card title="レジャー内での送金" icon="arrow-right-arrow-left" href="/ja/build-on-base/ledgers/transfer">
+    アカウント間で資産を秘匿して移動します。
+  </Card>
+</CardGroup>

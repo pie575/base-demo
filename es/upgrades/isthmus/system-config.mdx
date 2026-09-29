@@ -1,0 +1,71 @@
+---
+title: "Isthmus: configuración del sistema"
+description: "Cambios en SystemConfig introducidos con la actualización Isthmus, que añade las variables de configuración operatorFeeScalar y operatorFeeConstant."
+---
+
+## Configuración de los parámetros de la tarifa del operador {#operator-fee-parameter-configuration}
+
+Isthmus añade a `SystemConfig` las variables de configuración `operatorFeeScalar` (`uint32`)
+y `operatorFeeConstant` (`uint64`) para controlar los parámetros de la tarifa del operador.
+
+### `ConfigUpdate` {#configupdate}
+
+El siguiente evento `ConfigUpdate` se define cuando `CONFIG_VERSION` es `uint256(0)`:
+
+| Nombre                | Valor      | Definición                                                                        | Uso                                                                  |
+| --------------------- | ---------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `BATCHER`             | `uint8(0)` | `abi.encode(address)`                                                             | Modifica la cuenta autorizada para hacer avanzar la cadena segura    |
+| `FEE_SCALARS`         | `uint8(1)` | `(uint256(0x01) << 248) \| (uint256(_blobbasefeeScalar) << 32) \| _basefeeScalar` | Modifica los escalares de comisión                                   |
+| `GAS_LIMIT`           | `uint8(2)` | `abi.encode(uint64 _gasLimit)`                                                    | Modifica el límite de gas de L2                                      |
+| `UNSAFE_BLOCK_SIGNER` | `uint8(3)` | `abi.encode(address)`                                                             | Modifica la cuenta autorizada para hacer avanzar la cadena no segura |
+| `EIP_1559_PARAMS`     | `uint8(4)` | `uint256(uint64(uint32(_denominator))) << 32 \| uint64(uint32(_elasticity))`      | Modifica el denominador y la elasticidad de EIP-1559                 |
+| `OPERATOR_FEE_PARAMS` | `uint8(5)` | `uint256(_operatorFeeScalar) << 64 \| _operatorFeeConstant`                       | Modifica el escalar y la constante de la tarifa del operador       |
+
+### Inicialización {#initialization}
+
+Durante la inicialización de `SystemConfig` deben producirse las siguientes acciones:
+
+* `emit ConfigUpdate.BATCHER`
+* `emit ConfigUpdate.FEE_SCALARS`
+* `emit ConfigUpdate.GAS_LIMIT`
+* `emit ConfigUpdate.UNSAFE_BLOCK_SIGNER`
+* `emit ConfigUpdate.EIP_1559_PARAMS`
+
+Estas acciones solo PUEDEN activarse si el valor cambia.
+
+`operatorFeeScalar` y `operatorFeeConstant` se inicializan a 0.
+
+### Modificación de los parámetros de la tarifa del operador {#modifying-operator-fee-parameters}
+
+Se introduce un nuevo `UpdateType` de `SystemConfig` que permite al propietario de `SystemConfig` modificar
+los valores de `operatorFeeScalar` y `operatorFeeConstant`.
+
+### Interfaz {#interface}
+
+#### Parámetros de la tarifa del operador {#operator-fee-parameters}
+
+##### `operatorFeeScalar` {#operatorfeescalar}
+
+Esta función devuelve el escalar de la tarifa del operador actualmente configurado.
+
+```solidity SystemConfig.sol
+function operatorFeeScalar()(uint32)
+```
+
+##### `operatorFeeConstant` {#operatorfeeconstant}
+
+Esta función devuelve la constante de la tarifa del operador configurada actualmente.
+
+```solidity SystemConfig.sol
+function operatorFeeConstant()(uint64)
+```
+
+##### `setOperatorFeeScalars` {#setoperatorfeescalars}
+
+Esta función establece los valores de `operatorFeeScalar` y `operatorFeeConstant`.
+
+Esta función DEBE poder ser invocada únicamente por el propietario de `SystemConfig`.
+
+```solidity SystemConfig.sol
+function setOperatorFeeScalar(uint32 _operatorFeeScalar, uint64 _operatorFeeConstant)
+```

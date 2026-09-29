@@ -1,0 +1,55 @@
+---
+title: "変更履歴"
+description: "B20 トークン標準のハードフォーク別・機能別の移行ノートです。新しいメソッド、非推奨化、有効化日などを新しい順に掲載しています。"
+---
+
+[B20 トークン標準](/ja/specifications/b20)のハードフォーク別・機能別の移行ノートです。Cobalt の各エントリは、ハードフォークをまたぐ個別の機能変更 1 件を取り上げ、コードを中心にまとめた変更履歴です。新しい順に掲載しています。
+
+<Note>
+  B20 のメソッドおよびイベントのシグネチャは、チェーンのコンセンサス対象の一部です。既存のセレクタと動作は変更されず、標準は追加によってのみ拡張されます。
+</Note>
+
+## ハードフォークの序数 {#hardfork-ordinals}
+
+| 序数   | ハードフォーク | ステータス |
+| ---- | ------- | ----- |
+| `01` | Beryl   | 稼働中   |
+| `02` | Cobalt  | 予定    |
+
+## [Cobalt](/ja/upgrades/cobalt/overview) (予定) — Ordinal 02 {#cobalt-upcoming-ordinal-02}
+
+| プロダクト                    | 変更内容                                             | 影響を受けるインターフェース       | エントリ                                                                                          |
+| ------------------------ | ------------------------------------------------ | -------------------- | --------------------------------------------------------------------------------------------- |
+| B20 Asset                | 乗数更新のスケジュール設定 (ERC-8056)                         | `IB20Asset`          | [乗数 / ERC-8056](/ja/base-chain/specs/reference/b20/changelog/02-cobalt-b20asset-multiplier)      |
+| B20 Asset、B20 Stablecoin | 差し押さえ (seize) 関連インターフェースの追加と `burnBlocked` の非推奨化 | `IB20` (共通インターフェース)  | [差し押さえインターフェース](/ja/base-chain/specs/reference/b20/changelog/02-cobalt-b20-seize)                |
+| PolicyRegistry           | 複合ポリシー (UNION / INTERSECT)                       | `IPolicyRegistry`    | [複合ポリシー](/ja/base-chain/specs/reference/b20/changelog/02-cobalt-policyregistry-composite-policy) |
+
+## [Beryl](/ja/upgrades/beryl/overview) — 初回リリース {#beryl-initial-release}
+
+| ネットワーク       | 有効化日       |
+| ------------ | ---------- |
+| Base mainnet | 2026-06-25 |
+| Base Sepolia | 2026-06-18 |
+
+[Beryl アップグレード](/ja/upgrades/beryl/overview)でリリースされました。
+
+**追加**
+
+* ネイティブプリコンパイルとしての B20 標準：ERC-20 のスーパーセットであり、`transfer`、`transferFrom`、`approve`、`allowance`、`balanceOf`、`totalSupply`、`name`、`symbol`、`decimals`、`Transfer`、`Approval` のセレクタと動作は ERC-20 と完全に同一です
+* 組み込みロール、ロールグラフ内のユーザー定義ロール、管理者不在での恒久的な運用を可能にする `renounceLastAdmin` を備えた[ロールベースのアクセス制御](/ja/specifications/b20/concepts/roles-and-pause#2-roles)
+* `BLOCKLIST`、`ALLOWLIST`、`UNION`、`INTERSECT` のポリシータイプ、2 段階の管理者移譲、組み込みの `ALWAYS_ALLOW` と `ALWAYS_BLOCK` を備えたシングルトンプリコンパイル [PolicyRegistry](/ja/specifications/b20/concepts/policies#21-the-registry-and-the-token)
+* すべてのトークンに設けられた[6 つのポリシースコープ](/ja/specifications/b20/concepts/policies#32-policy-scopes)：送金の送信者・受信者・実行者、ミントの受信者、差し押さえの保有者・受信者が対象です
+* コンプライアンス上の理由で残高を移転するための [`seizeWithMemo`](/specifications/b20/reference/interfaces/ib20/seize-with-memo)
+* transfer、transferFrom、mint、burn、seize の [Memo バリアント](/specifications/b20/reference/interfaces/ib20)：主イベントの直後に `Memo` を発行します
+* `PausableFeature` 単位での[きめ細かな一時停止](/ja/specifications/b20/concepts/roles-and-pause#3-pause)：`TRANSFER`、`MINT`、`BURN`、`SEIZE`
+* [任意設定の供給上限](/specifications/b20/reference/interfaces/ib20/supply-cap)：`type(uint128).max` は上限なしを示すセンチネル値であり、同時に最大供給量でもあります
+* バージョン `"1"` の EIP-712 ドメインを使用する [ERC-2612 `permit`](/ja/specifications/b20)
+* [ERC-7572 `contractURI`](/specifications/b20/reference/interfaces/ib20/contract-uri) と、`METADATA_ROLE` を必要とする name、symbol、URI の更新
+* バリアントがエンコードされた決定論的アドレスと、`initCalls` による初期化セマンティクスを備えたシングルトンプリコンパイル [B20Factory](/specifications/b20/reference/interfaces/ib20-factory/create-b20)
+* 状態を変更する PolicyRegistry 呼び出しに対する ActivationRegistry による制御
+* [`ASSET` バリアント](/ja/specifications/b20/concepts/token-types#4-asset)：`OPERATOR_ROLE`、予約更新と即時更新に対応した WAD 精度の UI 乗数、アナウンス、`batchMint`、発行者定義の追加メタデータ
+* [`STABLECOIN` バリアント](/ja/specifications/b20/concepts/token-types#5-stablecoin)：小数点以下の桁数は 6 桁固定で、`currency()` コードは作成時に一度だけ設定されます
+
+**非推奨**
+
+* `burnBlocked` と `BURN_BLOCKED_ROLE`：後方互換性のために残されています。新たな差し押さえフローでは `seizeWithMemo` を使用してください。

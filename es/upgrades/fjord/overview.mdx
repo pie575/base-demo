@@ -1,0 +1,25 @@
+---
+title: "Fjord"
+sidebarTitle: "Descripción general"
+description: "Descripción general del hardfork Fjord, que incorpora la estimación de comisiones de L1 basada en FastLZ, el precompilado secp256r1 de RIP-7212 y la compresión de canales con brotli."
+---
+
+## Marcas de tiempo de activación {#activation-timestamps}
+
+| Red       | Marca de tiempo de activación          |
+| --------- | -------------------------------------- |
+| `mainnet` | `1720627201` (2024-07-10 16:00:01 UTC) |
+| `sepolia` | `1716998400` (2024-05-29 16:00:00 UTC) |
+
+## Capa de ejecución {#execution-layer}
+
+* [RIP-7212: Precompilado para admitir la curva secp256r1](/es/specifications/base-protocol/execution/precompiles#P256VERIFY)
+* [Compresión FastLZ para el cálculo de la tarifa de datos de L1](/es/upgrades/fjord/exec-engine#fees)
+* [Obsolescencia del método `getL1GasUsed` en el contrato `GasPriceOracle`](/es/upgrades/fjord/predeploys#l1-gas-usage-estimation)
+* [Obsolescencia del campo `L1GasUsed` en el recibo de la transacción](/es/upgrades/fjord/exec-engine#l1-gas-usage-estimation)
+
+## Capa de consenso {#consensus-layer}
+
+* [Deriva máxima constante del secuenciador](/es/upgrades/fjord/derivation#constant-maximum-sequencer-drift)
+* [Compresión de canales con Brotli](/es/upgrades/fjord/derivation#brotli-channel-compression)
+* [Aumento del máximo de bytes por canal y del tamaño máximo del banco de canales](/es/upgrades/fjord/derivation#increasing-max_rlp_bytes_per_channel-and-max_channel_bank_size)

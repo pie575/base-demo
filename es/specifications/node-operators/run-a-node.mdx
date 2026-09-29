@@ -1,0 +1,229 @@
+---
+title: Ejecutar un nodo
+description: Un tutorial que enseña a configurar y ejecutar un nodo de Base.
+---
+
+Este tutorial te guiará paso a paso para configurar tu propio [nodo de Base](https://github.com/base/base).
+
+## Objetivos {#objectives}
+
+Al terminar este tutorial, podrás:
+
+* Desplegar y sincronizar un nodo de Base
+* Habilitar Flashblocks para obtener preconfirmaciones de 200 ms
+
+## Requisitos previos {#prerequisites}
+
+<Warning>
+  Ejecutar un nodo lleva mucho tiempo, consume muchos recursos y puede resultar costoso. Si todavía no tienes claro por qué quieres ejecutar tu propio nodo, probablemente no lo necesites.
+
+  Si estás empezando y necesitas una URL de RPC, puedes usar nuestros endpoints gratuitos:
+
+  * **Mainnet**: `https://mainnet.base.org`
+  * **Testnet (Sepolia)**: `https://sepolia.base.org`
+
+  **Nota:** Nuestros RPC tienen límites de solicitudes, por lo que no son adecuados para aplicaciones en producción.
+
+  Si quieres reforzar tu aplicación y evitar que tus usuarios se vean afectados por los límites de solicitudes, elige un proveedor de RPC del [Builder Stack](/es/get-started/builder-stack).
+</Warning>
+
+### Requisitos de hardware {#hardware-requirements}
+
+Consulta la [guía de rendimiento de nodos](/es/specifications/node-operators/performance-tuning#hardware) para ver las especificaciones completas de hardware, los requisitos de almacenamiento y ejemplos de hardware para entornos de producción.
+
+### Red {#networking}
+
+Configura tu firewall para permitir el tráfico en los siguientes puertos, necesarios para el descubrimiento de pares y la sincronización. Los operadores con reglas de salida estrictas deben abrir los puertos de salida para poder conectarse a los bootnodes de Base.
+
+<Tabs>
+  <Tab title="Entrada">
+    | Puerto  | Protocolo | Propósito                          |
+    | ------- | --------- | ---------------------------------- |
+    | `9222`  | TCP/UDP   | Reth Discovery v5 (discv5)         |
+    | `30303` | TCP/UDP   | Descubrimiento P2P (discv4) y RLPx |
+  </Tab>
+
+  <Tab title="Salida">
+    | Puerto  | Protocolo | Propósito                          |
+    | ------- | --------- | ---------------------------------- |
+    | `9200`  | UDP       | Conectividad con bootnodes         |
+    | `9222`  | TCP/UDP   | Reth Discovery v5 (discv5)         |
+    | `30301` | TCP/UDP   | Conectividad con bootnodes         |
+    | `30303` | TCP/UDP   | Descubrimiento P2P (discv4) y RLPx |
+
+    <Note>
+      Los puertos `9200` (UDP) y `30301` (TCP/UDP) son necesarios para acceder a los bootnodes de Base. Si el tráfico saliente hacia estos puertos está bloqueado, tu nodo no podrá establecer las conexiones iniciales con sus pares.
+    </Note>
+
+    <Warning>
+      Si usas ACL de red (en lugar de grupos de seguridad con estado, como los AWS SG) para controlar el tráfico de salida, también debes permitir el tráfico saliente en el rango de puertos efímeros **32768–60999** (TCP/UDP). Los firewalls con estado hacen un seguimiento automático del tráfico de retorno, pero las ACL no, así que, sin esta regla, los paquetes de respuesta de los pares se descartan sin previo aviso.
+    </Warning>
+  </Tab>
+</Tabs>
+
+### Docker {#docker}
+
+En este tutorial se da por hecho que conoces [Docker](https://www.docker.com/) y que lo tienes instalado y en ejecución en tu equipo.
+
+### URL de RPC de L1 {#l1-rpc-url}
+
+Necesitarás tu propia URL de RPC de L1. Puedes ejecutar el endpoint por tu cuenta o elegir un proveedor externo del [Builder Stack](/es/get-started/builder-stack).
+
+## Ejecutar un nodo {#running-a-node}
+
+<Warning>
+  **base/node se ha trasladado a [base/base](https://github.com/base/base).** A partir de la **v1.3.0**, el nodo para operadores se publica desde base/base y todas las nuevas versiones se distribuyen allí.
+
+  **base/node se archivará el 4 de septiembre de 2026** y pasará a ser de solo lectura (sin nuevos issues, PR ni versiones); seguirá disponible únicamente como referencia para las versiones anteriores a la v1.3.0. Para cualquier instalación o actualización nueva, utiliza base/base.
+</Warning>
+
+El archivo `docker-compose.yml` de la raíz descarga `ghcr.io/base/node` de forma predeterminada; si prefieres compilar el árbol de código fuente actual, añade `--build`.
+
+1. Clona el [repositorio](https://github.com/base/base).
+2. Asegúrate de tener disponible un RPC de un nodo completo de Ethereum L1 (no de Base) y configura `BASE_NODE_L1_ETH_RPC` y `BASE_NODE_L1_BEACON` en el archivo `.env` correspondiente (`.env.mainnet` o `.env.sepolia`). Si ejecutas tu propio nodo L1, debe estar sincronizado para que Base pueda sincronizarse por completo.
+3. Inicia el nodo:
+   * **Mainnet (descargar la imagen publicada)**: `docker compose up`
+   * **Mainnet (compilar desde el código fuente)**: `docker compose up --build`
+   * **Testnet**: `NETWORK_ENV=.env.sepolia docker compose up`
+4. Comprueba que obtienes respuesta de:
+
+```bash Terminal
+curl -d '{"id":0,"jsonrpc":"2.0","method":"eth_getBlockByNumber","params":["latest",false]}' \
+  -H "Content-Type: application/json" http://localhost:8545
+```
+
+<Warning>
+  Sincronizar tu nodo puede tardar **días** y consumirá una enorme cantidad de tu cuota de solicitudes. Asegúrate de supervisar el consumo y de ampliar tu plan si es necesario.
+</Warning>
+
+### Fija una imagen publicada con `NODE_TAG` {#pin-a-released-image-with-node_tag}
+
+De forma predeterminada, `docker compose up` descarga `ghcr.io/base/node:latest`. Para ejecutar una versión concreta sin tener que recompilar desde el código fuente, asigna a `NODE_TAG` una etiqueta publicada:
+
+```bash Terminal
+NODE_TAG=v1.3.0 docker compose up
+```
+
+Al fijar un `NODE_TAG`, se omite por completo la compilación desde el código fuente, por lo que el nodo arranca en cuanto se descarga la imagen. No uses `--build` cuando utilices `NODE_TAG`; si pasas `--build`, se fuerza una compilación local que anula la imagen fijada.
+
+### Variables de entorno de Compose {#compose-environment-variables}
+
+El archivo `docker-compose.yml` de la raíz expone algunos parámetros configurables para que puedas sobrescribir los valores predeterminados desde tu shell o un archivo `.env` sin tener que editar el archivo de Compose:
+
+| Variable        | Valor predeterminado | Propósito                                                                                                                       |
+| --------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `NODE_TAG`      | `latest`             | Etiqueta de la imagen que se descarga de `ghcr.io/base/node`. Asígnale una etiqueta de versión (p. ej., `v1.3.0`) para fijarla. |
+| `NETWORK_ENV`   | `.env.mainnet`       | Archivo de entorno de red que cargan los servicios `execution` y `node`. Asígnale `.env.sepolia` para usar la red de pruebas.   |
+| `HOST_DATA_DIR` | `./reth-data`        | Ruta del host que se monta en `/data` dentro del contenedor de ejecución. Cámbiala para que apunte a un volumen externo.        |
+| `PROFILE`       | `maxperf`            | Perfil de compilación de Cargo que se usa cuando se pasa `--build`. Coincide con el perfil empleado para la imagen publicada.   |
+
+Al ejecutar `docker compose up --build`, se compila el árbol actual de `base/base` con el objetivo `base` de `etc/docker/Dockerfile.rust-services` (el mismo que genera la imagen publicada `ghcr.io/base/node`), de modo que una compilación desde el código fuente y una imagen fijada comparten la misma estructura de binarios.
+
+### Instantáneas {#snapshots}
+
+Si operas un nodo de Base y quieres ahorrarte mucho tiempo en la sincronización inicial, puedes [restaurar a partir de una instantánea](/es/specifications/node-operators/snapshots#restoring-from-snapshot). Las instantáneas se actualizan semanalmente.
+
+### Sincronización {#syncing}
+
+Puedes supervisar el progreso de la sincronización con:
+
+```bash Terminal
+echo Latest synced block behind by: $((($(date +%s)-$( \
+  curl -d '{"id":0,"jsonrpc":"2.0","method":"optimism_syncStatus"}' \
+  -H "Content-Type: application/json" http://localhost:7545 | \
+  jq -r .result.unsafe_l2.timestamp))/60)) minutes
+```
+
+Otra señal de que la sincronización no ha terminado es que obtengas `Error: nonce has already been used` al intentar desplegar a través de tu nodo.
+
+<Tip>
+  Para obtener datos más completos del nodo y realizar comprobaciones de diagnóstico, usa [`basectl`](https://github.com/base/base/tree/main/bin/basectl), la CLI para operadores de nodos de Base.
+</Tip>
+
+***
+
+## Habilitar Flashblocks {#enable-flashblocks}
+
+Una vez que tu nodo esté sincronizado, puedes habilitar Flashblocks para ofrecer a tus aplicaciones preconfirmaciones de 200 ms.
+
+### Configuración {#configuration}
+
+Para habilitar Flashblocks, define `RETH_FB_WEBSOCKET_URL` al iniciar tu nodo:
+
+```sh Terminal
+RETH_FB_WEBSOCKET_URL="wss://mainnet.flashblocks.base.org/ws" docker compose up --build
+```
+
+| Variable                | Descripción                                            |
+| ----------------------- | ------------------------------------------------------ |
+| `RETH_FB_WEBSOCKET_URL` | Endpoint WebSocket de Flashblocks (consulta más abajo) |
+
+### Endpoints de WebSocket {#websocket-endpoints}
+
+| Red     | URL                                     |
+| ------- | --------------------------------------- |
+| Mainnet | `wss://mainnet.flashblocks.base.org/ws` |
+| Sepolia | `wss://sepolia.flashblocks.base.org/ws` |
+
+<Warning>
+  **Estos endpoints de WebSocket son exclusivamente para la infraestructura de nodos.**
+
+  Las aplicaciones no deben conectarse directamente a `wss://mainnet.flashblocks.base.org/ws`. En su lugar, deben consultar tu nodo RPC para obtener los datos de Flashblocks. Consulta la [descripción general de RPC](/es/base-chain/api-reference/rpc-overview#flashblocks) para más detalles.
+</Warning>
+
+<Note>
+  El binario [base](https://github.com/base/base) escucha el flujo de WebSocket de Flashblocks y almacena en caché los datos de preconfirmación. Cuando se invocan métodos RPC compatibles con Flashblocks, devuelve los datos desde esta caché. Para ver el esquema completo de los mensajes y la estructura del payload, consulta la [descripción general de la API de Flashblocks](/es/base-chain/api-reference/flashblocks-api/flashblocks-api-overview).
+</Note>
+
+<Tip>
+  Si `RETH_FB_WEBSOCKET_URL` está definida, ejecutar `docker compose up --build` en el repositorio [base/base](https://github.com/base/base) también aplicará la configuración de Flashblocks. Para ejecutarlo sin compilar desde el código fuente, define `RETH_FB_WEBSOCKET_URL` en tu archivo `.env` y usa `NODE_TAG=vX.Y.Z docker compose up`.
+</Tip>
+
+### Verificar el funcionamiento de Flashblocks {#verify-flashblocks-functionality}
+
+Comprueba que tu nodo sirve Flashblocks correctamente consultando un bloque `pending`:
+
+```sh Health Check
+curl -X POST \
+  --data '{"jsonrpc":"2.0","method":"eth_getBlockByNumber","params":["pending", false],"id":1}' \
+  http://localhost:8545
+```
+
+Una respuesta correcta incluirá los datos de bloque del Flashblock más reciente. Si los Flashblocks no están disponibles temporalmente, el nodo pasa a devolver el último bloque finalizado.
+
+### Métodos RPC disponibles {#available-rpc-methods}
+
+Tu nodo compatible con Flashblocks admite todos los métodos JSON-RPC estándar de Ethereum, además de métodos específicos de Flashblocks y suscripciones WebSocket. Consulta la [Referencia de la API de Flashblocks](/es/base-chain/api-reference/flashblocks-api/flashblocks-api-overview) para ver la lista completa, con ejemplos de código y detalles de los parámetros.
+
+## Habilitar los RPC de pruebas históricas {#enable-historical-proofs-rpcs}
+
+Para atender de forma eficiente métodos como `eth_getProof`, `debug_executionWitness` y `debug_executePayload`, deberás configurar la extensión de ejecución (ExEx) de pruebas históricas. Esta ExEx gestiona una base de datos independiente con los datos necesarios para atender estos métodos. Dicha base de datos puede ocupar cientos de GB de almacenamiento adicional y requiere una máquina con mayor rendimiento de E/S. La mayoría de los usuarios no necesita tener disponibles estos RPC.
+
+Para ejecutar la ExEx de pruebas históricas, basta con definir esta variable de entorno:
+
+```bash Terminal
+RETH_HISTORICAL_PROOFS=true
+```
+
+Cuando el nodo se inicie por primera vez, rellenará (backfill) el estado existente en la nueva base de datos de pruebas, ubicada en `<datadir>/proofs`. Este proceso puede tardar bastante (entre 24 y 48 horas en mainnet).
+
+Si quieres omitir este rellenado, hay instantáneas de la base de datos de pruebas disponibles. Consulta la página [Instantáneas](/es/specifications/node-operators/snapshots#proofs-snapshots) para ver las instrucciones de descarga.
+
+<Note>
+  El bloque en el que se inicie la ExEx por primera vez será el bloque más antiguo para el que estarán disponibles estos RPC. El flag `--rpc.eth-proof-window` se ignora cuando la ExEx de pruebas está habilitada.
+
+  De forma predeterminada, la ExEx conserva 28 días de bloques, pero puedes personalizar este valor configurando `RETH_PROOFS_HISTORY_WINDOW=<num_blocks>`.
+</Note>
+
+### Mejorar el rendimiento {#improving-performance}
+
+La ExEx de pruebas ofrece su mejor rendimiento cuando se encuentra a menos de 1024 bloques de la punta de la cadena. Por eso, el rendimiento puede degradarse mientras se sincroniza hasta la punta. Durante la sincronización inicial en Base Mainnet, la ExEx puede quedarse tan rezagada que no logre ponerse al día por sí sola.
+
+Para solucionarlo, puedes ejecutar `base-consensus` en modo de seguimiento para que se mantenga a menos de 512 bloques de la ExEx de pruebas.
+
+```bash Terminal
+BASE_NODE_SOURCE_L2_RPC=<trusted_rpc>
+BASE_NODE_PROOFS=true
+```
+
+Puedes comprobar que la ExEx de pruebas se está sincronizando de forma eficiente si las duraciones de la raíz de estado y de ejecución son 0. En este caso, la ExEx no ejecuta bloques, sino que simplemente escribe en disco los datos de los bloques ya ejecutados.

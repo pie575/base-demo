@@ -1,0 +1,38 @@
+---
+title: 'net_version'
+sidebarTitle: 'net_version'
+description: '現在のネットワークIDを文字列で返します。'
+---
+
+現在のネットワークIDを10進数の文字列で返します。
+
+## パラメーター {#parameters}
+
+パラメーターはありません。
+
+## 戻り値 {#returns}
+
+<ResponseField name="result" type="string">
+  ネットワーク ID (10 進数の文字列) 。Base Mainnet では `"8453"`、Base Sepolia では `"84532"` です。
+</ResponseField>
+
+## 例 {#example}
+
+<CodeGroup>
+  ```json Request
+  {
+    "jsonrpc": "2.0",
+    "method": "net_version",
+    "params": [],
+    "id": 1
+  }
+  ```
+
+  ```json Response (Base Mainnet)
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "8453"
+  }
+  ```
+</CodeGroup>

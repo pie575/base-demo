@@ -1,0 +1,44 @@
+---
+title: "标准桥"
+description: "标准桥合约规范：这些合约支持在 Base 的 L1 与 L2 之间跨域转移 ETH 和 ERC-20 代币。"
+---
+
+标准桥支持在 Ethereum (L1) 与 Base (L2) 之间跨域转移 ETH 和 ERC-20 代币。标准桥构建于[跨域消息传递合约](/zh/specifications/base-protocol/bridging/cross-domain-messengers)之上，为跨域转移代币提供标准接口。
+
+有关底层交易机制，请参阅[存款](/zh/specifications/base-protocol/bridging/deposits)和[提款](/zh/specifications/base-protocol/bridging/withdrawals)。
+
+## 概述 {#overview}
+
+标准桥负责实现跨域的
+ETH 和 ERC20 代币转移。它们构建于跨域
+消息传递合约之上，并为代币存入提供标准接口。
+
+该桥同时支持 L1 原生代币和 L2 原生代币。旧版 API
+予以保留，以确保现有应用程序在使用 Bedrock `StandardBridge` 合约时
+不会出现任何问题。
+
+`L2StandardBridge` 是一个预部署合约，地址为
+`0x4200000000000000000000000000000000000010`。
+
+```solidity StandardBridge.sol lines wrap expandable
+interface StandardBridge {
+    event ERC20BridgeFinalized(address indexed localToken, address indexed remoteToken, address indexed from, address to, uint256 amount, bytes extraData);
+    event ERC20BridgeInitiated(address indexed localToken, address indexed remoteToken, address indexed from, address to, uint256 amount, bytes extraData);
+    event ETHBridgeFinalized(address indexed from, address indexed to, uint256 amount, bytes extraData);
+    event ETHBridgeInitiated(address indexed from, address indexed to, uint256 amount, bytes extraData);
+
+    function bridgeERC20(address _localToken, address _remoteToken, uint256 _amount, uint32 _minGasLimit, bytes memory _extraData) external;
+    function bridgeERC20To(address _localToken, address _remoteToken, address _to, uint256 _amount, uint32 _minGasLimit, bytes memory _extraData) external;
+    function bridgeETH(uint32 _minGasLimit, bytes memory _extraData) payable external;
+    function bridgeETHTo(address _to, uint32 _minGasLimit, bytes memory _extraData) payable external;
+    function deposits(address, address) view external returns (uint256);
+    function finalizeBridgeERC20(address _localToken, address _remoteToken, address _from, address _to, uint256 _amount, bytes memory _extraData) external;
+    function finalizeBridgeETH(address _from, address _to, uint256 _amount, bytes memory _extraData) payable external;
+    function messenger() view external returns (address);
+    function OTHER_BRIDGE() view external returns (address);
+}
+```
+
+## 可升级性 {#upgradability}
+
+L1 和 L2 标准桥都应置于可升级代理之后。

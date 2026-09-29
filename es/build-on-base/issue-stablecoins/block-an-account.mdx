@@ -1,0 +1,102 @@
+---
+title: "Bloquear una cuenta"
+keywords: ["bloquear dirección stablecoin", "lista de bloqueo B20", "retención por cumplimiento stablecoin", "detener transferencias cuenta Base"]
+description: "Impide que una dirección concreta mueva tu stablecoin cuando lo exija una retención por cumplimiento normativo, sin afectar al resto de los titulares."
+---
+
+import { StablecoinDemo } from "/snippets/StablecoinDemo.jsx"
+
+A veces es necesario impedir que una dirección mueva tu stablecoin, por ejemplo, por una retención por cumplimiento normativo o una solicitud de soporte. Una **lista de bloqueo** deniega únicamente las direcciones que incluyas y no afecta a ningún otro titular. Vincúlala al ámbito del remitente para que una cuenta bloqueada no pueda realizar envíos.
+
+## Demostración {#demo}
+
+<StablecoinDemo flow="block" />
+
+<Tip>
+  La demostración usa una cuenta local generada en el navegador para enviar transacciones reales en **Base Vibenet**. Si Vibenet o sus funciones de B20 no están disponibles, cambia automáticamente a una versión ilustrativa sin conexión.
+</Tip>
+
+<Note>
+  ¿Es la primera vez que usas B20? Consulta el [Estándar de tokens B20](/es/specifications/b20) para conocer los conceptos y seguir una guía completa de lanzamiento. Estos ejemplos están pensados para `base-std@1505323`, `viem@2.55.11` y Base Foundry `v1.1.1`.
+</Note>
+
+## Bloquear y verificar una cuenta {#block-and-verify-an-account}
+
+<CodeGroup>
+  {/* sample: stablecoin-block-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={7,10}
+  import { type Address } from "viem";
+  import { publicClient } from "../../shared/clients.js";
+  import { POLICY_REGISTRY, policyRegistryAbi } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function setBlocked(policyId: bigint, holder: Address, blocked: boolean) {
+    await sendContract({
+      address: POLICY_REGISTRY,
+      abi: policyRegistryAbi,
+      functionName: "updateBlocklist",
+      args: [policyId, blocked, [holder]],
+    });
+    const authorized = await publicClient.readContract({
+      address: POLICY_REGISTRY,
+      abi: policyRegistryAbi,
+      functionName: "isAuthorized",
+      args: [policyId, holder],
+    });
+    if (authorized === blocked) throw new Error("Unexpected blocklist state");
+  }
+  ```
+
+  {/* sample: stablecoin-block-solidity */}
+
+  ```solidity Solidity lines wrap expandable highlight={4}
+      function setBlocked(uint64 policyId, address holder, bool blocked) public {
+          address[] memory accounts = new address[](1);
+          accounts[0] = holder;
+          StdPrecompiles.POLICY_REGISTRY.updateBlocklist(policyId, blocked, accounts);
+          require(StdPrecompiles.POLICY_REGISTRY.isAuthorized(policyId, holder) != blocked, "wrong policy state");
+      }
+  ```
+
+  {/* sample: stablecoin-block-cli */}
+
+  ```bash CLI lines wrap expandable highlight={1}
+  base-cast send "$POLICY_REGISTRY" "updateBlocklist(uint64,bool,address[])" \
+    "$BLOCKLIST_ID" true "[$ACCOUNT]" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  base-cast call "$POLICY_REGISTRY" "isAuthorized(uint64,address)(bool)" \
+    "$BLOCKLIST_ID" "$ACCOUNT" --rpc-url "$RPC_URL"
+  ```
+</CodeGroup>
+
+Consulta el [estándar de tokens B20](/es/specifications/b20) para ver la interfaz completa, los roles y las políticas.
+
+<Check>
+  `isAuthorized(policyId, account)` devuelve `false` mientras la cuenta esté bloqueada.
+</Check>
+
+<Warning>
+  Esto solo bloquea las transferencias salientes si la lista de bloqueo está vinculada a `TRANSFER_SENDER_POLICY`. Para desbloquear la cuenta, usa la misma llamada con `false`.
+</Warning>
+
+## Hacer recuperable una cuenta bloqueada {#make-a-blocked-account-recoverable}
+
+Bloquear una cuenta mediante `TRANSFER_SENDER_POLICY` congela sus transferencias salientes, pero eso no basta para poder retirar el saldo. La incautación consulta un ámbito distinto, `SEIZE_EXEMPT_POLICY`, cuya comprobación funciona a la inversa: una cuenta que **no** está autorizada según la política asociada puede incautarse. Asocia allí la misma lista de bloqueo para que una sola retención congele la cuenta y, a la vez, la haga recuperable:
+
+```solidity Attach the blocklist to the seize scope
+token.updatePolicy(token.SEIZE_EXEMPT_POLICY(), blocklistId);
+```
+
+Asocia a `SEIZE_EXEMPT_POLICY` una lista de bloqueo, nunca una lista de permitidos: una lista de permitidos vacía no autoriza a nadie, por lo que todos los titulares quedarían expuestos a la incautación. Para la incautación propiamente dicha, consulta [Recuperar fondos](/es/build-on-base/issue-stablecoins/recover-funds).
+
+## Consulta también {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="Recuperar fondos" icon="rotate-left" href="/es/build-on-base/issue-stablecoins/recover-funds">
+    Traslada un saldo bloqueado a una cuenta de custodia con seizeWithMemo.
+  </Card>
+
+  <Card title="Pausar la actividad" icon="circle-pause" href="/es/build-on-base/issue-stablecoins/pause-activity">
+    Congela toda la actividad del token.
+  </Card>
+</CardGroup>

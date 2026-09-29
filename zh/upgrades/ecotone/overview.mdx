@@ -1,0 +1,44 @@
+---
+title: "Ecotone"
+sidebarTitle: "概述"
+description: "Ecotone 硬分叉概述。该硬分叉纳入了以太坊 Dencun 升级的相关变更，包括 EIP-4844 blob 交易和 EIP-4788 信标区块根。"
+---
+
+## 激活时间戳 {#activation-timestamps}
+
+| 网络        | 激活时间戳                                   |
+| --------- | --------------------------------------- |
+| `mainnet` | `1710374401` (2024-03-14 00:00:01 UTC)  |
+| `sepolia` | `1708534800` (2024-02-21 17:00:00 UTC)  |
+
+Ecotone 升级纳入了 L1 的 Dencun 升级，并采用 EIP-4844 blob 实现数据可用性。
+
+## 执行层 {#execution-layer}
+
+* Cancun (执行层) ：
+  * [EIP-1153：瞬态存储操作码](https://eips.ethereum.org/EIPS/eip-1153)
+  * [EIP-4844：分片 Blob 交易](https://eips.ethereum.org/EIPS/eip-4844)
+    * [Blob 交易已禁用](/zh/specifications/base-protocol/execution/l2-execution-engine#ecotone-disable-blob-transactions)
+  * [EIP-4788：EVM 中的信标区块根](https://eips.ethereum.org/EIPS/eip-4788)
+    * [L1 信标区块根嵌入到 L2 中](/zh/specifications/base-protocol/execution/l2-execution-engine#ecotone-beacon-block-root)
+    * [信标根合约自动部署](/zh/specifications/base-protocol/consensus/derivation#ecotone-beacon-block-roots-contract-deployment-eip-4788)
+  * [EIP-5656：MCOPY - 内存复制指令](https://eips.ethereum.org/EIPS/eip-5656)
+  * [EIP-6780：SELFDESTRUCT 仅在同一交易内生效](https://eips.ethereum.org/EIPS/eip-6780)
+  * [EIP-7516：BLOBBASEFEE 操作码](https://eips.ethereum.org/EIPS/eip-7516)
+    * [BLOBBASEFEE 始终将 1 压入栈](/zh/specifications/base-protocol/execution/l2-execution-engine#ecotone-disable-blob-transactions)
+* Deneb (共识层) ：*不适用于 L2*
+  * [EIP-7044：已签名自愿退出永久有效](https://eips.ethereum.org/EIPS/eip-7044)
+  * [EIP-7045：提高证明纳入的最大槽位](https://eips.ethereum.org/EIPS/eip-7045)
+  * [EIP-7514：新增每纪元最大流失上限](https://eips.ethereum.org/EIPS/eip-7514)
+
+## 共识层 {#consensus-layer}
+
+[retrieval]: /specifications/base-protocol/consensus/derivation#ecotone-blob-retrieval
+
+[predeploy]: l1-attributes#ecotone-l1block-upgrade
+
+* Blob 数据可用性：在 [L1 数据检索阶段][retrieval]支持 blob DA。
+* Rollup 费用更新：在
+  [L1 数据费用计算](/zh/specifications/base-protocol/execution/l2-execution-engine#ecotone-l1-cost-fee-changes-eip-4844-da)中支持 blob DA。
+* 自动升级并扩展 [L1 属性预部署合约][predeploy]
+  (又称 `L1Block` 预部署合约)

@@ -1,0 +1,104 @@
+---
+title: "Validity Transactionを構築する"
+description: "Viemを使用してValidity Transactionに署名し、送信します。"
+---
+
+このガイドでは、推奨されるトランザクションタイプであるEIP-1559トランザクションをViemで作成します。APIは、署名済みのレガシートランザクションとEIP-2930トランザクションにも対応しています。
+
+<Warning>
+  Validity Transactionは実験的な機能です。`base_sendRawTransactionValidity`は現在、Vibenetでのみ利用できます。
+</Warning>
+
+## 1. 述語を作成する {#1-create-predicates}
+
+アカウントやコントラクトの状態が条件を満たすまで待機するには、`balance` または `storage` を使用します。候補の位置を絞り込むには、`block_number` と `flashblock_index` を使用します。すべての述語が一致する必要があります。
+
+```ts Predicate setup lines wrap expandable
+import type { Address, Hex } from 'viem';
+
+const validity = [
+  {
+    type: 'balance',
+    params: {
+      address: '0x8ba1f109551bD432803012645Ac136ddd64DBA72' as Address,
+      op: '>=',
+      value: '0x1' as Hex,
+    },
+  },
+  {
+    type: 'storage',
+    params: {
+      address: '0x8ba1f109551bD432803012645Ac136ddd64DBA72' as Address,
+      slot: '0x8' as Hex,
+      op: '=',
+      value: '0x2a' as Hex,
+    },
+  },
+  {
+    type: 'block_number',
+    params: { op: '<=', value: '0x11a6a1' as Hex },
+  },
+  {
+    type: 'flashblock_index',
+    params: { op: '<=', value: '0x2' as Hex },
+  },
+] as const;
+```
+
+ストレージワード全体を比較する場合は、`mask` を省略します。Flashblock 内の特定の位置を対象にする場合は、`flashblock_index` を使用します。
+
+## 2. EIP-1559 トランザクションに署名する {#2-sign-an-eip-1559-transaction}
+
+送信者の次の nonce を使用します。署名済みペイロードは、RPC の第 1 パラメータとして渡します。
+
+```ts Sign transaction lines wrap expandable
+import { createPublicClient, http, type Chain } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+
+const client = createPublicClient({ chain, transport: http(rpcUrl) });
+const account = privateKeyToAccount(privateKey);
+const fees = await client.estimateFeesPerGas();
+const nonce = await client.getTransactionCount({
+  address: account.address,
+  blockTag: 'latest',
+});
+
+const rawTransaction = await account.signTransaction({
+  chainId: (chain as Chain).id,
+  type: 'eip1559',
+  nonce,
+  to: '0x...' as Address,
+  data: '0x...' as Hex,
+  value: 0n,
+  gas: 100_000n,
+  maxFeePerGas: fees.maxFeePerGas,
+  maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
+});
+```
+
+## 3. トランザクションを送信する {#3-submit-the-transaction}
+
+署名済みトランザクションと `validity` は、それぞれ別のパラメータとして渡します。
+
+```ts Submit transaction lines wrap expandable
+const response = await fetch(rpcUrl, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'base_sendRawTransactionValidity',
+    params: [rawTransaction, { validity }],
+  }),
+});
+
+const body = await response.json();
+if (body.error) throw new Error(body.error.message);
+const hash = body.result;
+```
+
+## 4. ブロックへの取り込みを確認する {#4-check-inclusion}
+
+RPC はトランザクションハッシュを返します。[`eth_getTransactionReceipt`](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionReceipt) を使用して、オンチェーンのレシートが存在するか確認してください。
+
+各フィールドの定義については、[Validity Transaction RPC](/ja/specifications/build-transaction/base_sendRawTransactionValidity) を参照してください。

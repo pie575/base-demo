@@ -1,0 +1,82 @@
+---
+title: "发送付款"
+keywords: ["批量 USDC 付款", "Base 商户资金发放", "ERC-20 付款合约", "向多个收款人付款"]
+description: "在单笔交易中发送一批带引用标识的代币付款，且不会有资金滞留在付款合约中。"
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+向员工、创作者、供应商或卖家发送一笔带引用标识的批量付款。合约会将每笔金额直接从发送方划转给对应的收款人，因此不会在两次交易之间留存汇总的代币余额。
+
+## 演示 {#demo}
+
+<PaymentsDemo flow="payout" />
+
+<Tip>
+  上方演示仅为模拟效果。如需查看 Vibenet 上的链上演示，请前往 [Base 链演示](https://chain.base.org/demos)。
+</Tip>
+
+## 部署付款合约 {#deploy-the-payout-contract}
+
+{/* sample: payout-batch-solidity */}
+
+```solidity Payout.sol lines wrap expandable highlight={2-4,8-9}
+function sendPayouts(bytes32 batchId, address[] calldata recipients, uint256[] calldata amounts) external {
+    if (processed[batchId]) revert BatchAlreadyProcessed(batchId);
+    if (recipients.length == 0 || recipients.length != amounts.length) revert InvalidArrayLengths();
+    if (recipients.length > MAX_RECIPIENTS) revert TooManyRecipients();
+    processed[batchId] = true;
+
+    for (uint256 i; i < recipients.length; ++i) {
+        require(token.transferFrom(msg.sender, recipients[i], amounts[i]), "transfer failed");
+        emit PayoutSent(batchId, msg.sender, recipients[i], amounts[i]);
+    }
+}
+```
+
+先为已部署的合约授权批次总金额的额度，然后由同一发送方提交收款人及对应金额。
+
+{/* sample: send-payout-ts */}
+
+```typescript TypeScript backend lines wrap expandable highlight={2,4-8}
+export async function sendPayouts(
+  payout: Address,
+  batchReference: string,
+  recipients: Address[],
+  amounts: string[],
+) {
+  if (recipients.length !== amounts.length) throw new Error("Recipient and amount counts differ");
+  const batchId = keccak256(toHex(batchReference));
+  const simulation = await publicClient.simulateContract({
+    account,
+    address: payout,
+    abi: payoutAbi,
+    functionName: "sendPayouts",
+    args: [batchId, recipients, amounts.map((amount) => parseUnits(amount, 6))],
+  });
+  const hash = await walletClient.writeContract(simulation.request);
+  return publicClient.waitForTransactionReceipt({ hash, confirmations: 2 });
+}
+```
+
+<Check>
+  该交易会在同一个 `batchId` 下为每个收款人各触发一个 `PayoutSent` 事件，且代币转账总额与你批准的批次总额一致。
+</Check>
+
+<Warning>
+  请根据实测的 gas 用量限制批次大小，并保留合约的 `MAX_RECIPIENTS` 上限。只要有一笔代币转账失败，整个批次就会回滚。
+</Warning>
+
+不要将公共的 `Multicall3` 合约授权为 ERC-20 支出方 (spender) 。对下游代币调用而言，`msg.sender` 是 Multicall3，而任何调用者都可以让这个通用合约凭借你授予它的额度调用 `transferFrom`。请使用专门构建的合约，明确限定谁可以发起付款以及如何选择收款人。
+
+## 另请参阅 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="拆分付款" icon="divide" href="/zh/build-on-base/accept-payments/split-a-payment">
+    按基点计算各方份额，并精确分配舍入差额。
+  </Card>
+
+  <Card title="付款对账" icon="table" href="/zh/build-on-base/accept-payments/reconcile-payments">
+    将付款事件与您的账本参考编号关联起来。
+  </Card>
+</CardGroup>

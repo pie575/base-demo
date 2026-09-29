@@ -1,0 +1,50 @@
+---
+title: "Asignar atributos de usuario"
+description: "Elige Builder Codes para atribuir transacciones o Base Verify para obtener rasgos de usuario verificados, deduplicar identidades y aplicar políticas de elegibilidad."
+---
+
+Usa la atribución cuando necesites identificar qué builder generó una actividad onchain o determinar si un usuario cumple un requisito de elegibilidad verificado. Builder Codes y Base Verify resuelven aspectos distintos de ese problema.
+
+## Atribuir la actividad onchain {#attribute-onchain-activity}
+
+Los Builder Codes añaden un sufijo de atribución ERC-8021 al calldata de las transacciones. Los indexadores offchain utilizan este sufijo para vincular la actividad con la aplicación, la billetera o el agente que la generó.
+
+<CardGroup cols={2}>
+  <Card title="Descripción general de los Builder Codes" icon="code" href="/es/specifications/builder-codes/overview">
+    Conoce los Builder Codes, las ventajas de la atribución, los tipos de cuenta compatibles y las opciones de verificación.
+  </Card>
+
+  <Card title="Para desarrolladores de aplicaciones" icon="window" href="/es/specifications/builder-codes/for-app-developers">
+    Añade atribución automática de transacciones con Wagmi, Viem, CDP Wallets o Privy.
+  </Card>
+
+  <Card title="Para desarrolladores de billeteras" icon="wallet" href="/es/specifications/builder-codes/for-wallet-developers">
+    Implementa la capacidad `dataSuffix` para EOA y para operaciones de usuario de ERC-4337.
+  </Card>
+
+  <Card title="Para desarrolladores de agentes" icon="robot" href="/es/specifications/builder-codes/for-agent-developers">
+    Registra un agente y atribúyele las transacciones onchain que realice de forma autónoma.
+  </Card>
+</CardGroup>
+
+## Verificar atributos de usuario {#verify-user-attributes}
+
+Base Verify permite que un usuario demuestre que controla una cuenta compatible y que tu aplicación evalúe rasgos aprobados. Elige el flujo de backend para experiencias controladas por la aplicación, o el flujo onchain cuando un contrato inteligente deba hacer cumplir la política.
+
+<CardGroup cols={2}>
+  <Card title="API de Base Verify" icon="user-check" href="/es/sdks/base-verify/overview">
+    Compara los flujos de verificación de backend y onchain.
+  </Card>
+
+  <Card title="Verificar cuentas sociales" icon="address-card" href="/es/sdks/base-verify/verify-social-accounts">
+    Comprueba la titularidad verificada de cuentas y sus rasgos desde el backend de tu aplicación.
+  </Card>
+
+  <Card title="Verificar usuarios onchain" icon="shield-check" href="/es/sdks/base-verify/verify-users-onchain">
+    Aplica restricciones de acceso basadas en políticas y garantiza una única participación por persona en un contrato inteligente.
+  </Card>
+</CardGroup>
+
+<Note>
+  Los Builder Codes atribuyen el origen de las transacciones, pero no verifican la identidad ni la elegibilidad de un usuario. Base Verify evalúa atributos verificados de los usuarios, pero no atribuye las transacciones al builder que las generó.
+</Note>

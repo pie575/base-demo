@@ -1,0 +1,42 @@
+---
+title: "L1 区块属性"
+description: "Isthmus 升级对 L1 属性交易所做的变更：扩展 calldata，使其包含运营方费用标量和常量参数。"
+---
+
+## 概述 {#overview}
+
+L1 区块属性交易已更新，新增了运营方费用参数。
+
+| 输入参数                | 类型      | Calldata 字节 | 段   |
+| ------------------- | ------- | ----------- | --- |
+| {0x098999be}        |         | 0-3         | n/a |
+| baseFeeScalar       | uint32  | 4-7         | 1   |
+| blobBaseFeeScalar   | uint32  | 8-11        |     |
+| sequenceNumber      | uint64  | 12-19       |     |
+| l1BlockTimestamp    | uint64  | 20-27       |     |
+| l1BlockNumber       | uint64  | 28-35       |     |
+| basefee             | uint256 | 36-67       | 2   |
+| blobBaseFee         | uint256 | 68-99       | 3   |
+| l1BlockHash         | bytes32 | 100-131     | 4   |
+| batcherHash         | bytes32 | 132-163     | 5   |
+| operatorFeeScalar   | uint32  | 164-167     | 6   |
+| operatorFeeConstant | uint64  | 168-175     |     |
+
+请注意，与此前各版本的 L1 属性交易一样，第一个输入参数
+是函数选择器，即 `keccak256("setL1BlockValuesIsthmus()")` 的前四个字节。
+
+激活区块存在两种情况：
+
+* 如果 Isthmus 在创世时即已激活，则激活区块中没有任何交易，
+  因此无需考虑 L1 区块属性交易。
+* 如果 Isthmus 在创世之后激活，则必须使用 [`setL1BlockValuesEcotone()`](../ecotone/l1-attributes)
+  方法，因为此时 L1 Block 合约尚未升级。
+
+此后的每个 L2 区块都必须使用 `setL1BlockValuesIsthmus()` 方法。
+
+使用该方法时，Isthmus 之前的各项值会按 1:1 迁移，
+同时该交易还会将以下新属性设置为
+[`SystemConfig`](/zh/specifications/base-protocol/consensus/derivation#system-configuration) 中的值：
+
+* `operatorFeeScalar`
+* `operatorFeeConstant`

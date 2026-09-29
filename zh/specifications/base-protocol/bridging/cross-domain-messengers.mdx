@@ -1,0 +1,117 @@
+---
+title: "跨域消息传递器"
+description: "跨域消息传递器合约规范。这些合约为 Base 上 L1 与 L2 之间的消息发送提供了更高层级的 API。"
+---
+
+## 概述 {#overview}
+
+跨域消息传递器 (cross domain messenger) 负责为需要发送跨域消息的开发者提供更高层级的 API。它们支持重放跨域消息，并直接构建于
+L1 和 L2 上负责跨域消息传递的底层系统合约之上。
+
+`CrossDomainMessenger` 经扩展后分别派生出
+`L1CrossDomainMessenger` 和 `L2CrossDomainMessenger`。
+这两个合约又在此基础上扩展了各自的旧版 (legacy) API，以便为在 Bedrock 系统升级之前完成集成的应用提供向后兼容。
+
+`L2CrossDomainMessenger` 是一个预部署合约，地址为
+`0x4200000000000000000000000000000000000007`。
+
+`CrossDomainMessenger` 基础接口如下：
+
+```solidity CrossDomainMessenger.sol lines wrap expandable
+interface CrossDomainMessenger {
+    event FailedRelayedMessage(bytes32 indexed msgHash);
+    event RelayedMessage(bytes32 indexed msgHash);
+    event SentMessage(address indexed target, address sender, bytes message, uint256 messageNonce, uint256 gasLimit);
+    event SentMessageExtension1(address indexed sender, uint256 value);
+
+    function MESSAGE_VERSION() external view returns (uint16);
+    function MIN_GAS_CALLDATA_OVERHEAD() external view returns (uint64);
+    function MIN_GAS_CONSTANT_OVERHEAD() external view returns (uint64);
+    function MIN_GAS_DYNAMIC_OVERHEAD_DENOMINATOR() external view returns (uint64);
+    function MIN_GAS_DYNAMIC_OVERHEAD_NUMERATOR() external view returns (uint64);
+    function OTHER_MESSENGER() external view returns (address);
+    function baseGas(bytes memory _message, uint32 _minGasLimit) external pure returns (uint64);
+    function failedMessages(bytes32) external view returns (bool);
+    function messageNonce() external view returns (uint256);
+    function relayMessage(
+        uint256 _nonce,
+        address _sender,
+        address _target,
+        uint256 _value,
+        uint256 _minGasLimit,
+        bytes memory _message
+    ) external payable returns (bytes memory returnData_);
+    function sendMessage(address _target, bytes memory _message, uint32 _minGasLimit) external payable;
+    function successfulMessages(bytes32) external view returns (bool);
+    function xDomainMessageSender() external view returns (address);
+}
+```
+
+## 消息传递 {#message-passing}
+
+`sendMessage` 函数用于发送跨域消息。要在另一端触发执行，需调用
+`relayMessage` 函数。
+成功消息的哈希会存储在 `successfulMessages` 映射中，
+而失败消息的哈希则存储在 `failedMessages`
+映射中。
+
+从 L1 向 L2 发送消息时的用户体验，与从 L2 向 L1 发送交易时略有不同。
+从 L1 到 L2 时，用户无需亲自在 L2 上调用
+`relayMessage`。用户在 L1 上支付 L2 gas 费用后，
+交易会被自动拉取到 L2 并在 L2 上执行。
+从 L2 到 L1 时，用户需要先在 OptimismPortal 上证明其提款，
+然后等待最终确认窗口期结束，再在 OptimismPortal 上完成提款的最终确认；
+此时 OptimismPortal 会调用
+`L1CrossDomainMessenger` 上的 `relayMessage` 来最终完成提款。
+
+## 可升级性 {#upgradability}
+
+L1 和 L2 跨域消息传递器应部署在可升级
+代理之后，以便日后更新消息版本。
+
+## 消息版本控制 {#message-versioning}
+
+消息的版本由其 nonce 的前 2 个字节决定。不同版本的消息
+可能采用不同的序列化和哈希方案。
+之所以保留 nonce 的前两个字节来存放版本元数据，是因为
+消息本身最初并未包含版本字段，而
+`uint256` 类型的 nonce 空间极大，我们可以很方便地将额外数据
+打包进该字段。
+
+### 消息版本 0 {#message-version-0}
+
+```solidity Message Version 0 Encoding
+abi.encodeWithSignature(
+    "relayMessage(address,address,bytes,uint256)",
+    _target,
+    _sender,
+    _message,
+    _messageNonce
+);
+```
+
+### 消息版本 1 {#message-version-1}
+
+```solidity Message Version 1 Encoding lines wrap expandable
+abi.encodeWithSignature(
+    "relayMessage(uint256,address,address,uint256,uint256,bytes)",
+    _nonce,
+    _sender,
+    _target,
+    _value,
+    _gasLimit,
+    _data
+);
+```
+
+## 向后兼容性说明 {#backwards-compatibility-notes}
+
+旧版 messenger 合约中有&quot;被阻止消息&quot; (blocked messages) 的概念，
+通过 `blockedMessages` 映射实现。由于高明的攻击者总能绕过任何消息拦截手段，
+该功能已从 messenger 中移除。此外，移除该功能还能降低
+最终确认提款时的 gas 开销。
+
+&quot;relay id&quot;的概念以及 `relayedMessages` 映射也已移除。
+其设计初衷是为代表用户中继消息的第三方提供资金，
+但由于无法确定被中继的消息是否真正执行成功，
+该机制的实现存在缺陷。

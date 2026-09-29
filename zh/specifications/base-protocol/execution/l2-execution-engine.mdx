@@ -1,0 +1,510 @@
+---
+title: "L2 执行引擎"
+description: "L2 执行引擎规范，详细介绍 EIP-1559 参数、费用金库、Engine API 的用法以及执行层行为。"
+---
+
+本文档概述了将 L1 执行引擎用于 L2 时所需的修改、配置及使用方法。
+
+如需查看完整的 JSON-RPC API 参考 (包括 Flashblocks 端点，以及用于查询预确认状态的 `"pending"` 标签) ，请参阅 [API 参考](/zh/base-chain/api-reference/rpc-overview)。
+
+## 1559 参数 {#1559-parameters}
+
+执行引擎必须能够接受按链配置，用于指定 EIP-1559 分母
+和 EIP-1559 弹性系数。Canyon 之后，执行引擎还应接受一个新值 `EIP1559DenominatorCanyon`，并在
+1559 公式中以该值代替先前的分母。
+
+除此之外，EIP-1559 公式保持不变。
+
+自 Holocene 起，EIP-1559 参数改为[可动态配置](/zh/upgrades/holocene/exec-engine#dynamic-eip-1559-parameters)。
+
+自 Jovian 起，新增了[可配置的最低基础费用](/zh/upgrades/jovian/exec-engine#minimum-base-fee)。
+
+## Extra Data {#extra-data}
+
+在 Holocene 之前，创世区块可以包含任意 `extraData` 值，而所有普通区块的 `extraData` 字段都必须为**空**。
+
+自 Holocene 起，`extraData` 字段用于[编码 EIP-1559 参数](/zh/upgrades/holocene/exec-engine#dynamic-eip-1559-parameters)。
+
+自 Jovian 起，`extraData` 的编码经过扩展，[纳入了 `minBaseFee`](/zh/upgrades/jovian/exec-engine#minimum-base-fee)。
+
+## 存款交易处理 {#deposited-transaction-processing}
+
+Engine 接口借助 [EIP-2718][eip-2718] 对交易类型进行了抽象。
+
+为支持 rollup 功能，引擎实现了对新增的 Deposit [`TransactionType`][eip-2718-transactions] 的处理，详见[存款规范][deposit-spec]。
+
+此类交易可以铸造 L2 ETH、运行 EVM，
+并将 L1 信息写入执行状态中的内置 (enshrined) 合约。
+
+[deposit-spec]: /specifications/base-protocol/bridging/deposits
+
+### 存款交易边界 {#deposited-transaction-boundaries}
+
+交易不能被盲目信任，信任需要通过认证来建立。
+与其他交易类型不同，存款交易不通过签名进行认证，
+而是由 rollup 节点在引擎之外完成认证。
+
+为了安全地处理存款交易，存款 MUST 先经过认证：
+
+* 通过受信任的 Engine API 直接摄入
+* 作为向受信任区块哈希同步过程的一部分 (该区块哈希的可信性来自先前的 Engine API 指令)
+
+存款交易 MUST 绝不能从交易池中获取。
+*在仅处理存款的 rollup 中，可以禁用交易池*
+
+## 费用 {#fees}
+
+经排序的交易 (即不包括存款交易) 需支付 3 类费用：
+优先费、基础费用和 L1 成本费。
+
+### 费用金库 {#fee-vaults}
+
+出于记账需要，这三类费用分别归集到 3 个独立部署的 L2 费用金库中：
+费用支付不会被记录为内部 EVM 调用，因此以这种方式分开存放，更便于区分。
+
+这些地址均为硬编码，指向预部署的代理合约。
+这些代理合约背后是基于 `FeeVault` 部署的金库合约，用于将金库资金安全地转移到 L1。
+
+| 金库名称           | 预部署合约                                                                                       |
+| -------------- | ------------------------------------------------------------------------------------------- |
+| Sequencer 费用金库 | [`SequencerFeeVault`](/zh/specifications/base-protocol/execution/predeploys#sequencerfeevault) |
+| 基础费用金库         | [`BaseFeeVault`](/zh/specifications/base-protocol/execution/predeploys#basefeevault)           |
+| L1 费用金库        | [`L1FeeVault`](/zh/specifications/base-protocol/execution/predeploys#l1feevault)               |
+
+### 优先费 (Sequencer Fee Vault) {#priority-fees-sequencer-fee-vault}
+
+优先费遵循 [eip-1559] 规范，由 L2 区块的费用接收方 (fee-recipient) 收取。
+区块费用接收方 (又称 coinbase 地址) 设置为 Sequencer Fee Vault 地址。
+
+### 基础费用 (Base Fee Vault) {#base-fees-base-fee-vault}
+
+基础费用基本遵循 [eip-1559] 规范，区别在于基础费用不会被销毁，
+而是累加到 Base Fee Vault 的 ETH 账户余额中。
+
+### L1 成本费用 (L1 Fee Vault) {#l1-cost-fees-l1-fee-vault}
+
+协议根据预估的批次提交成本，向 L2 用户额外收取一笔费用，
+用于支付已排序 L2 交易的批次提交开销。
+该费用从 L2 交易发送方的 ETH 余额中扣除，并归集到 L1 Fee Vault 中。
+
+L2 交易中 L1 成本费用部分由哪个 L1 成本函数确定，取决于
+当前已激活的升级。
+
+#### Pre-Ecotone {#pre-ecotone}
+
+在 Ecotone 激活之前，L1 成本的计算公式为：
+`(rollupDataGas + l1FeeOverhead) * l1BaseFee * l1FeeScalar / 1e6` (大整数运算，结果
+以 Wei 为单位，且位于 `uint256` 范围内)
+其中：
+
+* `rollupDataGas` 根据&#95;完整&#95;的已编码交易确定
+  (采用标准 EIP-2718 交易编码，包含签名字段) ：
+  * `rollupDataGas = zeroes * 4 + ones * 16`
+* `l1FeeOverhead` 是 Gas Price Oracle 的 `overhead` 值。
+* `l1FeeScalar` 是 Gas Price Oracle 的 `scalar` 值。
+* `l1BaseFee` 是 L2 链中所记录的最新 L1 origin 的 L1 基础费用。
+
+请注意，`rollupDataGas` 采用与 [eip-2028] 中定义相同的字节成本计算方式，
+区别在于，现在整笔 L2 交易都会计入 L1 calldata 的计费字节数。
+这与 Bedrock 之前对 L2 交易 L1 成本的估算方式一致。
+
+批次交易的压缩、批处理以及固有 gas 成本，由协议通过 Gas Price Oracle 的 `overhead` 和 `scalar` 参数进行计入。
+
+Gas Price Oracle 的 `l1FeeOverhead` 和 `l1FeeScalar`，以及 L1 origin 的 `l1BaseFee`，
+可以通过以下两种等效方式获取：
+
+* 从当前 L2 区块中存入的 L1 属性 (`l1FeeOverhead`、`l1FeeScalar`、`basefee`) 读取
+* 从 L1 Block Info 合约 (`0x4200000000000000000000000000000000000015`) 读取
+  * 调用相应的 solidity `uint256` getter 函数 (`l1FeeOverhead`、`l1FeeScalar`、`basefee`)
+  * 直接读取存储：
+    * L1 basefee 以大端序 `uint256` 存储在槽位 `1`
+    * Overhead 以大端序 `uint256` 存储在槽位 `5`
+    * Scalar 以大端序 `uint256` 存储在槽位 `6`
+
+#### Ecotone L1 成本费用变更 (EIP-4844 DA) {#ecotone-l1-cost-fee-changes-eip-4844-da}
+
+Ecotone 支持通过 Blob 提交批次，而 Blob 采用一个新的费用市场。为此，
+L1 成本按如下方式计算：
+
+`(zeroes*4 + ones*16) * (16*l1BaseFee*l1BaseFeeScalar + l1BlobBaseFee*l1BlobBaseFeeScalar) / 16e6`
+
+其中：
+
+* 该计算为无限精度整数运算，结果以 Wei 为单位，取值范围为
+  `uint256`。
+
+* zeroes 和 ones 分别是&#95;完整&#95;编码的已签名交易中零字节与非零字节的
+  数量。
+
+* `l1BaseFee` 是 L2 链中已登记的最新 L1 origin 的 L1 基础费用。
+
+* `l1BlobBaseFee` 是 blob gas 价格，根据最新登记的 L1 origin 区块的区块头，按照 [EIP-4844][4844-gas] 中描述的方式
+  计算得出。
+
+从概念上讲，上述函数所表达的是下面的公式，其中 `compressedTxSize =
+(zeroes*4 + ones*16) / 16` 可大致视为该
+交易在压缩批次中所占的字节数。
+
+`(compressedTxSize) * (16*l1BaseFee*lBaseFeeScalar + l1BlobBaseFee*l1BlobBaseFeeScalar) / 1e6`
+
+本节开头给出的 Ecotone 精确成本函数将内层的除以 16 推迟到最后一步执行，从而在
+整数运算中保持精度。
+
+[4844-gas]: https://github.com/ethereum/EIPs/blob/master/EIPS/eip-4844.md#gas-accounting
+
+这两个基础费用值及其各自的标量可通过以下两种等效方式获取：
+
+* 从当前 L2 区块存入的 L1 属性 (`l1BaseFeeScalar`、`l1BlobBaseFeeScalar`、`basefee`、
+  `blobBaseFee`) 中读取
+* 从 L1 Block Info 合约 (`0x4200000000000000000000000000000000000015`) 中读取
+  * 使用相应的 Solidity getter 函数
+  * 直接读取存储：
+    * basefee `uint256`，位于槽 `1`
+    * blobBaseFee `uint256`，位于槽 `7`
+    * l1BaseFeeScalar 大端序 `uint32`，位于槽 `3` 的偏移量 `12` 处
+    * l1BlobBaseFeeScalar 大端序 `uint32`，位于槽 `3` 的偏移量 `8` 处
+
+## Engine API {#engine-api}
+
+### `engine_forkchoiceUpdatedV2` {#engine_forkchoiceupdatedv2}
+
+此方法用于更新引擎视为规范 (canonical) 的 L2 区块 (`forkchoiceState` 参数) ，
+并可选择启动区块生产 (`payloadAttributes` 参数) 。
+
+在 rollup 中，各类 forkchoice 更新的含义如下：
+
+* `headBlockHash`：规范链链头的区块哈希。在面向用户的 JSON-RPC 中标记为 `"unsafe"`。
+  节点可以通过带外方式提前应用 L2 区块，并在与 L1 数据发生冲突时进行重组 (reorg) 。
+* `safeBlockHash`：规范链的区块哈希，由 L1 数据推导得出，不太可能发生重组。
+* `finalizedBlockHash`：不可逆的区块哈希，对应争议期的下边界。
+
+为支持 rollup 功能，[`engine_forkchoiceUpdatedV2`][engine&#95;forkchoiceUpdatedV2] 引入了一项向后兼容的变更：扩展后的 `PayloadAttributesV2`
+
+#### 扩展的 PayloadAttributesV2 {#extended-payloadattributesv2}
+
+[`PayloadAttributesV2`][PayloadAttributesV2] 扩展如下：
+
+```js Extended PayloadAttributesV2 lines wrap expandable
+PayloadAttributesV2: {
+    timestamp: QUANTITY
+    prevRandao: DATA (32 bytes)
+    suggestedFeeRecipient: DATA (20 bytes)
+    withdrawals: array of WithdrawalV1
+    transactions: array of DATA
+    noTxPool: bool
+    gasLimit: QUANTITY or null
+}
+```
+
+此处使用的类型表示法沿用 [Ethereum JSON-RPC API
+规范][JSON-RPC-API] 中的 [HEX value encoding]，因为该结构需要通过 JSON-RPC 发送。`array` 指
+JSON 数组。
+
+`transactions` 数组中的每一项都是一个对交易进行编码的字节列表：`TransactionType ||
+TransactionPayload` 或 `LegacyTransaction`，定义见 [EIP-2718][eip-2718]。
+这与 [`ExecutionPayloadV2`][ExecutionPayloadV2] 中的 `transactions` 字段等同
+
+`transactions` 字段是可选的：
+
+* 若为空或缺失：引擎行为不变。sequencer 将 (在启用时) 从交易池中取用交易来构建
+  区块。
+* 若存在且非空：载荷 MUST 以这一确切的交易列表开头进行构建。
+  [rollup 驱动程序][rollup-driver]根据确定性的 L1 输入来确定该交易列表。
+
+`noTxPool` 同样是可选的，它扩展了 `transactions` 的含义：
+
+* 若为 `false`，执行引擎可以在所有 `transactions` 之后，自由地将来自交易池等外部来源的其他交易
+  打包进载荷。这是 L1 节点实现的默认行为。
+* 若为 `true`，执行引擎不得对给定的 `transactions` 列表做任何更改。
+
+如果存在 `transactions` 字段，引擎必须按顺序执行这些交易，并在处理交易出错时返回 `STATUS_INVALID`。
+如果所有交易均能无错执行，则必须返回 `STATUS_VALID`。**注意**：状态转换规则已经过修改，确保存款交易永远不会失败，
+因此如果 `engine_forkchoiceUpdatedV2` 返回 `STATUS_INVALID`，原因必然是某笔批处理交易无效。
+
+就与 L1 的兼容性而言，`gasLimit` 是可选的，但用于 rollup 时则为必需。
+该字段会覆盖区块构建时使用的 gas 上限。
+如果用于 rollup 时未指定该字段，则返回 `STATUS_INVALID`。
+
+[rollup-driver]: /specifications/base-protocol/consensus/specification
+
+### `engine_forkchoiceUpdatedV3` {#engine_forkchoiceupdatedv3}
+
+有关 forkchoice 更新方法的说明，请参阅 [`engine_forkchoiceUpdatedV2`](#engine-forkchoiceupdatedv2)。
+`engine_forkchoiceUpdatedV3` **只能使用 Ecotone 载荷调用。**
+
+为支持 rollup 功能，[`engine_forkchoiceUpdatedV3`][engine&#95;forkchoiceUpdatedV3] 引入了一项向后兼容的变更：扩展后的 `PayloadAttributesV3`
+
+#### 扩展的 PayloadAttributesV3 {#extended-payloadattributesv3}
+
+[`PayloadAttributesV3`][PayloadAttributesV3] 扩展如下：
+
+```js Extended PayloadAttributesV3 lines wrap expandable
+PayloadAttributesV3: {
+    timestamp: QUANTITY
+    prevRandao: DATA (32 bytes)
+    suggestedFeeRecipient: DATA (20 bytes)
+    withdrawals: array of WithdrawalV1
+    parentBeaconBlockRoot: DATA (32 bytes)
+    transactions: array of DATA
+    noTxPool: bool
+    gasLimit: QUANTITY or null
+    eip1559Params: DATA (8 bytes) or null
+    minBaseFee: QUANTITY or null
+}
+```
+
+该对象的要求与扩展的 [`PayloadAttributesV2`](#extended-payloadattributesv2) 相同，
+另外新增了 `parentBeaconBlockRoot`，即该 L2 区块的 L1 origin 区块中的父信标区块根。
+
+从 Ecotone 开始，`parentBeaconBlockRoot` 必须设置为 L1 origin 的 `parentBeaconBlockRoot`；
+如果 L1 上尚未激活涉及 `parentBeaconBlockRoot` 的 Dencun 功能，则必须设置为零值 `bytes32`。
+
+从 Holocene 开始，`eip1559Params` 字段必须编码 EIP1559 参数；在此之前，该字段必须为 `null`。
+详情请参阅[动态 EIP-1559 参数](/zh/upgrades/holocene/exec-engine#dynamic-eip-1559-parameters)。
+
+从 Jovian 开始，新增 `minBaseFee` 字段；在 Jovian 之前，该字段必须为 `null`。
+详情请参阅 [Jovian 最低基础费用](/zh/upgrades/jovian/exec-engine#minimum-base-fee)。
+
+### `engine_newPayloadV2` {#engine_newpayloadv2}
+
+[`engine_newPayloadV2`][engine&#95;newPayloadV2] 无任何修改。
+将一个 L2 区块应用到引擎状态。
+
+### `engine_newPayloadV3` {#engine_newpayloadv3}
+
+[`engine_newPayloadV3`][engine&#95;newPayloadV3] 用于将一个 Ecotone L2 区块应用到引擎状态。此 API 未做任何
+修改。
+`engine_newPayloadV3` **只能以 Ecotone 载荷调用。**
+
+附加参数应按如下方式设置：
+
+* `expectedBlobVersionedHashes` MUST 为空数组。
+* `parentBeaconBlockRoot` MUST 为该 L2 区块所对应 L1 origin 区块中的父信标区块根 (parent beacon block root) 。
+
+### `engine_newPayloadV4` {#engine_newpayloadv4}
+
+[`engine_newPayloadV4`][engine&#95;newPayloadV4] 将一个 Isthmus L2 区块应用到引擎状态。
+Isthmus 硬分叉之后，`ExecutionPayload` 参数将额外包含一个 `withdrawalsRoot` 字段。
+
+**调用 `engine_newPayloadV4` 时只能传入 Isthmus 载荷。**
+
+新增参数应按如下方式设置：
+
+* `executionRequests` 必须 (MUST) 为空数组。
+
+### `engine_getPayloadV2` {#engine_getpayloadv2}
+
+[`engine_getPayloadV2`][engine&#95;getPayloadV2] 无任何修改。
+根据 ID 获取载荷，该载荷由携带 `payloadAttributes` 调用 `engine_forkchoiceUpdatedV2` 时预先准备。
+
+### `engine_getPayloadV3` {#engine_getpayloadv3}
+
+[`engine_getPayloadV3`][engine&#95;getPayloadV3] 按 ID 获取载荷，该载荷由调用时传入了 `payloadAttributes` 的 `engine_forkchoiceUpdatedV3`
+准备。
+`engine_getPayloadV3` **只能用于 Ecotone 载荷。**
+
+#### 扩展后的响应 {#extended-response}
+
+[响应][GetPayloadV3Response]扩展为：
+
+```js Extended GetPayloadV3 Response
+{
+    executionPayload: ExecutionPayload
+    blockValue: QUANTITY
+    blobsBundle: BlobsBundle
+    shouldOverrideBuilder: BOOLEAN
+    parentBeaconBlockRoot: DATA (32 bytes)
+}
+```
+
+[GetPayloadV3Response]: https://github.com/ethereum/execution-apis/blob/main/src/engine/cancun.md#response-2
+
+在 Ecotone 中，该字段 MUST 设置为该 L2 区块所对应 L1 origin 区块的 parentBeaconBlockRoot。
+
+### `engine_getPayloadV4` {#engine_getpayloadv4}
+
+[`engine_getPayloadV4`][engine&#95;getPayloadV4] 按 ID 获取载荷，该载荷由携带 `payloadAttributes` 调用的 `engine_forkchoiceUpdatedV3`
+准备。
+`engine_getPayloadV4` **只能用于 Isthmus 载荷。**
+
+### `engine_signalSuperchainV1` {#engine_signalsuperchainv1}
+
+Engine API 的可选扩展，用于向 Engine 传递超级链 (superchain) 信息：
+V1 用于告知推荐的协议版本和必需的协议版本。
+
+类型：
+
+```javascript SuperchainSignal Type
+SuperchainSignal: {
+  recommended: ProtocolVersion;
+  required: ProtocolVersion;
+}
+```
+
+`ProtocolVersion`：按照协议版本格式规范中的定义编码为 RPC 格式。
+
+参数：
+
+* `signal`：`SuperchainSignal`，通过信号传递的超级链信息。
+
+返回值：
+
+* `ProtocolVersion`：执行引擎所支持的最新 Base 协议版本。
+
+当推荐版本高于执行引擎当前支持的版本时，执行引擎 SHOULD (应当) 向用户发出警告。
+
+如果执行引擎不满足要求的协议版本，则 SHOULD (应当) 采取安全防范措施。
+这可能包括在征得执行引擎运营者同意后停止引擎。
+
+## 网络 {#networking}
+
+执行引擎可以通过 rollup 节点获取从 L1 派生出的全部数据：
+*P2P 网络完全是可选的。*
+
+不过，为了避免 L1 数据检索速度成为瓶颈，SHOULD 启用 P2P 网络功能，以提供以下服务：
+
+* 对等节点发现 ([Disc v5][discv5])
+* [`eth/66`][eth66]：
+  * 交易池 (供 sequencer 节点使用)
+  * 状态同步 (实现快速、无需信任的数据库复制的理想路径)
+  * 历史区块 header 和区块体检索
+  * *新区块则改为通过共识层 (rollup 节点) 获取*
+
+除配置外，无需对 L1 网络功能做任何修改：
+
+* [`networkID`][network-id]：用于将 L2 网络与 L1 及测试网区分开来。
+  其值等于 rollup 网络的 [`chainID`][chain-id]。
+* 激活 Merge 分叉：启用 Engine API 并禁用区块传播，
+  因为没有共识层就无法验证区块 header。
+* 引导节点列表：DiscV5 是一个共享网络，
+  优先连接 L2 节点可以加快[引导][discv5-rationale]速度。
+
+[discv5]: https://github.com/ethereum/devp2p/blob/master/discv5/discv5.md
+
+[eth66]: https://github.com/ethereum/devp2p/blob/master/caps/eth.md
+
+[network-id]: https://github.com/ethereum/devp2p/blob/master/caps/eth.md#status-0x00
+
+[chain-id]: https://github.com/ethereum/EIPs/blob/master/EIPS/eip-155.md
+
+[discv5-rationale]: https://github.com/ethereum/devp2p/blob/master/discv5/discv5-rationale.md
+
+## 同步 {#sync}
+
+执行引擎可以通过不同方式进行同步：
+
+* 理想路径：rollup 节点将由 L1 确定的目标链头告知引擎，再由引擎通过 P2P 网络完成同步。
+* 最坏情况：rollup 节点检测到引擎停滞，完全依靠 L1 数据完成同步，无需任何对等节点。
+
+理想路径更适合让新节点快速上线，
+因为引擎实现可以借助 [snap-sync][snap-sync] 等方法更快地同步状态。
+
+[snap-sync]: https://github.com/ethereum/devp2p/blob/master/caps/snap.md
+
+### 理想路径同步 {#happy-path-sync}
+
+1. rollup 节点无条件地将 L2 链头告知引擎 (这是节点常规运行的一部分) ：
+   * Bedrock / Canyon / Delta 载荷
+     * 使用从 P2P 接收到的最新 L2 区块调用 [`engine_newPayloadV2`][engine&#95;newPayloadV2]。
+     * 使用当前的
+       `unsafe`/`safe`/`finalized` L2 区块哈希调用 [`engine_forkchoiceUpdatedV2`][engine&#95;forkchoiceUpdatedV2]。
+   * Ecotone 载荷
+     * 使用从 P2P 接收到的最新 L2 区块调用 [`engine_newPayloadV3`][engine&#95;newPayloadV3]。
+     * 使用当前的
+       `unsafe`/`safe`/`finalized` L2 区块哈希调用 [`engine_forkchoiceUpdatedV3`][engine&#95;forkchoiceUpdatedV3]。
+2. 引擎从对等节点反向请求区块头，直到父哈希与本地链相匹配
+3. 引擎进行追赶同步：
+   a) 启动某种形式的状态同步，同步至最终确定区块哈希或头部区块哈希
+   b) 某种形式的区块同步拉取区块体，并处理至头部区块哈希
+
+基于 P2P 的具体同步机制不在 L2 规范的范围之内：
+引擎内部的操作与 L1 完全相同 (只是所用的 EVM 支持存款交易) 。
+
+### 最坏情况下的同步 {#worst-case-sync}
+
+1. 执行引擎未同步、未建立对等连接，和/或因其他原因停滞。
+2. rollup 节点持续跟踪执行引擎的最新链头 (轮询 `eth_getBlockByNumber` 和/或维护区块头订阅)
+3. 如果执行引擎处于未同步状态，且未通过 P2P 进行同步 (`eth_syncing`) ，rollup 节点将启动同步
+4. rollup 节点按照 [rollup node spec] 中的说明，逐个插入从 L1 派生的区块，
+   并可能需要应对 L1 重组。
+
+[rollup node spec]: /specifications/base-protocol/consensus/specification
+
+## Ecotone：禁用 Blob 交易 {#ecotone-disable-blob-transactions}
+
+[EIP-4844] 引入了 Blob 交易：它具备 [EIP-1559] 交易的全部功能，
+此外还包含一个“blobs”列表。“blob”即“Binary Large Object” (二进制大对象) ，是一种专门用于在基础层提供数据可用性的数据类型。
+
+Ecotone 升级启用了 Cancun L1 的全部执行特性，唯独 [EIP-4844] 例外：
+Base 作为 L2 不提供 blob 服务，因此禁用了这一新交易类型。
+
+EIP-4844 的禁用方式如下：
+
+* 忽略网络层中对 blob 类型交易的通告。
+* 无论通过 RPC 还是其他途径，blob 类型交易均不得进入交易池。
+* 区块构建代码不会选取 EIP-4844 交易。
+* 包含 EIP-4844 交易的 L2 区块状态转换无效。
+
+[BLOBBASEFEE 操作码](https://eips.ethereum.org/EIPS/eip-7516)依然存在，但由于 L2 不处理任何 blob，其语义已有所改变。该操作码始终向栈中压入值 1。
+
+## Ecotone：信标区块根 {#ecotone-beacon-block-root}
+
+[EIP-4788] 在执行层区块头和 EVM 中引入了“信标区块根” (beacon block root) 。
+该区块根是上一个共识区块中共识层内容的 [SSZ hash-tree-root]。
+
+由于 Bedrock 升级已采用 [EIP-4399]，Base 中已经包含 L1 的 `PREVRANDAO`。
+因此，借助 [EIP-4788]，L1 信标区块根也随之可供使用。
+
+对 Ecotone 升级而言，这意味着：
+
+* L1 origin 的 `parent_beacon_block_root` 现在会嵌入 L2 区块头中。
+* “Beacon roots 合约”在 Ecotone 升级时部署；若在创世时即激活，则直接嵌入创世状态。
+* 区块状态转换过程现在包含与 L1 以太坊相同的信标区块根专用 EVM 处理。
+
+[SSZ hash-tree-root]: https://github.com/ethereum/consensus-specs/blob/master/ssz/simple-serialize.md#merkleization
+
+[EIP-4399]: https://eips.ethereum.org/EIPS/eip-4399
+
+[EIP-4788]: https://eips.ethereum.org/EIPS/eip-4788
+
+[EIP-4844]: https://eips.ethereum.org/EIPS/eip-4844
+
+[eip-1559]: https://eips.ethereum.org/EIPS/eip-1559
+
+[eip-2028]: https://eips.ethereum.org/EIPS/eip-2028
+
+[eip-2718]: https://eips.ethereum.org/EIPS/eip-2718
+
+[eip-2718-transactions]: https://eips.ethereum.org/EIPS/eip-2718#transactions
+
+[PayloadAttributesV3]: https://github.com/ethereum/execution-apis/blob/cea7eeb642052f4c2e03449dc48296def4aafc24/src/engine/cancun.md#payloadattributesv3
+
+[PayloadAttributesV2]: https://github.com/ethereum/execution-apis/blob/584905270d8ad665718058060267061ecfd79ca5/src/engine/shanghai.md#PayloadAttributesV2
+
+[ExecutionPayloadV2]: https://github.com/ethereum/execution-apis/blob/main/src/engine/shanghai.md#executionpayloadv2
+
+[engine_forkchoiceUpdatedV3]: https://github.com/ethereum/execution-apis/blob/cea7eeb642052f4c2e03449dc48296def4aafc24/src/engine/cancun.md#engine_forkchoiceupdatedv3
+
+[engine_forkchoiceUpdatedV2]: https://github.com/ethereum/execution-apis/blob/584905270d8ad665718058060267061ecfd79ca5/src/engine/shanghai.md#engine_forkchoiceupdatedv2
+
+[engine_newPayloadV2]: https://github.com/ethereum/execution-apis/blob/584905270d8ad665718058060267061ecfd79ca5/src/engine/shanghai.md#engine_newpayloadv2
+
+[engine_newPayloadV3]: https://github.com/ethereum/execution-apis/blob/cea7eeb642052f4c2e03449dc48296def4aafc24/src/engine/cancun.md#engine_newpayloadv3
+
+[engine_newPayloadV4]: https://github.com/ethereum/execution-apis/blob/869b7f062830ba51a7fd8a51dfa4678c6d36b6ec/src/engine/prague.md#engine_newpayloadv4
+
+[engine_getPayloadV2]: https://github.com/ethereum/execution-apis/blob/584905270d8ad665718058060267061ecfd79ca5/src/engine/shanghai.md#engine_getpayloadv2
+
+[engine_getPayloadV3]: https://github.com/ethereum/execution-apis/blob/a0d03086564ab1838b462befbc083f873dcf0c0f/src/engine/cancun.md#engine_getpayloadv3
+
+[engine_getPayloadV4]: https://github.com/ethereum/execution-apis/blob/869b7f062830ba51a7fd8a51dfa4678c6d36b6ec/src/engine/prague.md#engine_getpayloadv4
+
+[HEX value encoding]: https://ethereum.org/en/developers/docs/apis/json-rpc/#hex-encoding
+
+[JSON-RPC-API]: https://github.com/ethereum/execution-apis
+
+## P2P 变更 {#p2p-modifications}
+
+Base 执行节点的以太坊节点记录 (ENR) 必须包含一个 `opel` 键值对，其中键为
+`opel`，值为 [EIP-2124](https://eips.ethereum.org/EIPS/eip-2124) 分叉 ID (fork id) 。
+EL 使用与 CL 不同的键，以防止 EL 节点与 CL 节点相互连接。

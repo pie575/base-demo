@@ -1,0 +1,55 @@
+---
+title: "Registro de cambios"
+description: "Notas de migración por hardfork y por funcionalidad para el estándar de tokens B20, ordenadas de la más reciente a la más antigua, con nuevos métodos, elementos obsoletos y fechas de activación."
+---
+
+Notas de migración por hardfork y por funcionalidad para el [estándar de tokens B20](/es/specifications/b20). Cada entrada de Cobalt es un registro de cambios conciso y centrado en el código sobre un cambio de funcionalidad acotado que abarca un hardfork. Las más recientes aparecen primero.
+
+<Note>
+  Las firmas de los métodos y eventos de B20 forman parte de la superficie de consenso de la cadena. Los selectores y el comportamiento existentes no cambian; el estándar evoluciona únicamente mediante adiciones.
+</Note>
+
+## Ordinales de hardfork {#hardfork-ordinals}
+
+| Ordinal | Hardfork | Estado  |
+| ------- | -------- | ------- |
+| `01`    | Beryl    | Activo  |
+| `02`    | Cobalt   | Próximo |
+
+## [Cobalt](/es/upgrades/cobalt/overview) (Próximamente) — Ordinal 02 {#cobalt-upcoming-ordinal-02}
+
+| Producto(s)               | Cambio                                                       | Interfaces afectadas           | Entrada                                                                                                     |
+| ------------------------- | ------------------------------------------------------------ | ------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| B20 Asset                 | Programación de actualizaciones del multiplicador (ERC-8056) | `IB20Asset`                    | [Multiplicador / ERC-8056](/es/base-chain/specs/reference/b20/changelog/02-cobalt-b20asset-multiplier)         |
+| B20 Asset, B20 Stablecoin | Superficie de incautación + retirada de `burnBlocked`        | `IB20` (superficie compartida) | [Superficie de incautación](/es/base-chain/specs/reference/b20/changelog/02-cobalt-b20-seize)                  |
+| PolicyRegistry            | Políticas compuestas (UNION / INTERSECT)                     | `IPolicyRegistry`              | [Políticas compuestas](/es/base-chain/specs/reference/b20/changelog/02-cobalt-policyregistry-composite-policy) |
+
+## [Beryl](/es/upgrades/beryl/overview) — Versión inicial {#beryl-initial-release}
+
+| Red          | Activación |
+| ------------ | ---------- |
+| Base mainnet | 2026-06-25 |
+| Base Sepolia | 2026-06-18 |
+
+Incluido en la [actualización Beryl](/es/upgrades/beryl/overview).
+
+**Añadido**
+
+* El estándar B20 como precompilado nativo: un superconjunto de ERC-20 con paridad completa de selectores y comportamiento para `transfer`, `transferFrom`, `approve`, `allowance`, `balanceOf`, `totalSupply`, `name`, `symbol`, `decimals`, `Transfer` y `Approval`
+* [Control de acceso basado en roles](/es/specifications/b20/concepts/roles-and-pause#2-roles) con roles integrados, roles definidos por el usuario en el grafo de roles y `renounceLastAdmin` para operar de forma permanente sin administrador
+* Precompilado singleton [PolicyRegistry](/es/specifications/b20/concepts/policies#21-the-registry-and-the-token) con los tipos de política `BLOCKLIST`, `ALLOWLIST`, `UNION` e `INTERSECT`, transferencia de administración en dos pasos y las políticas integradas `ALWAYS_ALLOW` y `ALWAYS_BLOCK`
+* [Seis ámbitos de política](/es/specifications/b20/concepts/policies#32-policy-scopes) en cada token, que cubren el emisor, el receptor y el ejecutor de las transferencias, el receptor de las acuñaciones, y el titular y el receptor de las incautaciones
+* [`seizeWithMemo`](/specifications/b20/reference/interfaces/ib20/seize-with-memo) para transferencias de saldo por motivos de cumplimiento normativo
+* [Variantes con memo](/specifications/b20/reference/interfaces/ib20) de transfer, transferFrom, mint, burn y seize, que emiten `Memo` justo después del evento principal
+* [Pausa granular](/es/specifications/b20/concepts/roles-and-pause#3-pause) por `PausableFeature`: `TRANSFER`, `MINT`, `BURN` y `SEIZE`
+* [Límites de suministro opcionales](/specifications/b20/reference/interfaces/ib20/supply-cap), con `type(uint128).max` como valor centinela que indica ausencia de límite y como suministro máximo
+* [ERC-2612 `permit`](/es/specifications/b20) con un dominio EIP-712 en la versión `"1"`
+* [ERC-7572 `contractURI`](/specifications/b20/reference/interfaces/ib20/contract-uri) y actualizaciones de nombre, símbolo y URI restringidas por `METADATA_ROLE`
+* Precompilado singleton [B20Factory](/specifications/b20/reference/interfaces/ib20-factory/create-b20) con direcciones deterministas que codifican la variante y semántica de inicialización mediante `initCalls`
+* Control mediante ActivationRegistry de las llamadas a PolicyRegistry que modifican el estado
+* La [variante `ASSET`](/es/specifications/b20/concepts/token-types#4-asset): `OPERATOR_ROLE`, multiplicadores de interfaz con precisión WAD y actualizaciones programadas e instantáneas, anuncios, `batchMint` y metadatos adicionales definidos por el emisor
+* La [variante `STABLECOIN`](/es/specifications/b20/concepts/token-types#5-stablecoin): 6 decimales fijos y un código `currency()` que se establece una sola vez al crear el token
+
+**Obsoleto**
+
+* `burnBlocked` y `BURN_BLOCKED_ROLE`, que se mantienen por compatibilidad con versiones anteriores. Los nuevos flujos de incautación usan `seizeWithMemo`.

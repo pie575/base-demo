@@ -1,0 +1,97 @@
+---
+title: "错误"
+description: "B20 自定义错误、选择器及其触发条件。"
+---
+
+*完整列出所有自定义错误、选择器及其触发条件。选择器是错误签名的 4 字节 `keccak256` 哈希值，可通过 `cast sig "ErrorName(types...)"` 计算得出。枚举参数按其底层 `uint8` 类型编码。*
+
+*注意：部分错误名称在多个文件中重复使用，但参数不同 (或不带参数) ，因此选择器也随之不同。`PolicyNotFound()` ([`IPolicyRegistry`](/specifications/b20/reference/interfaces/i-policy-registry)) 与 `PolicyNotFound(uint64)` ([`IB20`](/specifications/b20/reference/interfaces/ib20)) 是互不相关的两个错误，选择器各不相同；`Unauthorized()` (`IB20` / `IPolicyRegistry`) 与 `Unauthorized(address)` ([`IActivationRegistry`](/specifications/b20/reference/interfaces/i-activation-registry)) 也是如此。相反，`LengthMismatch(uint256,uint256)` 在 [`IB20Asset`](/specifications/b20/reference/interfaces/ib20-asset) 和 [`B20FactoryLib`](https://github.com/base/base-std/blob/main/src/lib/B20FactoryLib.sol) 中共用同一个选择器——二者虽各自独立声明，但签名完全相同。*
+
+## [`IB20`](/specifications/b20/reference/interfaces/ib20) {#ib20}
+
+| 错误                                                                          | 选择器          | 触发条件                                                                          |
+| --------------------------------------------------------------------------- | ------------ | ----------------------------------------------------------------------------- |
+| `NonPayable()`                                                              | `0x6fb1b0e9` | 调用非 payable 的代币选择器时附带了 ETH。                                                   |
+| `AccessControlUnauthorizedAccount(address account, bytes32 neededRole)`     | `0xe2517d3f` | `account` 未持有 `neededRole`。                                                   |
+| `Unauthorized()`                                                            | `0x82b42900` | 调用者未通过某项位置性授权检查，且该检查无法表述为“缺少角色 X”。                                            |
+| `ContractPaused(uint8 feature)`                                             | `0xfd8c4245` | 该操作所属的 `PausableFeature` 当前处于暂停状态。                                            |
+| `InsufficientAllowance(address spender, uint256 allowance, uint256 needed)` | `0x192b9e4e` | 执行所请求的 `transferFrom` 时，`spender` 的授权额度小于 `needed`。                           |
+| `InsufficientBalance(address sender, uint256 balance, uint256 needed)`      | `0xdb42144d` | 执行所请求的转账或销毁时，`sender` 的余额小于 `needed`。                                         |
+| `InvalidSender(address sender)`                                             | `0x4c14f64c` | 转账的源地址无效 (通常为 `address(0)`) 。                                                 |
+| `InvalidReceiver(address receiver)`                                         | `0x9cfea583` | 转账的目标地址无效 (`address(0)` 或任何带 B20 前缀的地址) 。                                     |
+| `InvalidApprover(address approver)`                                         | `0x8bc146c4` | 授权的 `owner` 地址无效 (通常为 `address(0)`) 。                                         |
+| `InvalidSpender(address spender)`                                           | `0x4e15efda` | 授权的 `spender` 地址无效 (通常为 `address(0)`) 。                                       |
+| `InvalidAmount()`                                                           | `0x2c5211c6` | 在要求非零值的位置传入了为零的金额参数。不适用于 ERC-20 金额参数。                                         |
+| `EmptyFeatureSet()`                                                         | `0x4861ff45` | 向要求至少包含一个元素的函数传入了空数组。                                                         |
+| `InvalidSupplyCap(uint256 currentSupply, uint256 proposedCap)`              | `0x0a3780ce` | 提议的供应上限低于当前 `totalSupply`，或高于 `type(uint128).max`。                            |
+| `SupplyCapExceeded(uint256 cap, uint256 attempted)`                         | `0x4b344b11` | 此次铸造将使 `totalSupply` 超过所配置的上限。                                                |
+| `PolicyForbids(bytes32 policyScope, uint64 policyId)`                       | `0xa43fec12` | 某个策略槽拒绝了该操作。                                                                  |
+| `PolicyNotFound(uint64 policyId)`                                           | `0xcccad523` | 所提供的策略 ID 在策略注册表中不存在。                                                         |
+| `UnsupportedPolicyType(bytes32 policyScope)`                                | `0xcdd98a4a` | `policyScope` 不是该代币 (或其变体) 支持的槽。                                              |
+| `AccountNotSeizable(address account)`                                       | `0x91dbbc8d` | 对在 `SEIZE_EXEMPT_POLICY` 下豁免扣押 (仍处于授权状态) 的 `from` 调用了 `seizeWithMemo`。        |
+| `AccountNotBlocked(address account)`                                        | `0x64a5cb46` | 对当前在 `TRANSFER_SENDER_POLICY` 下处于授权状态 (即未被封禁) 的 `from` 调用了已弃用的 `burnBlocked`。 |
+| `ExpiredSignature(uint256 deadline)`                                        | `0xbd2a913c` | 提交的 EIP-2612 `permit` 的 `deadline` 严格小于 `block.timestamp`。                    |
+| `InvalidSigner(address signer, address owner)`                              | `0x7ba5ffb5` | 对 EIP-2612 `permit` 执行 ECDSA 恢复得到的 `signer` 与声明的 `owner` 不一致。                 |
+| `LastAdminCannotRenounce()`                                                 | `0x361513e7` | 仅剩的唯一管理员调用了 `renounceRole(DEFAULT_ADMIN_ROLE, ...)`。                          |
+| `NotSoleAdmin()`                                                            | `0x2a98e73b` | 在还有其他账户持有 `DEFAULT_ADMIN_ROLE` 时调用了 `renounceLastAdmin()`。                    |
+| `AccessControlBadConfirmation()`                                            | `0x6697b232` | 传给 `renounceRole` 的 `callerConfirmation` 参数不是 `msg.sender`。                   |
+
+## [`IB20Asset`](/specifications/b20/reference/interfaces/ib20-asset) {#ib20asset}
+
+| 错误                                                  | 选择器          | 触发条件                                                                                              |
+| --------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------- |
+| `AnnouncementIdAlreadyUsed(string id)`              | `0xd10b3c9e` | 调用 `announce` 时传入的 `id` 已被使用。                                                                     |
+| `InvalidMetadataKey()`                              | `0x86ea3abb` | 调用 `updateExtraMetadata` 时传入的 `key` 为空。                                                           |
+| `InvalidMultiplier()`                               | `0x6f12f3dc` | 调用乘数设置函数 (`updateUIMultiplier` 或已弃用的 `updateMultiplier`) 时，传入的乘数为零或超过 `type(uint128).max` 溢出保护上限。 |
+| `EffectiveAtInPast(uint256 effectiveAt)`            | `0x14119cf6` | 调用 `updateUIMultiplier` 时传入的 `effectiveAt` 不是未来时间。                                                |
+| `EffectiveAtTooFar(uint256 effectiveAt)`            | `0x1ce214fa` | 调用 `updateUIMultiplier` 时传入的 `effectiveAt` 超过 `type(uint64).max`。                                 |
+| `UIMultiplierUpdateExists(uint256 effectiveAt)`     | `0x4481a68e` | 调用 `updateUIMultiplier` 时，已存在一个有效的待生效更新。                                                          |
+| `UIMultiplierUpdateDoesNotExist()`                  | `0xa7d6a5ca` | 调用 `cancelUIMultiplierUpdate` 时，不存在有效的待生效更新。                                                      |
+| `LengthMismatch(uint256 leftLen, uint256 rightLen)` | `0xab8b67c6` | 调用批处理函数时，传入的并行数组长度不一致。                                                                            |
+| `EmptyBatch()`                                      | `0xc2e5347d` | 调用批处理函数时传入的数组为空。                                                                                  |
+| `AnnouncementInProgress()`                          | `0x5c5f0829` | 由 `announce` 分派的内部调用试图再次调用 `announce`。                                                            |
+| `InternalCallMalformed(bytes call)`                 | `0x4e2f143e` | 由 `announce` 分派的内部调用长度不足四个字节。                                                                     |
+| `InternalCallFailed(bytes call)`                    | `0xb288a127` | 由 `announce` 分派的内部调用发生普通 revert 回滚 (不向上冒泡原因) 。                                                    |
+
+## [`IB20Factory`](/specifications/b20/reference/interfaces/ib20-factory) {#ib20factory}
+
+| 错误                                                 | 选择器          | 触发条件                                                                                       |
+| -------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------ |
+| `NonPayable()`                                     | `0x6fb1b0e9` | 调用非 payable 的工厂选择器时附带了 ETH。                                                        |
+| `TokenAlreadyExists(address token)`                | `0x15ef3a57` | 由 `(variant, msg.sender, salt)` 派生出的确定性地址上已存在代币。                                           |
+| `InvalidVariant()`                                 | `0xf10e8e43` | `variant` 不是可识别的 `B20Variant`。                                                             |
+| `UnsupportedVersion(uint8 version, uint8 variant)` | `0xc0d8b4e0` | `params` 的首个 `version` 字节与所请求变体的任何已知编码均不匹配。                                                |
+| `MissingRequiredField(string field)`               | `0x4a43ae87` | 某个必需的字符串参数为空字符串。                                                                           |
+| `InvalidCurrency(string code)`                     | `0x997c1de8` | 稳定币的 `currency` 非空，但包含 `A`-`Z` 以外的字节。                                                      |
+| `InvalidDecimals(uint8 decimals)`                  | `0xca950391` | 资产的 `decimals` 超出 `[B20Constants.MIN_ASSET_DECIMALS, B20Constants.MAX_ASSET_DECIMALS]` 范围。 |
+| `InitCallFailed(uint256 index)`                    | `0x4eae0860` | 某个 `initCalls` 调用发生回滚，且未向上传递回滚原因。                                                          |
+
+## [`IPolicyRegistry`](/specifications/b20/reference/interfaces/i-policy-registry) {#ipolicyregistry}
+
+| 错误                                         | 选择器          | 触发条件                                                                                  |
+| ------------------------------------------ | ------------ | ------------------------------------------------------------------------------------- |
+| `NonPayable()`                             | `0x6fb1b0e9` | 调用非 payable 的策略注册表选择器时附带了 ETH。                                                        |
+| `Unauthorized()`                           | `0x82b42900` | 调用者不是该操作所要求的管理员。                                                                      |
+| `PolicyNotFound()`                         | `0x720caa4f` | 所引用的策略 ID 不存在。                                                                        |
+| `IncompatiblePolicyType()`                 | `0xf1011ef5` | 该操作与策略类型不兼容。                                                                          |
+| `ZeroAddress()`                            | `0xd92e233d` | 某个必需的地址参数为零地址。                                                                        |
+| `BatchSizeTooLarge(uint256 maxBatchSize)`  | `0x083e2f67` | 成员批次超出注册表上限。                                                                          |
+| `NoPendingAdmin()`                         | `0xb4539afa` | 调用 `finalizeUpdateAdmin` 时尚未暂存待定管理员。                                                  |
+| `ChildPoliciesOutsideOfRange()`            | `0x697ec868` | 创建或更新组合策略时，子策略数量超出 `[MIN_COMPOSITE_CHILD_POLICIES, MAX_COMPOSITE_CHILD_POLICIES]` 范围。 |
+| `InvalidChildPolicy(uint64 childPolicyId)` | `0x46508ef6` | 某个子策略不是已存在的简单策略 (ALLOWLIST/BLOCKLIST) 。                                               |
+
+## [`IActivationRegistry`](/specifications/b20/reference/interfaces/i-activation-registry) {#iactivationregistry}
+
+| 错误                                     | 选择器          | 触发条件                                                       |
+| -------------------------------------- | ------------ | ---------------------------------------------------------- |
+| `Unauthorized(address caller)`         | `0x8e4a23d6` | 调用者不是激活管理员。                                                |
+| `AlreadyActivated(bytes32 feature)`    | `0x866b0041` | 对已激活的功能调用了 `activate`。                                     |
+| `FeatureNotActivated(bytes32 feature)` | `0xb9b2a425` | 对未激活的功能调用了 `checkActivated`，或对已处于未激活状态的功能调用了 `deactivate`。 |
+| `DelegateCallNotAllowed()`             | `0x0d89438e` | 通过 `DELEGATECALL` 或 `CALLCODE` 调用了预编译合约。                   |
+| `StaticCallNotAllowed()`               | `0xbeaba5b7` | 在 `STATICCALL` 调用帧中调用了会修改状态的入口点。                           |
+
+## [`B20FactoryLib`](https://github.com/base/base-std/blob/main/src/lib/B20FactoryLib.sol) {#b20factorylib}
+
+| 错误                                                  | 选择器          | 触发条件                          |
+| --------------------------------------------------- | ------------ | ----------------------------- |
+| `LengthMismatch(uint256 leftLen, uint256 rightLen)` | `0xab8b67c6` | 传入 `build*` 辅助函数的两个并行数组长度不一致。 |

@@ -1,0 +1,79 @@
+---
+title: "Descripción general"
+description: "Azul es la primera actualización de red independiente de Base. Se centra en reforzar la seguridad y la descentralización, acelerar el camino hacia 1 gigagas/s y mejorar la experiencia de los desarrolladores."
+---
+
+|         | Estado | Fecha               |
+| ------- | ------ | ------------------- |
+| Sepolia | Activa | 20 de abril de 2026 |
+| Mainnet | Activa | 28 de mayo de 2026  |
+
+## Características {#features}
+
+<AccordionGroup>
+  <Accordion title="EIP-7823: límite superior para MODEXP">
+    **EIP** · Ejecución
+
+    Limita las entradas del precompilado MODEXP a un máximo de 1024 bytes por campo. Se rechazan las llamadas con entradas de mayor tamaño.
+  </Accordion>
+
+  <Accordion title="EIP-7825: límite de gas por transacción">
+    **EIP** · Ejecución
+
+    Introduce a nivel de protocolo un límite máximo de gas de 16.777.216 (2^24) por transacción. Las transacciones que superan este límite se rechazan durante la validación, y Base adopta el mismo límite que L1 para maximizar la equivalencia con Ethereum.
+  </Accordion>
+
+  <Accordion title="EIP-7883: aumento del costo de gas de MODEXP">
+    **EIP** · Ejecución
+
+    Eleva el costo mínimo de gas del precompilado MODEXP de 200 a 500 y triplica el resultado del cálculo general del costo.
+  </Accordion>
+
+  <Accordion title="EIP-7939: opcode CLZ">
+    **EIP** · Ejecución
+
+    Añade un nuevo opcode CLZ que cuenta los bits cero iniciales de una palabra de 256 bits y devuelve 256 si la entrada es cero.
+  </Accordion>
+
+  <Accordion title="EIP-7951: precompilado secp256r1">
+    **EIP** · Ejecución
+
+    Especifica el precompilado secp256r1 en la dirección 0×100. A partir de Azul, el costo de gas aumenta a 6.900 para igualar el costo de gas de L1 especificado en EIP-7951.
+  </Accordion>
+
+  <Accordion title="EIP-7642: eth/69">
+    **EIP** · Redes
+
+    Actualiza el protocolo de red (wire protocol) de Ethereum a la versión 69: elimina campos legacy del mensaje Status y simplifica el handshake.
+  </Accordion>
+
+  <Accordion title="Eliminación de saldos de cuentas y recibos">
+    **Base** · Redes
+
+    Simplifica la carga útil de FlashblocksMetadata al eliminar new&#95;account&#95;balances y receipts del formato WebSocket de Flashblocks.
+  </Accordion>
+
+  <Accordion title="Uso del ID de protocolo basev0 para discv5">
+    **Base** · Redes
+
+    Actualiza el descubrimiento de la capa de ejecución para que use basev0 como ID de protocolo, de modo que los nodos de Base puedan encontrarse más rápido, sobre todo en redes más pequeñas como Sepolia.
+  </Accordion>
+
+  <Accordion title="EIP-7910: método RPC eth_config">
+    **EIP** · RPC
+
+    Introduce el método JSON-RPC eth&#95;config, que devuelve parámetros de configuración de la cadena, como las marcas de tiempo de activación de los forks.
+  </Accordion>
+
+  <Accordion title="Uso de la Engine API">
+    **Base** · RPC
+
+    A partir de la activación de Azul, la producción e importación de bloques utilizan los siguientes métodos de la Engine API: engine&#95;forkchoiceUpdatedV3 para iniciar la construcción de bloques y sincronizar el forkchoice, y engine&#95;getPayloadV5 para obtener las cargas útiles construidas.
+  </Accordion>
+
+  <Accordion title="Multipruebas">
+    **Base** · Pruebas
+
+    Proof System introduce un sistema de múltiples pruebas para los checkpoints de L2, en el que AggregateVerifier puede verificar una o dos pruebas de una misma propuesta antes de que los retiros dependan de ella.
+  </Accordion>
+</AccordionGroup>

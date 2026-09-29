@@ -1,0 +1,362 @@
+---
+title: "Puente Base-Solana"
+description: "Transfiere tokens y mensajes entre Base y Solana Mainnet a través del puente"
+---
+
+import { GithubRepoCard } from "/snippets/es/GithubRepoCard.mdx"
+
+El puente Base-Solana permite transferir tokens y enviar mensajes en ambas direcciones entre las redes Base y
+Solana. Con este puente puedes:
+
+* **Transferir tokens** entre Base y Solana
+* **Enviar mensajes arbitrarios entre cadenas**
+* **Combinar ambos flujos (transferencias con llamadas arbitrarias)**
+* **Desplegar tokens envueltos** en cualquiera de las dos cadenas
+
+Esta guía abarca la arquitectura del puente, las direcciones de producción y patrones prácticos de
+implementación.
+
+## Cómo funciona {#how-it-works}
+
+### En Base {#on-base}
+
+El contrato del puente de Base bloquea o quema tokens al enviarlos a Solana, y acuña o desbloquea
+tokens al recibirlos desde Solana. El propio contrato Bridge construye árboles de Merkle a partir de
+los mensajes salientes. Los validadores verifican la raíz de Merkle cada ~300 bloques finalizados y la retransmiten a
+Solana. Después, demuestras que tu mensaje existe en el árbol para completar la transferencia en Solana.
+
+<Info>
+  Al transferir tokens mediante el puente hacia Solana, los tokens nativos de Base se bloquean y los tokens nativos de Solana se queman.
+  Al transferir tokens mediante el puente hacia Base, los tokens nativos de Solana se acuñan y los tokens nativos de Base se desbloquean.
+</Info>
+
+**Contratos inteligentes clave:**
+
+* [**Bridge Contract**](https://github.com/base/bridge/blob/main/base/src/Bridge.sol): gestiona las transferencias salientes
+* [**CrossChainERC20**](https://github.com/base/bridge/blob/main/base/src/CrossChainERC20.sol): tokens acuñables/quemables para transferencias entre cadenas
+* [**BridgeValidator**](https://github.com/base/bridge/blob/main/base/src/BridgeValidator.sol): valida mensajes con firmas de oráculos
+* [**Twin Contract**](https://github.com/base/bridge/blob/main/base/src/Twin.sol): tu contrato inteligente personal en Base para ejecutar llamadas desde Solana
+
+<Tip>
+  **¿Qué es el Twin Contract?**
+  Cada billetera de Solana se corresponde de forma determinista con un contrato Twin en Base. Cuando incluyes una llamada a un contrato
+  en un mensaje del puente, la llamada se ejecuta desde este contrato Twin; es decir, el Twin pasa a ser `msg.sender` en Base.
+</Tip>
+
+### En Solana {#on-solana}
+
+El programa del puente de Solana gestiona las transferencias de tokens bloqueando o quemando tokens y emitiendo eventos.
+En el caso de la mensajería, los validadores retransmiten estos eventos a Base, donde se ejecutan a través de tu contrato
+Twin.
+
+**Programas clave (Solana Mainnet-Beta):**
+
+* [**Bridge Program**](https://github.com/base/bridge/blob/main/solana/programs/bridge): gestiona las transferencias salientes y los compromisos de mensajes.
+* [**Base Relayer Program**](https://github.com/base/bridge/blob/main/solana/programs/base_relayer): relayer opcional que puede pagar por adelantado el gas en Base.
+
+<Info>
+  El programa relayer no forma parte del núcleo del puente. Es una capa opcional que, por comodidad, puede pagar
+  las comisiones de gas de Base en nombre del usuario de Solana en la dirección Solana → Base.
+
+  Aun así, el usuario tendría que pagar la comisión de gas añadiendo `PayForRelay` a la transacción de Solana.
+  Si el usuario no añade `PayForRelay`, el programa relayer no pagará la comisión de gas.
+</Info>
+
+Puedes acceder al repositorio completo aquí:
+
+<GithubRepoCard title="Base Bridge - Repositorio oficial" githubUrl="https://github.com/base/bridge" />
+
+## Flujos de bridging {#bridging-flows}
+
+<CardGroup cols={3}>
+  <Card title="Solana → Base" icon="arrow-right" href="#solana-to-base">
+    Modelo push con relayer opcional para ejecución instantánea en Base
+  </Card>
+
+  <Card title="Base → Solana" icon="arrow-left" href="#base-to-solana">
+    Quema y desbloqueo basados en pruebas, con custodia total
+  </Card>
+
+  <Card title="Terminally Onchain" icon="command-line" href="#terminally-onchain-example">
+    Interfaz de terminal lista para producción para bridging y llamadas a contratos
+  </Card>
+</CardGroup>
+
+## De Solana a Base {#solana-to-base}
+
+**Flujo:** Bloquear SOL/SPL → (Opcional) Pagar la retransmisión → Los validadores aprueban → Acuñar + ejecutar en Base
+
+El puente de Solana a Base utiliza un modelo de extracción (pull) que consta de 3 pasos:
+
+1. **Iniciar el puente en Solana**: bloquea tu SOL o tu token SPL nativo en una bóveda de Solana
+2. **Esperar a que los validadores preaprueben el mensaje**: los validadores verifican y aprueban tu mensaje de puente
+3. **Ejecutar el mensaje en Base**: el mensaje aprobado se ejecuta en Base para acuñar SOL y ejecutar cualquier llamada arbitraria adicional
+
+<Info>
+  Al transferir de Solana a Base, los SOL/SPL nativos se bloquean y se acuña SOL en formato ERC20 en Base.
+</Info>
+
+<Warning>
+  Si tu mensaje de Solana → Base incluye una llamada para ejecutar, debes asegurarte
+  de que la llamada codificada en ABI sea **ejecutable en Base**. Una llamada que no se pueda ejecutar
+  en Base **no se puede deshacer**. Si transfieres tokens en la misma transacción,
+  esos tokens quedarán **bloqueados**.
+</Warning>
+
+Los scripts de referencia (retransmisión automática, envoltura de tokens, utilidades de CLI) se encuentran en el directorio `scripts/` del repositorio oficial:
+
+<GithubRepoCard title="Scripts de CLI de Solana → Base" githubUrl="https://github.com/base/bridge/tree/main/scripts/src/commands/sol/bridge" />
+
+### Ejemplo de retransmisión automática {#auto-relay-example}
+
+Este es un script de ejemplo que muestra cómo transferir SOL por el puente con retransmisión automática
+
+```typescript solToBaseWithAutoRelay/index.ts lines wrap expandable
+// Configuración
+const TO = "0x8c1a617bdb47342f9c17ac8750e0b070c372c721"; // Dirección en Base
+const AMOUNT = 0.001; // Cantidad de SOL
+
+// Transferir SOL por el puente con retransmisión automática
+const ixs = [
+  getBridgeSolInstruction({
+    payer,
+    from: payer,
+    solVault: solVaultAddress,
+    bridge: bridgeAccountAddress,
+    outgoingMessage,
+    to: toBytes(TO),
+    remoteToken: toBytes("0xC5b9112382f3c87AFE8e1A28fa52452aF81085AD"), // SOL en Base
+    amount: BigInt(AMOUNT * 10**9),
+  }),
+  await buildPayForRelayIx(RELAYER_PROGRAM_ID, outgoingMessage, payer)
+];
+
+await buildAndSendTransaction(SOLANA_RPC_URL, ixs, payer);
+```
+
+Para más detalles, consulta el [script de retransmisión de Solana a Base](https://github.com/base/bridge/blob/main/scripts/src/commands/sol/bridge/solana-to-base/bridge-sol.handler.ts).
+
+### Envolver tokens SPL personalizados {#wrap-custom-spl-tokens}
+
+El ejemplo anterior muestra cómo transferir SOL nativo a Base mediante el puente.
+Para transferir tokens SPL personalizados,
+debes crear representaciones ERC20 envueltas en Base con CrossChainERC20Factory.
+
+<GithubRepoCard title="Ejemplo de envoltura de tokens" githubUrl="https://github.com/base/bridge/blob/main/scripts/src/commands/sol/bridge/solana-to-base/wrap-token.handler.ts" />
+
+```typescript wrapSolTokenOnBase/index.ts lines wrap expandable
+// Desplegar el token envuelto en Base
+const mintBytes32 = getBase58Codec().encode(SOLANA_SPL_MINT_ADDRESS).toHex();
+
+await client.writeContract({
+  address: "0x58207331CBF8Af87BB6453b610E6579D9878e4EA", // Factory
+  abi: TokenFactory,
+  functionName: "deploy",
+  args: [`0x${mintBytes32}`, "Token Name", "SYMBOL", 9],
+});
+```
+
+## De Base a Solana {#base-to-solana}
+
+**Flujo:** Quemar SOL ERC20 en Base → Esperar la finalización → Generar la prueba de Merkle → Ejecutar en Solana
+
+Quema los tokens envueltos en Base, espera a que el mensaje sea demostrable y, a continuación, ejecuta la prueba en
+Solana para desbloquear el activo nativo. Esta ruta ofrece custodia total y requiere un *prover*.
+
+<GithubRepoCard title="Ejemplo de Base → Solana" githubUrl="https://github.com/base/bridge/blob/main/scripts/src/internal/sol/base.ts" />
+
+```typescript bridgeSolFromBaseToSolana/index.ts lines wrap expandable
+// Paso 1: Quemar SOL en Base
+const transfer = {
+  localToken: "0xC5b9112382f3c87AFE8e1A28fa52452aF81085AD", // SOL (en Base)
+  remoteToken: pubkeyToBytes32(SOL_ADDRESS),
+  to: pubkeyToBytes32(solanaAddress),
+  remoteAmount: BigInt(AMOUNT * 10**9),
+};
+
+const txHash = await client.writeContract({
+  address: "0xB2068ECCDb908902C76E3f965c1712a9cF64171E", // Contrato Bridge
+  abi: Bridge,
+  functionName: "bridgeToken",
+  args: [transfer, []],
+});
+
+// Paso 2: Esperar a la finalización
+const isProvable = await isBridgeMessageProvable(txHash);
+
+// Paso 3: Generar la prueba
+const { event, rawProof } = await generateProof(txHash, baseBlockNumber);
+
+// Paso 4: Ejecutar en Solana
+const proveIx = getProveMessageInstruction({
+  nonce: event.message.nonce,
+  sender: toBytes(event.message.sender),
+  data: toBytes(event.message.data),
+  proof: rawProof.map(e => toBytes(e)),
+  messageHash: toBytes(event.messageHash),
+});
+
+const relayIx = getRelayMessageInstruction({ message: messagePda });
+await buildAndSendTransaction(SOLANA_RPC_URL, [proveIx, relayIx], payer);
+```
+
+<Warning>
+  Si operas un relayer que firma y envía transacciones de Solana en nombre de los usuarios en la dirección **Base → Solana**,
+  **no** firmes transacciones que exijan la clave pública (pubkey) de tu relayer como firmante.
+
+  Un usuario malintencionado puede codificar una transacción que incluya la pubkey de tu relayer como firmante obligatorio; si
+  la firmas y la envías, podrías autorizar sin querer instrucciones arbitrarias (incluso algunas
+  capaces de robar los fondos del relayer). Como medida de mitigación básica, ignora cualquier transacción que especifique tu
+  pubkey como firmante.
+</Warning>
+
+## Utilidades {#utilities}
+
+El repositorio incluye utilidades para convertir direcciones entre los formatos de Solana y Base,
+obtener el par de claves de tu CLI de Solana para firmar transacciones
+y crear y enviar transacciones de Solana.
+
+<GithubRepoCard title="Ejemplos de Base Bridge - Utilidades" githubUrl="https://github.com/base/bridge/tree/main/scripts/src/commands" />
+
+### Conversión de direcciones {#address-conversion}
+
+Convierte una clave pública (pubkey) de Solana a bytes32 para los contratos de Base:
+
+```typescript example.ts
+// Convierte la clave pública de Solana a bytes32 para los contratos de Base
+import { pubkeyToBytes32 } from "./utils/pubkeyToBytes32";
+
+const bytes32Address = pubkeyToBytes32(solanaAddress);
+```
+
+### Gestión de pares de claves {#keypair-management}
+
+Obtén el par de claves de la CLI de Solana para firmar transacciones:
+
+```typescript example.ts
+import { getSolanaCliConfigKeypairSigner } from "./utils/keypair";
+
+const payer = await getSolanaCliConfigKeypairSigner();
+```
+
+### Construcción de transacciones {#transaction-building}
+
+Crea y envía transacciones de Solana:
+
+```typescript example.ts
+import { buildAndSendTransaction } from "./utils/buildAndSendTransaction";
+
+const signature = await buildAndSendTransaction(SOLANA_RPC_URL, ixs, payer);
+```
+
+## Ejemplo de Terminally Onchain {#terminally-onchain-example}
+
+<GithubRepoCard title="Terminally Onchain" githubUrl="https://github.com/base/sol2base" />
+
+[Terminally Onchain](https://terminallyonchain.com/) es una aplicación Next.js en producción que expone el puente a través de una
+interfaz de terminal de comandos. Los usuarios conectan una billetera de Solana y escriben comandos como los siguientes para transferir fondos por el puente y llamar a un contrato en Base:
+
+```bash Terminal
+bridge 0.0001 sol 0xYourTwin --call-contract 0x311935Cd80B76769bF2ecC9D8Ab7635b2139cf82 \
+  --call-selector "transfer(address,uint256)" \
+  --call-args 0x0000000000000000000000000000000000000000 100000000000000
+```
+
+El flujo de trabajo:
+
+1. **Analizar el comando:** el analizador de la terminal resuelve el activo, el destino y la llamada opcional en Base (selector + argumentos + valor).
+2. **Preparar el puente:** `queueBridge` valida las anulaciones de SPL, codifica en ABI la llamada en Base mediante `encodeFunctionData` y prepara las anulaciones de retransmisión.
+3. **Ejecutar:** `solanaBridge.bridge()` resuelve el destino (ENS/Basename), comprueba que haya saldo suficiente y llama a `realBridgeImplementation` para firmar y enviar la transacción de Solana.
+4. **Retransmisión + llamada:** si el gas de retransmisión está prepagado, el Base Relayer ejecuta la llamada adjunta desde el contrato Twin del usuario justo después de que se acuñe el SOL ERC20.
+
+Referencias clave de la implementación:
+
+* `src/lib/bridge.ts`: resolución de activos (admite direcciones de mint), conexiones RPC adaptadas a cada entorno y compatibilidad con llamadas adjuntas.
+* `src/lib/realBridgeImplementation.ts`: construye transacciones de Solana con instrucciones `PayForRelay` + `bridge_sol`/`bridge_spl`, usando PDA y receptores de comisiones de gas específicos de cada entorno.
+* `src/components/MainContent.tsx`: interfaz de terminal con preparación de comandos, visor de registros y codificación ABI para llamadas arbitrarias en Base.
+* `src/components/WalletConnection.tsx`: obtiene la dirección Twin determinista en Base Mainnet/Sepolia para la billetera de Solana conectada.
+
+### Ejecutar la terminal {#running-the-terminal}
+
+```bash Terminal lines wrap expandable
+git clone https://github.com/base/sol2base.git
+cd sol2base
+npm install --legacy-peer-deps
+
+# Configura el entorno (URL de RPC, direcciones de relayers, claves de API de CDP, etc.)
+cp env.template .env.local
+
+npm run dev   # se ejecuta por defecto en http://localhost:3000
+```
+
+<Tip>
+  La terminal ofrece tanto Base Sepolia ↔ Solana Devnet como Base Mainnet ↔ Solana Mainnet. Usa el
+  menú desplegable de red de la interfaz para cambiar de una a otra.
+
+  Define `CDP_API_KEY` en tu archivo `.env` para poder acceder al faucet.
+</Tip>
+
+## Direcciones de contratos {#contract-addresses}
+
+### Base Mainnet {#base-mainnet}
+
+```json Base Mainnet Addresses
+{
+  "Bridge": "0x3eff766C76a1be2Ce1aCF2B69c78bCae257D5188",
+  "BridgeValidator": "0xAF24c1c24Ff3BF1e6D882518120fC25442d6794B",
+  "CrossChainERC20Factory": "0xDD56781d0509650f8C2981231B6C917f2d5d7dF2",
+  "SOL": "0x311935Cd80B76769bF2ecC9D8Ab7635b2139cf82"
+}
+```
+
+### Solana Mainnet {#solana-mainnet}
+
+```json Solana Mainnet Addresses
+{
+  "BridgeProgram": "HNCne2FkVaNghhjKXapxJzPaBvAKDG1Ge3gqhZyfVWLM",
+  "BaseRelayerProgram": "g1et5VenhfJHJwsdJsDbxWZuotD5H4iELNG61kS4fb9"
+}
+```
+
+### Base Sepolia {#base-sepolia}
+
+```json Base Sepolia Addresses lines wrap expandable
+{
+  "Bridge": "0x01824a90d32A69022DdAEcC6C5C14Ed08dB4EB9B",
+  "BridgeValidator": "0xa80C07DF38fB1A5b3E6a4f4FAAB71E7a056a4EC7",
+  "CrossChainERC20Factory": "0x488EB7F7cb2568e31595D48cb26F63963Cc7565D",
+  "SOL": "0xCace0c896714DaF7098FFD8CC54aFCFe0338b4BC",
+  "FLYWHEEL_ADDRESS": "0x00000F14AD09382841DB481403D1775ADeE1179F",
+  "BRIDGE_CAMPAIGN_ADDRESS": "0xE2AD1C34382410C30d826B019A0B3700F5c4e6c9"
+}
+```
+
+### Solana Devnet {#solana-devnet}
+
+```json Solana Devnet Addresses
+{
+  "BridgeProgram": "7c6mteAcTXaQ1MFBCrnuzoZVTTAEfZwa6wgy4bqX3KXC",
+  "BaseRelayerProgram": "56MBBEYAtQAdjT4e1NzHD8XaoyRSTvfgbSVVcEcHj51H",
+  "GasFeeReceiver": "AFs1LCbodhvwpgX3u3URLsud6R1XMSaMiQ5LtXw4GKYT"
+}
+```
+
+## Recursos {#resources}
+
+<CardGroup cols={2}>
+  <Card title="Repositorio de Base Bridge" icon="github" href="https://github.com/base/bridge">
+    Código fuente, contratos, programas y scripts
+  </Card>
+
+  <Card title="Explorador de Solana" icon="magnifying-glass" href="https://explorer.solana.com/">
+    Monitorea las transacciones de Solana mainnet-beta
+  </Card>
+
+  <Card title="Explorador de Base" icon="magnifying-glass" href="https://basescan.org/">
+    Monitorea las transacciones de Base Mainnet
+  </Card>
+
+  <Card title="Soporte en Discord" icon="discord" href="https://base.org/discord">
+    Obtén ayuda de la comunidad de Base
+  </Card>
+</CardGroup>

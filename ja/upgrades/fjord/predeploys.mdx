@@ -1,0 +1,71 @@
+---
+title: "プリデプロイ"
+description: "Fjord アップグレードにおけるプリデプロイの変更点です。GasPriceOracle コントラクトに、FastLZ による手数料計算用の定数が追加されます。"
+---
+
+## GasPriceOracle {#gaspriceoracle}
+
+Fjord アップグレード以降、L1 手数料の計算には次の 3 つの値が追加で使用されます。
+
+* costIntercept
+* costFastlzCoef
+* minTransactionSize
+
+これらの値は `GasPriceOracle` コントラクトにハードコードされた定数です。計算には
+[Fjord L1-Cost fee changes (FastLZ estimator)](./exec-engine#fjord-l1-cost-fee-changes-fastlz-estimator)
+セクションで説明されているものと同じ式を使用します。
+
+新しいメソッド `getL1FeeUpperBound(uint256)` が導入されます。このメソッドは、指定されたトランザクションサイズに対する L1 手数料の上限を返します。
+書き込みパスで L1 トランザクションコストを見積もりたい呼び出し元向けのメソッドで、
+`getL1Fee` よりもはるかにガス効率に優れています。
+
+上限のオーバーヘッドは、LZ4 に倣って `original/255+16` と想定されています。過去のデータによれば、
+この方式で 99.99% を超えるトランザクションをカバーできます。
+
+実装は次のとおりです。
+
+```solidity GasPriceOracle.sol lines wrap expandable
+function getL1FeeUpperBound(uint256 unsignedTxSize) external view returns (uint256) {
+    // 未署名トランザクション分として 68 を加算
+    uint256 txSize = unsignedTxSize + 68;
+    // txSize / 255 + 16 は、トランザクションの 99.99% をカバーする実用上の fastlz 上限値。
+    uint256 flzUpperBound = txSize + txSize / 255 + 16;
+
+    int256 estimatedSize = costIntercept + costFastlzCoef * flzUpperBound;
+    if (estimatedSize < minTransactionSize) {
+        estimatedSize = minTransactionSize;
+    }
+  
+    uint256 l1FeeScaled = baseFeeScalar() * l1BaseFee() * 16 + blobBaseFeeScalar() * blobBaseFee();
+    return uint256(estimatedSize) * l1FeeScaled / (10 ** (DECIMALS * 2));
+}
+```
+
+### L1ガス使用量の推定 {#l1-gas-usage-estimation}
+
+`getL1GasUsed` メソッドは、Fjord アップグレードで[圧縮推定](./exec-engine#fees)
+の精度が向上したことを反映するよう更新されています。
+
+```solidity GasPriceOracle.sol lines wrap expandable
+function getL1GasUsed(bytes memory _data) public view returns (uint256) {
+    if (isFjord) {
+      // 未署名トランザクションの分としてサイズに68を加算する
+      int256 flzSize = LibZip.flzCompress(_data).length + 68;
+
+      int256 estimatedSize = costIntercept + costFastlzCoef * flzSize;
+      if (estimatedSize < minTransactionSize) {
+        estimatedSize = minTransactionSize;
+      }
+
+      // 圧縮データの大部分は非ゼロバイトであり、calldata 1バイトあたり16 gasを支払うものと仮定する
+      return estimatedSize * 16;
+    }
+    // ...
+}
+```
+
+`getL1GasUsed` メソッドは、blob の導入によって2種類のガスが消費されるようになった点を反映できないため、Fjord 以降は非推奨となっています。
+この関数は、将来のアップグレード以降、呼び出すと revert するようになります。
+
+特定のトランザクションの L1 手数料を見積もるには、引き続き `getL1Fee` メソッドを使用できます。
+また、よりガス消費の少ない代替手段として、Fjord で導入された新しい `getL1FeeUpperBound` メソッドを使用することもできます。

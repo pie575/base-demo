@@ -1,0 +1,55 @@
+---
+title: 'debug_traceBlockByNumber'
+sidebarTitle: 'debug_traceBlockByNumber'
+description: 'ブロック番号で指定したブロック内のすべてのトランザクションの EVM 実行トレースを返します。'
+---
+
+ブロック番号で指定したブロックに含まれるすべてのトランザクションについて、EVM 実行トレースを返します。
+
+<Warning>
+  debug メソッドはブロック内のすべてのトランザクションを再実行するため、計算コストが高くなります。対応状況は [Builder Stack](/ja/get-started/builder-stack) に掲載されているプロバイダーごとに異なります。
+</Warning>
+
+## パラメーター {#parameters}
+
+<ParamField body="block" type="string" required>
+  16進数のブロック番号、または `"latest"`、`"earliest"`、`"safe"`、`"finalized"` のいずれか。
+</ParamField>
+
+<ParamField body="tracerConfig" type="object">
+  トレーサーの設定 (任意) 。指定可能なオプションについては [`debug_traceTransaction`](/ja/base-chain/api-reference/debug-api/debug_traceTransaction) を参照してください。
+</ParamField>
+
+## 戻り値 {#returns}
+
+<ResponseField name="result" type="array">
+  トレースオブジェクトの配列。ブロック内の各トランザクションにつき1つずつ含まれます。
+</ResponseField>
+
+## 例 {#example}
+
+<CodeGroup>
+  ```json Request
+  {
+    "jsonrpc": "2.0",
+    "method": "debug_traceBlockByNumber",
+    "params": ["latest", {"tracer": "callTracer"}],
+    "id": 1
+  }
+  ```
+
+  ```json Response lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": [
+      {
+        "result": {
+          "type": "CALL",
+          "gasUsed": "0xab3f"
+        }
+      }
+    ]
+  }
+  ```
+</CodeGroup>

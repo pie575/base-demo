@@ -1,0 +1,509 @@
+---
+title: "L2 実行エンジン"
+description: "L2 実行エンジンの仕様。EIP-1559 パラメータ、手数料ボールト、Engine API の使用方法、実行レイヤーの動作について詳しく説明します。"
+---
+
+本ドキュメントでは、L1 実行エンジンを L2 で使用するための変更点、設定、および使用方法について説明します。
+
+Flashblocks エンドポイントや、事前確認済みの状態を照会するための `"pending"` タグなど、JSON-RPC API の完全なリファレンスについては、[API リファレンス](/ja/base-chain/api-reference/rpc-overview)を参照してください。
+
+## 1559 パラメータ {#1559-parameters}
+
+実行エンジンは、EIP-1559 の分母と EIP-1559 の弾力性 (elasticity) を指定するチェーンごとの設定を受け取れなければなりません。Canyon 以降は、新しい値 `EIP1559DenominatorCanyon` も受け取り、
+従来の分母に代えて、この値を 1559 の計算式の分母として使用する必要があります。
+
+これ以外に EIP-1559 の計算式の変更はありません。
+
+Holocene 以降、EIP-1559 パラメータは[動的に設定可能](/ja/upgrades/holocene/exec-engine#dynamic-eip-1559-parameters)になります。
+
+Jovian 以降、[設定可能な最低ベースフィー](/ja/upgrades/jovian/exec-engine#minimum-base-fee)が導入されます。
+
+## Extra Data {#extra-data}
+
+Holocene より前は、ジェネシスブロックには任意の `extraData` 値を含めることができますが、通常のブロックはすべて `extraData` フィールドが**空**でなければなりません。
+
+Holocene 以降、`extraData` フィールドは [EIP-1559 パラメータをエンコードします](/ja/upgrades/holocene/exec-engine#dynamic-eip-1559-parameters)。
+
+Jovian では、`extraData` のエンコーディングが拡張され、[`minBaseFee` も含む](/ja/upgrades/jovian/exec-engine#minimum-base-fee)ようになります。
+
+## デポジットトランザクションの処理 {#deposited-transaction-processing}
+
+Engine インターフェースは、[EIP-2718][eip-2718] によってトランザクションタイプを抽象化しています。
+
+ロールアップ機能をサポートするため、エンジンには新しい Deposit [`TransactionType`][eip-2718-transactions]
+の処理が実装されています。詳細は[デポジット仕様][deposit-spec]を参照してください。
+
+この種類のトランザクションでは、L2 ETH のミント、EVM の実行、
+および実行状態内の組み込みコントラクトへの L1 情報の取り込みが可能です。
+
+[deposit-spec]: /specifications/base-protocol/bridging/deposits
+
+### デポジットトランザクションの境界 {#deposited-transaction-boundaries}
+
+トランザクションを無条件に信頼することはできません。信頼は認証によって確立されます。
+デポジットは、他のトランザクションタイプとは異なり、署名によって認証されるものではありません。
+デポジットの認証は、エンジンの外部でロールアップノードが行います。
+
+デポジットトランザクションを安全に処理するには、まずデポジットを認証しなければなりません (MUST) 。
+
+* 信頼された Engine API を通じて直接取り込む
+* 信頼されたブロックハッシュ (以前の Engine API 命令によって信頼されたもの) への同期の一部として取り込む
+
+デポジットトランザクションは、決してトランザクションプールから取り込んではなりません (MUST) 。
+*デポジットのみのロールアップでは、トランザクションプールを無効にできます*
+
+## 手数料 {#fees}
+
+シーケンスされたトランザクション (デポジットは対象外) には、3種類の手数料が課されます：
+優先手数料 (priority fee) 、基本手数料 (base fee) 、L1コスト手数料です。
+
+### 手数料ボールト {#fee-vaults}
+
+3種類の手数料は、会計処理のため、それぞれ個別にデプロイされた3つのL2手数料ボールトに徴収されます。
+手数料の支払いは内部EVM呼び出しとして記録されないため、この方式のほうが区別しやすくなります。
+
+これらはハードコードされたアドレスで、事前デプロイされたプロキシコントラクトを指しています。
+各プロキシの背後には `FeeVault` をベースとするボールトコントラクトがデプロイされており、ボールトの資金をL1へ安全に送金します。
+
+| ボールト名         | プリデプロイ                                                                                      |
+| ------------- | ------------------------------------------------------------------------------------------- |
+| シーケンサー手数料ボールト | [`SequencerFeeVault`](/ja/specifications/base-protocol/execution/predeploys#sequencerfeevault) |
+| ベースフィーボールト    | [`BaseFeeVault`](/ja/specifications/base-protocol/execution/predeploys#basefeevault)           |
+| L1手数料ボールト     | [`L1FeeVault`](/ja/specifications/base-protocol/execution/predeploys#l1feevault)               |
+
+### 優先手数料 (Sequencer Fee Vault) {#priority-fees-sequencer-fee-vault}
+
+優先手数料は [eip-1559] 仕様に従い、L2 ブロックの fee-recipient が受け取ります。
+ブロックの fee-recipient (coinbase アドレスとも呼ばれます) には、Sequencer Fee Vault のアドレスが設定されます。
+
+### 基本手数料 (Base Fee Vault) {#base-fees-base-fee-vault}
+
+基本手数料は概ね[eip-1559]の仕様に従います。ただし、基本手数料はバーンされず、
+Base Fee VaultのETHアカウント残高に加算される点が異なります。
+
+### L1コスト手数料 (L1 Fee Vault) {#l1-cost-fees-l1-fee-vault}
+
+プロトコルは、シーケンス済みL2トランザクションのバッチ送信費用を賄うため、推定バッチ送信コストに基づく追加手数料を
+L2ユーザーに課します。
+この手数料はL2トランザクション送信者のETH残高から差し引かれ、L1 Fee Vaultに蓄積されます。
+
+L2トランザクションの手数料のうちL1コスト部分を算出する具体的なL1コスト関数は、
+有効なアップグレードによって異なります。
+
+#### Pre-Ecotone {#pre-ecotone}
+
+Ecotone の有効化以前は、L1 コストは次のように計算されます：
+`(rollupDataGas + l1FeeOverhead) * l1BaseFee * l1FeeScalar / 1e6` (多倍長整数で計算し、結果
+は Wei 単位で `uint256` の範囲に収まります)
+ここで：
+
+* `rollupDataGas` は、エンコードされたトランザクション *全体*
+  (署名フィールドを含む、標準の EIP-2718 トランザクションエンコーディング) から算出されます：
+  * `rollupDataGas = zeroes * 4 + ones * 16`
+* `l1FeeOverhead` は Gas Price Oracle の `overhead` の値です。
+* `l1FeeScalar` は Gas Price Oracle の `scalar` の値です。
+* `l1BaseFee` は、L2 チェーンに登録された最新の L1 origin の L1 基本手数料です。
+
+なお、`rollupDataGas` は [eip-2028] で定義されているものと同じバイトコスト計算を使用しますが、
+L2 トランザクション全体が L1 calldata の課金対象バイト数に含まれる点が異なります。
+この動作は、Bedrock 以前の L2 トランザクションにおける L1 コストの見積もり方法と同じです。
+
+バッチトランザクションの圧縮、バッチ処理、および固有ガスコストは、プロトコル側で
+Gas Price Oracle の `overhead` および `scalar` パラメータによって反映されます。
+
+Gas Price Oracle の `l1FeeOverhead` と `l1FeeScalar`、および L1 origin の `l1BaseFee` には、
+次の 2 つの方法でアクセスできます (どちらを使用しても同じ結果が得られます) ：
+
+* 現在の L2 ブロックのデポジットされた L1 属性 (`l1FeeOverhead`、`l1FeeScalar`、`basefee`) から読み取る
+* L1 Block Info コントラクト (`0x4200000000000000000000000000000000000015`) から読み取る
+  * 対応する Solidity の `uint256` ゲッター関数 (`l1FeeOverhead`、`l1FeeScalar`、`basefee`) を使用する
+  * ストレージを直接読み取る：
+    * L1 basefee：スロット `1` にビッグエンディアンの `uint256` として格納
+    * Overhead：スロット `5` にビッグエンディアンの `uint256` として格納
+    * Scalar：スロット `6` にビッグエンディアンの `uint256` として格納
+
+#### Ecotone における L1 コスト手数料の変更 (EIP-4844 DA) {#ecotone-l1-cost-fee-changes-eip-4844-da}
+
+Ecotone では、新しい手数料市場が適用される Blob を使ってバッチを投稿できます。この機能に対応するため、
+L1 コストは次のように計算されます。
+
+`(zeroes*4 + ones*16) * (16*l1BaseFee*l1BaseFeeScalar + l1BlobBaseFee*l1BlobBaseFeeScalar) / 16e6`
+
+ここで:
+
+* この計算は無制限精度の整数演算で行われ、結果は Wei 単位で
+  `uint256` の範囲に収まります。
+
+* zeroes と ones は、それぞれ *完全な* エンコード済み署名付きトランザクションに含まれる
+  ゼロバイトと非ゼロバイトの数です。
+
+* `l1BaseFee` は、L2 チェーンに登録された最新の L1 origin の L1 基本手数料です。
+
+* `l1BlobBaseFee` は blob ガス価格であり、登録済みの最新 L1 origin ブロックの header から
+  [EIP-4844][4844-gas] に記載された方法で計算されます。
+
+概念的には、上記の関数は以下の式を表しています。ここで `compressedTxSize =
+(zeroes*4 + ones*16) / 16` は、圧縮されたバッチ内でトランザクションが占めるバイト数の
+おおよその近似値とみなせます。
+
+`(compressedTxSize) * (16*l1BaseFee*lBaseFeeScalar + l1BlobBaseFee*l1BlobBaseFeeScalar) / 1e6`
+
+このセクションの冒頭で示した Ecotone の厳密なコスト関数は、内側の 16 による除算を最後の最後まで
+行わないことで、整数演算でも精度を保っています。
+
+[4844-gas]: https://github.com/ethereum/EIPs/blob/master/EIPS/eip-4844.md#gas-accounting
+
+2 つの基本手数料の値とそれぞれのスカラーには、次のいずれかの方法でアクセスできます (どちらを使っても同じです) 。
+
+* 現在の L2 ブロックのデポジットされた L1 属性 (`l1BaseFeeScalar`、`l1BlobBaseFeeScalar`、`basefee`、
+  `blobBaseFee`) から読み取る
+* L1 Block Info コントラクト (`0x4200000000000000000000000000000000000015`) から読み取る
+  * 対応する solidity ゲッター関数を使用する
+  * ストレージを直接読み取る:
+    * basefee: スロット `1` の `uint256`
+    * blobBaseFee: スロット `7` の `uint256`
+    * l1BaseFeeScalar: スロット `3` のオフセット `12` にあるビッグエンディアンの `uint32`
+    * l1BlobBaseFeeScalar: スロット `3` のオフセット `8` にあるビッグエンディアンの `uint32`
+
+## Engine API {#engine-api}
+
+### `engine_forkchoiceUpdatedV2` {#engine_forkchoiceupdatedv2}
+
+このメソッドは、エンジンが正規とみなす L2 ブロックを更新し (`forkchoiceState` 引数) 、
+必要に応じてブロック生成を開始します (`payloadAttributes` 引数) 。
+
+ロールアップにおいて、フォークチョイス更新の各種類は次のように対応します。
+
+* `headBlockHash`: 正規チェーンの先頭ブロックのハッシュ。ユーザー向け JSON-RPC では `"unsafe"` とラベル付けされます。
+  ノードは L2 ブロックを帯域外で先行して適用し、L1 データと競合した場合にリオーグすることがあります。
+* `safeBlockHash`: L1 データから導出された、リオーグの可能性が低い正規チェーンのブロックハッシュ。
+* `finalizedBlockHash`: 不可逆なブロックハッシュ。紛争期間の下限に対応します。
+
+ロールアップ機能をサポートするため、[`engine_forkchoiceUpdatedV2`][engine&#95;forkchoiceUpdatedV2] には後方互換性のある変更が 1 つ加えられています。拡張された `PayloadAttributesV2`
+
+#### PayloadAttributesV2 の拡張 {#extended-payloadattributesv2}
+
+[`PayloadAttributesV2`][PayloadAttributesV2] は次のように拡張されます。
+
+```js Extended PayloadAttributesV2 lines wrap expandable
+PayloadAttributesV2: {
+    timestamp: QUANTITY
+    prevRandao: DATA (32 bytes)
+    suggestedFeeRecipient: DATA (20 bytes)
+    withdrawals: array of WithdrawalV1
+    transactions: array of DATA
+    noTxPool: bool
+    gasLimit: QUANTITY or null
+}
+```
+
+ここで使用する型表記は、[Ethereum JSON-RPC API
+仕様][JSON-RPC-API]で使用されている[HEX value encoding]に従います。この構造体は JSON-RPC 経由で送信する必要があるためです。`array` は
+JSON 配列を指します。
+
+`transactions` 配列の各要素は、トランザクションをエンコードしたバイトリストです。形式は [EIP-2718][eip-2718] で定義されている `TransactionType ||
+TransactionPayload` または `LegacyTransaction` です。
+これは [`ExecutionPayloadV2`][ExecutionPayloadV2] の `transactions` フィールドと同等です。
+
+`transactions` フィールドは省略可能です。
+
+* 空または存在しない場合: エンジンの動作は変わりません。シーケンサーは (有効な場合) トランザクションプールからトランザクションを取り込んで
+  ブロックを構築します。
+* 存在し、かつ空でない場合: ペイロードは、このトランザクションリストをそのままの順序で先頭に配置して生成しなければなりません (MUST) 。
+  [rollup driver][rollup-driver] は、決定論的な L1 入力に基づいてトランザクションリストを決定します。
+
+`noTxPool` も省略可能で、`transactions` の意味を拡張します。
+
+* `false` の場合、実行エンジンは `transactions` の後に、トランザクションプールなどの外部ソースから追加のトランザクションを
+  自由にペイロードへ詰め込めます。これは L1 ノードが実装しているデフォルトの動作です。
+* `true` の場合、実行エンジンは与えられた `transactions` のリストを一切変更してはなりません。
+
+`transactions` フィールドが存在する場合、エンジンはトランザクションを順に実行し、処理中にエラーが発生した場合は `STATUS_INVALID`
+を返さなければなりません。すべてのトランザクションをエラーなく実行できた場合は `STATUS_VALID` を返さなければなりません。**注**: 状態遷移ルールは、デポジットが決して失敗しないように変更されています。
+したがって、`engine_forkchoiceUpdatedV2` が `STATUS_INVALID` を返すのは、バッチ内のトランザクションが無効な場合です。
+
+`gasLimit` は L1 との互換性の観点では省略可能ですが、ロールアップとして使用する場合は必須です。
+このフィールドは、ブロック構築時に使用されるガスリミットを上書きします。
+ロールアップとして使用する際に指定されていない場合は、`STATUS_INVALID` が返されます。
+
+[rollup-driver]: /specifications/base-protocol/consensus/specification
+
+### `engine_forkchoiceUpdatedV3` {#engine_forkchoiceupdatedv3}
+
+forkchoice updated メソッドの説明については、[`engine_forkchoiceUpdatedV2`](#engine_forkchoiceupdatedv2) を参照してください。
+`engine_forkchoiceUpdatedV3` は **Ecotone ペイロードに対してのみ呼び出さなければなりません (MUST) 。**
+
+ロールアップ機能をサポートするため、[`engine_forkchoiceUpdatedV3`][engine&#95;forkchoiceUpdatedV3] には後方互換性のある変更が 1 つ導入されています。拡張された `PayloadAttributesV3` です。
+
+#### 拡張された PayloadAttributesV3 {#extended-payloadattributesv3}
+
+[`PayloadAttributesV3`][PayloadAttributesV3] は次のように拡張されます：
+
+```js Extended PayloadAttributesV3 lines wrap expandable
+PayloadAttributesV3: {
+    timestamp: QUANTITY
+    prevRandao: DATA (32 bytes)
+    suggestedFeeRecipient: DATA (20 bytes)
+    withdrawals: array of WithdrawalV1
+    parentBeaconBlockRoot: DATA (32 bytes)
+    transactions: array of DATA
+    noTxPool: bool
+    gasLimit: QUANTITY or null
+    eip1559Params: DATA (8 bytes) or null
+    minBaseFee: QUANTITY or null
+}
+```
+
+このオブジェクトの要件は、拡張された [`PayloadAttributesV2`](#extended-payloadattributesv2) と同じですが、
+`parentBeaconBlockRoot` が追加されています。これは、L2 ブロックの L1 origin ブロックの親ビーコンブロックルートです。
+
+Ecotone 以降、`parentBeaconBlockRoot` には L1 origin の `parentBeaconBlockRoot` を設定しなければなりません。
+ただし、L1 上で `parentBeaconBlockRoot` を伴う Dencun の機能が有効になっていない場合は、ゼロの `bytes32` を設定しなければなりません。
+
+Holocene 以降、`eip1559Params` フィールドには EIP-1559 パラメータをエンコードしなければなりません。Holocene より前は `null` でなければなりません。
+詳細は [動的な EIP-1559 パラメータ](/ja/upgrades/holocene/exec-engine#dynamic-eip-1559-parameters) を参照してください。
+
+Jovian 以降、`minBaseFee` フィールドが追加されます。Jovian より前は `null` でなければなりません。
+詳細は [Jovian の最低ベースフィー](/ja/upgrades/jovian/exec-engine#minimum-base-fee) を参照してください。
+
+### `engine_newPayloadV2` {#engine_newpayloadv2}
+
+[`engine_newPayloadV2`][engine&#95;newPayloadV2] からの変更はありません。
+L2 ブロックをエンジンの状態に適用します。
+
+### `engine_newPayloadV3` {#engine_newpayloadv3}
+
+[`engine_newPayloadV3`][engine&#95;newPayloadV3] は、Ecotone の L2 ブロックをエンジンの状態に適用します。この API に
+変更はありません。
+`engine_newPayloadV3` **は Ecotone のペイロードに対してのみ呼び出さなければなりません。**
+
+追加のパラメータは次のように設定する必要があります (SHOULD) 。
+
+* `expectedBlobVersionedHashes` は空の配列でなければなりません (MUST) 。
+* `parentBeaconBlockRoot` は、その L2 ブロックの L1 origin ブロックが持つ親ビーコンブロックルートでなければなりません (MUST) 。
+
+### `engine_newPayloadV4` {#engine_newpayloadv4}
+
+[`engine_newPayloadV4`][engine&#95;newPayloadV4] は、Isthmus の L2 ブロックをエンジンの状態に適用します。
+Isthmus ハードフォーク以降、`ExecutionPayload` パラメータには追加フィールド `withdrawalsRoot` が含まれます。
+
+`engine_newPayloadV4` **は Isthmus のペイロードに対してのみ呼び出さなければなりません。**
+
+追加のパラメータは次のように設定する必要があります (SHOULD) 。
+
+* `executionRequests` は空の配列でなければなりません (MUST) 。
+
+### `engine_getPayloadV2` {#engine_getpayloadv2}
+
+[`engine_getPayloadV2`][engine&#95;getPayloadV2] に変更はありません。
+`payloadAttributes` を指定して `engine_forkchoiceUpdatedV2` を呼び出したときに準備されたペイロードを、ID で取得します。
+
+### `engine_getPayloadV3` {#engine_getpayloadv3}
+
+[`engine_getPayloadV3`][engine&#95;getPayloadV3] は、`payloadAttributes` を指定して `engine_forkchoiceUpdatedV3` を呼び出した際に準備されたペイロードを、ID を指定して取得します。
+`engine_getPayloadV3` は、**Ecotone ペイロードに対してのみ呼び出さなければなりません。**
+
+#### 拡張レスポンス {#extended-response}
+
+[レスポンス][GetPayloadV3Response]は次のように拡張されます：
+
+```js Extended GetPayloadV3 Response
+{
+    executionPayload: ExecutionPayload
+    blockValue: QUANTITY
+    blobsBundle: BlobsBundle
+    shouldOverrideBuilder: BOOLEAN
+    parentBeaconBlockRoot: DATA (32 bytes)
+}
+```
+
+[GetPayloadV3Response]: https://github.com/ethereum/execution-apis/blob/main/src/engine/cancun.md#response-2
+
+Ecotoneでは、この値にはL2ブロックのL1 originブロックのparentBeaconBlockRootを設定しなければなりません (MUST) 。
+
+### `engine_getPayloadV4` {#engine_getpayloadv4}
+
+[`engine_getPayloadV4`][engine&#95;getPayloadV4] は、`payloadAttributes` を指定した `engine_forkchoiceUpdatedV3` の呼び出しによって準備されたペイロードを、ID を指定して取得します。
+**`engine_getPayloadV4` は Isthmus ペイロードに対してのみ呼び出さなければなりません (MUST) 。**
+
+### `engine_signalSuperchainV1` {#engine_signalsuperchainv1}
+
+Engine API のオプション拡張です。Superchain の情報を Engine に通知します。
+V1 では、推奨プロトコルバージョンと必須プロトコルバージョンを通知します。
+
+型:
+
+```javascript SuperchainSignal Type
+SuperchainSignal: {
+  recommended: ProtocolVersion;
+  required: ProtocolVersion;
+}
+```
+
+`ProtocolVersion`：プロトコルバージョン形式の仕様に従い、RPC 用にエンコードされます。
+
+パラメーター：
+
+* `signal`：`SuperchainSignal`。通知されたスーパーチェーン情報です。
+
+戻り値：
+
+* `ProtocolVersion`：実行エンジンがサポートする最新の Base プロトコルバージョンです。
+
+推奨バージョンが、実行エンジンが現在サポートしているバージョンより新しい場合、実行エンジンはユーザーに警告すべきです (SHOULD) 。
+
+必須のプロトコルバージョンを満たしていない場合、実行エンジンは安全対策を講じるべきです (SHOULD) 。
+これには、実行エンジンのオペレーターの同意を得たうえでエンジンを停止することも含まれます。
+
+## ネットワーキング {#networking}
+
+実行エンジンは、L1 から導出されるすべてのデータをロールアップノード経由で取得できます。
+*P2P ネットワーキングは完全に任意です。*
+
+ただし、L1 からのデータ取得速度がボトルネックとならないよう、P2P ネットワーク機能を有効にするべきです (SHOULD) 。P2P ネットワークは以下の機能を提供します。
+
+* ピア探索 ([Disc v5][discv5])
+* [`eth/66`][eth66]:
+  * トランザクションプール (シーケンサーノードが利用)
+  * 状態同期 (トラストレスな DB 高速複製のためのハッピーパス)
+  * 過去のブロックヘッダーおよびボディの取得
+  * *新しいブロックは、P2P ではなくコンセンサスレイヤー (ロールアップノード) を通じて取得されます*
+
+設定以外に、L1 のネットワーク機能への変更は必要ありません。
+
+* [`networkID`][network-id]: L2 ネットワークを L1 やテストネットと区別します。
+  ロールアップネットワークの [`chainID`][chain-id] と同じ値です。
+* Merge フォークの有効化: Engine API を有効にし、ブロックの伝播を無効にします。
+  コンセンサスレイヤーなしではブロックヘッダーを認証できないためです。
+* ブートノードリスト: DiscV5 は共有ネットワークであるため、
+  最初に L2 ノードへ接続したほうが[ブートストラップ][discv5-rationale]が速くなります。
+
+[discv5]: https://github.com/ethereum/devp2p/blob/master/discv5/discv5.md
+
+[eth66]: https://github.com/ethereum/devp2p/blob/master/caps/eth.md
+
+[network-id]: https://github.com/ethereum/devp2p/blob/master/caps/eth.md#status-0x00
+
+[chain-id]: https://github.com/ethereum/EIPs/blob/master/EIPS/eip-155.md
+
+[discv5-rationale]: https://github.com/ethereum/devp2p/blob/master/discv5/discv5-rationale.md
+
+## 同期 {#sync}
+
+実行エンジンは、複数の方法で同期を行えます。
+
+* ハッピーパス: ロールアップノードが、L1 に基づいて決定された目標のチェーンヘッドをエンジンに通知し、エンジンの P2P を通じて同期を完了します。
+* 最悪のケース: ロールアップノードがエンジンの停止を検出し、L1 データのみを用いて同期を完了します。ピアは不要です。
+
+新しいノードを迅速にオンラインにするには、ハッピーパスのほうが適しています。
+エンジン実装は [snap-sync][snap-sync] などの手法により、状態をより高速に同期できるためです。
+
+[snap-sync]: https://github.com/ethereum/devp2p/blob/master/caps/snap.md
+
+### ハッピーパス {#happy-path-sync}
+
+1. ロールアップノードは、L2 チェーンのヘッドを無条件にエンジンへ通知します (通常のノード動作の一部) :
+   * Bedrock / Canyon / Delta のペイロード
+     * [`engine_newPayloadV2`][engine&#95;newPayloadV2] が、P2P から受信した最新の L2 ブロックを引数として呼び出されます。
+     * [`engine_forkchoiceUpdatedV2`][engine&#95;forkchoiceUpdatedV2] が、現在の
+       `unsafe`/`safe`/`finalized` L2 ブロックハッシュを引数として呼び出されます。
+   * Ecotone のペイロード
+     * [`engine_newPayloadV3`][engine&#95;newPayloadV3] が、P2P から受信した最新の L2 ブロックを引数として呼び出されます。
+     * [`engine_forkchoiceUpdatedV3`][engine&#95;forkchoiceUpdatedV3] が、現在の
+       `unsafe`/`safe`/`finalized` L2 ブロックハッシュを引数として呼び出されます。
+2. エンジンは、親ハッシュがローカルチェーンと一致するまで、ピアからヘッダーを逆順に要求します
+3. エンジンが同期に追いつきます:
+   a) ファイナライズ済みブロックハッシュまたはヘッドブロックハッシュを目標として、何らかの形式のステート同期が開始されます
+   b) 何らかの形式のブロック同期によってブロックボディが取得され、ヘッドブロックハッシュまで処理されます
+
+P2P ベースの同期の具体的な方式は L2 仕様の対象外です:
+エンジン内での動作は L1 とまったく同じです (ただし、EVM はデポジットに対応したものになります) 。
+
+### 最悪ケースの同期 {#worst-case-sync}
+
+1. エンジンが同期しておらず、ピアに接続されていない、またはその他の理由で停止している。
+2. ロールアップノードは、エンジンから取得した最新のヘッドを保持する (`eth_getBlockByNumber` をポーリングする、またはヘッダーのサブスクリプションを維持する) 。
+3. エンジンが同期しておらず、かつ P2P 経由でも同期していない場合 (`eth_syncing`) 、ロールアップノードは同期を開始する。
+4. ロールアップノードは、[rollup node spec] に記載されているとおり、L1 から導出されたブロックを 1 つずつ挿入する。その際、必要に応じて L1 の reorg に対応する。
+
+[rollup node spec]: /specifications/base-protocol/consensus/specification
+
+## Ecotone: blobトランザクションの無効化 {#ecotone-disable-blob-transactions}
+
+[EIP-4844] はblobトランザクションを導入します。blobトランザクションは、[EIP-1559] トランザクションのすべての機能に加えて、「blob」 (「Binary Large Object」) のリストを持ちます。blobとは、ベースレイヤーとしてデータ可用性を提供するための専用のデータ型です。
+
+Ecotoneアップグレードでは、[EIP-4844] を除き、CancunのすべてのL1実行機能が有効化されます。
+BaseはL2としてblobを提供しないため、この新しいトランザクションタイプを無効化します。
+
+EIP-4844は次のように無効化されます。
+
+* blobタイプのトランザクションを告知するネットワーク層のアナウンスは無視されます。
+* blobタイプのトランザクションは、RPC経由かどうかにかかわらず、トランザクションプールに追加できません。
+* ブロック構築コードはEIP-4844トランザクションを選択しません。
+* EIP-4844トランザクションを含むL2ブロックの状態遷移は無効です。
+
+[BLOBBASEFEE opcode](https://eips.ethereum.org/EIPS/eip-7516) は存在しますが、L2ではblobが処理されないため、そのセマンティクスは
+変更されています。このオペコードは常に値1を
+スタックにプッシュします。
+
+## Ecotone: Beacon Block Root {#ecotone-beacon-block-root}
+
+[EIP-4788] は、実行レイヤーのブロックヘッダーと EVM に「beacon block root」を導入します。
+このブロックルートは、直前のコンセンサスブロックが持つコンセンサスレイヤーの内容の [SSZ hash-tree-root] です。
+
+Bedrock アップグレードで [EIP-4399] が採用されたことにより、Base にはすでに L1 の `PREVRANDAO` が含まれています。
+これに加えて、[EIP-4788] により L1 の beacon block root も利用できるようになります。
+
+Ecotone アップグレードにおける具体的な変更点は次のとおりです。
+
+* L1 origin の `parent_beacon_block_root` が L2 のブロックヘッダーに埋め込まれるようになります。
+* 「Beacon roots contract」は Ecotone のアップグレード時にデプロイされます。ジェネシス時点で有効化される場合は、ジェネシスに埋め込まれます。
+* ブロックの状態遷移プロセスに、L1 の Ethereum と同様の beacon-block-root 用の特別な EVM 処理が加わります。
+
+[SSZ hash-tree-root]: https://github.com/ethereum/consensus-specs/blob/master/ssz/simple-serialize.md#merkleization
+
+[EIP-4399]: https://eips.ethereum.org/EIPS/eip-4399
+
+[EIP-4788]: https://eips.ethereum.org/EIPS/eip-4788
+
+[EIP-4844]: https://eips.ethereum.org/EIPS/eip-4844
+
+[eip-1559]: https://eips.ethereum.org/EIPS/eip-1559
+
+[eip-2028]: https://eips.ethereum.org/EIPS/eip-2028
+
+[eip-2718]: https://eips.ethereum.org/EIPS/eip-2718
+
+[eip-2718-transactions]: https://eips.ethereum.org/EIPS/eip-2718#transactions
+
+[PayloadAttributesV3]: https://github.com/ethereum/execution-apis/blob/cea7eeb642052f4c2e03449dc48296def4aafc24/src/engine/cancun.md#payloadattributesv3
+
+[PayloadAttributesV2]: https://github.com/ethereum/execution-apis/blob/584905270d8ad665718058060267061ecfd79ca5/src/engine/shanghai.md#PayloadAttributesV2
+
+[ExecutionPayloadV2]: https://github.com/ethereum/execution-apis/blob/main/src/engine/shanghai.md#executionpayloadv2
+
+[engine_forkchoiceUpdatedV3]: https://github.com/ethereum/execution-apis/blob/cea7eeb642052f4c2e03449dc48296def4aafc24/src/engine/cancun.md#engine_forkchoiceupdatedv3
+
+[engine_forkchoiceUpdatedV2]: https://github.com/ethereum/execution-apis/blob/584905270d8ad665718058060267061ecfd79ca5/src/engine/shanghai.md#engine_forkchoiceupdatedv2
+
+[engine_newPayloadV2]: https://github.com/ethereum/execution-apis/blob/584905270d8ad665718058060267061ecfd79ca5/src/engine/shanghai.md#engine_newpayloadv2
+
+[engine_newPayloadV3]: https://github.com/ethereum/execution-apis/blob/cea7eeb642052f4c2e03449dc48296def4aafc24/src/engine/cancun.md#engine_newpayloadv3
+
+[engine_newPayloadV4]: https://github.com/ethereum/execution-apis/blob/869b7f062830ba51a7fd8a51dfa4678c6d36b6ec/src/engine/prague.md#engine_newpayloadv4
+
+[engine_getPayloadV2]: https://github.com/ethereum/execution-apis/blob/584905270d8ad665718058060267061ecfd79ca5/src/engine/shanghai.md#engine_getpayloadv2
+
+[engine_getPayloadV3]: https://github.com/ethereum/execution-apis/blob/a0d03086564ab1838b462befbc083f873dcf0c0f/src/engine/cancun.md#engine_getpayloadv3
+
+[engine_getPayloadV4]: https://github.com/ethereum/execution-apis/blob/869b7f062830ba51a7fd8a51dfa4678c6d36b6ec/src/engine/prague.md#engine_getpayloadv4
+
+[HEX value encoding]: https://ethereum.org/en/developers/docs/apis/json-rpc/#hex-encoding
+
+[JSON-RPC-API]: https://github.com/ethereum/execution-apis
+
+## P2Pの変更点 {#p2p-modifications}
+
+Base実行ノードのEthereum Node Record (ENR) には、`opel`キーと値のペアを含めなければなりません (MUST) 。このペアのキーは
+`opel`、値は[EIP-2124](https://eips.ethereum.org/EIPS/eip-2124)のフォークIDです。
+ELはCLとは異なるキーを使用します。これは、ELノードとCLノードが相互に接続するのを防ぐためです。

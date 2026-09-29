@@ -1,0 +1,38 @@
+---
+title: 'eth_blockNumber'
+sidebarTitle: 'eth_blockNumber'
+description: 'Devuelve el número del bloque minado más reciente.'
+---
+
+Devuelve el número del bloque minado más reciente.
+
+## Parámetros {#parameters}
+
+Sin parámetros.
+
+## Valor devuelto {#returns}
+
+<ResponseField name="result" type="string">
+  El número de bloque actual, como cadena hexadecimal.
+</ResponseField>
+
+## Ejemplo {#example}
+
+<CodeGroup>
+  ```json Request
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_blockNumber",
+    "params": [],
+    "id": 1
+  }
+  ```
+
+  ```json Response
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x158a0e9"
+  }
+  ```
+</CodeGroup>

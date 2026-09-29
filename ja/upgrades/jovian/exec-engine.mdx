@@ -1,0 +1,174 @@
+---
+title: "Jovian：実行エンジン"
+description: "Jovian アップグレードにおける実行エンジンの変更点。SystemConfig で設定可能な最小ベースフィーを導入し、優先手数料オークションが続く期間を短縮します。"
+---
+
+## 最小ベースフィー {#minimum-base-fee}
+
+Jovian では、Base における優先手数料オークションの期間を短縮するため、
+[設定可能な最小ベースフィー](https://github.com/ethereum-optimism/design-docs/blob/main/protocol/minimum-base-fee.md)
+が導入されます。
+
+最小ベースフィーは `SystemConfig` で設定され ([System Configuration](/ja/specifications/base-protocol/consensus/derivation#system-configuration) を参照) 、ブロックヘッダーの `extraData` エンコーディングと Engine API の `PayloadAttributesV3` パラメータを通じて、
+実行エンジンによって適用されます。
+
+### ブロックヘッダー内の最小ベースフィー {#minimum-base-fee-in-block-header}
+
+[Holocene の動的な EIP-1559 パラメータ](../holocene/exec-engine#dynamic-eip-1559-parameters)と同様に、Jovian は各 L2 ブロックヘッダーの `extraData` フィールドに
+手数料パラメータをエンコードします。このフォーマットは拡張され、wei 単位の最小ベースフィーを表す
+`u64` フィールドが追加されます。
+
+| 名前           | 型                  | バイトオフセット  |
+| ------------ | ------------------ | --------- |
+| `minBaseFee` | `u64 (big-endian)` | `[9, 17)` |
+
+制約:
+
+* `version` は `1` でなければなりません (MUST)  (Holocene の `0` からインクリメント) 。
+* この 17 バイトの後に、いかなるデータも存在してはなりません (MUST NOT) 。
+
+`minBaseFee` フィールドは、wei で表される絶対的な下限値です。ベースフィーの計算時に、
+算出された `baseFee` が `minBaseFee` を下回る場合は、`minBaseFee` にクランプしなければなりません (MUST) 。
+
+```javascript Minimum Base Fee Clamp
+if (baseFee < minBaseFee) {
+  baseFee = minBaseFee
+}
+```
+
+注: `extraData` の最大容量は、L1 ビーコンチェーンの `extraData` 型に合わせて 32 バイトとなっており、
+将来のアップグレードで拡張される可能性があります。
+
+### `PayloadAttributesV3` における最小ベースフィー {#minimum-base-fee-in-payloadattributesv3}
+
+Engine API の [`PayloadAttributesV3`](/ja/specifications/base-protocol/execution/l2-execution-engine#extended-payloadattributesv3) が拡張され、新しい
+フィールド `minBaseFee` が追加されます。既存の `eip1559Params` は引き続き 8 バイト (Holocene 形式) です。
+
+```text Extended PayloadAttributesV3 lines wrap expandable
+PayloadAttributesV3: {
+    timestamp: QUANTITY
+    prevRandao: DATA (32 bytes)
+    suggestedFeeRecipient: DATA (20 bytes)
+    withdrawals: array of WithdrawalV1
+    parentBeaconBlockRoot: DATA (32 bytes)
+    transactions: array of DATA
+    noTxPool: bool
+    gasLimit: QUANTITY or null
+    eip1559Params: DATA (8 bytes) or null
+    minBaseFee: QUANTITY or null
+}
+```
+
+`minBaseFee` は、Jovian フォーク前は `null` でなければならず (MUST) 、Jovian フォーク後は `null` 以外でなければなりません (MUST) 。
+
+### 設計根拠 {#rationale}
+
+[Holocene の動的な EIP-1559 パラメータ](../holocene/exec-engine#rationale)と同様に、最小ベースフィーをブロックヘッダーに格納することで、
+ブロックのシーリング時にステートを参照せずに済みます。
+これにより、親ブロックのヘッダーから次のブロックのベースフィーを計算する関数の純粋性を保ちながら、
+これらの値を動的に設定できます。動的な設定は `gasLimit` と同様の方法で行われ、
+導出パイプラインが適切な `SystemConfig`
+コントラクトの値を `PayloadAttributesV3` パラメータ経由でブロックビルダーに渡します。
+
+## DA フットプリント Block Limit {#da-footprint-block-limit}
+
+1つのブロックに収まる、圧縮後のトランザクションデータの推定総量を制限するため、*DA フットプリント block limit* が導入されます。
+各トランザクションでは、ガス使用量とあわせて、DA フットプリントと呼ばれる新しいリソースが追跡されます。
+DA フットプリントはガスの次元にスケーリングされるため、ブロック内の合計値も、ブロックの総ガス使用量と同様にブロックガスリミットによって制限できます。
+
+ブロックの `daFootprint` を次のように定義します。
+
+```python DA Footprint Calculation lines wrap expandable
+def daFootprint(block: Block) -> int:
+  daFootprint = 0
+
+  for tx in block.transactions:
+      if tx.type == DEPOSIT_TX_TYPE:
+          continue
+
+      daUsageEstimate = max(
+          minTransactionSize,
+          (intercept + fastlzCoef * tx.fastlzSize) // 1e6
+      )
+      daFootprint += daUsageEstimate * daFootprintGasScalar
+
+  return daFootprint 
+```
+
+ここで、`intercept`、`minTransactionSize`、`fastlzCoef`、`fastlzSize` は
+[Fjord 仕様](../fjord/exec-engine)で定義されており、`DEPOSIT_TX_TYPE` は `0x7E`、
+`//` は整数の切り捨て除算を表します。
+
+Jovian 以降、各ブロックヘッダーの `blobGasUsed` プロパティには、そのブロックの `daFootprint` が設定されます。なお、Jovian より前の
+Ecotone 以降では、Base が blob をサポートしていないため、この値は 0 に設定されていました。現在は DA フットプリントを格納する用途に転用されています。
+
+ブロック構築時にはブロックの `daFootprint` が `gasLimit` を下回ることを保証し、ヘッダー検証時にはそれを検証しなければなりません。これは `gasUsed` プロパティの場合と同様です。
+つまり、ブロックの推定 DA 使用量の合計は最大でも `gasLimit/daFootprintGasScalar` バイトまでとなります。
+
+さらに Jovian 以降、ベースフィーの更新計算では、従来の `gasUsed` の値に代えて
+`gasMetered := max(gasUsed, blobGasUsed)` が使用されます。
+その結果、DA 使用量の多いブロックによって、後続ブロックのベースフィーが上昇する可能性があります。
+
+### スカラーの読み込み {#scalar-loading}
+
+`daFootprintGasScalar` は、Isthmus フォークで[導入された](../isthmus/exec-engine#operator-fee) `operatorFeeScalar` および `operatorFeeConstant` と同様の方法で読み込まれます。読み取り方法は次の 2 つで、どちらを使っても同じ結果になります。
+
+* 現在の L2 ブロックのデポジットされた L1 属性 (`daFootprintGasScalar`) から読み取る
+  ([jovian スキーマ](./l1-attributes)に従ってデコード)
+* L1 Block Info コントラクト (`0x4200000000000000000000000000000000000015`) から読み取る
+  * Solidity のゲッター関数 `daFootprintGasScalar` を使用する
+  * ストレージを直接読み取る：スロット `8` のオフセット `12` にあるビッグエンディアンの `uint16`
+
+デフォルト値については、[L1 属性](./l1-attributes)のセクションを参照してください。
+
+### レシート {#receipts}
+
+Jovian の有効化後、トランザクションレシートに新しいフィールド `daFootprintGasScalar` が追加されます。このフィールドには、
+トランザクションを含むブロックの DA フットプリントガススカラーが設定されます。
+また、レシートの `blobGasUsed` フィールドには、そのトランザクションの DA フットプリントが設定されます。
+
+### 根拠 {#rationale-2}
+
+現在の L1 fee メカニズムは、トランザクションの DA フットプリントの推定値に基づいて DA 使用量に課金していますが、*L1 上の DA スループット* に限りがあることを反映するプロトコルメカニズムは現時点では存在しません。たとえば、Pectra
+が有効な Ethereum L1 では、利用可能な blob スループットは `~96 kB/s` (目標値は `~64 kB/s`) ですが、calldata の多い L2 トランザクションに対する calldata のフロアガス価格が
+`40` であるため、ほとんどの Base
+チェーンでは、Ethereum の blob 領域で処理できる量を超える圧縮不可能なトランザクションデータをブロックに含めることができてしまいます。現在これは、ポリシーレベルでのバッチャー・シーケンサー間の
+スロットリング、つまりブロック構築を人為的に制限するメカニズムによって緩和されています。しかし、これによりベースフィーが低下することがあり、
+チェーンオペレーターにとって不要な損失が生じるほか、ユーザー体験も悪化します (トランザクション取り込みの遅延、priority fee
+オークションの発生など) 。そこで、ブロックの DA フットプリントにハードリミットを設け、それがベースフィーにも反映されるようにすることで、
+前述のポリシーベースの解決策が抱える問題を緩和します。
+
+## オペレーター手数料 {#operator-fee}
+
+### 手数料計算式の更新 {#fee-formula-update}
+
+Jovian では、より高い手数料を課せるようにオペレーター手数料の計算方法が更新されます。
+Jovian の有効化以降、オペレーター手数料は次の式で計算しなければなりません (MUST) 。
+
+$$
+\text{operatorFee} = (\text{gas} \times \text{operatorFeeScalar} \times 100) + \text{operatorFeeConstant}
+$$
+
+したがって、ガスあたりに実際に適用されるスカラーは `100 * operatorFeeScalar` となります。それ以外の点については、[Isthmus 仕様](../isthmus/exec-engine#operator-fee)に記載されているデータ型およびオペレーター手数料
+のセマンティクスが引き続き適用されます。
+
+### 最大値 {#maximum-value}
+
+新しい計算式では、オペレーター手数料の最大値は103ビットになります：
+
+```text Maximum Operator Fee
+operatorFee_max = (uint64_max * uint32_max * 100) + uint64_max ≈ 7.924660923989131 * 10^30
+```
+
+中間演算に `uint256` を使用する実装では、追加のオーバーフローチェックは不要です。
+
+## EVMの変更点 {#evm-changes}
+
+### プリコンパイルの入力サイズ制限 {#precompile-input-size-restrictions}
+
+一部のプリコンパイルで入力サイズの制限が変更されました。変更後の制限は次のとおりです。
+
+* `bn256Pairing`: 81,984 バイト (427 ペア)
+* `BLS12-381 G1 MSM`: 288,960 バイト (1,806 ペア)
+* `BLS12-381 G2 MSM`: 278,784 バイト (968 ペア)
+* `BLS12-381 Pairing`: 156,672 バイト (408 ペア)

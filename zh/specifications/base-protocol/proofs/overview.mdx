@@ -1,0 +1,21 @@
+---
+title: "证明"
+sidebarTitle: "概览"
+description: "概述 Azul 证明系统中的链下服务与链上合约，它们使 L2 检查点提案能够在以太坊上得到验证。"
+---
+
+证明系统由一组链下服务与链上合约组成，使 L2 检查点
+提案能够在以太坊上得到验证。每个提案都会针对某一固定 L2 区块范围声明一个 output root。
+独立的证明参与者会重新计算该声明并提供证明材料；若声明无效，则对该
+博弈发起争议。
+
+本节介绍 Azul 证明系统中各组件承担的角色。
+
+* [Challenger](/zh/specifications/base-protocol/proofs/challenger)：将进行中的博弈与规范 L2 状态进行比对，并对
+  无效声明发起争议。
+* [Proposer](/zh/specifications/base-protocol/proofs/proposer)：创建新的检查点提案。
+* [Registrar](/zh/specifications/base-protocol/proofs/registrar)：维护已接受的 TEE 签名者身份的链上注册表。
+* [TEE Prover](/zh/specifications/base-protocol/proofs/tee-prover)：为常规提案路径生成基于 Nitro Enclave 的证明。
+* [ZK Prover](/zh/specifications/base-protocol/proofs/zk-prover)：为提案路径和争议路径生成无需许可的证明。
+* [合约](/zh/specifications/base-protocol/proofs/proof-contracts)：验证证明材料、跟踪博弈状态，并根据博弈结果释放提款和
+  保证金。

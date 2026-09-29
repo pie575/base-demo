@@ -1,0 +1,46 @@
+---
+title: 'eth_chainId'
+sidebarTitle: 'eth_chainId'
+description: '現在のネットワークのチェーンIDを返します。'
+---
+
+[EIP-695](https://eips.ethereum.org/EIPS/eip-695)に準拠して、現在のネットワークのチェーンIDを返します。
+
+## パラメーター {#parameters}
+
+パラメーターはありません。
+
+## 戻り値 {#returns}
+
+<ResponseField name="result" type="string">
+  チェーン ID (16進数文字列) 。Base Mainnet では `"0x2105"` (8453) 、Base Sepolia では `"0x14a34"` (84532) です。
+</ResponseField>
+
+## 例 {#example}
+
+<CodeGroup>
+  ```json リクエスト
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_chainId",
+    "params": [],
+    "id": 1
+  }
+  ```
+
+  ```json レスポンス (Base Mainnet)
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x2105"
+  }
+  ```
+
+  ```json レスポンス (Base Sepolia)
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x14a34"
+  }
+  ```
+</CodeGroup>

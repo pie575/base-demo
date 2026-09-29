@@ -1,0 +1,82 @@
+---
+title: "ペイアウトを送信する"
+keywords: ["USDC の一括ペイアウト", "Base での加盟店への支払い", "ERC-20 ペイアウトコントラクト", "複数の受取人への支払い"]
+description: "参照 ID 付きのトークンの一括ペイアウトを 1 回のトランザクションで送信します。ペイアウトコントラクトに資金は残りません。"
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+従業員、クリエイター、サプライヤー、販売者に対し、参照 ID 付きのバッチを 1 回で送信します。コントラクトは各金額を送信者から受取人へ直接引き出して送るため、トランザクション間でトークン残高をプールして保持することはありません。
+
+## デモ {#demo}
+
+<PaymentsDemo flow="payout" />
+
+<Tip>
+  上記のデモはモックです。Vibenet 上のオンチェーンデモをご覧になりたい場合は、[Base チェーンのデモ](https://chain.base.org/demos)をご確認ください。
+</Tip>
+
+## ペイアウトコントラクトをデプロイする {#deploy-the-payout-contract}
+
+{/* sample: payout-batch-solidity */}
+
+```solidity Payout.sol lines wrap expandable highlight={2-4,8-9}
+function sendPayouts(bytes32 batchId, address[] calldata recipients, uint256[] calldata amounts) external {
+    if (processed[batchId]) revert BatchAlreadyProcessed(batchId);
+    if (recipients.length == 0 || recipients.length != amounts.length) revert InvalidArrayLengths();
+    if (recipients.length > MAX_RECIPIENTS) revert TooManyRecipients();
+    processed[batchId] = true;
+
+    for (uint256 i; i < recipients.length; ++i) {
+        require(token.transferFrom(msg.sender, recipients[i], amounts[i]), "transfer failed");
+        emit PayoutSent(batchId, msg.sender, recipients[i], amounts[i]);
+    }
+}
+```
+
+デプロイしたコントラクトに対してバッチの合計額をapproveしてから、同じ送信者アドレスから受取人と金額を送信します。
+
+{/* sample: send-payout-ts */}
+
+```typescript TypeScript backend lines wrap expandable highlight={2,4-8}
+export async function sendPayouts(
+  payout: Address,
+  batchReference: string,
+  recipients: Address[],
+  amounts: string[],
+) {
+  if (recipients.length !== amounts.length) throw new Error("Recipient and amount counts differ");
+  const batchId = keccak256(toHex(batchReference));
+  const simulation = await publicClient.simulateContract({
+    account,
+    address: payout,
+    abi: payoutAbi,
+    functionName: "sendPayouts",
+    args: [batchId, recipients, amounts.map((amount) => parseUnits(amount, 6))],
+  });
+  const hash = await walletClient.writeContract(simulation.request);
+  return publicClient.waitForTransactionReceipt({ hash, confirmations: 2 });
+}
+```
+
+<Check>
+  このトランザクションでは、同じ `batchId` のもとで受取人ごとに `PayoutSent` イベントが1件ずつ発行され、トークン転送の合計額が承認済みのバッチ総額と一致します。
+</Check>
+
+<Warning>
+  バッチサイズの上限は実測したガス使用量に基づいて設定し、コントラクトの `MAX_RECIPIENTS` による制限は維持してください。トークン転送が1件でも失敗すると、バッチ全体がリバートされます。
+</Warning>
+
+公開されている `Multicall3` コントラクトを ERC-20 のスペンダーとして承認しないでください。下流のトークン呼び出しからは Multicall3 が `msg.sender` として見えます。そのため、この汎用コントラクトに付与したアローワンスに対して `transferFrom` を実行するよう、誰でも依頼できてしまいます。ペイアウトを開始できる主体と受取人の選定方法があらかじめ固定された専用コントラクトを使用してください。
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="支払いを分割する" icon="divide" href="/ja/build-on-base/accept-payments/split-a-payment">
+    ベーシスポイント単位で配分額を計算し、端数を正確に割り当てます。
+  </Card>
+
+  <Card title="支払いを照合する" icon="table" href="/ja/build-on-base/accept-payments/reconcile-payments">
+    ペイアウトイベントを台帳の参照情報と紐付けます。
+  </Card>
+</CardGroup>

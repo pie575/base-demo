@@ -1,0 +1,324 @@
+---
+title: "プリデプロイ"
+description: "Base にプリデプロイされたスマートコントラクトの仕様です。ジェネシス状態で所定のアドレスにデプロイされるシステムコントラクトも対象としています。"
+---
+
+## 概要 {#overview}
+
+[プリデプロイされたスマートコントラクト](/ja/specifications/reference/glossary#predeployed-contract-predeploy)は、Base のジェネシス状態において、あらかじめ定められたアドレスに配置されています。プリコンパイルに似ていますが、EVM の外部でネイティブコードを実行するのではなく、EVM 内で直接実行される点が異なります。
+
+プリコンパイルではなくプリデプロイを採用しているのは、マルチクライアント実装を容易にするとともに、hardhat/foundry のネットワークフォーク機能との統合をより深められるようにするためです。
+
+プリデプロイのアドレスは、プレフィックス付きの名前空間 `0x4200000000000000000000000000000000000xxx` 内に存在します。この名前空間の先頭 2048 個のアドレスにはプロキシが設定されていますが、`WETH` プリデプロイ用に予約されたアドレスは例外です。
+
+`LegacyERC20ETH` プリデプロイは特別なアドレス `0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000` に配置されており、このアカウントにはプロキシがデプロイされていません。
+
+以下の表に各プリデプロイを示します。システムバージョンは、そのプリデプロイが導入された時期を表し、`Legacy`、`Bedrock`、`Canyon` のいずれかの値を取ります。非推奨のコントラクトは使用しないでください。
+
+| 名前                            | アドレス                                       | 導入時期    | 非推奨 | プロキシ |
+| ----------------------------- | ------------------------------------------ | ------- | --- | ---- |
+| LegacyMessagePasser           | 0x4200000000000000000000000000000000000000 | Legacy  | はい  | はい   |
+| DeployerWhitelist             | 0x4200000000000000000000000000000000000002 | Legacy  | はい  | はい   |
+| LegacyERC20ETH                | 0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000 | Legacy  | はい  | いいえ  |
+| WETH9                         | 0x4200000000000000000000000000000000000006 | Legacy  | いいえ | いいえ  |
+| L2CrossDomainMessenger        | 0x4200000000000000000000000000000000000007 | Legacy  | いいえ | はい   |
+| L2StandardBridge              | 0x4200000000000000000000000000000000000010 | Legacy  | いいえ | はい   |
+| SequencerFeeVault             | 0x4200000000000000000000000000000000000011 | Legacy  | いいえ | はい   |
+| OptimismMintableERC20Factory  | 0x4200000000000000000000000000000000000012 | Legacy  | いいえ | はい   |
+| L1BlockNumber                 | 0x4200000000000000000000000000000000000013 | Legacy  | はい  | はい   |
+| GasPriceOracle                | 0x420000000000000000000000000000000000000F | Legacy  | いいえ | はい   |
+| L1Block                       | 0x4200000000000000000000000000000000000015 | Bedrock | いいえ | はい   |
+| L2ToL1MessagePasser           | 0x4200000000000000000000000000000000000016 | Bedrock | いいえ | はい   |
+| L2ERC721Bridge                | 0x4200000000000000000000000000000000000014 | Legacy  | いいえ | はい   |
+| OptimismMintableERC721Factory | 0x4200000000000000000000000000000000000017 | Bedrock | いいえ | はい   |
+| ProxyAdmin                    | 0x4200000000000000000000000000000000000018 | Bedrock | いいえ | はい   |
+| BaseFeeVault                  | 0x4200000000000000000000000000000000000019 | Bedrock | いいえ | はい   |
+| L1FeeVault                    | 0x420000000000000000000000000000000000001a | Bedrock | いいえ | はい   |
+| SchemaRegistry                | 0x4200000000000000000000000000000000000020 | Bedrock | いいえ | はい   |
+| EAS                           | 0x4200000000000000000000000000000000000021 | Bedrock | いいえ | はい   |
+| BeaconBlockRoot               | 0x000F3df6D732807Ef1319fB7B8bB8522d0Beac02 | Ecotone | いいえ | いいえ  |
+| OperatorFeeVault              | 0x420000000000000000000000000000000000001B | Isthmus | いいえ | はい   |
+
+## LegacyMessagePasser {#legacymessagepasser}
+
+[実装](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/legacy/LegacyMessagePasser.sol)
+
+アドレス: `0x4200000000000000000000000000000000000000`
+
+`LegacyMessagePasser` コントラクトは、Bedrock アップグレード以前の出金
+トランザクションに対するコミットメントを保存します。出金トランザクションにコミットする特定の
+ストレージスロットのマークル証明は、L1 上の出金トランザクションの一部として
+使用されます。このストレージスロットを保持すべきアカウントは、
+L1 のロジックにハードコードされています。Bedrock アップグレード以降は、
+代わりに `L2ToL1MessagePasser` が使用されます。Bedrock 以降、このコントラクトからの
+出金のファイナライズはサポートされておらず、このコントラクトは、これに依存している可能性のある
+代替ブリッジのためにのみ残されています。このコントラクトは
+`L2ToL1MessagePasser` に呼び出しを転送しないため、`CrossDomainMessenger`
+システムを通じて出金を行う場合、このコントラクトの呼び出しは no-op とみなされます。
+
+ファイナライズされていない保留中の出金は、アップグレードの一環としてすべて
+`L2ToL1MessagePasser` に移行されるため、引き続き
+ファイナライズできます。
+
+## L2ToL1MessagePasser {#l2tol1messagepasser}
+
+[実装](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/L2ToL1MessagePasser.sol)
+
+アドレス: `0x4200000000000000000000000000000000000016`
+
+`L2ToL1MessagePasser` は、出金トランザクションに対するコミットメントを保存します。
+ユーザーは L1 で出金トランザクションを送信する際、L2 で実行した出金トランザクションが
+このコントラクトの `sentMessages`
+マッピングに含まれていることを示す証明を提出します。
+
+出金された ETH はすべて L2 上のこのコントラクトに蓄積され、
+`burn()` 関数を呼び出すことで、誰でもパーミッションレスに L2 の供給量から除去できます。
+
+## DeployerWhitelist {#deployerwhitelist}
+
+[実装](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/legacy/DeployerWhitelist.sol)
+
+アドレス: `0x4200000000000000000000000000000000000002`
+
+`DeployerWhitelist` は、Optimism の初期段階において安全性を補強するために使用されていた
+プリデプロイです。
+かつては、ネットワーク上でコントラクトをデプロイできるアカウントを定義していました。
+
+その後、任意のコントラクトのデプロイが可能になり、現在これを無効にすることはできません。
+レガシーシステムでは、このコントラクトが `CREATE` および
+`CREATE2` にフックされており、デプロイヤーが許可リストに登録されているかを確認していました。
+
+Bedrock システムでは、このコントラクトは
+`CREATE` のコードパスで使用されなくなります。
+
+このコントラクトは非推奨であるため、使用しないでください。
+
+## LegacyERC20ETH {#legacyerc20eth}
+
+[実装](https://github.com/ethereum-optimism/optimism/blob/a4524ac152b4c9e8eb80beadc9cd772b96243aa2/packages/contracts-bedrock/src/legacy/LegacyERC20ETH.sol)
+
+アドレス: `0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000`
+
+`LegacyERC20ETH` プリデプロイは、Bedrock アップグレード以前にシステム内に存在していたすべての
+ether を表すものです。当時、ETH はすべて ERC20 トークンとして表現されており、ユーザーは
+ERC20 インターフェースとネイティブ ETH インターフェースのいずれかを選択して利用できました。
+
+Bedrock へのアップグレードでは、すべての ether がこのコントラクトから移行され、
+ネイティブな表現に置き換えられます。このコントラクトの状態を変更するメソッドはすべて、
+Bedrock アップグレード後は revert します。
+
+このコントラクトは非推奨のため、使用しないでください。
+
+## WETH9 {#weth9}
+
+[実装](https://github.com/ethereum-optimism/optimism/blob/2b1c99b39744579cc226077d356ae9e5f162db4a/packages/contracts-bedrock/src/vendor/WETH9.sol)
+
+アドレス: `0x4200000000000000000000000000000000000006`
+
+`WETH9` は、Base における Wrapped Ether の標準実装です。
+広く利用されているコントラクトであるため、プリデプロイとして配置されており、
+どの Base ネットワークでも同じ決定論的なアドレスに存在します。
+
+## L2CrossDomainMessenger {#l2crossdomainmessenger}
+
+[実装](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/L2CrossDomainMessenger.sol)
+
+アドレス: `0x4200000000000000000000000000000000000007`
+
+`L2CrossDomainMessenger` は、`L2ToL1MessagePasser` を直接呼び出すよりも高レベルな、
+クロスドメインメッセージ送信用の API を提供します。
+リプレイ攻撃を防ぐために L2 へリレー済みの L1 メッセージのマッピングを保持するとともに、
+L1 から L2 へのトランザクションが L2 でリバートした場合には再実行も可能にします。
+
+L1 上の `L1CrossDomainMessenger` に対する呼び出しはすべて、
+L2 上の `L2CrossDomainMessenger` を経由するようにシリアライズされます。
+
+`relayMessage` 関数はリモートドメインから届いたトランザクションを実行します。
+一方、`sendMessage` 関数は、リモートドメインの `relayMessage` 関数を通じて
+リモートドメイン上で実行されるトランザクションを送信します。
+
+## L2StandardBridge {#l2standardbridge}
+
+[実装](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/L2StandardBridge.sol)
+
+アドレス: `0x4200000000000000000000000000000000000010`
+
+`L2StandardBridge` は、`L2CrossDomainMessenger` の上に構築された上位レベルの API で、ETH や
+ERC20 トークンをドメイン間で送信するための標準インターフェースを提供します。
+
+L1 から L2 へトークンをデポジットする場合、`L1StandardBridge` がトークンをロックし、
+`L2StandardBridge` にクロスドメインメッセージを送信します。これを受けて `L2StandardBridge` が
+指定されたアカウントにトークンをミントします。
+
+L2 から L1 へトークンを引き出す場合は、ユーザーが L2 上でトークンをバーンし、
+`L2StandardBridge` が `L1StandardBridge` にメッセージを送信します。`L1StandardBridge` は
+元となるトークンのロックを解除し、指定されたアカウントに転送します。
+
+`OptimismMintableERC20Factory` を使用すると、ローカルドメイン上の ERC20 トークンコントラクトに対応する
+ERC20 トークンコントラクトをリモートドメイン上に作成でき、トークンをリモートドメインへデポジットできるようになります。このファクトリーは、
+`StandardBridge` と連携可能なインターフェースを備えた `OptimismMintableERC20` をデプロイします。
+
+このコントラクトは L1 上にデプロイすることもでき、その場合は L2 ネイティブのトークンを
+L1 へ引き出せるようになります。
+
+## L1BlockNumber {#l1blocknumber}
+
+[実装](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/legacy/L1BlockNumber.sol)
+
+アドレス: `0x4200000000000000000000000000000000000013`
+
+`L1BlockNumber` は、最新の既知の L1 ブロック番号を返します。このコントラクトは
+レガシーシステムで導入されたもので、内部で `L1Block` コントラクトを呼び出すことにより
+後方互換性が保たれるはずです。
+
+L2 上で L1 に関する情報を取得する場合は、`L1Block` コントラクトの使用を
+推奨します。
+
+## GasPriceOracle {#gaspriceoracle}
+
+[実装](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/GasPriceOracle.sol)
+
+アドレス: `0x420000000000000000000000000000000000000F`
+
+レガシーシステムでは、`GasPriceOracle` は許可制のコントラクトであり、
+オフチェーンのアクターが L1 のベースフィーと L2 のガス価格をプッシュしていました。
+このオフチェーンのアクターは、L1 のブロックヘッダーを監視して L1 のベースフィーを取得するとともに、
+L2 のガス使用量を監視し、輻輳制御アルゴリズムに基づいて
+適切な L2 のガス価格を算出していました。
+
+Bedrock 以降、`GasPriceOracle` は許可制のコントラクトではなくなり、
+オフチェーンでのガス見積もり用の API を維持する目的でのみ存在しています。
+関数 `getL1Fee(bytes)` は未署名の RLP トランザクションを受け取り、
+手数料のうち L1 部分を返します。この手数料は L1 をデータ可用性レイヤーとして
+利用するための費用です。トランザクション手数料の合計を算出するには、
+実行費用にあたる L2 部分の手数料にこれを加算する必要があります。
+
+Ecotone アップグレード以前に、手数料の L1 部分の算出に使用される値は次のとおりです。
+
+* scalar
+* overhead
+* decimals
+
+Bedrock アップグレード以降、これらの値は L1 上の
+`SystemConfig` コントラクトで管理されるようになりました。`scalar` と `overhead` の値は
+ブロックごとに `L1Block` コントラクトへ送信され、`decimals` の値は
+6 にハードコードされています。
+
+Ecotone アップグレード以降、L1 手数料の算出に使用される値は次のとおりです。
+
+* baseFeeScalar
+* blobBaseFeeScalar
+* decimals
+
+[ecotone-scalars]: /specifications/reference/glossary#post-ecotone-parameters
+
+これらの新しい scalar 値は、L1 上の `SystemConfig` コントラクトで管理されます。その際、`scalars` ストレージ
+スロットには後方互換性のある[バージョン付きエンコード方式][ecotone-scalars]が導入されています。
+`decimals` は引き続き 6 にハードコードされており、`overhead` の値は無視されます。
+
+## L1Block {#l1block}
+
+[実装](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/L1Block.sol)
+
+アドレス: `0x4200000000000000000000000000000000000015`
+
+[l1-block-predeploy]: /specifications/reference/glossary#l1-attributes-predeployed-contract
+
+[L1Block][l1-block-predeploy] は Bedrock で導入され、L2 上で L1 のコンテキストを維持する役割を担います。
+これにより、L2 から L1 の状態にアクセスできます。
+
+## ProxyAdmin {#proxyadmin}
+
+[ProxyAdmin](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/universal/ProxyAdmin.sol)
+アドレス: `0x4200000000000000000000000000000000000018`
+
+`ProxyAdmin` は、プリデプロイに配置されたすべてのプロキシコントラクトの
+オーナーです。`ProxyAdmin` 自体もプロキシの背後にあります。`ProxyAdmin` のオーナーは、
+他のどのプリデプロイコントラクトもアップグレードできます。
+
+## SequencerFeeVault {#sequencerfeevault}
+
+[実装](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/SequencerFeeVault.sol)
+
+アドレス: `0x4200000000000000000000000000000000000011`
+
+`SequencerFeeVault` はトランザクションの優先手数料 (priority fee) をすべて蓄積するコントラクトであり、
+`block.coinbase` の値として設定されています。
+このアカウントに手数料が十分に蓄積されると、変更不可能な L1 アドレスへ引き出すことができます。
+
+手数料の引き出し先となる L1 アドレスを変更するには、プロキシの実装キーを変更して
+コントラクトをアップグレードする必要があります。
+
+## OptimismMintableERC20Factory {#optimismmintableerc20factory}
+
+[実装](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/universal/OptimismMintableERC20Factory.sol)
+
+アドレス: `0x4200000000000000000000000000000000000012`
+
+`OptimismMintableERC20Factory` は、L1 のネイティブトークンのデポジット先として使用できる ERC20 コントラクトを
+L2 上に作成する役割を担います。これらの ERC20 コントラクトはパーミッションレスに作成でき、
+`StandardBridge` が要求するインターフェースを実装しているため、そのままデポジットおよび出金に利用できます。
+
+`OptimismMintableERC20Factory` によって作成された各 ERC20 コントラクトでは、ユーザーが L1 から L2 へデポジットするか、
+L2 から L1 へ出金するかに応じて、`L2StandardBridge` がトークンをミントまたはバーンできます。
+
+## OptimismMintableERC721Factory {#optimismmintableerc721factory}
+
+[実装](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/OptimismMintableERC721Factory.sol)
+
+アドレス: `0x4200000000000000000000000000000000000017`
+
+`OptimismMintableERC721Factory` は、L1 ネイティブの NFT のデポジット先として使用できる ERC721 コントラクトを
+L2 上に作成する役割を担います。
+
+## BaseFeeVault {#basefeevault}
+
+[実装](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/BaseFeeVault.sol)
+
+アドレス: `0x4200000000000000000000000000000000000019`
+
+`BaseFeeVault` プリデプロイは、L2 のベースフィーを受け取ります。L2 では、L1 とは異なりベースフィーは
+バーンされません。コントラクトが受け取った手数料が一定額に達すると、その ETH を
+L1 上の変更不可能なアドレスへ引き出せるようになります。
+
+## L1FeeVault {#l1feevault}
+
+[実装](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/L1FeeVault.sol)
+
+アドレス: `0x420000000000000000000000000000000000001a`
+
+`L1FeeVault` プリデプロイは、トランザクション手数料のうち L1 分を受け取ります。
+コントラクトに一定額の手数料が蓄積されると、その ETH を
+L1 上の変更不可能なアドレスへ引き出せるようになります。
+
+## SchemaRegistry {#schemaregistry}
+
+[実装](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/vendor/eas/SchemaRegistry.sol)
+
+アドレス: `0x4200000000000000000000000000000000000020`
+
+`SchemaRegistry` プリデプロイは、`Ethereum Attestation Service`
+プロトコル向けのグローバルなアテステーションスキーマを実装します。
+
+## EAS {#eas}
+
+[実装](https://github.com/ethereum-optimism/optimism/tree/develop/packages/contracts-bedrock/src/vendor/eas)
+
+アドレス: `0x4200000000000000000000000000000000000021`
+
+`EAS` プリデプロイは、`Ethereum Attestation Service` プロトコルを実装したものです。
+
+## Beacon Block Root {#beacon-block-root}
+
+アドレス: `0x000F3df6D732807Ef1319fB7B8bB8522d0Beac02`
+
+`BeaconBlockRoot` プリデプロイを使用すると、L1 のビーコンブロックルートにアクセスできます。これは
+Ecotone ネットワークアップグレードで追加されたもので、仕様は [EIP-4788](https://eips.ethereum.org/EIPS/eip-4788) で定められています。
+
+## Operator Fee Vault {#operator-fee-vault}
+
+[実装](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/OperatorFeeVault.sol)
+
+アドレス: `0x420000000000000000000000000000000000001B`
+
+詳細は [Operator Fee Vault](/ja/upgrades/isthmus/predeploys#operatorfeevault) の仕様を参照してください。

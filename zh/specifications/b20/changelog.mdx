@@ -1,0 +1,55 @@
+---
+title: "变更日志"
+description: "B20 代币标准的迁移说明，按硬分叉和功能分别列出，最新条目在前，涵盖新增方法、弃用项及激活日期。"
+---
+
+[B20 代币标准](/zh/specifications/b20)的迁移说明，按硬分叉和功能分别列出。每个 Cobalt 条目都是一份重点突出、以代码为主的变更日志，对应一项跨越硬分叉边界的特定功能变更。最新条目在前。
+
+<Note>
+  B20 的方法和事件签名属于链共识面的一部分。现有选择器及其行为保持不变；该标准只通过新增内容来扩展。
+</Note>
+
+## 硬分叉序号 {#hardfork-ordinals}
+
+| 序号   | 硬分叉    | 状态   |
+| ---- | ------ | ---- |
+| `01` | Beryl  | 已上线  |
+| `02` | Cobalt | 即将上线 |
+
+## [Cobalt](/zh/upgrades/cobalt/overview) (即将推出) — 序号 02 {#cobalt-upcoming-ordinal-02}
+
+| 产品                       | 变更                        | 受影响的接口            | 条目                                                                                          |
+| ------------------------ | ------------------------- | ----------------- | ------------------------------------------------------------------------------------------- |
+| B20 Asset                | 定时乘数更新 (ERC-8056)         | `IB20Asset`       | [乘数 / ERC-8056](/zh/base-chain/specs/reference/b20/changelog/02-cobalt-b20asset-multiplier)    |
+| B20 Asset、B20 Stablecoin | 扣押接口 + 弃用 `burnBlocked`   | `IB20` (共享接口)     | [扣押接口](/zh/base-chain/specs/reference/b20/changelog/02-cobalt-b20-seize)                       |
+| PolicyRegistry           | 复合策略 (UNION / INTERSECT)  | `IPolicyRegistry` | [复合策略](/zh/base-chain/specs/reference/b20/changelog/02-cobalt-policyregistry-composite-policy) |
+
+## [Beryl](/zh/upgrades/beryl/overview) — 初始版本 {#beryl-initial-release}
+
+| 网络           | 激活时间       |
+| ------------ | ---------- |
+| Base mainnet | 2026-06-25 |
+| Base Sepolia | 2026-06-18 |
+
+随 [Beryl 升级](/zh/upgrades/beryl/overview)一同发布。
+
+**新增**
+
+* 以原生预编译形式提供的 B20 标准：B20 是 ERC-20 的超集，其 `transfer`、`transferFrom`、`approve`、`allowance`、`balanceOf`、`totalSupply`、`name`、`symbol`、`decimals`、`Transfer` 和 `Approval` 的选择器及行为均与 ERC-20 完全一致
+* [基于角色的访问控制](/zh/specifications/b20/concepts/roles-and-pause#2-roles)，包括内置角色、角色图中的用户自定义角色，以及用于实现永久无管理员运行的 `renounceLastAdmin`
+* [PolicyRegistry](/zh/specifications/b20/concepts/policies#21-the-registry-and-the-token) 单例预编译，支持 `BLOCKLIST`、`ALLOWLIST`、`UNION` 和 `INTERSECT` 策略类型、两步式管理员转移，并内置 `ALWAYS_ALLOW` 和 `ALWAYS_BLOCK`
+* 每个代币均具备[六种策略作用域](/zh/specifications/b20/concepts/policies#32-policy-scopes)，涵盖转账的发送方、接收方和执行方，铸造的接收方，以及扣押的持有方和接收方
+* [`seizeWithMemo`](/specifications/b20/reference/interfaces/ib20/seize-with-memo)，用于出于合规要求的余额转移
+* transfer、transferFrom、mint、burn 和 seize 的 [Memo 变体](/specifications/b20/reference/interfaces/ib20)，会在主事件之后立即发出 `Memo`
+* 按 `PausableFeature` 进行[细粒度暂停](/zh/specifications/b20/concepts/roles-and-pause#3-pause)：`TRANSFER`、`MINT`、`BURN` 和 `SEIZE`
+* [可选的供应上限](/specifications/b20/reference/interfaces/ib20/supply-cap)，以 `type(uint128).max` 作为表示无上限的哨兵值及最大供应量
+* [ERC-2612 `permit`](/zh/specifications/b20)，其 EIP-712 域版本为 `"1"`
+* [ERC-7572 `contractURI`](/specifications/b20/reference/interfaces/ib20/contract-uri)，以及受 `METADATA_ROLE` 管控的名称、符号和 URI 更新
+* [B20Factory](/specifications/b20/reference/interfaces/ib20-factory/create-b20) 单例预编译，提供确定性且编码了变体信息的地址，以及 `initCalls` 引导语义
+* 对会更改状态的 PolicyRegistry 调用实施 ActivationRegistry 门控
+* [`ASSET` 变体](/zh/specifications/b20/concepts/token-types#4-asset)：`OPERATOR_ROLE`、支持计划更新和即时更新的 WAD 精度 UI 乘数、公告、`batchMint`，以及发行方自定义的额外元数据
+* [`STABLECOIN` 变体](/zh/specifications/b20/concepts/token-types#5-stablecoin)：固定 6 位小数，以及在创建时一次性设定的 `currency()` 代码
+
+**已弃用**
+
+* `burnBlocked` 和 `BURN_BLOCKED_ROLE`，仅为向后兼容而保留。新的扣押流程请使用 `seizeWithMemo`。

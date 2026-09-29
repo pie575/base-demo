@@ -1,0 +1,474 @@
+---
+title: "デポジット"
+description: "Base におけるデポジットの仕組み — ユーザー体験から、プロトコルレベルのデポジットトランザクションタイプ、保証されたガス市場まで。"
+---
+
+[g-transaction-type]: /specifications/reference/glossary#transaction-type
+
+[g-derivation]: /specifications/reference/glossary#L2-chain-derivation
+
+[g-deposited]: /specifications/reference/glossary#deposited
+
+[g-deposits]: /specifications/reference/glossary#deposits
+
+[g-l1-attr-deposit]: /specifications/reference/glossary#l1-attributes-deposited-transaction
+
+[g-user-deposited]: /specifications/reference/glossary#user-deposited-transaction
+
+[g-eoa]: /specifications/reference/glossary#eoa
+
+[g-exec-engine]: /specifications/reference/glossary#execution-engine
+
+デポジットとは、Base の外部で開始され、Base 上のトランザクションとして取り込まれるトランザクションです。Ethereum からのデポジットでは、L1 トランザクションが発行したデータをもとに、Base ノードが対応する L2 デポジットトランザクションを導出します。
+
+デポジットトランザクションは、プロトコルの一部としてブロックに含められます。L1 のデポジットイベントによって認可され、L2 のガス代は L1 上で支払われるため、通常の L2 トランザクションのような署名、nonce、手数料フィールドは使用しません。ほとんどのユーザーにとって、実際の動作はシンプルです。送信元チェーンのトランザクションが承認・処理されると、資産やメッセージが Base 上に反映されます。
+
+利用可能なブリッジルートについては、[Bridge to Base](/ja/base-chain/network-information/ecosystem-bridges) を参照してください。
+
+## 概要 {#overview}
+
+[デポジットトランザクション][g-deposited] ([デポジット][g-deposits]とも呼ばれます) は、L1で開始され、L2で実行されるトランザクションです。本ドキュメントでは、デポジット用の新しい[トランザクションタイプ][g-transaction-type]について概説します。また、L1におけるデポジットの開始方法と、L2における認可および検証の条件についても説明します。
+
+**用語に関する注記**: *デポジットトランザクション* はL2トランザクションのみを指すのに対し、*デポジット* はさまざまな段階 (たとえばL1でデポジットされた時点など) にあるトランザクションを指す場合があります。
+
+## デポジットトランザクションタイプ {#the-deposited-transaction-type}
+
+[deposited-tx-type]: #the-deposited-transaction-type
+
+[デポジットトランザクション][g-deposited]には、既存のトランザクションタイプと比べて
+次のような注目すべき違いがあります。
+
+1. Layer 1のブロックから導出され、プロトコルの一部として必ず取り込まれなければなりません。
+2. 署名検証を含みません (その理由については[ユーザーによるデポジットトランザクション][user-deposited]
+   を参照してください) 。
+3. L2のガスをL1で購入するため、L2のガスは払い戻されません。
+
+デポジットトランザクションを表すため、プレフィックス`0x7E`を持つ[EIP-2718]互換の新しいトランザクションタイプを定義します。
+
+デポジットは次のフィールドを持ちます
+(ここに記載された順序でRLPエンコードされます) 。
+
+[EIP-2718]: https://eips.ethereum.org/EIPS/eip-2718
+
+* `bytes32 sourceHash`: ソースハッシュ。デポジットの発生元を一意に識別します。
+* `address from`: 送信者アカウントのアドレス。
+* `address to`: 受信者アカウントのアドレス。デポジットトランザクションがコントラクト作成である場合は、
+  null (長さゼロ) のアドレス。
+* `uint256 mint`: L2上でミントするETHの額。
+* `uint256 value`: 受信者アカウントに送金するETHの額。
+* `uint64 gas`: L2トランザクションのガスリミット。
+* `bool isSystemTx`: trueの場合、トランザクションはL2ブロックのガスプールに影響しません。
+  * この値は無効化されており、`false`でなければなりません (MUST) 。
+* `bytes data`: calldata。
+
+[EIP-155]トランザクションと異なり、このトランザクションタイプには次の特徴があります。
+
+* `sourceHash`によって識別されるため、`nonce`を含みません。
+  ただしAPIレスポンスには引き続き`nonce`属性が含まれ、対応するトランザクションレシートの
+  `depositNonce`の値が設定されます。
+* 署名情報を含まず、`from`アドレスを明示的に指定します。
+  APIレスポンスには、後方互換性のためにゼロ埋めされた署名値`v`、`r`、`s`が含まれます。
+* 新たに`sourceHash`、`from`、`mint`、`isSystemTx`の属性を含みます。
+  APIレスポンスには、これらが追加フィールドとして含まれます。
+
+[EIP-155]: https://eips.ethereum.org/EIPS/eip-155
+
+`0x7E`を選択したのは、現在トランザクションタイプの識別子として`0x7F`までが許可されているためです。
+大きな識別子を選ぶことで、将来L1チェーン上の別のトランザクションタイプと識別子が
+衝突するリスクを最小限に抑えられます。`0x7F`自体を選ばなかったのは、可変長エンコーディング方式に
+使われる可能性を考慮したためです。
+
+### ソースハッシュの計算 {#source-hash-computation}
+
+デポジットトランザクションの `sourceHash` は、その発生元に応じて計算されます。
+
+* ユーザーデポジット:
+  `keccak256(bytes32(uint256(0)), keccak256(l1BlockHash, bytes32(uint256(l1LogIndex))))`。
+  ここで、`l1BlockHash` と `l1LogIndex` はいずれも、L1 上でデポジットログイベントが取り込まれた位置を指します。
+  `l1LogIndex` は、ブロック内のすべてのログイベントを結合したリストにおける、デポジットイベントログのインデックスです。
+* L1 属性のデポジット:
+  `keccak256(bytes32(uint256(1)), keccak256(l1BlockHash, bytes32(uint256(seqNumber))))`。
+  ここで、`l1BlockHash` は、情報属性のデポジット元となる L1 ブロックのハッシュを指します。
+  また `seqNumber = l2BlockNum - l2EpochStartBlockNum` であり、
+  `l2BlockNum` はデポジットトランザクションが取り込まれた L2 ブロックの番号、
+  `l2EpochStartBlockNum` はそのエポックにおける最初の L2 ブロックの番号です。
+* アップグレードによるデポジット: `keccak256(bytes32(uint256(2)), keccak256(intent))`。
+  ここで、`intent` はアップグレードの意図を識別する UTF-8 バイト文字列です。
+
+デポジットに `sourceHash` がなければ、異なる 2 つのデポジットトランザクションがまったく同じハッシュを持つ可能性があります。
+
+外側の `keccak256` は、一意な識別情報そのものをドメインとあわせてハッシュ化することで、
+異なる種類のソース間での衝突を防ぎます。
+
+[Interop 導出仕様](/ja/specifications/base-protocol/consensus/derivation)では、ドメイン `3` と `4` を持つ
+2 種類のシステムデポジットが新たに導入されています。
+
+一意性の確保に送信者の nonce を使用しないのは、そうするとブロック導出時に
+[実行エンジン][g-exec-engine]から L2 EVM の状態を追加で読み取る必要が生じるためです。
+
+### デポジットトランザクションの種類 {#kinds-of-deposited-transactions}
+
+新たに定義するトランザクションタイプは 1 つのみですが、L2 ブロック内での位置によって、デポジットトランザクションは 2 種類に区別できます。
+
+1. 最初のトランザクションは [L1 属性デポジットトランザクション][l1-attr-deposit] でなければならず (MUST) 、その後に
+2. L1 上のデポジットフィードコントラクト (`OptimismPortal`) に送信された、0 個以上の [ユーザーデポジットトランザクション][user-deposited] の配列が続きます。
+   ユーザーデポジットトランザクションは、L2 エポックの最初のブロックにのみ含まれます。
+
+新しいトランザクションタイプを 1 つだけにしているのは、L1 クライアントソフトウェアへの変更を最小限に抑え、全体的な複雑さも抑えるためです。
+
+### デポジットトランザクションの検証と認可 {#validation-and-authorization-of-deposited-transactions}
+
+前述のとおり、デポジットトランザクションタイプには検証用の署名が含まれません。
+認可は代わりに [L2 チェーン導出][g-derivation]プロセスによって行われます。このプロセスが正しく
+適用されていれば、導出されるのは [L1
+デポジットコントラクト][deposit-contract]のログによって証明された `from` アドレスを持つトランザクションのみです。
+
+### 実行 {#execution}
+
+デポジットトランザクションを実行するには、次の手順に従います。
+
+まず、`from` アカウントの残高を `mint` の量だけ増加させなければなりません (MUST) 。
+これは無条件に行われ、デポジットが失敗してもリバートされません。
+
+次に、デポジットトランザクションの実行環境を、トランザクションの属性に基づき、
+EIP-155 トランザクションの場合とまったく同じ方法で初期化します。
+
+デポジットトランザクションは、以下の例外を除き、type-2 (EIP-1559) トランザクションとまったく同じように処理されます。
+
+* 手数料フィールドは検証されません。デポジットは L1 上でガス代を支払うため、手数料フィールドを持ちません。
+* `nonce` フィールドは検証されません。デポジットはこれを持たず、`sourceHash` によって一意に識別されます。
+* アクセスリストは処理されません。デポジットはアクセスリストを持たないため、アクセスリストが空であるものとして処理されます。
+* `from` が外部所有アカウント (EOA) であるかどうかはチェックされません。デポジットは L1 アドレスマスキングによって EOA でないことが保証されます。
+  ただしこの点は、将来の L1 コントラクトのデプロイにおいて、たとえばアカウント抽象化のような仕組みを実現するために変更される可能性があります。
+* ガスは ETH として返金されません (返金処理を行わないか、デポジットのガス価格が `0` であることを利用します) 。
+* トランザクションの priority fee は徴収されず、ブロックの手数料受取人への支払いも行われません。
+* L1 コスト手数料は徴収されません。デポジットは L1 から導出されるため、データとして L1 に再送信する必要がないからです。
+* ベースフィーは徴収されません。ベースフィーの総計にも変化はありません。
+
+なお、これには通常のトランザクションと同様のコントラクトデプロイの動作も含まれます。また、ガスの計測も
+(上記の手数料関連の変更を除き) 通常と同じであり、intrinsic gas の計測も含まれます。
+
+EVM 実行中に発生した EVM 以外の状態遷移エラーは、特別な方法で処理されます。
+
+* EVM エラーに変換されます。
+  つまり、デポジットは常にブロックに含まれますが、EVM 以外の状態遷移エラー (たとえば、アカウント残高の不足により
+  指定された `value` 量の ETH を送金できなかった場合など) が発生すると、
+  そのレシートは失敗を示します。
+* ワールドステートは、デポジットのミント処理が完了した後の、EVM 処理の開始時点までロールバックされます。
+* ワールドステートにおける `from` の `nonce` は 1 インクリメントされ、これによりこのエラーはネイティブな EVM の失敗と同等に扱われます。
+  なお、EVM 処理中にすでに `nonce` がインクリメントされている場合がありますが、その変更はまずロールバックされます。
+
+最後に、上記の処理の後、実行の後処理は通常どおり行われます。
+つまり、ガスプールとレシートは通常のトランザクションとまったく同じように処理されます。
+デポジットトランザクションのレシートには `depositNonce` 値が追加され、
+EVM 処理の *前* に記録された送信者 `from` の `nonce` 値が格納されます。
+
+なお、実行出力に示された使用ガス量は、ガスプールから差し引かれます。
+
+アプリケーション開発者向けの注意：`CALLER` と `ORIGIN` は `from` に設定されるため、
+デポジットトランザクション中に `tx.origin == msg.sender` チェックを使って
+呼び出し元が EOA かどうかを判定することはできません。このチェックが役立つのは、
+L2 デポジットトランザクションにおける最初の呼び出しを識別する場合に限られます。ただし、
+`CALLER` が呼び出しの前後でコードを実行できないことを保証する目的でこのチェックを使用するという
+一般的なケースでは、引き続き要件を満たします。
+
+#### nonce の処理 {#nonce-handling}
+
+署名検証は行われませんが、デポジットトランザクションの実行時には `from` アカウントの nonce をインクリメントします。デポジットのみのロールアップでは、トランザクションの順序付けやリプレイ防止のためにこの処理が必要になるわけではありません。しかし、これにより[コントラクト作成][create-nonce]時の nonce の扱いとの一貫性が保たれます。また、下流のツール (ウォレットやブロックエクスプローラーなど) との統合が容易になる可能性もあります。
+
+[create-nonce]: https://github.com/ethereum/execution-specs/blob/617903a8f8d7b50cf71bf1aa733c37897c8d75c1/src/ethereum/frontier/utils/address.py#L40
+
+## デポジットレシート {#deposit-receipt}
+
+トランザクションレシートは、[EIP-2718] に従った標準的な型付けを使用します。
+デポジットトランザクションのレシート型は通常のレシートと同じですが、
+オプションの `depositNonce` フィールドが追加されています。
+
+RLP エンコードされ、コンセンサスによって強制されるフィールドは以下のとおりです。
+
+* `postStateOrStatus` (標準) ：トランザクションのステータスを格納します。[EIP-658] を参照してください。
+* `cumulativeGasUsed` (標準) ：このトランザクションを含め、ブロック内でこれまでに使用されたガス量です。
+  * 実際の使用ガス量は、直前のトランザクションの `CumulativeGasUsed` との差分から算出されます。
+  * これにより、通常のトランザクションと同様に、デポジットによる実際のガス使用量が反映されます。
+* `bloom` (標準) ：トランザクションログのブルームフィルターです。
+* `logs` (標準) ：EVM の処理中に発行されたログイベントです。
+* `depositNonce` (独自拡張) ：オプションのフィールドです。デポジットトランザクションは、実行時に使用された nonce を保持します。
+* `depositNonceVersion` (独自拡張) ：オプションのフィールドです。このフィールドが存在する場合、値は 1 でなければなりません
+  * Canyon より前は、`depositNonce` および `depositNonceVersion` フィールドを常に省略しなければなりません。
+  * Canyon 以降は、`depositNonce` および `depositNonceVersion` フィールドを常に含めなければなりません。
+
+レシート API のレスポンスでは、これらのレシートの変更を利用して、より正確なデータを返します。
+
+* `depositNonce` は、API レスポンスのレシート JSON データに含まれます
+* コントラクトのデプロイ時 (`to == null` の場合) には、nonce をゼロと仮定する代わりに、`depositNonce` を用いて正しい `contractAddress` メタデータを導出できます。
+* `cumulativeGasUsed` は、EVM の処理で計測された実際のガス使用量を反映します。
+
+[EIP-658]: https://eips.ethereum.org/EIPS/eip-658
+
+## L1 属性デポジットトランザクション {#l1-attributes-deposited-transaction}
+
+[l1-attr-deposit]: #l1-attributes-deposited-transaction
+
+[L1 属性デポジットトランザクション][g-l1-attr-deposit]とは、[L1 属性プリデプロイコントラクト][predeploy]に送信されるデポジットトランザクションです。
+
+このトランザクションは、以下の値を持たなければなりません (MUST) 。
+
+1. `from` は `0xdeaddeaddeaddeaddeaddeaddeaddeaddead0001` ([L1 属性デポジターアカウント][depositor-account]のアドレス)
+2. `to` は `0x4200000000000000000000000000000000000015` ([L1 属性プリデプロイコントラクト][predeploy]のアドレス)
+3. `mint` は `0`
+4. `value` は `0`
+5. `gasLimit` は `1,000,000` に設定する。
+6. `isSystemTx` は `false` に設定する。
+7. `data` は [L1 属性プリデプロイコントラクト][predeploy]へのエンコードされた呼び出しであり、
+   その内容は有効化されているアップグレードによって異なる (後述) 。
+
+L1 属性を扱うこのシステム起点のトランザクションは、状態遷移処理の一部とみなされるため、割り当てられた `gasLimit` に対して ETH は課金されません。
+
+### L1 属性デポジットトランザクションの calldata {#l1-attributes-deposited-transaction-calldata}
+
+#### L1 属性 - Bedrock、Canyon、Delta {#l1-attributes-bedrock-canyon-delta}
+
+L1 属性デポジットトランザクションの `data` フィールドは、`setL1BlockValues()` 関数に対する [ABI][ABI] エンコード済みの呼び出しであり、
+対応する L1 ブロックに関連付けられた正しい値を引数とします
+([リファレンス実装][l1-attr-ref-implem]を参照) 。
+
+## L2 上の特殊アカウント {#special-accounts-on-l2}
+
+L1 属性デポジットトランザクションには、次の 2 つの特殊用途アカウントが関与します。
+
+1. L1 属性デポジターアカウント
+2. L1 属性プリデプロイコントラクト
+
+### L1 属性デポジターアカウント {#l1-attributes-depositor-account}
+
+[depositor-account]: #l1-attributes-depositor-account
+
+デポジターアカウントは、対応する秘密鍵が知られていない [EOA][g-eoa] です。そのアドレスは
+`0xdeaddeaddeaddeaddeaddeaddeaddeaddead0001` です。L1 属性デポジットトランザクションの実行中は、`CALLER` および `ORIGIN`
+オペコードがこのアドレスを返します。
+
+### L1 属性プリデプロイコントラクト {#l1-attributes-predeployed-contract}
+
+[predeploy]: #l1-attributes-predeployed-contract
+
+L2 上のアドレス `0x4200000000000000000000000000000000000015` に配置されたプリデプロイコントラクトです。対応する L1 ブロックの特定のブロック変数をストレージに保持し、
+後続のデポジットトランザクションの実行時にそれらを参照できるようにします。
+
+このプリデプロイは次の値を保存します。
+
+* L1 ブロック属性:
+  * `number` (`uint64`)
+  * `timestamp` (`uint64`)
+  * `basefee` (`uint256`)
+  * `hash` (`bytes32`)
+* `sequenceNumber` (`uint64`): エポック開始時点を基準とした L2 ブロック番号です。
+  つまり、L1 属性が最後に変更された L2 ブロック高からの L2 ブロック数の差であり、
+  新しいエポックの開始時に 0 にリセットされます。
+* L1 ブロックに紐づくシステム設定値 ([システム設定仕様](/ja/specifications/base-protocol/consensus/derivation#system-configuration)を参照) :
+  * `batcherHash` (`bytes32`): 現在稼働中のバッチ送信者に対するバージョン付きコミットメント。
+  * `overhead` (`uint256`): この L2 ブロック内のトランザクションの L1 コスト計算に適用する L1 手数料オーバーヘッド。
+  * `scalar` (`uint256`): この L2 ブロック内のトランザクションの L1 コスト計算に適用する L1 手数料スカラー。
+
+このコントラクトは認可スキームを実装しており、状態を変更する呼び出しは
+[デポジターアカウント][depositor-account]からのものしか受け付けません。
+
+このコントラクトは次の Solidity インターフェースを備えており、
+[コントラクト ABI 仕様][ABI]に従って操作できます。
+
+[ABI]: https://docs.soliditylang.org/en/v0.8.10/abi-spec.html
+
+#### L1 属性プリデプロイコントラクト：リファレンス実装 {#l1-attributes-predeployed-contract-reference-implementation}
+
+[l1-attr-ref-implem]: #l1-attributes-predeployed-contract-reference-implementation
+
+L1 属性プリデプロイコントラクトのリファレンス実装は、[L1Block.sol] で確認できます。
+
+[L1Block.sol]: https://github.com/ethereum-optimism/optimism/blob/d48b45954c381f75a13e61312da68d84e9b41418/packages/contracts-bedrock/src/L2/L1Block.sol
+
+## ユーザーデポジットトランザクション {#user-deposited-transactions}
+
+[user-deposited]: #user-deposited-transactions
+
+[ユーザーデポジットトランザクション][g-user-deposited]は、[L2 チェーン導出][g-derivation]プロセスによって生成される[デポジットトランザクション][deposited-tx-type]です。各ユーザーデポジットトランザクションの内容は、L1 上の[デポジットコントラクト][deposit-contract]が発行した、対応する `TransactionDeposited` イベントによって決まります。
+
+1. `from` は発行された値のまま変更されません (ただし、デポジットフィードコントラクトである `OptimismPortal` において
+   エイリアスに変換されている場合があります) 。
+2. `to` は任意の 20 バイトのアドレスです (ゼロアドレスを含む) 。
+   * コントラクト作成の場合 (`isCreation` を参照) 、このアドレスは `null` に設定されます。
+3. `mint` には発行された値が設定されます。
+4. `value` には発行された値が設定されます。
+5. `gaslimit` は発行された値のまま変更されません。21000 以上でなければなりません。
+6. `isCreation` は、トランザクションがコントラクト作成であれば `true`、そうでなければ `false` に設定されます。
+7. `data` は発行された値のまま変更されません。`isCreation` の値に応じて、
+   calldata またはコントラクト初期化コードとして扱われます。
+8. `isSystemTx` は、ガスを計測せずに実行される特定のトランザクションに対して、ロールアップノードが設定します。
+   ユーザーデポジットトランザクションでは `false` です
+
+### デポジットコントラクト {#deposit-contract}
+
+[deposit-contract]: #deposit-contract
+
+デポジットコントラクトはL1にデプロイされます。デポジットトランザクションは、デポジットコントラクトが発行する
+`TransactionDeposited` イベントの値から導出されます。
+
+デポジットコントラクトは、[保証ガス市場](#guaranteed-gas-fee-market)の維持、L2で使用されるガスの料金のデポジットへの課金、
+および単一のL1ブロック内の保証ガスの総量がL2ブロックのガスリミットを超えないようにする役割を担います。
+
+デポジットコントラクトは、次の2つの特殊なケースを処理します。
+
+1. コントラクト作成デポジット。`isCreation` フラグを `true` に設定することで示されます。
+   `to` アドレスがゼロでない場合、コントラクトはリバートします。
+2. コントラクトアカウントからの呼び出し。この場合、`from` の値は対応するL2
+   [エイリアス][address-aliasing]に変換されます。
+
+#### アドレスエイリアシング {#address-aliasing}
+
+[address-aliasing]: #address-aliasing
+
+呼び出し元がコントラクトの場合、アドレスに
+`0x1111000000000000000000000000000000001111` を加算して変換します。この演算は `unchecked` で、
+Solidity の `uint160` 上で行われるため、値はオーバーフローします。これにより、L1 上のコントラクトが
+L2 上のコントラクトと同じアドレスを持ちながらコードが異なる場合の攻撃を防止できます。EOA は
+同じ「コード」 (つまり、コードがまったく存在しない状態) を持つことが保証されているため、この変換を考慮する必要はありません。また、この仕組みにより、
+シーケンサーが停止している場合でも、ユーザーは L2 上のコントラクトとやり取りできます。
+
+#### デポジットコントラクトの実装：Optimism Portal {#deposit-contract-implementation-optimism-portal}
+
+デポジットコントラクトのリファレンス実装は、[OptimismPortal.sol] で確認できます。
+
+[OptimismPortal.sol]: https://github.com/ethereum-optimism/optimism/blob/d48b45954c381f75a13e61312da68d84e9b41418/packages/contracts-bedrock/src/L1/OptimismPortal.sol
+
+## 保証ガス手数料市場 {#guaranteed-gas-fee-market}
+
+[デポジットトランザクション][g-deposited]とは、L1 で開始される L2 上のトランザクションです。
+これらのトランザクションが L2 で使用するガスは、L1 上でのガスバーン (将来的には直接支払い) によって購入されます。
+単一の L1 ブロック内のすべてのデポジットに提供されるガス量については、手数料市場とハードキャップを設けています。
+
+デポジットトランザクションに提供されるガスは、「保証ガス」と呼ばれることがあります。デポジットトランザクションに提供される
+ガスは、返金されないという点で特殊です。ガスバーンによって支払われる場合があり、その際には返金できる ETH が残っていない可能性があるため、
+返金することはできません。
+
+**保証ガス**は、ガス支給分と、ユーザーがそれに上乗せして (L1 上で) 購入する任意の量の保証ガスで構成されます。
+
+L2 上の保証ガスは、次の手順で購入されます。まず、EIP-1559 方式のアルゴリズムによって L2 のガス価格が計算されます。
+次に、そのガスの購入に必要な ETH の総額が (`guaranteed gas * L2 deposit base fee`) として計算されます。
+その後、コントラクトはその額の ETH を受け取るか (将来のアップグレードで対応予定) 、または (現時点で唯一の方法として) L2 のコストに相当する量の L1 ガス (`L2
+cost / L1 base fee`) をバーンします。保証ガスの L2 ガス価格は L2 のベースフィーとは同期しておらず、
+両者は異なる値になる可能性が高いです。
+
+### ガス補填 {#gas-stipend}
+
+デポジットイベントで消費されたガスを相殺するため、`gas spent * L1 base fee` ETH を L2 ガスのコストに充当します。ここで `gas spent` は、デポジットの処理に消費された L1 ガスの量です。この充当額の ETH
+換算値が、要求された保証ガスの ETH 換算値 (`requested
+guaranteed gas * L2 gas price`) を上回る場合、L1 ガスはバーンされません。
+
+### デフォルト値 {#default-values}
+
+| 変数                                | 値                                              |
+| --------------------------------- | ---------------------------------------------- |
+| `MAX_RESOURCE_LIMIT`              | 20,000,000                                     |
+| `ELASTICITY_MULTIPLIER`           | 10                                             |
+| `BASE_FEE_MAX_CHANGE_DENOMINATOR` | 8                                              |
+| `MINIMUM_BASE_FEE`                | 1 gwei                                         |
+| `MAXIMUM_BASE_FEE`                | type(uint128).max                              |
+| `SYSTEM_TX_MAX_GAS`               | 1,000,000                                      |
+| `TARGET_RESOURCE_LIMIT`           | `MAX_RESOURCE_LIMIT` / `ELASTICITY_MULTIPLIER` |
+
+### 保証ガスの制限 {#limiting-guaranteed-gas}
+
+単一の L1 ブロック内で購入できる保証ガスの総量は制限する必要があります。これは、L2 に対するサービス拒否攻撃を防ぐとともに、
+保証ガスの総量を L2 のブロックガスリミット未満に保つためです。
+
+保証ガスの上限は L1 ブロックあたり `MAX_RESOURCE_LIMIT` ガス、目標値は L1 ブロックあたり
+`MAX_RESOURCE_LIMIT` / `ELASTICITY_MULTIPLIER` ガスに設定しています。これらの値により、
+L2 のガス使用量を目標値および上限の範囲内に抑えつつ、時折発生する大規模なトランザクションにも対応できるようになりました。
+
+単一のブロック内で購入できる L2 の保証ガス量が制限されたことを受け、
+デポジットの混雑を緩和するために EIP-1559 方式の手数料市場を実装しています。上限を目標値の倍数に設定することで、
+デポジットはより高いコストを支払えば、一時的に多くの L2 ガスを使用できます。
+
+```python Guaranteed Gas Market Pseudocode lines wrap expandable
+# L2 のデポジット基本手数料を更新し、1 ブロック内で購入される保証ガスの量に上限を設けるための擬似コード。
+# ガスのバーン、およびアカウントがこのガスを支払えるかどうかの妥当性チェックは、
+# 呼び出し側のコードで処理しなければならない。
+
+# prev_base fee は u128、prev_bought_gas と prev_num は u64
+prev_base_fee, prev_bought_gas, prev_num = <values from previous update>
+now_num = block.number
+
+# 基本手数料全体を特定の範囲内にクランプする。基本手数料が素早く反応できるよう、範囲の最小値は
+# 100〜1000 程度にすべきである。これは ethereum 1559 実装における `max` の仕組みに代わるものである
+# （基本手数料が非常に小さい場合でも増加できるようにする役割も果たす）。
+def clamp(v: i256, min: u128, max: u128) -> u128:
+    if v < i256(min):
+        return min
+    elif v > i256(max):
+        return max
+    else:
+        return u128(v)
+
+# 新しいブロックであれば、基本手数料を更新し、合計ガスをリセットする
+# そうでなければ、合計ガスのみを更新する
+if prev_num == now_num:
+    now_base_fee = prev_base_fee
+    now_bought_gas = prev_bought_gas + requested_gas
+elif prev_num != now_num:
+    # ビット幅の拡張と符号付き整数演算への変換
+    gas_used_delta = int128(prev_bought_gas) - int128(TARGET_RESOURCE_LIMIT)
+    # 切り捨て（0 方向への丸め）除算を使用する（solidity のデフォルト）。
+    # ここでのオーバーフローを避けるため、gas_used_delta と prev_base_fee を 256 ビットに符号拡張する。
+    base_fee_per_gas_delta = prev_base_fee * gas_used_delta / TARGET_RESOURCE_LIMIT / BASE_FEE_MAX_CHANGE_DENOMINATOR
+    now_base_fee_wide = prev_base_fee + base_fee_per_gas_delta
+
+    now_base_fee = clamp(now_base_fee_wide, min=MINIMUM_BASE_FEE, max=UINT_128_MAX_VALUE)
+    now_bought_gas =  requested_gas
+
+    # 前回のブロックから現在までに複数のブロックがスキップされた場合は、基本手数料を再度更新する。
+    # これは上記の関数を繰り返し適用した場合と厳密には一致しないが、妥当なガスターゲット値であれば
+    # 十分に近い結果となる。また、欠落したブロック数に関係なく定数時間で処理できる点も、
+    # ガス使用量を安定させるうえで重要である。
+    if prev_num + 1 < now_num:
+        n = now_num - prev_num - 1
+        # 連続する n 個の空ブロックについて、prev_base_fee に 7/8 の減少を適用する。
+        now_base_fee_wide = now_base_fee * pow(1-(1/BASE_FEE_MAX_CHANGE_DENOMINATOR), n)
+        now_base_fee = clamp(now_base_fee_wide, min=MINIMUM_BASE_FEE, max=type(uint128).max)
+
+require(now_bought_gas < MAX_RESOURCE_LIMIT)
+
+store_values(now_base_fee, now_bought_gas, now_num)
+```
+
+### L1 ガスをバーンする理由 {#rationale-for-burning-l1-gas}
+
+ネットワークの利用には、シビル耐性の仕組みが必要です。L2 で保証ガスを非常に安価に取得できると、
+ネットワークにスパムを送ることが可能になってしまいます。L1 で動的な量のガスをバーンする方式は、
+需要が増えるほどコストが高くなるため、シビル耐性の仕組みとして機能します。
+
+L2 ガスの支払いとして ETH を直接徴収する場合、deposit 関数を (間接的にでも) 呼び出すすべての呼び出し元に
+payable セレクターを付ける必要があります。多くの既存プロジェクトでは、これは不可能です。ただし残念ながら、
+この方式 (L1 ガスのバーン) はかなり無駄が多くなります。そこで、L2 ガスを購入する方法として次の 2 つを提供します。
+
+1. L1 ガスをバーンする
+2. Optimism Portal に ETH を送信する (未サポート)
+
+payable 版 (オプション 2) には割引が適用される見込みです (逆に言えば、#1 には
+割増が適用されます) 。
+
+bedrock の初回リリースでは、#1 のみがサポートされます。
+
+### グリーフィング攻撃の防止について {#on-preventing-griefing-attacks}
+
+各ブロックのデポジットガスをすべて買い占めるコストは、攻撃者がネットワークへのすべてのデポジットを妨害できないよう、
+十分に高くなければなりません。
+攻撃者はメモリプール内のデポジットを観測し、そのデポジットがリバートするだけのガスを購入する
+デポジットを送信してフロントランニングを行います。
+最大リソース上限が小さいほど、この攻撃は容易になります。
+この攻撃は、リソース上限と
+弾力性乗数 (elasticity multiplier) をいずれも大きく設定することで緩和されます。これにより目標リソース使用量が小さく抑えられるため、
+最大リソース上限まで購入された場合に、デポジットのベースフィーが上昇する余地を
+十分に確保できます。
+
+実際には、この攻撃はコストが高すぎて実行できないと考えられます。ただし、極めて
+資金力のある攻撃者が長期間にわたってネットワークのデポジットを妨害しようとした場合には、
+デポジットがネットワーク上で確実に処理されるよう
+対策を講じます。

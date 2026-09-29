@@ -1,0 +1,49 @@
+---
+title: "概要"
+description: "オンチェーンの条件を満たしたときに Base が処理対象とする署名済みトランザクションを送信します。"
+tag: "Soon"
+---
+
+Validity Transactions を使用すると、Base のステートに関する条件を付けて署名済みトランザクションを送信できます。この API は legacy、EIP-2930、EIP-1559 の各トランザクションに対応しており、EIP-1559 の使用を推奨します。条件付きスワップや出金など、ステートに依存する操作に活用できます。
+
+<Warning>
+  Validity Transactions は実験的な機能です。`base_sendRawTransactionValidity` は現在 Vibenet で利用できます。メインネットおよび Base Sepolia で提供されるかどうかは、まだ確定していません。
+</Warning>
+
+## 仕組み {#how-it-works}
+
+署名済みの raw トランザクションと、空でない `validity` 配列を送信します。現在の API では、残高、ストレージ、ブロック番号、Flashblock インデックスの各述語がサポートされています。
+
+トランザクションが取り込み対象となるのは、すべての述語が一致した場合のみです。Base はブロックに取り込む前に述語を検証します。保留中のトランザクションは、先行するトランザクションによって監視対象のステートが変更されると、取り込み対象になることがあります。
+
+EIP-1559 Validity Transactions では、通常の手数料フィールドを使用します。取り込み対象になっても、ブロックスペースが確保されるわけでも、取り込みが保証されるわけでもありません。
+
+## 有効期間とプライバシー {#lifetime-and-privacy}
+
+トランザクションをブロックに含められるタイミングを制限するには、`block_number` または `flashblock_index` の述語を使用します。保留中のトランザクションを置き換える場合は、送信者の nonce を使用してください。
+
+有効性の条件は、署名済みトランザクションとは別に送信されるため、最終的に生成されるオンチェーントランザクションには含まれません。calldata や述語の値に機密情報を含めないでください。
+
+## 次のステップ {#next-steps}
+
+<CardGroup cols={2}>
+  <Card title="Validity Transaction を構築する" href="/ja/specifications/build-transaction/build-a-validity-transaction" icon="hammer">
+    Viem を使ってトランザクションに署名し、送信します。
+  </Card>
+
+  <Card title="Validity Transaction RPC" href="/ja/specifications/build-transaction/base_sendRawTransactionValidity" icon="code">
+    リクエスト形式を確認します。
+  </Card>
+
+  <Card title="手数料、順序付け、ライフサイクル" href="/ja/specifications/build-transaction/fees-ordering-and-lifecycle" icon="arrow-down-1-9">
+    手数料、有効期限、トランザクションの置き換えについて理解します。
+  </Card>
+
+  <Card title="述語と安全性" href="/ja/specifications/build-transaction/predicates-and-safety" icon="shield-check">
+    述語のルールと安全上の制限について学びます。
+  </Card>
+
+  <Card title="トラブルシューティング" href="/ja/specifications/build-transaction/troubleshooting" icon="screwdriver-wrench">
+    送信やブロックへの取り込みに関する問題を診断します。
+  </Card>
+</CardGroup>

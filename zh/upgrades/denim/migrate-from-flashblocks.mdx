@@ -1,0 +1,43 @@
+---
+title: "从 Flashblocks 迁移"
+description: "将您的 Flashblocks 集成迁移至 200ms 区块。"
+---
+
+<Warning>
+  200ms 原生区块已在 [Vibenet](/zh/build-on-base/test-on-vibenet) 上线，供开发者进行实验性测试。该部署可能随时变更，请勿将其作为生产环境决策的依据。
+
+  Denim 尚未在 Base Sepolia 或 Base Mainnet 上激活，激活时间及所需客户端版本均未确定。
+</Warning>
+
+## 概述 {#summary}
+
+如果你的应用依赖 Flashblocks，请参阅本指南。Denim 将以 200ms 的规范区块取代 Flashblocks，因此升级激活后，Flashblocks 订阅和 pending 状态将不再可用。
+
+## 建议操作 {#recommended-action}
+
+请在 Denim 升级之前，全面梳理所有使用 `"pending"` 区块标签的 Flashblocks 订阅和 RPC 请求，并参照下表逐一替换相关集成。
+
+## 为 Denim 更新集成 {#update-integrations-for-denim}
+
+| 需检查的集成                                            | Denim 应对措施                                                 |
+| ------------------------------------------------- | ---------------------------------------------------------- |
+| `eth_subscribe("newFlashblocks")`                 | 改用 `eth_subscribe("newHeads")`。                            |
+| `eth_subscribe("pendingLogs")`                    | 改用 `eth_subscribe("logs")`。                                |
+| `eth_subscribe("newFlashblockTransactions")`      | 改用 `eth_subscribe("newHeads")`，再获取每个规范区块中的交易。              |
+| `eth_getBlockByNumber("pending", ...)`            | 使用常规 RPC 调用读取最新的规范区块。                                      |
+| `eth_getBalance(..., "pending")`                  | 使用常规 RPC 调用读取最新的规范状态。                                      |
+| `eth_getTransactionCount(..., "pending", ...)`    | 使用常规 RPC 调用读取最新的规范状态。                                      |
+| `eth_call(..., "pending")`                        | 使用常规 RPC 调用读取最新的规范状态。                                      |
+| `eth_estimateGas(..., "pending")`                 | 使用常规 RPC 调用读取最新的规范状态。                                      |
+| `eth_simulateV1(..., "pending")`                  | 使用常规 RPC 调用读取最新的规范状态。                                      |
+| 查询范围截止于 `"pending"` 的 `eth_getLogs`               | 使用常规 RPC 调用查询规范区块中的日志。                                     |
+| `eth_getBlockTransactionCountByNumber("pending")` | 使用常规 RPC 调用读取最新的规范区块。                                      |
+| 读取历史区块哈希或信标根的跨链桥或证明流程                             | 检查其对历史数据的假设。保留的值数量不变，但由于区块时间缩短为 200ms，这些历史数据所覆盖的时间跨度会相应变短。 |
+
+<Warning>
+  Denim 升级后，`"pending"` 区块标签和 Flashblocks 预确认状态将不再有直接的替代方案。上述替代方式返回的是 200ms 区块中的规范数据，而非预确认数据或待处理数据。
+</Warning>
+
+## 在 Vibenet 上测试 {#test-on-vibenet}
+
+请在 [Vibenet](/zh/build-on-base/test-on-vibenet) 上测试迁移后的集成。如需了解协议设计和 RPC 行为，请参阅 [200ms 原生区块](/zh/upgrades/denim/200ms-blocks)。

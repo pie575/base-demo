@@ -1,0 +1,127 @@
+---
+title: "智能合约"
+description: "介绍智能合约在 Base 上的工作原理、Base 为何需要专属的 Foundry 构建版本，以及如何使用 base-anvil 将合约部署到 Base Sepolia。"
+---
+
+Base 是一条与 EVM 等效的以太坊 L2。智能合约使用 Solidity 或 Vyper 编写，部署方式与以太坊完全相同——字节码、ABI 和工具链均可直接沿用。
+
+## Base 的不同之处 {#how-base-differs}
+
+Base 在固定地址上添加了**原生预编译合约**，以内置于节点本身的功能扩展 EVM，例如 [B20 代币标准](/zh/build-on-base/issue-rwa/create-an-asset-token)、PolicyRegistry 和 B20 Factory。这些地址上没有合约字节码，因此标准 Foundry (`forge`、`cast`、`anvil`) 无法模拟对它们的调用，会因 `call to non-contract address` 错误而中止。
+
+Base 发布了 [base-anvil](https://github.com/base/base-anvil)，这是 Foundry 的一个分叉版本，会将 Base 的预编译合约注册到其 EVM 中。它会与你现有的 Foundry 工具链并行安装 `base-forge`、`base-cast` 和 `base-anvil`，不会覆盖原有工具链，从而确保合约在本地的行为与在 Base 上一致。
+
+<Warning>
+  进行 Base 开发时，请使用 Base 的 Foundry 构建版本 (`base-forge`、`base-cast`、`base-anvil`) ，而非标准 Foundry (`forge`、`cast`、`anvil`) 。凡是读取或写入 Base 预编译合约的合约 (例如部署或调用 [B20 代币](/zh/build-on-base/issue-rwa/create-an-asset-token)的合约) ，在标准 Foundry 下都会运行失败。
+</Warning>
+
+## 设置开发环境 {#set-up-your-environment}
+
+1. 新建项目目录
+
+```bash Terminal
+mkdir my-base-project && cd my-base-project
+```
+
+2. 安装 Base 的 Foundry 构建版本
+
+```bash Terminal
+curl -L https://raw.githubusercontent.com/base/base-anvil/HEAD/foundryup/install | bash
+base-foundryup
+```
+
+这会在你现有的 Foundry 工具链之外，额外安装 `base-forge`、`base-cast` 和 `base-anvil`。
+
+3. 初始化新的 Solidity 项目
+
+```bash Terminal
+base-forge init
+```
+
+你的项目已准备就绪。`src/Counter.sol` 中提供了一个示例 `Counter` 合约，你可以将其替换为自己的合约。
+
+<Tip>
+  Base 的 Foundry 构建版本提供与标准 Foundry 相同的工具，并内置了 Base 的预编译合约：`base-forge` (构建和测试) 、`base-cast` (与链交互) 以及 `base-anvil` (运行本地 Base 节点) 。进一步了解 [base-anvil](https://github.com/base/base-anvil) 及其底层的 [Foundry](https://book.getfoundry.sh/) 工具链。
+</Tip>
+
+## 配置节点连接和部署者密钥 {#configure-a-node-connection-and-deployer-key}
+
+1. 在项目根目录下创建 `.env` 文件，并添加 Base RPC URL
+
+```bash .env
+BASE_RPC_URL="https://mainnet.base.org"
+BASE_SEPOLIA_RPC_URL="https://sepolia.base.org"
+```
+
+2. 加载变量
+
+```bash Terminal
+source .env
+```
+
+3. 将部署者私钥存储到 Foundry 的安全密钥库 (keystore) 中
+
+```bash Terminal
+base-cast wallet import deployer --interactive
+```
+
+根据提示输入你的私钥和密码。私钥将存储在 `~/.foundry/keystores` 中，该目录不会被 git 跟踪。
+
+<Warning>
+  切勿泄露私钥，也不要将其提交到代码仓库。请务必妥善保管私钥，谨慎处理。
+</Warning>
+
+<Tip>
+  Base Sepolia 是 Base 的测试网络，本指南后续内容均使用该网络。你可以通过[此处列出的任一水龙头](/base-chain/network-information/network-faucets)免费领取 Base Sepolia ETH。
+</Tip>
+
+## 部署合约 {#deploy-a-contract}
+
+1. (可选) 先对部署进行试运行 (dry-run) ，确认配置无误：
+
+```bash Terminal
+base-forge create ./src/Counter.sol:Counter --rpc-url $BASE_SEPOLIA_RPC_URL --account deployer
+```
+
+此命令仅模拟部署，不会广播交易。你可以看到交易详情和合约 ABI，但不会实际部署任何内容。
+
+2. 添加 `--broadcast` 标志以执行部署：
+
+```bash Terminal
+base-forge create ./src/Counter.sol:Counter --rpc-url $BASE_SEPOLIA_RPC_URL --account deployer --broadcast
+```
+
+合约路径的格式为 `<contract-path>:<contract-name>`。
+
+3. 部署成功后，你将看到合约的部署地址：
+
+```text Example Output
+Deployer: 0x...
+Deployed to: 0x...  <-- 你的合约地址
+Transaction hash: 0x...
+```
+
+## 验证部署 {#verify-your-deployment}
+
+1. 使用交易哈希在 [Sepolia Basescan](https://sepolia.basescan.org/) 上查看该交易。
+2. 在命令行中读取合约状态：
+
+```bash Terminal
+base-cast call <CONTRACT_ADDRESS> "number()(uint256)" --rpc-url $BASE_SEPOLIA_RPC_URL
+```
+
+这将返回 `Counter` 合约中 `number` 变量的初始值 `0`。
+
+## 后续步骤 {#next-steps}
+
+<CardGroup cols={2}>
+  <Card title="B20 代币标准" icon="coins" href="/zh/build-on-base/issue-rwa/create-an-asset-token">
+    基于 Base 原生代币标准发行代币，该标准在预编译层内置实现。
+  </Card>
+
+  <Card title="连接到 Base" icon="plug" href="/base-chain/quickstart/connecting-to-base">
+    网络详情、RPC 端点及钱包配置。
+  </Card>
+</CardGroup>
+
+使用 [wagmi](https://wagmi.sh) 或 [viem](https://viem.sh) 将前端连接到你的合约；如需通过命令行与合约交互，请参阅 [Foundry 脚本指南](https://www.getfoundry.sh/forge/scripting)。

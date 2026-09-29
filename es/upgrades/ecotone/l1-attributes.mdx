@@ -1,0 +1,115 @@
+---
+title: "Atributos de L1 en Ecotone"
+description: "Cambios en la transacción de atributos de L1 introducidos en la actualización Ecotone, que modifican el formato de calldata para admitir el nuevo modelo de cálculo de comisiones basado en blobs."
+---
+
+## Descripción general {#overview}
+
+En el bloque de activación de Ecotone, y si Ecotone no se activa en el Genesis,
+la transacción de atributos de L1 incluye una llamada a `setL1BlockValues()`
+porque la transacción de atributos de L1 precede a las [transacciones de actualización de Ecotone][ecotone-upgrade-txs],
+por lo que aún no se garantiza que `setL1BlockValuesEcotone` exista.
+
+Cada transacción de atributos de L1 posterior debe incluir una llamada a la función `setL1BlockValuesEcotone()`.
+Los argumentos de entrada ya no son parámetros de función codificados en ABI,
+sino que se empaquetan en 5 segmentos alineados de 32 bytes (a continuación del selector de función).
+Cada argumento entero sin signo se codifica en big-endian con un número de bytes correspondiente al tipo subyacente.
+La estructura general del calldata es la siguiente:
+
+[ecotone-upgrade-txs]: derivation#network-upgrade-automation-transactions
+
+| Argumento de entrada | Tipo    | Bytes de calldata | Segmento |
+| -------------------- | ------- | ----------------- | -------- |
+| {0x440a5e20}         |         | 0-3               | n/a      |
+| baseFeeScalar        | uint32  | 4-7               | 1        |
+| blobBaseFeeScalar    | uint32  | 8-11              |          |
+| sequenceNumber       | uint64  | 12-19             |          |
+| l1BlockTimestamp     | uint64  | 20-27             |          |
+| l1BlockNumber        | uint64  | 28-35             |          |
+| basefee              | uint256 | 36-67             | 2        |
+| blobBaseFee          | uint256 | 68-99             | 3        |
+| l1BlockHash          | bytes32 | 100-131           | 4        |
+| batcherHash          | bytes32 | 132-163           | 5        |
+
+La longitud total del calldata DEBE ser exactamente de 164 bytes, lo que implica que el sexto y último segmento solo se
+llena parcialmente. Esto contribuye a frenar el crecimiento de la base de datos, ya que cada bloque de L2 incluye una transacción
+de depósito de atributos de L1.
+
+Los atributos de L1 de Ecotone se usan por primera vez en el primer bloque de L2 posterior al bloque de activación de Ecotone.
+
+Los valores anteriores a Ecotone se migran 1:1.
+Los bloques posteriores al bloque de activación de Ecotone contienen todos los valores anteriores a Ecotone 1:1
+y, además, establecen los siguientes atributos nuevos:
+
+* `baseFeeScalar` se establece en el valor `scalar` anterior a Ecotone.
+* `blobBaseFeeScalar` se establece en `0`.
+* Se elimina el atributo `overhead` anterior a Ecotone.
+* `blobBaseFee` se establece en la tarifa base de blobs de L1 del bloque de origen de L1,
+  o en `1` si el bloque de L1 no admite blobs.
+  El valor `1` se deriva de `MIN_BLOB_GASPRICE` de EIP-4844.
+
+Tenga en cuenta que la tarifa base de blobs de L1 *no* se expone como parte del bloque de origen de L1.
+Debe calcularse mediante una fórmula parametrizada fuera de la cadena que toma el
+campo de exceso de gas de blobs del encabezado del bloque de origen de L1, como se describe en
+[EIP-4844](https://eips.ethereum.org/EIPS/eip-4844#base-fee-per-blob-gas-update-rule).
+El parámetro `BLOB_BASE_FEE_UPDATE_FRACTION` de la fórmula varía
+según la bifurcación de L1 que esté activa
+en el bloque de origen (véase, p. ej., [EIP-7691](https://eips.ethereum.org/EIPS/eip-7691)). Por lo tanto,
+los clientes de la capa de consenso de L2 necesitan conocer los parámetros de blobs y el momento de activación
+de cada bifurcación de L1 para calcular `blobBaseFee` correctamente. Las bifurcaciones Blob Parameter Only
+(BPO), introducidas en [EIP-7892](https://eips.ethereum.org/EIPS/eip-7892),
+pueden hacer que `BLOB_BASE_FEE_UPDATE_FRACTION` se actualice con frecuencia,
+por lo que los clientes y los programas de prueba deben mantenerse al día con
+dichas bifurcaciones.
+
+## Contrato predesplegado de atributos de L1 {#l1-attributes-predeployed-contract}
+
+[sys-config]: /specifications/base-protocol/consensus/derivation#system-configuration
+
+El contrato predesplegado de atributos de L1 almacena los siguientes valores:
+
+* Atributos del bloque de L1:
+  * `number` (`uint64`)
+  * `timestamp` (`uint64`)
+  * `basefee` (`uint256`)
+  * `hash` (`bytes32`)
+  * `blobBaseFee` (`uint256`)
+* `sequenceNumber` (`uint64`): equivale al número de bloque de L2 relativo al inicio de la época,
+  es decir, la distancia en bloques de L2 hasta la altura de bloque de L2 en la que cambiaron por última vez los atributos de L1,
+  y se restablece a 0 al inicio de cada nueva época.
+* Parámetros configurables del sistema vinculados al bloque de L1 (consulta la [especificación de configuración del sistema][sys-config]):
+  * `batcherHash` (`bytes32`): un compromiso versionado con los remitentes de lotes que están operando actualmente.
+  * `baseFeeScalar` (`uint32`): parámetro configurable del sistema que escala el `basefee` en el cálculo del costo de L1 de Ecotone
+  * `blobBasefeeScalar` (`uint32`): parámetro configurable del sistema que escala el `blobBaseFee` en el cálculo del costo de L1 de Ecotone
+
+Los valores `overhead` y `scalar` siguen siendo accesibles después del bloque de activación de Ecotone,
+pero ya no tienen ningún efecto en el funcionamiento del sistema. Estos campos también se conocían como `l1FeeOverhead`
+y `l1FeeScalar`.
+
+Tras ejecutar `pnpm build` en el directorio `packages/contracts-bedrock`, el bytecode que debe añadirse al
+archivo génesis estará en el campo `deployedBytecode` del archivo de artefactos de compilación ubicado en
+`/packages/contracts-bedrock/forge-artifacts/L1Block.sol/L1Block.json`.
+
+### Actualización de L1Block en Ecotone {#ecotone-l1block-upgrade}
+
+El contrato predesplegado de atributos de L1, `L1Block.sol`, se actualiza como parte de la actualización Ecotone.
+La versión se incrementa a `1.2.0`, se introduce una nueva ranura de almacenamiento y una ranura existente
+pasa a almacenar datos adicionales:
+
+* `blobBaseFee` (`uint256`): la tarifa base de blobs de L1.
+* `blobBaseFeeScalar` (`uint32`): el valor escalar que se aplica a la parte del costo de L1 correspondiente a la tarifa base de blobs de L1.
+* `baseFeeScalar` (`uint32`): el valor escalar que se aplica a la parte del costo de L1 correspondiente a la tarifa base de L1.
+
+La función que llama la transacción de atributos de L1 depende de la actualización de red:
+
+* Antes de la activación de Ecotone:
+  * Se llama a `setL1BlockValues`, según las reglas de atributos de L1 anteriores a Ecotone.
+* En el bloque de activación de Ecotone:
+  * Se MUST llamar a la función `setL1BlockValues`, salvo que la activación se produzca en el génesis.
+    El contrato se actualiza más adelante en este mismo bloque para admitir `setL1BlockValuesEcotone`.
+* Después de la activación de Ecotone:
+  * La función `setL1BlockValues` queda obsoleta y MUST no llamarse nunca.
+  * Se MUST llamar a `setL1BlockValuesEcotone` con los nuevos atributos de Ecotone.
+
+`setL1BlockValuesEcotone` utiliza una codificación compacta para sus parámetros, que se describe en
+[Calldata de la transacción depositada de atributos de L1](/es/specifications/base-protocol/bridging/deposits#l1-attributes-deposited-transaction-calldata).

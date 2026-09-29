@@ -1,0 +1,44 @@
+---
+title: "Puentes estándar"
+description: "Especificación de los contratos de puente estándar que permiten transferir ETH y tokens ERC-20 entre dominios, de L1 a L2 y viceversa, en Base."
+---
+
+Los puentes estándar permiten transferir ETH y tokens ERC-20 entre dominios, concretamente entre Ethereum (L1) y Base (L2). Se basan en los [contratos de mensajería entre dominios](/es/specifications/base-protocol/bridging/cross-domain-messengers) y ofrecen una interfaz estándar para mover tokens de un dominio a otro.
+
+Para conocer los mecanismos de transacción subyacentes, consulta [Depósitos](/es/specifications/base-protocol/bridging/deposits) y [Retiros](/es/specifications/base-protocol/bridging/withdrawals).
+
+## Descripción general {#overview}
+
+Los puentes estándar permiten las transferencias de ETH y tokens ERC20
+entre dominios. Se basan en los contratos de mensajería
+entre dominios y ofrecen una interfaz estándar para depositar tokens.
+
+El puente admite tanto tokens nativos de L1 como tokens nativos de L2. Se conserva la API legacy
+para garantizar que las aplicaciones existentes no tengan ningún
+problema con los contratos `StandardBridge` de Bedrock.
+
+El `L2StandardBridge` es un contrato predeploy ubicado en
+`0x4200000000000000000000000000000000000010`.
+
+```solidity StandardBridge.sol lines wrap expandable
+interface StandardBridge {
+    event ERC20BridgeFinalized(address indexed localToken, address indexed remoteToken, address indexed from, address to, uint256 amount, bytes extraData);
+    event ERC20BridgeInitiated(address indexed localToken, address indexed remoteToken, address indexed from, address to, uint256 amount, bytes extraData);
+    event ETHBridgeFinalized(address indexed from, address indexed to, uint256 amount, bytes extraData);
+    event ETHBridgeInitiated(address indexed from, address indexed to, uint256 amount, bytes extraData);
+
+    function bridgeERC20(address _localToken, address _remoteToken, uint256 _amount, uint32 _minGasLimit, bytes memory _extraData) external;
+    function bridgeERC20To(address _localToken, address _remoteToken, address _to, uint256 _amount, uint32 _minGasLimit, bytes memory _extraData) external;
+    function bridgeETH(uint32 _minGasLimit, bytes memory _extraData) payable external;
+    function bridgeETHTo(address _to, uint32 _minGasLimit, bytes memory _extraData) payable external;
+    function deposits(address, address) view external returns (uint256);
+    function finalizeBridgeERC20(address _localToken, address _remoteToken, address _from, address _to, uint256 _amount, bytes memory _extraData) external;
+    function finalizeBridgeETH(address _from, address _to, uint256 _amount, bytes memory _extraData) payable external;
+    function messenger() view external returns (address);
+    function OTHER_BRIDGE() view external returns (address);
+}
+```
+
+## Capacidad de actualización {#upgradability}
+
+Tanto el puente estándar de L1 como el de L2 deberían estar detrás de proxies actualizables.

@@ -1,0 +1,867 @@
+---
+title: "Glosario"
+description: "Glosario de términos y definiciones que se utilizan a lo largo de la especificación del protocolo de Base Chain."
+---
+
+## Términos generales {#general-terms}
+
+### Capa 1 (L1) {#layer-1-l1}
+
+[L1]: glossary#layer-1-L1
+
+Hace referencia a la blockchain de Ethereum, por contraposición a la [capa 2][L2], que designa a Base.
+
+### Capa 2 (L2) {#layer-2-l2}
+
+[L2]: glossary#layer-2-L2
+
+Hace referencia a Base Chain (especificada en este repositorio), por oposición a la [capa 1][L1], que
+designa la blockchain de Ethereum.
+
+### Bloque {#block}
+
+[block]: glossary#block
+
+Puede referirse a un bloque de [L1] o a un bloque de [L2], que tienen una estructura similar.
+
+Un bloque es una lista secuencial de transacciones, junto con algunas propiedades almacenadas en el *encabezado* del bloque. Puedes encontrar una
+descripción de estas propiedades en los comentarios del código [aquí][nano-header] o en el [yellow paper de Ethereum
+(pdf)][yellow], sección 4.3.
+
+Conviene distinguir entre las propiedades de entrada del bloque, que se conocen antes de ejecutar sus
+transacciones, y las propiedades de salida del bloque, que se obtienen tras ejecutarlas. Entre estas últimas se incluyen varias
+[raíces de Merkle Patricia Trie][mpt] que, en particular, constituyen un compromiso con el estado de L2 y con los eventos de registro emitidos durante la ejecución.
+
+### EOA {#eoa}
+
+[EOA]: glossary#EOA
+
+«Externally Owned Account» (cuenta de propiedad externa), término de Ethereum que designa las direcciones controladas por usuarios, a diferencia de las direcciones de contratos.
+
+### Merkle Patricia Trie {#merkle-patricia-trie}
+
+[mpt]: glossary#merkle-patricia-trie
+
+Un [Merkle Patricia Trie (MPT)][mpt-details] es un trie disperso, es decir, una estructura en forma de árbol que asigna claves a valores.
+El hash raíz de un MPT es un compromiso con el contenido del árbol, lo que permite construir una
+prueba para cualquier asignación clave-valor codificada en el árbol. Este tipo de prueba se denomina prueba de Merkle y puede
+verificarse contra la raíz de Merkle.
+
+### Reorganización de la cadena {#chain-re-organization}
+
+[reorg]: glossary#chain-re-organization
+
+Una reorganización, o *re-org* para abreviar, se produce cada vez que la cabeza de una blockchain (su último bloque) cambia (según lo
+determine la [regla de elección de fork][fork-choice-rule]) a un bloque que no es hijo de la cabeza anterior.
+
+Las reorganizaciones de L1 pueden producirse por las condiciones de la red o por ataques. Las reorganizaciones de L2 son consecuencia de las reorganizaciones de L1 y se propagan a través de
+la [derivación de la cadena L2][derivation].
+
+### Contrato predesplegado («Predeploy») {#predeployed-contract-predeploy}
+
+[predeploy]: glossary#predeployed-contract-predeploy
+
+Un contrato incluido en el estado génesis de la L2 (es decir, al inicio de la cadena).
+
+Todos los contratos predesplegados se definen en la [especificación de predeploys](/es/specifications/base-protocol/execution/predeploys).
+
+### Contrato preinstalado («Preinstall») {#preinstalled-contract-preinstall}
+
+[preinstall]: glossary#preinstalled-contract-preinstall
+
+Contrato incluido en el estado génesis de la L2 (es decir, al inicio de la cadena). Estos contratos no ofrecen las mismas
+garantías de seguridad que los [predeploys](#predeployed-contract-predeploy), sino que son contratos de uso general que se ponen
+a disposición para mejorar la experiencia de usuario (UX) de la L2.
+
+Todos los contratos preinstalados se definen en la [especificación de preinstalls](/es/specifications/base-protocol/execution/preinstalls).
+
+### Contrato precompilado («precompile») {#precompiled-contract-precompile}
+
+[precompile]: glossary#precompiled-contract-precompile
+
+Un contrato implementado de forma nativa en la EVM que ejecuta una operación específica de manera más eficiente que una implementación en bytecode
+(p. ej., en Solidity). Los precompilados se encuentran en direcciones predefinidas. Se crean y modifican mediante
+actualizaciones de la red.
+
+Todos los contratos precompilados se definen en la [especificación de precompilados](/es/specifications/base-protocol/execution/precompiles).
+
+### Recibo {#receipt}
+
+[receipt]: glossary#receipt
+
+Un recibo es un resultado generado por una transacción que se compone de un código de estado, la cantidad de gas utilizada, una lista de entradas
+de log y un [filtro de Bloom][bloom filter] que indexa dichas entradas. Las entradas de log se utilizan sobre todo para codificar [eventos de Solidity][Solidity events].
+
+Los recibos no se almacenan en los bloques, sino que cada bloque almacena la [raíz de un Merkle Patricia Trie][mpt] correspondiente a un árbol que contiene el recibo
+de cada transacción del bloque.
+
+Los recibos se especifican en la sección 4.3.1 del [yellow paper (pdf)][yellow].
+
+### Tipo de transacción {#transaction-type}
+
+[transaction-type]: glossary#transaction-type
+
+Ethereum ofrece un mecanismo (descrito en [EIP-2718]) para definir distintos tipos de transacción.
+Cada tipo de transacción puede contener cargas útiles diferentes, y el protocolo puede procesarlos de forma distinta.
+
+[EIP-2718]: https://eips.ethereum.org/EIPS/eip-2718
+
+### Regla de elección de fork {#fork-choice-rule}
+
+[fork-choice-rule]: glossary#fork-choice-rule
+
+La regla de elección de fork es la regla que se utiliza para determinar qué bloque debe considerarse la cabeza de una blockchain. En L1,
+esto lo determinan las reglas de prueba de participación (proof of stake).
+
+L2 también tiene una regla de elección de fork, aunque las reglas varían según se busque la [cabeza segura de L2][safe-l2-head],
+la [cabeza no segura de L2][unsafe-l2-head] o la [cabeza finalizada de L2][finalized-l2-head].
+
+### Priority Gas Auction {#priority-gas-auction}
+
+Las transacciones en Ethereum se ordenan según el precio que cada transacción paga al minero. Las Priority Gas Auctions
+(PGA) se producen cuando varias partes compiten por ser la primera transacción de un bloque. Cada parte actualiza
+continuamente el precio del gas de su transacción. Las PGA se dan cuando resulta ventajoso enviar una transacción antes que otras
+partes (por ejemplo, para ser el primer depósito o para enviar un depósito antes de que se agote el gas garantizado).
+Las PGA suelen generar externalidades negativas en la red, ya que se envía una gran cantidad de transacciones en un
+lapso de tiempo muy breve.
+
+## Secuenciación {#sequencing}
+
+[sequencing]: glossary#sequencing
+
+Las transacciones del rollup pueden incluirse de dos maneras:
+
+* Mediante una [transacción depositada](#deposited-transaction), cuya inclusión la garantiza el sistema
+* Mediante una transacción normal, incluida en un [lote del sequencer](#sequencer-batch)
+
+Enviar transacciones para incluirlas en un lote reduce los costos al disminuir la sobrecarga, y permite que el sequencer
+preconfirme las transacciones antes de que la L1 confirme los datos.
+
+### Sequencer {#sequencer}
+
+[sequencer]: glossary#sequencer
+
+Un sequencer es un [nodo de rollup][rollup-node] que se ejecuta en modo sequencer, o bien el operador de dicho nodo de rollup.
+
+El sequencer es un actor privilegiado que recibe transacciones de L2 de los usuarios de L2 y las usa para crear bloques de L2, que
+luego envía al [proveedor de disponibilidad de datos][avail-provider] (a través de un [batcher]). También envía [raíces de
+salida][l2-output] a L1.
+
+### Ventana de secuenciación {#sequencing-window}
+
+[sequencing-window]: glossary#sequencing-window
+
+Una ventana de secuenciación es un rango de bloques de L1 a partir del cual se puede derivar una [época de secuenciación][sequencing-epoch].
+
+Una ventana de secuenciación cuyo primer bloque de L1 tiene el número `N` contiene las [transacciones del batcher][batcher-transaction] de la época
+`N`. La ventana abarca los bloques `[N, N + SWS)`, donde `SWS` es el tamaño de la ventana del sequencer.
+
+Actualmente, el valor predeterminado de `sws` es de 3600 épocas.
+
+Además, el primer bloque de la ventana define las [transacciones de depósito][depositing-tx] que determinan los
+[depósitos][deposits] que se incluirán en el primer bloque de L2 de la época.
+
+### Época de secuenciación {#sequencing-epoch}
+
+[sequencing-epoch]: glossary#sequencing-epoch
+
+Una época de secuenciación es un rango secuencial de bloques de L2 derivados de una [ventana de secuenciación](#sequencing-window) de bloques de L1.
+
+Cada época se identifica mediante un número de época, que coincide con el número de bloque del primer bloque de L1 de la
+ventana de secuenciación.
+
+Las épocas pueden tener un tamaño variable, con ciertas restricciones. Consulta la [especificación de derivación de la cadena L2][derivation-spec]
+para obtener más información.
+
+### Origen L1 {#l1-origin}
+
+[l1-origin]: glossary#l1-origin
+
+El origen L1 de un bloque L2 es el bloque L1 que corresponde a su [época de secuenciación][sequencing-epoch].
+
+## Depósitos {#deposits}
+
+[deposits]: glossary#deposits
+
+En general, un depósito es una transacción de L2 derivada de un bloque de L1 (por el [rollup driver]).
+
+Aunque los depósitos de transacciones se utilizan sobre todo (aunque no exclusivamente) para &quot;depositar&quot; (transferir mediante un puente) ETH y tokens a L2, la palabra
+*depósito* debe entenderse como &quot;una transacción *depositada* en L2 desde L1&quot;.
+
+El término *depósito* resulta algo ambiguo, ya que estas &quot;transacciones&quot; existen en varios niveles. Esta sección aclara
+todos los términos relacionados con los depósitos.
+
+En concreto, un *depósito* puede referirse a:
+
+* Una [transacción depositada][deposited] (en L2) que forma parte de un bloque de depósito.
+* Una [llamada de depósito][depositing-call] que da lugar a la derivación de una [transacción depositada][deposited].
+* Los datos de evento/log generados por la [llamada de depósito][depositing-call], que son los que lee el [rollup driver] para
+  derivar la [transacción depositada][deposited].
+
+A veces también hablamos de *depósito de usuario*, un término similar que excluye explícitamente las [transacciones depositadas
+de L1 Attributes][l1-attr-deposit].
+
+Los depósitos se definen en la [especificación de depósitos][deposits-spec].
+
+### Transacción depositada {#deposited-transaction}
+
+[deposited]: glossary#deposited-transaction
+
+Una *transacción depositada* es una transacción de L2 derivada de L1 e incluida en un bloque de L2.
+
+Existen dos tipos de transacciones depositadas:
+
+* [Transacción depositada de L1 Attributes][l1-attr-deposit], que envía los atributos del bloque de L1 al [contrato
+  predesplegado de L1 Attributes][l1-attr-predeploy].
+* [Transacciones depositadas por usuarios][user-deposited], que son transacciones derivadas de una llamada en L1 al [contrato
+  de depósito][deposit-contract].
+
+### Transacción depositada de L1 Attributes {#l1-attributes-deposited-transaction}
+
+[l1-attr-deposit]: glossary#l1-attributes-deposited-transaction
+
+Una *transacción depositada de L1 Attributes* es una [transacción depositada][deposited] que se utiliza para registrar los atributos del bloque de L1
+(número, marca de tiempo, etc.) en L2 mediante una llamada al [contrato predesplegado de L1 Attributes][l1-attr-predeploy].
+Después, ese contrato permite leer los atributos del bloque de L1 que corresponde al bloque de L2 actual.
+
+Las transacciones depositadas de L1 Attributes se especifican en la sección [Depósito de L1 Attributes][l1-attributes-tx-spec] de la
+especificación de depósitos.
+
+[l1-attributes-tx-spec]: /specifications/base-protocol/bridging/deposits#l1-attributes-deposited-transaction
+
+### Transacción depositada por el usuario {#user-deposited-transaction}
+
+[user-deposited]: glossary#user-deposited-transaction
+
+Una *transacción depositada por el usuario* es una [transacción depositada][deposited] que se deriva de una llamada en L1 al [contrato
+de depósito][deposit-contract] (una [llamada de depósito][depositing-call]).
+
+Las transacciones depositadas por el usuario se especifican en la sección [Depósitos de transacciones][tx-deposits-spec] de la especificación
+de depósitos.
+
+[tx-deposits-spec]: /specifications/base-protocol/bridging/deposits#user-deposited-transactions
+
+### Llamada de depósito {#depositing-call}
+
+[depositing-call]: glossary#depositing-call
+
+Una *llamada de depósito* (depositing call) es una llamada en L1 al [contrato de depósito][deposit-contract], a partir de la cual el [rollup driver] derivará una
+[transacción depositada por el usuario][user-deposited].
+
+Esta llamada especifica todos los datos (destino, valor, calldata, etc.) de la transacción depositada.
+
+### Transacción de depósito {#depositing-transaction}
+
+[depositing-tx]: glossary#depositing-transaction
+
+Una *transacción de depósito* es una transacción de L1 que realiza una o más [llamadas de depósito][depositing-call].
+
+### Depositante {#depositor}
+
+[depositor]: glossary#depositor
+
+El *depositante* es la cuenta de L1 (contrato o [EOA]) que realiza la [llamada de
+depósito][depositing-call] (es decir, que es su `msg.sender`). El *depositante* **NO** es el originador de la transacción de depósito (es decir, `tx.origin`).
+
+### Tipo de transacción depositada {#deposited-transaction-type}
+
+[deposit-tx-type]: glossary#deposited-transaction-type
+
+El *tipo de transacción depositada* es un [tipo de transacción][transaction-type] de [EIP-2718] que especifica los campos de entrada
+y el tratamiento correcto de una [transacción depositada][deposited].
+
+Consulta la [sección correspondiente][spec-deposit-tx-type] de la especificación de depósitos para obtener más información.
+
+[spec-deposit-tx-type]: /specifications/base-protocol/bridging/deposits#the-deposited-transaction-type
+
+### Contrato de depósito {#deposit-contract}
+
+[deposit-contract]: glossary#deposit-contract
+
+El *contrato de depósito* es un contrato de [L1] al que las [EOA][EOA] y los contratos pueden enviar [depósitos][deposits]. Los depósitos se
+emiten como registros de log (en Solidity, se denominan *eventos*) para que los consuman los [nodos de rollup][rollup-node].
+
+Nota avanzada: los depósitos no se almacenan en el calldata porque pueden enviarlos contratos, en cuyo caso el calldata
+forma parte de la ejecución *interna* entre contratos, y este calldata intermedio no queda reflejado en ninguna de las
+[raíces del Merkle Patricia Trie][mpt] incluidas en el bloque de L1.
+
+Véase la [Especificación de depósitos][deposits-spec]
+
+## Retiros {#withdrawals}
+
+[withdrawals]: glossary#withdrawals
+
+En general, un retiro es una transacción enviada de L2 a L1 que puede transferir datos, valor o ambos.
+
+El término *retiro* es algo ambiguo, ya que estas «transacciones» existen en varios niveles. Para distinguir
+entre los componentes de L1 y L2 de un retiro, introducimos los siguientes términos:
+
+* Una *transacción de inicio de retiro* es, específicamente, una transacción en L2 enviada al predeploy Withdrawals.
+* Una *transacción de finalización de retiro* es, específicamente, una transacción de L1 que finaliza y retransmite el
+  retiro.
+
+### Relayer {#relayer}
+
+[relayer]: glossary#relayer
+
+Una EOA en L1 que finaliza un retiro mediante el envío de los datos necesarios para verificar su inclusión en L2.
+
+### Período de finalización {#finalization-period}
+
+[finalization-period]: glossary#finalization-period
+
+El período de finalización —a veces también llamado *retraso de retiro*— es el tiempo mínimo (en segundos) que
+debe transcurrir antes de que un [retiro][withdrawals] pueda finalizarse.
+
+El período de finalización es necesario para que los [validadores][validator] dispongan de tiempo suficiente para presentar una [prueba de
+fallo][fault-proof].
+
+## Configuración {#configuration}
+
+### Batch Inbox {#batch-inbox}
+
+[batch-inbox]: glossary#batch-inbox
+
+El **Batch Inbox** es la dirección en la que se publican los lotes de transacciones del secuenciador. Los secuenciadores
+publican transacciones en el Batch Inbox al establecerlo como dirección `to` de una transacción
+que contiene transacciones de L2 agrupadas en lotes, ya sea en el calldata o como datos de blob.
+
+### Batcher Hash {#batcher-hash}
+
+[batcher-hash]: glossary#batcher-hash
+
+El **Batcher Hash** identifica al remitente o remitentes cuyas transacciones enviadas al [Batch Inbox](#batch-inbox)
+serán reconocidas por los clientes de L2 en una cadena Base determinada.
+
+El Batcher Hash se versiona mediante su primer byte. La estructura del Batcher Hash V0
+es un hash de 32 bytes definido de la siguiente manera:
+
+| 1 byte         | 11 bytes | 20 bytes  |
+| -------------- | -------- | --------- |
+| versión (0x00) | vacío    | dirección |
+
+Esto también puede entenderse así:
+
+```solidity Batcher Hash
+bytes32(address(batcher))
+```
+
+Donde `batcher` es la dirección de la cuenta que envía transacciones al Batch Inbox. En pocas
+palabras, el hash V0 identifica una *única* dirección cuyos lotes de transacciones reconocerán
+los clientes de L2. Este hash está versionado para que pueda, por ejemplo, reutilizarse como un compromiso
+con una lista de cuentas autorizadas o con alguna otra forma de identificación del batcher.
+
+### Escalares de tarifas {#fee-scalars}
+
+[fee-scalars]: glossary#fee-scalars
+
+Los **escalares de tarifas** (Fee Scalars) son parámetros que se utilizan para calcular la tarifa de datos de L1 de las transacciones de L2. Estos
+parámetros también se conocen como parámetros del Gas Price Oracle (GPO).
+
+#### Parámetros previos a Ecotone {#pre-ecotone-parameters}
+
+Antes de la actualización Ecotone, estos parámetros son:
+
+* **Scalar**: multiplicador que se aplica a la tarifa base de L1, interpretado como un `uint256` big-endian
+* **Overhead**: sobrecarga constante de gas, interpretada como un `uint256` big-endian
+
+#### Parámetros posteriores a Ecotone {#post-ecotone-parameters}
+
+Tras la actualización Ecotone:
+
+* El atributo **Scalar** codifica información escalar adicional mediante un esquema de codificación versionado
+* El valor **Overhead** se ignora y no afecta al resultado de la transición de estado de la L2
+
+#### Codificación del escalar posterior a Ecotone {#post-ecotone-scalar-encoding}
+
+El escalar se codifica como `uint256` big-endian, se interpreta como `bytes32` y se compone de la siguiente manera:
+
+* Byte `0`: byte de versión del escalar
+* Bytes `[1, 32)`: según la versión del escalar:
+  * Versión del escalar `0`:
+    * Bytes `[1, 28)`: relleno, debería ser cero
+    * Bytes `[28, 32)`: `uint32` big-endian que codifica el `baseFeeScalar` de la tarifa de L1
+    * Esta versión implica que el `blobBaseFeeScalar` de la tarifa de L1 se establece en 0
+    * Si hay bytes distintos de cero en el área de relleno, `baseFeeScalar` debe establecerse en MaxUint32
+  * Versión del escalar `1`:
+    * Bytes `[1, 24)`: relleno, debe ser cero
+    * Bytes `[24, 28)`: `uint32` big-endian que codifica el `blobBaseFeeScalar`
+    * Bytes `[28, 32)`: `uint32` big-endian que codifica el `baseFeeScalar`
+
+El `baseFeeScalar` corresponde a la proporción que representa la transacción de usuario (por byte) en el uso total
+de gas regular de la EVM de L1 que consume la transacción de datos del remitente de lotes. En las transacciones
+de blob, corresponde al costo fijo de gas intrínseco de la transacción de L1.
+
+El `blobBaseFeeScalar` corresponde a la proporción que representa una transacción de usuario (por byte) en el total
+de datos de blob que introduce la transacción de datos del remitente de lotes.
+
+### Unsafe Block Signer {#unsafe-block-signer}
+
+[unsafe-block-signer]: glossary#unsafe-block-signer
+
+El **Unsafe Block Signer** es una dirección de Ethereum cuya clave privada correspondiente se utiliza para firmar
+los bloques «unsafe» antes de que se publiquen en L1. Esta firma permite que los nodos de la red P2P
+reconozcan estos bloques como los bloques unsafe canónicos, lo que evita ataques de denegación de servicio en la
+capa P2P.
+
+Para que su valor pueda obtenerse mediante una prueba de almacenamiento con independencia de la
+disposición del almacenamiento, se guarda en una ranura de almacenamiento especial correspondiente a
+`keccak256("systemconfig.unsafeblocksigner")`.
+
+A diferencia de otros parámetros de configuración del sistema, el Unsafe Block Signer solo afecta a la política de la cadena de bloques
+y no es un parámetro de consenso.
+
+### Límite de gas de L2 {#l2-gas-limit}
+
+[l2-gas-limit]: glossary#l2-gas-limit
+
+El **límite de gas de L2** define la cantidad máxima de gas que se puede usar en un solo bloque de L2.
+Este parámetro garantiza que los bloques de L2 mantengan un tamaño razonable para que puedan procesarse y probarse.
+
+Los cambios en el límite de gas de L2 se aplican por completo en el primer bloque de L2 cuyo origen en L1 es el que
+introdujo el cambio.
+
+El límite de gas no puede establecerse en un valor superior al
+[límite de gas máximo](/es/specifications/base-protocol/consensus/derivation#system-configuration). Así se garantiza que los bloques de L2 sean demostrables y que el software de consenso y de ejecución pueda procesarlos.
+
+## Envío de lotes {#batch-submission}
+
+[batch-submission]: glossary#batch-submission
+
+### Disponibilidad de datos {#data-availability}
+
+[data-availability]: glossary#data-availability
+
+La disponibilidad de datos es la garantía de que ciertos datos estarán «disponibles» (es decir, *recuperables*) durante una ventana de tiempo
+razonablemente larga. En el caso de Base, los datos en cuestión son los [lotes del sequencer][sequencer-batch] que los [validadores][validator]
+necesitan para verificar el trabajo del sequencer y validar la cadena L2.
+
+El [período de finalización][finalization-period] debe tomarse como el límite inferior de la ventana de disponibilidad, ya que
+es entonces cuando la disponibilidad de datos resulta más crítica, puesto que es necesaria para ejecutar una [prueba de fallo][fault-proof].
+
+«Disponibilidad» **no** implica que los datos queden almacenados a largo plazo de forma garantizada.
+
+### Proveedor de disponibilidad de datos {#data-availability-provider}
+
+[avail-provider]: glossary#data-availability-provider
+
+Un proveedor de disponibilidad de datos es un servicio que puede utilizarse para que los datos estén disponibles. Consulte la sección [Disponibilidad
+de datos][data-availability] para obtener más información sobre lo que esto significa.
+
+Idealmente, un buen proveedor de disponibilidad de datos ofrece garantías sólidas y *verificables* de disponibilidad de datos
+
+Actualmente, entre los proveedores de disponibilidad de datos compatibles se encuentran los datos de llamada (call data) de Ethereum y los datos de blob.
+
+### Lote del sequencer {#sequencer-batch}
+
+[sequencer-batch]: glossary#sequencer-batch
+
+Un lote del sequencer es una lista de transacciones de L2 (enviadas a un sequencer) etiquetada con un [número de
+época](#sequencing-epoch) y una marca de tiempo de bloque de L2 (que se puede convertir fácilmente en un número de bloque, ya que nuestro
+tiempo de bloque es constante).
+
+Los lotes del sequencer forman parte de las [entradas de derivación de L2][deriv-inputs]. Cada lote representa las entradas necesarias para construir
+**un** bloque de L2 (a partir del estado actual de la cadena L2), salvo en el caso del primer bloque de cada época, que además necesita
+información sobre los depósitos (cf. la sección sobre [entradas de derivación de L2][deriv-inputs]).
+
+### Canal {#channel}
+
+[channel]: glossary#channel
+
+Un canal es una secuencia de [lotes del sequencer][sequencer-batch] (correspondientes a bloques consecutivos) comprimidos conjuntamente. El motivo
+de agrupar varios lotes es simplemente obtener una mejor tasa de compresión y, así, reducir los costos de
+disponibilidad de datos.
+
+Un canal puede dividirse en [frames][channel-frame] para transmitirse mediante [transacciones del
+batcher][batcher-transaction]. Se divide un canal en frames porque podría ser demasiado grande para
+incluirse en una sola transacción del batcher.
+
+Un canal se identifica de forma única por su marca de tiempo (el tiempo UNIX en que se creó) y un valor aleatorio. Consulta
+la sección [Formato de frame][frame-format] de la especificación de derivación de la cadena L2 para obtener más información.
+
+[frame-format]: /specifications/base-protocol/consensus/derivation#frame-format
+
+Desde el punto de vista del [nodo de rollup][rollup-node] (que es el consumidor de los canales), un canal se considera
+*abierto* si aún no se ha leído su frame final (marcado explícitamente como tal), y cerrado en caso contrario.
+
+### Channel Frame {#channel-frame}
+
+[channel-frame]: glossary#channel-frame
+
+Un channel frame es un fragmento de datos que pertenece a un [canal]. Las [transacciones del batcher][batcher-transaction] contienen uno o
+varios frames. Un canal se divide en frames porque podría ser demasiado grande para incluirlo en una sola
+transacción del batcher.
+
+### Batcher {#batcher}
+
+[batcher]: glossary#batcher
+
+Un batcher es un componente de software (un programa independiente) que se encarga de poner los canales a disposición en un proveedor de
+disponibilidad de datos. El batcher se comunica con el nodo del rollup para obtener los canales, que luego
+se ponen a disposición mediante [transacciones del batcher][batcher-transaction].
+
+### Transacción del batcher {#batcher-transaction}
+
+[batcher-transaction]: glossary#batcher-transaction
+
+Una transacción del batcher es una transacción que un [batcher] envía a un proveedor de disponibilidad de datos para que
+los canales estén disponibles. Estas transacciones contienen uno o más frames completos, que pueden pertenecer a distintos canales. Los
+frames de un canal pueden repartirse entre varias transacciones del batcher.
+
+Cuando se envía como calldata de Ethereum, el destinatario de la transacción del batcher debe ser la dirección del inbox del sequencer. Además, la
+transacción debe estar firmada por una cuenta de envío de lotes reconocida, que se almacena
+en la [configuración del sistema][system-config].
+
+### Frecuencia de envío de lotes {#batch-submission-frequency}
+
+Dentro de las restricciones de la [sequencing-window], el protocolo permite al batcher enviar bloques de L2 para
+disponibilidad de datos en cualquier momento. El software del batcher permite que su operador configure políticas dinámicas.
+Si el batcher no envía datos dentro del plazo asignado, el rollup mantiene las garantías de seguridad y de actividad (liveness)
+mediante la ventana de secuenciación.
+
+Al enviar nuevos datos de L2 en pasos más pequeños y frecuentes, se reduce el retraso en la confirmación de las entradas de los bloques
+de L2. Esto permite a los verificadores garantizar antes la seguridad de los bloques de L2. Además, reduce el tiempo hasta la finalidad de
+los datos en L1 y, por consiguiente, el tiempo hasta la finalidad de las entradas de L2.
+
+Al enviar nuevos datos de L2 en pasos más grandes y menos frecuentes, se dispone de más tiempo para agregar más datos de L2 y,
+de este modo, reducir la sobrecarga fija del trabajo de envío de lotes. Esto puede abaratar el envío de lotes, especialmente
+en cadenas de menor rendimiento que tardan más en llenar las transacciones de datos (normalmente 128 KB de calldata u 800 KB
+de datos de blob).
+
+### Tiempo de espera del canal {#channel-timeout}
+
+[channel-timeout]: glossary#channel-timeout
+
+El tiempo de espera del canal es una duración (en bloques de L1) durante la cual los [frames del canal][channel-frame] pueden llegar a L1 dentro de
+[transacciones del batcher][batcher-transaction].
+
+El intervalo de tiempo aceptable para los frames de un [canal][channel] es `[channel_id.timestamp, channel_id.timestamp +
+CHANNEL_TIMEOUT]`. El intervalo de bloques de L1 aceptable para estos frames comprende cualquier bloque de L1 cuya marca de tiempo se encuentre dentro de este
+intervalo. (Ten en cuenta que `channel_id.timestamp` debe ser menor que la marca de tiempo de cualquier bloque de L1 en el que aparezcan frames
+del canal; de lo contrario, dichos frames se ignoran).
+
+Los tiempos de espera del canal cumplen un doble propósito:
+
+* Evitar conservar indefinidamente datos de canales antiguos que no se han cerrado (un canal no cerrado es aquel cuyo frame final no se
+  ha enviado).
+* Acotar el número de bloques de L1 que hay que revisar hacia atrás para decodificar [lotes del sequencer][sequencer-batch] a partir de
+  los canales. Esto es especialmente relevante durante las reorganizaciones de L1; para obtener más información, consulta la sección [Resetting Channel Buffering][reset-channel-buffer]
+  de la especificación de derivación de la cadena L2.
+
+[reset-channel-buffer]: /specifications/base-protocol/consensus/derivation#resetting-channel-buffering
+
+## Propuestas de raíces de salida de L2 {#l2-output-root-proposals}
+
+[l2-output-root-proposals]: glossary#l2-output-root-proposals
+
+### Proponente {#proposer}
+
+[proposer]: glossary#proposer
+
+La función del proponente es construir y enviar raíces de salida (output roots), que son compromisos sobre el estado de la L2, al
+contrato L2OutputOracle en L1 (la capa de liquidación). Para ello, el proponente consulta periódicamente al nodo de rollup
+la raíz de salida más reciente derivada del último bloque finalizado de L1. A continuación, envía esa raíz de salida al
+contrato L2OutputOracle en la capa de liquidación (L1).
+
+## Derivación de la cadena L2 {#l2-chain-derivation}
+
+[derivation]: glossary#L2-chain-derivation
+
+La derivación de la cadena L2 es el proceso que lee las [entradas de derivación de L2][deriv-inputs] desde L1 para derivar la cadena
+L2.
+
+Consulta la [especificación de derivación de la cadena L2][derivation-spec] para obtener más información.
+
+### Entradas de derivación de L2 {#l2-derivation-inputs}
+
+[deriv-inputs]: glossary#l2-derivation-inputs
+
+Este término se refiere a los datos que se encuentran en los bloques de L1 y que el [nodo de rollup][rollup-node] lee para construir los [atributos de
+payload][payload-attr].
+
+Las entradas de derivación de L2 incluyen:
+
+* Atributos del bloque de L1
+  * número de bloque
+  * marca de tiempo
+  * tarifa base (basefee)
+  * tarifa base de blob
+* [Depósitos][deposits] (como datos de log)
+* [Lotes del sequencer][sequencer-batch] (como datos de transacción)
+* Actualizaciones de la [configuración del sistema][system-config] (como datos de log)
+
+### Configuración del sistema {#system-configuration}
+
+Este término designa el conjunto de parámetros del rollup configurables dinámicamente que mantiene
+el contrato [`SystemConfig`](/es/specifications/base-protocol/consensus/derivation#system-configuration) en L1 y que lee el proceso de [derivation] de L2.
+Estos parámetros permiten rotar las claves periódicamente y ajustar los parámetros de costos externos
+sin la sobrecarga que supone una actualización de red mediante un hardfork.
+
+Consulta la sección [Configuración del sistema](/es/specifications/base-protocol/consensus/derivation#system-configuration) para ver una descripción completa.
+
+### Atributos de payload {#payload-attributes}
+
+[payload-attr]: glossary#payload-attributes
+
+Este término se refiere a un objeto que puede derivarse de las [entradas de derivación de la cadena L2][deriv-inputs] disponibles en L1, y que
+luego se pasa al [motor de ejecución][execution-engine] para construir bloques de L2.
+
+En esencia, el objeto de atributos de payload codifica [un bloque sin propiedades de salida][block].
+
+Los atributos de payload se definieron originalmente en la [especificación de la Engine API de Ethereum][engine-api], que ampliamos en
+la [Especificación del motor de ejecución][exec-engine].
+
+Consulta también la sección [Construcción de los atributos de payload][building-payload-attr] de la especificación del nodo de rollup.
+
+[building-payload-attr]: /specifications/base-protocol/consensus/specification#building-the-payload-attributes
+
+### Bloque génesis de L2 {#l2-genesis-block}
+
+[l2-genesis]: glossary#l2-genesis-block
+
+El bloque génesis de L2 es el primer bloque de la cadena L2 en su versión actual.
+
+El estado del bloque génesis de L2 comprende:
+
+* El estado heredado de la versión anterior de la cadena L2.
+  * Es posible que este estado se haya modificado mediante «cirugías de estado». Por ejemplo, la migración a Bedrock implicó cambios en
+    la forma en que se almacenaban los saldos de ETH nativo en el trie de almacenamiento.
+* [Contratos predesplegados][predeploy]
+
+La marca de tiempo del bloque génesis de L2 debe ser un múltiplo del [tiempo de bloque][block-time] (es decir, un número par, ya que el
+tiempo de bloque es de 2 segundos).
+
+Al actualizar el protocolo de rollup a una nueva versión, podemos realizar un *squash fork*, un proceso que implica crear
+un nuevo bloque génesis de L2. Este nuevo bloque génesis de L2 tendrá el número de bloque `X + 1`, donde `X` es el número de bloque
+del último bloque de L2 antes de la actualización.
+
+No debe confundirse un squash fork con un *re-genesis*, un proceso similar que empleamos en el pasado y que también
+reinicia los números de bloque de L2, de modo que el nuevo bloque génesis de L2 tiene el número 0. No volveremos a recurrir al re-genesis en el futuro.
+
+Los squash forks son preferibles a los re-genesis porque evitan duplicar números de bloque de L2, algo que hace fallar muchas herramientas
+externas.
+
+### Inicio de la cadena L2 {#l2-chain-inception}
+
+[l2-chain-inception]: glossary#L2-chain-inception
+
+Número de bloque de L1 en el que se propusieron las raíces de salida del [bloque génesis][l2-genesis] en el contrato [oráculo
+de salidas][output-oracle].
+
+En la implementación actual, corresponde al número de bloque de L1 en el que se desplegó o actualizó el contrato del oráculo de salidas.
+
+### Bloque L2 seguro {#safe-l2-block}
+
+[safe-l2-block]: glossary#safe-l2-block
+
+Un bloque L2 seguro es un bloque L2 que un [nodo de rollup][rollup-node] puede derivar íntegramente a partir de L1. Esto puede variar
+de un nodo a otro, según la visión que cada uno tenga de la cadena L1.
+
+### Cabeza L2 segura {#safe-l2-head}
+
+[safe-l2-head]: glossary#safe-l2-head
+
+La cabeza L2 segura es el [bloque L2 seguro][safe-l2-block] más alto del que tiene constancia un [nodo de rollup][rollup-node].
+
+### Bloque L2 no seguro {#unsafe-l2-block}
+
+[unsafe-l2-block]: glossary#unsafe-l2-block
+
+Un bloque L2 no seguro es un bloque L2 que un [nodo de rollup][rollup-node] conoce, pero que no se ha derivado de la cadena L1.
+En el modo sequencer, se trata de un bloque secuenciado por el propio sequencer. En el modo validador, se trata de un
+bloque obtenido del sequencer mediante [sincronización no segura][unsafe-sync].
+
+### Cabeza L2 no segura {#unsafe-l2-head}
+
+[unsafe-l2-head]: glossary#unsafe-l2-head
+
+La cabeza L2 no segura es el [bloque L2 no seguro][unsafe-l2-block] más reciente del que tiene conocimiento un [nodo de rollup][rollup-node].
+
+### Consolidación de bloques no seguros {#unsafe-block-consolidation}
+
+[consolidation]: glossary#unsafe-block-consolidation
+
+La consolidación de bloques no seguros es el proceso mediante el cual el [nodo de rollup][rollup-node] intenta hacer avanzar un bloque la [cabeza L2
+segura][safe-l2-head], de modo que el [bloque L2 no seguro][unsafe-l2-block] más antiguo pase a ser la nueva cabeza L2 segura.
+
+Para llevar a cabo la consolidación, el nodo verifica que los [atributos de payload][payload-attr] derivados de la cadena L1
+coincidan exactamente con el bloque L2 no seguro más antiguo.
+
+Para más información, consulta la [sección Engine Queue][engine-queue] de la especificación de derivación de la cadena L2.
+
+[engine-queue]: /specifications/base-protocol/consensus/derivation#engine-queue
+
+### Cabeza L2 finalizada {#finalized-l2-head}
+
+[finalized-l2-head]: glossary#finalized-l2-head
+
+La cabeza L2 finalizada es el bloque L2 más alto que puede derivarse de bloques L1 *[finalizados][finality]*, es decir, bloques L1
+con una antigüedad superior a dos épocas de L1 (64 [franjas de tiempo][time-slot] de L1).
+
+[finality]: https://hackmd.io/@prysmaticlabs/finality
+
+## Otros conceptos de la cadena L2 {#other-l2-chain-concepts}
+
+### Alias de direcciones {#address-aliasing}
+
+[address-aliasing]: glossary#address-aliasing
+
+Cuando un contrato envía un [depósito][deposits] de L1 a L2, su dirección (tal como la devuelven `ORIGIN` y `CALLER`) se
+sustituirá por un alias, es decir, una representación modificada de la dirección del contrato.
+
+* cf. [Especificación de depósitos](/es/specifications/base-protocol/bridging/deposits#address-aliasing)
+
+### Nodo de rollup {#rollup-node}
+
+[rollup-node]: glossary#rollup-node
+
+El nodo de rollup se encarga de [derivar la cadena L2][derivation] a partir de la cadena L1 (los [bloques][block] de L1 y sus
+[recibos][receipt] asociados).
+
+El nodo de rollup puede ejecutarse en modo *validador* o en modo *sequencer*.
+
+En modo sequencer, el nodo de rollup recibe de los usuarios transacciones de L2, con las que crea bloques de L2. Luego, estos se
+envían a un [proveedor de disponibilidad de datos][avail-provider] mediante el [envío de lotes][batch-submission]. En este caso, la derivación
+de la cadena L2 sirve como comprobación de coherencia y como mecanismo para detectar [reorganizaciones][reorg] de la cadena L1.
+
+En modo validador, el nodo de rollup realiza la derivación descrita anteriormente, pero también puede «adelantarse» a la cadena
+L1 obteniendo bloques directamente del sequencer; en ese caso, la derivación sirve para validar el comportamiento
+del sequencer.
+
+A un nodo de rollup que se ejecuta en modo validador a veces se le denomina *réplica*.
+
+Consulta la [especificación del nodo de rollup][rollup-node-spec] para obtener más información.
+
+### Controlador del rollup {#rollup-driver}
+
+[rollup driver]: glossary#rollup-driver
+
+El controlador del rollup es el componente del [nodo de rollup][rollup-node] que se encarga de [derivar la cadena L2][derivation]
+a partir de la cadena L1 (los [bloques][block] de L1 y sus [recibos][receipt] asociados).
+
+### Contrato predesplegado de L1 Attributes {#l1-attributes-predeployed-contract}
+
+[l1-attr-predeploy]: glossary#l1-attributes-predeployed-contract
+
+Un [contrato predesplegado][predeploy] en L2 que permite obtener los atributos de bloque de L1 correspondientes a bloques de L1 con un número de bloque
+o un hash de bloque determinados.
+
+cf. [Especificación del contrato predesplegado de L1 Attributes](/es/specifications/base-protocol/bridging/deposits#l1-attributes-predeployed-contract)
+
+### Raíz de salida de L2 {#l2-output-root}
+
+[l2-output]: glossary#l2-output-root
+
+Un valor de 32 bytes que funciona como compromiso con el estado actual de la cadena L2.
+
+### Contrato L2 Output Oracle {#l2-output-oracle-contract}
+
+[output-oracle]: glossary#l2-output-oracle-contract
+
+Contrato de L1 en el que el [sequencer] publica las [raíces de salida de L2][l2-output].
+
+### Validador {#validator}
+
+[validator]: glossary#validator
+
+Un validador es una entidad (persona u organización) que ejecuta un [nodo de rollup][rollup-node] en modo validador.
+
+Esto aporta muchas ventajas similares a las de ejecutar un nodo de Ethereum, como la posibilidad de simular transacciones de L2
+localmente, sin límites de tasa.
+
+Además, permite al validador verificar el trabajo del [sequencer] volviendo a derivar las [raíces de salida][l2-output] y comparándolas
+con las que ha enviado el sequencer. Si no coinciden, el validador puede presentar una [prueba de
+fallo][fault-proof].
+
+### Prueba de fallo {#fault-proof}
+
+[fault-proof]: glossary#fault-proof
+
+Una prueba *interactiva* on-chain, realizada por [validadores][validator], que demuestra que un [sequencer] proporcionó
+[raíces de salida][l2-output] erróneas.
+
+### Franja de tiempo {#time-slot}
+
+[time-slot]: glossary#time-slot
+
+En L2, se produce un bloque cada 2 segundos (esta duración se conoce como [tiempo de bloque][block-time]).
+
+Decimos que hay una «franja de tiempo» en cada múltiplo de 2 s a partir de la marca de tiempo del [bloque génesis de L2][l2-genesis].
+
+En L1, tras el [merge], las franjas de tiempo se suceden cada 12 s. Sin embargo, es posible que no se produzca un bloque de L1 en cada franja de tiempo si surgen problemas
+de consenso, incluso benignos.
+
+### Tiempo de bloque {#block-time}
+
+[block-time]: glossary#block-time
+
+El tiempo de bloque de L2 es de 2 segundos, lo que significa que se produce un bloque de L2 en cada [franja de tiempo][time-slot] de 2 s.
+
+Tras [The Merge][merge], podría decirse que el tiempo de bloque de L1 es de 12 s, ya que esa es la duración de la [franja de tiempo][time-slot] de L1. Sin embargo, en
+la práctica el tiempo de bloque es variable, ya que algunas franjas de tiempo pueden omitirse.
+
+Antes de The Merge, el tiempo de bloque de L1 es variable, aunque de media es de 13 s.
+
+### Sincronización no segura {#unsafe-sync}
+
+[unsafe-sync]: glossary#unsafe-sync
+
+La sincronización no segura es el proceso mediante el cual un [validador][validator] recibe del [sequencer][sequencer] información sobre los
+[bloques L2 no seguros][unsafe-l2-block].
+
+Posteriormente, estos bloques no seguros deberán ser confirmados por la cadena L1 (mediante la [consolidación de bloques no seguros][consolidation]).
+
+## Conceptos del motor de ejecución {#execution-engine-concepts}
+
+### Motor de ejecución {#execution-engine}
+
+[execution-engine]: glossary#execution-engine
+
+El motor de ejecución se encarga de ejecutar las transacciones de los bloques y de calcular las raíces de estado, las raíces de recibos
+y el hash de bloque resultantes.
+
+Tanto L1 (tras [merge]) como L2 tienen un motor de ejecución.
+
+En L1, los bloques ejecutados pueden provenir de la sincronización de bloques de L1 o de un bloque recién generado por el motor
+de ejecución (con transacciones del [mempool] de L1) a petición de la capa de consenso de L1.
+
+En L2, los bloques ejecutados los genera el motor de ejecución a petición del [nodo de rollup][rollup-node],
+con transacciones [derivadas de bloques de L1][derivation].
+
+En estas especificaciones, «motor de ejecución» siempre se refiere al motor de ejecución de L2, salvo que se indique lo contrario.
+
+* cf. [Especificación del motor de ejecución][exec-engine]
+
+[deposits-spec]: /specifications/base-protocol/bridging/deposits
+
+[system-config]: /specifications/base-protocol/consensus/derivation#system-configuration
+
+[exec-engine]: /specifications/base-protocol/execution/l2-execution-engine
+
+[derivation-spec]: /specifications/base-protocol/consensus/derivation
+
+[rollup-node-spec]: /specifications/base-protocol/consensus/specification
+
+[mpt-details]: https://github.com/norswap/nanoeth/blob/d4c0c89cc774d4225d16970aa44c74114c1cfa63/src/com/norswap/nanoeth/trees/patricia/README.md
+
+[trie]: https://en.wikipedia.org/wiki/Trie
+
+[bloom filter]: https://en.wikipedia.org/wiki/Bloom_filter
+
+[Solidity events]: https://docs.soliditylang.org/en/latest/contracts.html?highlight=events#events
+
+[nano-header]: https://github.com/norswap/nanoeth/blob/cc5d94a349c90627024f3cd629a2d830008fec72/src/com/norswap/nanoeth/blocks/BlockHeader.java#L22-L156
+
+[yellow]: https://ethereum.github.io/yellowpaper/paper.pdf
+
+[engine-api]: https://github.com/ethereum/execution-apis/blob/main/src/engine/shanghai.md#PayloadAttributesV2
+
+[merge]: https://ethereum.org/en/eth2/merge/
+
+[mempool]: https://www.quicknode.com/guides/defi/how-to-access-ethereum-mempool
+
+[L1 consensus layer]: https://github.com/ethereum/consensus-specs/#readme
+
+[cannon]: https://github.com/ethereum-optimism/cannon
+
+[eip4844]: https://www.eip4844.com/

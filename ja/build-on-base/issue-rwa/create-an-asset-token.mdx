@@ -1,0 +1,101 @@
+---
+title: "アセットトークンを作成する"
+description: "発行者ロール、供給上限、発行者が定義するメタデータを備えた、小数点以下6桁のB20 Assetトークンを作成します。この例では株式トークンを構成します。"
+keywords: ["create asset token Base", "B20 Asset token", "tokenized asset Base", "B20Factory Asset"]
+---
+
+import { AssetDemo } from "/snippets/AssetDemo.jsx"
+import RwaDisclaimer from "/snippets/ja/RwaDisclaimer.mdx"
+
+[B20 Asset バリアント](/ja/specifications/b20/concepts/token-types#4-asset)を使用すると、精度を設定可能で、発行者ロール、供給量の制御、メタデータを備えたトークン化株式のクラスを表現できます。この例では、小数点以下の桁数が6桁の Example Corp Class A (`EXM`) を作成します。
+
+<RwaDisclaimer />
+
+## デモ {#demo}
+
+<AssetDemo flow="create" />
+
+<Tip>
+  このデモでは、ブラウザ上でローカルに生成したアカウントを使って、**Base Vibenet** に実際のトランザクションを送信します。Vibenet またはその B20 機能が利用できない場合は、説明用のオフライン版に自動で切り替わります。
+</Tip>
+
+<Note>
+  B20 を初めて使う方は、[B20 トークン標準](/ja/build-on-base/issue-rwa/create-an-asset-token)で基本概念とローンチまでの一連の手順をご確認ください。これらのサンプルは `base-std@1505323`、`viem@2.55.11`、Base Foundry `v1.1.1` を対象としています。
+</Note>
+
+## 株式トークンの作成と検証 {#create-and-verify-the-stock-token}
+
+小数点以下の桁数の設定、アナウンス、予定された UI 乗数、追加メタデータ、または `batchMint` が必要な場合は、**Asset** バリアントを選択してください。Asset の小数点以下の桁数は `[6, 18]` の範囲内である必要があり、範囲外の値を指定すると `InvalidDecimals` でリバートします。タイプは作成時にトークンアドレスに組み込まれるため、後から変更することはできません。
+
+<CodeGroup>
+  {/* sample: stock-create-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={15}
+  import { encodeAbiParameters, encodeFunctionData, keccak256, parseAbiParameters, parseEventLogs, stringToBytes } from "viem";
+  import { account } from "../../shared/clients.js";
+  import { B20_FACTORY, b20Abi, factoryAbi, role } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function createStockToken() {
+    const salt = keccak256(stringToBytes("example-class-a-v1"));
+    const params = encodeAbiParameters(
+      parseAbiParameters("(uint8 version,string name,string symbol,address initialAdmin,uint8 decimals)"),
+      [{ version: 1, name: "Example Corp Class A", symbol: "EXM", initialAdmin: account.address, decimals: 6 }],
+    );
+    const initCalls = ["MINT_ROLE", "BURN_BLOCKED_ROLE", "PAUSE_ROLE", "UNPAUSE_ROLE", "OPERATOR_ROLE"].map(
+      (name) => encodeFunctionData({ abi: b20Abi, functionName: "grantRole", args: [role(name), account.address] }),
+    );
+    const receipt = await sendContract({ address: B20_FACTORY, abi: factoryAbi, functionName: "createB20", args: [0, salt, params, initCalls] });
+    const [created] = parseEventLogs({ abi: factoryAbi, logs: receipt.logs, eventName: "B20Created" });
+    return created.args.token;
+  }
+  ```
+
+  {/* sample: stock-create-solidity */}
+
+  ```solidity Solidity lines wrap expandable highlight={1}
+      function createStock(address admin) public returns (address token) {
+          B20FactoryLib.B20AssetRoleHolders memory holders = B20FactoryLib.B20AssetRoleHolders({
+              minter: admin,
+              burner: admin,
+              burnBlocker: admin,
+              pauser: admin,
+              unpauser: admin,
+              metadataAdmin: admin,
+              operator: admin
+          });
+          bytes[] memory settings = new bytes[](1);
+          settings[0] = B20FactoryLib.encodeUpdateSupplyCap(1_000_000e6);
+          token = StdPrecompiles.B20_FACTORY.createB20(
+              IB20Factory.B20Variant.ASSET,
+              keccak256("example-class-a-v1"),
+              B20FactoryLib.encodeAssetCreateParams("Example Corp Class A", "EXM", admin, 6),
+              B20FactoryLib.concat(B20FactoryLib.buildRoleGrants(holders), settings)
+          );
+      }
+  ```
+</CodeGroup>
+
+ファクトリーは `(variant, sender, salt)` から決定論的にアドレスを割り当てます。Asset トークンの場合、アドレスのバイト `[10]` は `0x00` になります。同じ `(variant, sender, salt)` の組み合わせを再利用すると、`TokenAlreadyExists` でリバートします。上記のロール付与など、オプションの `initCalls` は同じトランザクション内で新しいトークンに対して実行されます。`createB20` から戻った時点で、ファクトリーはアクセス権を手放します。
+
+インターフェース、ロール、ポリシーの詳細については、[B20 トークン標準](/ja/build-on-base/issue-rwa/create-an-asset-token)を参照してください。
+
+<Check>
+  ファクトリーが Asset バリアントの `B20Created` イベントを発行し、決定論的なトークンアドレスを返します。
+</Check>
+
+<Warning>
+  供給上限はあくまで技術的な上限であり、授権株式数や発行済株式数を表すものではありません。
+</Warning>
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="シェアを発行する" icon="coins" href="/ja/build-on-base/issue-rwa/issue-units">
+    資産ユニットをミントして保有者に割り当てます。
+  </Card>
+
+  <Card title="保有資格者を制限する" icon="user-check" href="/ja/build-on-base/issue-rwa/restrict-eligible-holders">
+    ポリシーを使って保有できるユーザーを制限します。
+  </Card>
+</CardGroup>

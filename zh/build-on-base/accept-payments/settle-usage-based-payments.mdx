@@ -1,0 +1,83 @@
+---
+title: "结算按用量计费的支付"
+keywords: ["x402 upto", "按用量计费的 API 支付", "按量计费的 USDC API", "x402 结算覆盖"]
+description: "授权 x402 支付的最高额度，并在处理程序成功执行后按实际 API 用量结算。"
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+如果在执行任务前就已知最高价格，但最终费用需要在完成后才能算出，请使用 x402 `upto`。它相当于智能体场景下的封顶式可变金额结账。
+
+## 演示 {#demo}
+
+<PaymentsDemo flow="x402Upto" />
+
+<Tip>
+  以上演示仅为模拟效果。如需查看 Vibenet 上的链上演示，请前往 [Base 链演示](https://chain.base.org/demos)。
+</Tip>
+
+## 声明最高金额并设置实际收费 {#advertise-the-maximum-and-set-the-actual-charge}
+
+<CodeGroup>
+  {/* sample: x402-upto-ts */}
+
+  ```typescript TypeScript · Express lines wrap expandable highlight={1,3,9}
+  app.use(paymentMiddleware({
+    "GET /metered": {
+      accepts: [{ scheme: "upto", price: "$0.10", network, payTo }],
+      description: "Usage-priced inference",
+      mimeType: "application/json",
+    },
+  }, resourceServer));
+  app.get("/metered", (_request, response) => {
+    setSettlementOverrides(response, { amount: "$0.04" });
+    response.json({ tokens: 812, result: "Generated response" });
+  });
+  ```
+
+  {/* sample: x402-upto-go */}
+
+  ```go Go · net/http lines wrap expandable highlight={2,6}
+  routes["GET /metered"] = x402http.RouteConfig{
+  	Accepts: x402http.PaymentOptions{{Scheme: "upto", Price: "$0.10", Network: network, PayTo: payTo}},
+  	Description: "Usage-priced inference", MimeType: "application/json",
+  }
+  mux.HandleFunc("GET /metered", func(w http.ResponseWriter, _ *http.Request) {
+  	nethttpmw.SetSettlementOverrides(w, &x402.SettlementOverrides{Amount: "40000"})
+  	_ = json.NewEncoder(w).Encode(map[string]any{"tokens": 812, "result": "Generated response"})
+  })
+  ```
+
+  {/* sample: x402-upto-python */}
+
+  ```python Python · FastAPI lines wrap expandable highlight={2,10}
+  routes["GET /metered"] = RouteConfig(
+      accepts=[PaymentOption(scheme="upto", price="$0.10", network=network, pay_to=pay_to)],
+      description="Usage-priced inference",
+      mime_type="application/json",
+  )
+
+
+  @app.get("/metered")
+  async def metered(response: Response) -> dict[str, object]:
+      set_settlement_overrides(response, {"amount": "$0.04"})
+      return {"tokens": 812, "result": "Generated response"}
+  ```
+</CodeGroup>
+
+只有在算出成功完成的用量之后，才能设置结算覆盖值。实际收费金额不得超过 402 支付要求中声明的最高金额。
+
+<Check>
+  买方授权的上限为 $0.10，成功响应记录的实际用量为 $0.04，最终结算收取 $0.04。
+</Check>
+
+<Warning>
+  在中间件完成授权验证之前，切勿返回任何计费内容。在对外开放该端点之前，请先明确失败、超时和部分完成的工作分别应如何收费。
+</Warning>
+
+## 另请参阅 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="为 API 收费" icon="server" href="/zh/build-on-base/accept-payments/charge-for-an-api">如果在执行工作前就已确定价格，请使用 `exact`。</Card>
+  <Card title="扣款已授权的金额" icon="receipt" href="/zh/build-on-base/accept-payments/capture-an-authorization#capture-a-partial-amount">使用受限的 permit 构建钱包结账版本。</Card>
+</CardGroup>

@@ -1,0 +1,150 @@
+---
+title: 'Descripción general de RPC en Base'
+sidebarTitle: 'Descripción general'
+description: 'Referencia completa de todos los métodos JSON-RPC y de Flashblocks disponibles en los nodos de Base.'
+---
+
+Base ofrece una única API JSON-RPC, totalmente compatible con la EVM, en dos niveles de rendimiento. Para pasar de confirmaciones de bloque de 2 segundos a preconfirmaciones de 200 ms, basta con cambiar una URL y una etiqueta de bloque.
+
+## Redes {#networks}
+
+Para consultar los detalles de la red, los endpoints RPC y la configuración de la billetera, consulta [Conectarse a Base](/base-chain/quickstart/connecting-to-base).
+
+<Note>
+  Los endpoints públicos de Base son **solo HTTP**. Las conexiones RPC por WebSocket (`eth_subscribe`, `newHeads`, `logs`) no están disponibles en los endpoints públicos de Base; elige un proveedor compatible con WebSocket en el [Builder Stack](/es/get-started/builder-stack).
+</Note>
+
+## Flashblocks {#flashblocks}
+
+Todos los endpoints públicos de Base son compatibles con Flashblocks. Todos los métodos `eth_` estándar funcionan exactamente igual, y la etiqueta de bloque `pending` refleja el **bloque preconfirmado en curso**, que se actualiza cada ~200 ms con nuevos lotes de transacciones ordenadas por el secuenciador.
+
+Llamadas como `eth_getBalance`, `eth_getStorageAt` y `eth_call` se ejecutan sobre el estado real del secuenciador hasta 1,8 segundos antes de que se selle el bloque, con una latencia inferior a un segundo.
+
+## Referencia de la API {#api-reference}
+
+### API JSON-RPC de Ethereum {#ethereum-json-rpc-api}
+
+Métodos principales del protocolo Ethereum para consultar cuentas, obtener datos de bloques y transacciones, estimar gas y filtrar registros.
+
+<Info>
+  Los métodos marcados con ✓ admiten la etiqueta de bloque `"pending"`, que refleja el Flashblock preconfirmado que está en curso.
+</Info>
+
+| Método                                                                                                                                 | Descripción                                        | Flashblocks `pending` |
+| :------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------- | :-------------------- |
+| [eth&#95;blockNumber](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_blockNumber)                                                 | Número de bloque actual                            | —                     |
+| [eth&#95;getBalance](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_getBalance)                                                   | Saldo de ETH de la cuenta                          | ✓                     |
+| [eth&#95;getTransactionCount](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionCount)                                 | Nonce de la cuenta / número de transacciones       | ✓                     |
+| [eth&#95;getCode](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_getCode)                                                         | Bytecode del contrato desplegado                   | ✓                     |
+| [eth&#95;getStorageAt](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_getStorageAt)                                               | Valor de una ranura de almacenamiento del contrato | ✓                     |
+| [eth&#95;call](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_call)                                                               | Ejecutar una llamada de solo lectura               | ✓                     |
+| [eth&#95;getBlockByNumber](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_getBlockByNumber)                                       | Datos del bloque por número                        | ✓                     |
+| [eth&#95;getBlockByHash](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_getBlockByHash)                                           | Datos del bloque por hash                          | —                     |
+| [eth&#95;getBlockReceipts](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_getBlockReceipts)                                       | Todos los recibos de un bloque                     | ✓                     |
+| [eth&#95;getBlockTransactionCountByNumber](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_getBlockTransactionCountByNumber)       | Número de transacciones por número de bloque       | ✓                     |
+| [eth&#95;getBlockTransactionCountByHash](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_getBlockTransactionCountByHash)           | Número de transacciones por hash de bloque         | —                     |
+| [eth&#95;getTransactionByHash](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionByHash)                               | Datos de la transacción por hash                   | —                     |
+| [eth&#95;getTransactionByBlockHashAndIndex](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionByBlockHashAndIndex)     | Transacción por hash de bloque e índice            | —                     |
+| [eth&#95;getTransactionByBlockNumberAndIndex](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionByBlockNumberAndIndex) | Transacción por número de bloque e índice          | —                     |
+| [eth&#95;getTransactionReceipt](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionReceipt)                             | Recibo de una transacción minada                   | —                     |
+| [eth&#95;sendRawTransaction](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_sendRawTransaction)                                   | Enviar una transacción firmada                     | —                     |
+| [eth&#95;gasPrice](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_gasPrice)                                                       | Precio actual del gas                              | —                     |
+| [eth&#95;maxPriorityFeePerGas](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_maxPriorityFeePerGas)                               | Estimación de la tarifa máxima de prioridad        | —                     |
+| [eth&#95;feeHistory](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_feeHistory)                                                   | Historial de tarifas base y recompensas            | —                     |
+| [eth&#95;estimateGas](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_estimateGas)                                                 | Estimar el gas de una transacción                  | ✓                     |
+| [eth&#95;getLogs](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_getLogs)                                                         | Consultar registros de eventos con un filtro       | ✓                     |
+| [eth&#95;chainId](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_chainId)                                                         | ID de cadena de la red                             | —                     |
+| [eth&#95;syncing](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_syncing)                                                         | Estado de sincronización del nodo                  | —                     |
+| [net&#95;version](/es/base-chain/api-reference/ethereum-json-rpc-api/net_version)                                                         | ID de versión de la red                            | —                     |
+| [web3&#95;clientVersion](/es/base-chain/api-reference/ethereum-json-rpc-api/web3_clientVersion)                                           | Cadena de versión del cliente                      | —                     |
+| [eth&#95;subscribe](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_subscribe)                                                     | Suscribirse a eventos (WSS)                        | ✓                     |
+| [eth&#95;unsubscribe](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_unsubscribe)                                                 | Cancelar una suscripción (WSS)                     | —                     |
+
+### API de Flashblocks {#flashblocks-api}
+
+Métodos de preconfirmación para obtener señales de transacciones en menos de un segundo en Base. Estos métodos permiten leer el estado, simular paquetes y transmitir eventos en streaming hasta ~1,8 segundos antes de que se selle un bloque.
+
+| Método                                                                                           | Descripción                                                    |
+| ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| [eth&#95;simulateV1](/es/base-chain/api-reference/flashblocks-api/eth_simulateV1)                   | Simula paquetes de transacciones sobre el estado preconfirmado |
+| [base&#95;transactionStatus](/es/base-chain/api-reference/flashblocks-api/base_transactionStatus)   | Comprueba si el mempool ha recibido una transacción            |
+| [newFlashblockTransactions](/es/base-chain/api-reference/flashblocks-api/newFlashblockTransactions) | Se suscribe a transacciones preconfirmadas individuales        |
+| [pendingLogs](/es/base-chain/api-reference/flashblocks-api/pendingLogs)                             | Se suscribe a registros filtrados de transacciones preconfirmadas   |
+| [newFlashblocks](/es/base-chain/api-reference/flashblocks-api/newFlashblocks)                       | Se suscribe al flujo completo de payloads de Flashblocks       |
+
+### Debug API {#debug-api}
+
+Utilidades de desarrollo y depuración para inspeccionar transacciones en profundidad y reproducir bloques. Los métodos de depuración vuelven a ejecutar las transacciones y tienen un alto coste computacional; la disponibilidad y los límites de tasa varían según el proveedor del [Builder Stack](/es/get-started/builder-stack).
+
+| Método                                                                                       | Descripción                                                          |
+| -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| [debug&#95;traceTransaction](/es/base-chain/api-reference/debug-api/debug_traceTransaction)     | Traza completa de ejecución de la EVM para una transacción           |
+| [debug&#95;traceBlockByHash](/es/base-chain/api-reference/debug-api/debug_traceBlockByHash)     | Trazas de la EVM de todas las transacciones de un bloque, por hash   |
+| [debug&#95;traceBlockByNumber](/es/base-chain/api-reference/debug-api/debug_traceBlockByNumber) | Trazas de la EVM de todas las transacciones de un bloque, por número |
+
+## Formato de solicitud y respuesta {#request-response-format}
+
+Todas las solicitudes son HTTP POST con `Content-Type: application/json`.
+
+| Campo     | Tipo   | Descripción                     |                                                        |
+| :-------- | :----- | :------------------------------ | ------------------------------------------------------ |
+| `jsonrpc` | string | Siempre `"2.0"`                 |                                                        |
+| `method`  | string | Nombre del método RPC           |                                                        |
+| `params`  | array  | Parámetros del método, en orden |                                                        |
+| `id`      | number | string                          | Identificador que se devuelve tal cual en la respuesta |
+
+**Solicitud:**
+
+```json Request
+{
+  "jsonrpc": "2.0",
+  "method": "eth_getBalance",
+  "params": ["0x742d35Cc6634C0532925a3b8D4C9dD0b4f3BaEa", "pending"],
+  "id": 1
+}
+```
+
+**Respuesta exitosa:**
+
+```json Success Response
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": "0x1a055690d9db80000"
+}
+```
+
+**Respuesta de error:**
+
+```json Error Response lines wrap expandable
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "error": {
+    "code": -32602,
+    "message": "Invalid params"
+  }
+}
+```
+
+## Códigos de error {#error-codes}
+
+| Código   | Nombre           | Descripción                                     |
+| -------- | ---------------- | ----------------------------------------------- |
+| `-32700` | Parse error      | JSON no válido                                  |
+| `-32600` | Invalid request  | No es un objeto JSON-RPC 2.0 válido             |
+| `-32601` | Method not found | El método no existe o no está disponible        |
+| `-32602` | Invalid params   | Parámetros del método no válidos                |
+| `-32603` | Internal error   | Error interno de JSON-RPC                       |
+| `-32000` | Server error     | Error específico del nodo (consulta el mensaje) |
+
+## Parámetros de bloque {#block-parameters}
+
+| Valor         | Estándar                                    | Flashblocks                                                   |
+| ------------- | ------------------------------------------- | ------------------------------------------------------------- |
+| `"latest"`    | Bloque sellado más reciente                 | Bloque sellado más reciente                                   |
+| `"pending"`   | Estado del pool de transacciones no minadas | **Flashblock actual en construcción (resolución de ~200 ms)** |
+| `"safe"`      | Último bloque seguro                        | Último bloque seguro                                          |
+| `"finalized"` | Último bloque finalizado                    | Último bloque finalizado                                      |
+| `"earliest"`  | Bloque génesis                              | Bloque génesis                                                |
+| `"0x<n>"`     | Bloque específico por número                | Bloque específico por número                                  |

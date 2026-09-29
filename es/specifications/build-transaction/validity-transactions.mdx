@@ -1,0 +1,49 @@
+---
+title: "Descripción general"
+description: "Envía transacciones firmadas que Base tiene en cuenta cuando se cumplen las condiciones onchain."
+tag: "Soon"
+---
+
+Las Validity Transactions te permiten enviar una transacción firmada sujeta a condiciones sobre el estado de Base. La API admite transacciones legacy, EIP-2930 y EIP-1559, aunque se recomienda EIP-1559. Úsalas para swaps condicionales, retiros y otras acciones que dependan del estado.
+
+<Warning>
+  Las Validity Transactions son experimentales. Por ahora, `base_sendRawTransactionValidity` solo está disponible en Vibenet. Aún no se ha confirmado su disponibilidad en Mainnet ni en Base Sepolia.
+</Warning>
+
+## Cómo funciona {#how-it-works}
+
+Envía una transacción firmada sin procesar y un array `validity` no vacío. Actualmente, la API admite predicados de saldo, almacenamiento, número de bloque e índice de Flashblock.
+
+Una transacción solo es elegible cuando se cumplen todos los predicados. Base comprueba los predicados antes de incluirla. Una transacción pendiente puede volverse elegible cuando una transacción anterior modifica el estado que vigila.
+
+Las Validity Transactions de EIP-1559 usan los campos de comisión habituales. Que una transacción sea elegible no reserva espacio en el bloque ni garantiza su inclusión.
+
+## Vigencia y privacidad {#lifetime-and-privacy}
+
+Usa los predicados `block_number` o `flashblock_index` para restringir cuándo puede incluirse una transacción. Para reemplazar una transacción pendiente, utiliza el nonce del remitente.
+
+Los criterios de validez se envían por separado de la transacción firmada y no aparecen en la transacción onchain resultante. No incluyas secretos en el calldata ni en los valores de los predicados.
+
+## Próximos pasos {#next-steps}
+
+<CardGroup cols={2}>
+  <Card title="Crear una Validity Transaction" href="/es/specifications/build-transaction/build-a-validity-transaction" icon="hammer">
+    Firma y envía una transacción con Viem.
+  </Card>
+
+  <Card title="RPC de Validity Transaction" href="/es/specifications/build-transaction/base_sendRawTransactionValidity" icon="code">
+    Consulta el formato de la solicitud.
+  </Card>
+
+  <Card title="Comisiones, ordenación y ciclo de vida" href="/es/specifications/build-transaction/fees-ordering-and-lifecycle" icon="arrow-down-1-9">
+    Entiende las comisiones, la caducidad y el reemplazo.
+  </Card>
+
+  <Card title="Predicados y seguridad" href="/es/specifications/build-transaction/predicates-and-safety" icon="shield-check">
+    Conoce las reglas de los predicados y los límites de seguridad.
+  </Card>
+
+  <Card title="Solución de problemas" href="/es/specifications/build-transaction/troubleshooting" icon="screwdriver-wrench">
+    Diagnostica problemas de envío e inclusión.
+  </Card>
+</CardGroup>

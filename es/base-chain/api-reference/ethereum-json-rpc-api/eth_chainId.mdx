@@ -1,0 +1,46 @@
+---
+title: 'eth_chainId'
+sidebarTitle: 'eth_chainId'
+description: 'Devuelve el ID de cadena de la red actual.'
+---
+
+Devuelve el ID de cadena de la red actual, según lo definido en [EIP-695](https://eips.ethereum.org/EIPS/eip-695).
+
+## Parámetros {#parameters}
+
+Sin parámetros.
+
+## Valor devuelto {#returns}
+
+<ResponseField name="result" type="string">
+  El ID de la cadena en formato de cadena hexadecimal: `"0x2105"` (8453) para Base Mainnet y `"0x14a34"` (84532) para Base Sepolia.
+</ResponseField>
+
+## Ejemplo {#example}
+
+<CodeGroup>
+  ```json Solicitud
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_chainId",
+    "params": [],
+    "id": 1
+  }
+  ```
+
+  ```json Respuesta (Base Mainnet)
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x2105"
+  }
+  ```
+
+  ```json Respuesta (Base Sepolia)
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x14a34"
+  }
+  ```
+</CodeGroup>

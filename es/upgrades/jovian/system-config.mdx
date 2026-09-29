@@ -1,0 +1,99 @@
+---
+title: "Jovian: configuración del sistema"
+description: "Cambios en SystemConfig introducidos por la actualización Jovian, que añaden una variable de configuración para la tarifa base mínima del mercado de tarifas de EIP-1559."
+---
+
+## Configuración de la tarifa base mínima {#minimum-base-fee-configuration}
+
+Jovian añade un valor de configuración a `SystemConfig` para controlar la tarifa base mínima que utiliza el mercado de tarifas EIP-1559
+en Base. Este valor corresponde a una tarifa base mínima expresada en wei.
+
+| Nombre       | Tipo     | Valor predeterminado | Significado               |
+| ------------ | -------- | -------------------- | ------------------------- |
+| `minBaseFee` | `uint64` | `0`                  | Tarifa base mínima en wei |
+
+La configuración se actualiza mediante un nuevo método de `SystemConfig`:
+
+```solidity SystemConfig.sol
+function setMinBaseFee(uint64 minBaseFee) external onlyOwner;
+```
+
+### `ConfigUpdate` {#configupdate}
+
+Cuando se actualiza la configuración, se DEBE emitir un evento [`ConfigUpdate`](/es/specifications/base-protocol/consensus/derivation#system-config-updates)
+con los siguientes parámetros:
+
+| `version`    | `updateType` | `data`                            | Uso                                    |
+| ------------ | ------------ | --------------------------------- | -------------------------------------- |
+| `uint256(0)` | `uint8(6)`   | `abi.encode(uint64(_minBaseFee))` | Modifica la tarifa base mínima (wei) |
+
+### Inicialización {#initialization}
+
+Las siguientes acciones deben producirse durante la inicialización de `SystemConfig`:
+
+* `emit ConfigUpdate.BATCHER`
+* `emit ConfigUpdate.FEE_SCALARS`
+* `emit ConfigUpdate.GAS_LIMIT`
+* `emit ConfigUpdate.UNSAFE_BLOCK_SIGNER`
+
+Se omiten intencionadamente `emit ConfigUpdate.EIP_1559_PARAMS` y `emit ConfigUpdate.MIN_BASE_FEE`.
+Mientras estos valores no estén definidos, se usarán los valores predeterminados.
+Exigir que estos parámetros se definan durante la inicialización impondría el requisito estricto
+de que la L2 realice el hardfork antes de que se actualicen los contratos de L1, algo difícil de gestionar en un
+ecosistema con muchas cadenas.
+
+### Modificación de la tarifa base mínima {#modifying-minimum-base-fee}
+
+Tras cada actualización, el contrato emite el evento `ConfigUpdate` descrito anteriormente, lo que permite a los nodos
+derivar la configuración a partir de los registros de L1.
+
+Las implementaciones DEBEN incorporar el valor configurado en el campo `extraData` del encabezado del bloque, tal como se especifica en
+`./exec-engine.md`. Hasta que se emita el primero de estos eventos, se debería usar un valor predeterminado de `0`.
+
+### Interfaz {#interface}
+
+#### Parámetros de la tarifa base mínima {#minimum-base-fee-parameters}
+
+##### `minBaseFee` {#minbasefee}
+
+Esta función devuelve la tarifa base mínima configurada actualmente, expresada en wei.
+
+```solidity SystemConfig.sol
+function minBaseFee() external view returns (uint64);
+```
+
+## Configuración de la huella de DA {#da-footprint-configuration}
+
+Jovian añade a `SystemConfig` un valor de configuración `uint16` para controlar el [`daFootprintGasScalar`](./derivation).
+
+La configuración se actualiza mediante un nuevo método de `SystemConfig`:
+
+```solidity SystemConfig.sol
+function setDAFootprintGasScalar(uint16 daFootprintGasScalar) external onlyOwner;
+```
+
+### `ConfigUpdate` {#configupdate-2}
+
+Cuando se actualiza la configuración, se DEBE emitir un evento [`ConfigUpdate`](/es/specifications/base-protocol/consensus/derivation#system-config-updates)
+con los siguientes parámetros:
+
+| `version`    | `updateType` | `data`                                      | Uso                                           |
+| ------------ | ------------ | ------------------------------------------- | --------------------------------------------- |
+| `uint256(0)` | `uint8(7)`   | `abi.encode(uint16(_daFootprintGasScalar))` | Modifica el escalar de gas de la huella de DA |
+
+### Modificación del escalar de gas de la huella de DA {#modifying-da-footprint-gas-scalar}
+
+Al actualizarse, el contrato emite el evento `ConfigUpdate` descrito anteriormente, lo que permite a los nodos
+derivar la configuración a partir de los registros de L1.
+
+### Interfaz {#interface-2}
+
+#### Parámetros del escalar de gas de la huella de DA {#da-footprint-gas-scalar-parameters}
+
+##### `daFootprintGasScalar` {#dafootprintgasscalar}
+
+Esta función devuelve el escalar de gas de la huella de DA configurado actualmente.
+
+```solidity SystemConfig.sol
+function daFootprintGasScalar() external view returns (uint16);
+```

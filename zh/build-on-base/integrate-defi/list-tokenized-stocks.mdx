@@ -1,0 +1,199 @@
+---
+title: "上架代币化股票"
+description: "让用户在您的应用中交易由 Coinbase 发行的代币化股票。"
+---
+
+Base 上的代币化股票基于 Base 原生代币标准 [B20](/zh/build-on-base/issue-rwa/create-an-asset-token) 构建。B20 是对 ERC-20 代币标准的扩展，设计上不限定资产类型，代币化股票只是其众多可能的用例之一。
+
+有关 Base 上代币化股票的产品详情，请访问 [coinbase.com/tokenize](https://coinbase.com/tokenize)。
+
+<Tip>
+  公开的 [Tokenized Stocks API](/zh/sdks/tokenized-stocks/overview) 只需发起一次只读请求，且无需 API 密钥，即可返回该 API 当前公开的所有代币化股票记录，包括合约地址、标准化代币供应量、乘数，以及基于 Chainlink 的 NAV/参考值。
+</Tip>
+
+## 代币信息与上架 {#token-information-and-listings}
+
+代币化股票的发行方式与其他 ERC-20 代币类似：名称、符号和图标均来自常规来源，但也有几项值得注意的 B20 特有事项。标准 ERC-20 方法和事件均获原生支持。
+
+* **链上：** [`name`](/specifications/b20/reference/interfaces/ib20/name)、[`symbol`](/specifications/b20/reference/interfaces/ib20/symbol)、[`decimals`](/specifications/b20/reference/interfaces/ib20/decimals) 和 [`contractURI`](/specifications/b20/reference/interfaces/ib20/contract-uri) ([ERC-7572](https://eips.ethereum.org/EIPS/eip-7572) 元数据) 。
+* **链下：** 也可以从权威代币列表和市场数据聚合平台获取徽标。
+* **API：** [List Tokenized Stocks](/zh/sdks/tokenized-stocks/api-reference/list-tokenized-stocks) 端点会返回每个代币的合约地址、符号、名称、小数位数、图标 URL 和 ISIN。
+
+B20 特有事项：
+
+* 应通过地址 (而非股票代码或符号) 来识别代币。元数据在链上可以更改，索引时应考虑到这一点。
+* 可通过监听 [`B20Created`](/specifications/b20/reference/interfaces/ib20-factory) 事件来发现新代币。
+
+## B20 代币功能 {#b20-token-features}
+
+### 乘数 {#multipliers}
+
+底层现实世界资产可能发生某些事件，从而改变 B20 代币的赎回比率。就代币化股票而言，这类事件包括分红和股票拆分，其影响必须在链上传递给 B20 代币化股权的持有人。[multiplier](/specifications/b20/reference/interfaces/ib20-asset/multiplier) 变量会根据所发生的公司行动，即时更新 B20 代币的赎回比率。
+
+<Warning>
+  一个 B20 代币并非永远等于一股。在代币单位与底层股份数量之间换算时，务必使用当前乘数。
+</Warning>
+
+资产层面的事件通过更新乘数来体现。例如，代币化股权分红后，乘数上调至 `1.02`，表示 1 个 B20 代币可赎回 1.02 股该股权。
+
+目前，对于代币化股票，现金分红会转换为底层股权的股份，并通过更新乘数来体现，而不是以现金形式发放给 B20 持有人。这样一来，B20 持有人的余额无需变动其 B20 代币数量，即可自动反映公司行动。
+
+乘数更新有以下几种形式：
+
+* **计划更新 (ERC-8056) ：** 使用 [`updateUIMultiplier`](/specifications/b20/reference/interfaces/ib20-asset/update-ui-multiplier) 设置一个在未来生效的变更，以便提前在链上发出通知。常规公司行动应采用此方式。
+* **即时更新 (已弃用) ：** [`updateMultiplier`](/specifications/b20/reference/interfaces/ib20-asset/update-multiplier) 会立即生效，并清除所有待生效的计划变更。该方式仅作为紧急故障保护机制保留，应优先使用计划更新。
+* **取消：** 使用 [`cancelUIMultiplierUpdate`](/specifications/b20/reference/interfaces/ib20-asset/cancel-ui-multiplier-update) 清除待生效的计划更新。
+
+B20 合约为常见计算提供了若干辅助函数，其中 `raw` 表示 B20 单位数量，`scaled` 表示可赎回的股票数量：
+
+| 函数                                                                                                  | 描述            |
+| --------------------------------------------------------------------------------------------------- | ------------- |
+| [`scaledBalanceOf(account)`](/specifications/b20/reference/interfaces/ib20-asset/scaled-balance-of) | 原始余额 × 乘数     |
+| [`toScaledBalance(raw)`](/specifications/b20/reference/interfaces/ib20-asset/to-scaled-balance)     | 将原始数量转换为缩放后数量 |
+| [`toRawBalance(scaled)`](/specifications/b20/reference/interfaces/ib20-asset/to-raw-balance)        | 将缩放后数量转换为原始数量 |
+
+### 策略 {#policies}
+
+为满足特定资产适用的监管要求，可以实施用于管理允许名单和阻止名单的[策略](/specifications/b20/reference/interfaces/i-policy-registry)。策略决定一笔转账是获准执行还是被拒绝。
+
+B20 合约提供了 [`isAuthorized(policyID, account)`](/specifications/b20/reference/interfaces/i-policy-registry/is-authorized) 函数，可用于判断特定账户是否有权转移资金。
+
+<Note>
+  标准的 [`approve()`](/specifications/b20/reference/interfaces/ib20/approve) 函数不受策略管控。即使确认某笔资金已获授权转移，也不能保证这些资金未被策略阻止。
+</Note>
+
+### 暂停 {#pauses}
+
+链上[暂停](/specifications/b20/reference/interfaces/ib20/pause)虽然不太可能发生，但请注意，B20 允许暂停合约中的特定函数。请持续监控这些暂停状态，以便准确掌握任一时刻资金能否转账。
+
+### 公告 {#announcements}
+
+敏感操作会被包装在链上[公告事件](/specifications/b20/reference/interfaces/ib20-asset/announce)中：[`announce`](/specifications/b20/reference/interfaces/ib20-asset/announce) 先发出 [`Announcement (id, description, uri)`](/specifications/b20/reference/interfaces/ib20-asset)，再发出 [`EndAnnouncement`](/specifications/b20/reference/interfaces/ib20-asset)。集成方可以索引这些事件，在公司行动执行时及时捕获。
+
+两个设计要点：
+
+* 公告可以与其所描述的代币变更原子性地打包执行 (例如股票拆分时的乘数更新) ，使链上记录保持清晰。
+* 描述内容特意以人类可读的形式存储在链上，以满足公开披露要求。
+
+**管理员操作：**管理员操作和 `updateMultiplier` ([`OPERATOR_ROLE`](/specifications/b20/reference/interfaces/ib20-asset/operator-role)) 在角色持有者调用时立即执行；B20 标准没有内置时间锁。`Announcement` 和 `EndAnnouncement` 事件仅起公开通知作用，并不强制延迟执行。任何时间锁或多签机制均由发行方在治理层自行实施。
+
+### 额外元数据 {#extra-metadata}
+
+发行方可以通过 [`extraMetadata(key)`](/specifications/b20/reference/interfaces/ib20-asset/extra-metadata) 在链上存储任意键值对数据 (例如 ISIN、CUSIP 等证券标识符) 。
+
+### 名称与符号 {#name-and-symbol}
+
+名称和符号可在链上更新 ([`updateName`](/specifications/b20/reference/interfaces/ib20/update-name)、[`updateSymbol`](/specifications/b20/reference/interfaces/ib20/update-symbol)) ，因此当底层资产在链下发生变更时，代币无需重新部署即可随之同步。
+
+### Memo {#memos}
+
+[`transferWithMemo`](/specifications/b20/reference/interfaces/ib20/transfer-with-memo) 和 [`transferFromWithMemo`](/specifications/b20/reference/interfaces/ib20/transfer-from-with-memo) 会为单笔转账附加一个 `bytes32` 引用 (通过 `Memo` 事件发出) ，用于为转账标注链下数据，便于对账和生成报告。
+
+### 供应上限 {#supply-cap}
+
+可选的供应上限用于限制总供应量，以降低因操作失误或安全事件导致超额铸造的风险。
+
+## 合规 {#compliance}
+
+在二级市场上持有和交易均无需许可。KYC 仅在授权参与者 (Authorized Participants，AP) 执行铸造和赎回流程时进行。
+
+* 链上策略可以屏蔽特定地址 (例如受制裁地址) ；被屏蔽的转账会回滚 (参见上文的[策略](#policies)) 。
+* 铸造和赎回底层股份是一个独立的发行方流程，仅限 AP 执行，因此属于受限流程。
+
+**安全与审计：** 代币化股票是 B20 原生预编译合约，而非单独部署的合约，因此既不存在各资产专属的合约，Basescan 上也没有各地址对应的已验证合约 (预编译合约不包含字节码) 。B20 随 Base 的 Beryl 升级上线，其代码经过 Base 和 Spearbit 审计，并持续纳入 Cantina (智能合约) 和 HackerOne (链下及基础设施) 的漏洞赏金计划。所有代币共用同一套经过审计的实现。
+
+## 价格馈送 {#price-feeds}
+
+代币化股票的价格可通过链上和链下两类来源获取。无论采用哪种来源，价格都遵循同一计算关系：底层股权的市场价格乘以该代币的乘数。
+
+```text Token price formula
+代币价格 = 标的股票市场价格 × 乘数
+```
+
+乘数按代币单独获取，并采用 WAD 缩放 (即具有 18 位小数的定点数) 。要得到实际系数，需将链上值除以该缩放因子；可调用 [`WAD_PRECISION()`](/specifications/b20/reference/interfaces/ib20-asset/wad-precision) 读取缩放因子 (返回值为 `1e18`) 。
+
+### 链上 {#onchain}
+
+上线时，Chainlink 是可用的链上价格方案。每种代币化股权都有一个 Chainlink 喂价，按 24/5 运行，在周末和节假日保持上一个收盘价，并在公司行动期间冻结。喂价实现了标准的 Chainlink V3 聚合器接口，通过代理合约读取，用法与加密资产喂价完全一致；使用 `latestRoundData()` 即可读取最新值。
+
+[Tokenized Stocks API](/zh/sdks/tokenized-stocks/api-reference/list-tokenized-stocks) 还会返回 `nav_price`，即每个代币最近一次发布的、基于 Chainlink 的 NAV/参考值，同时返回 `nav_price_updated_at` 和当前的 `multiplier`。`nav_price` 并非实时买卖报价或成交价：在使用它之前，请读取 `nav_price_updated_at`，并采用与 `updatedAt` 相同的过期阈值进行校验。
+
+与标准市场价格喂价不同，Coinbase 喂价报告的是**总回报值 (Total Return Values)&#x20;**，而非原始股价，因此价格反映的是标的资产的总回报，包括公司行动带来的调整。Chainlink 对其他代币化股权发行方也采用同样的方法，包括 [Ondo 和 Robinhood](https://docs.chain.link/data-feeds/tokenized-equity-feeds/providers)。标的价格来自 Chainlink 的股票价格喂价 (传统市场数据) ，而非该代币的链上或 DEX 交易；代币的 DEX 价格不会输入预言机。
+
+喂价从 Coinbase 的链上预言机注册表中读取乘数和暂停标志。该注册表是一个独立于代币的单一合约，一次调用即可返回某个代币的这两个值：
+
+* **正常 (`paused = false`) ：**喂价发布&quot;标的价格 × 乘数&quot;。
+* **暂停 (`paused = true`) ：**喂价停止发布，并保持最后一个已知有效值。
+
+<Warning>
+  在交易时段内，喂价会在价格偏离达到 0.5% 时更新，且至少每 24 小时更新一次 (即心跳周期) 。在非交易时段 (夜间、周末、节假日以及公司行动暂停期间) ，喂价停止更新并保持最后一个值，因此 `updatedAt` 不再变化，但合约仍可正常调用。使用价格前，务必读取 `updatedAt` 并进行过期校验；切勿基于已冻结的喂价进行结算或清算。
+</Warning>
+
+公司行动期间：
+
+* 铸造和赎回会在链下暂停，但代币在链上并未暂停，因此转账不受影响。
+* 喂价冻结 (注册表中的暂停标志被置位) ，其价格随之过期。
+* 由于喂价采用总回报值，价格不会出现跳变：乘数与标的价格反向变动、相互抵消 (例如 10:1 拆股会使价格下降约 10 倍，同时乘数上升约 10 倍) 。
+* **故障保护：**只有在 Coinbase 确认标的价格和乘数均已更新为新值后，喂价才会恢复。如果两者中有一个先行更新，喂价将继续冻结在暂停前的价格，而不会发布仅更新了一半的值。
+
+**Base 上的 Chainlink 数据喂价。**通过下方代理地址调用 `latestRoundData()` 读取各个喂价。所有喂价均返回 8 位小数，覆盖美国股票 (24/5 交易时段) ，并在价格偏离达到 0.5% 或 24 小时心跳周期到达时更新。数值均为总回报值；请按上文所述处理暂停和过期情况。
+
+| 喂价             | 地址                                           |
+| -------------- | -------------------------------------------- |
+| Coinbase AAPL  | `0x787f13dEa48Db0897CbCDD985de77809D837F988` |
+| Coinbase AMZN  | `0x06A8E4b3aBB3B7543d8396FB2B763d22820cB295` |
+| Coinbase GOOGL | `0x5bF49E0ffA937CE2FfF033c739aD7C634c4D34F2` |
+| Coinbase META  | `0x6526aE6797A76123638b863AeE4dD27Ba4E4b27D` |
+| Coinbase MSFT  | `0xeB10A6c9aa7E537aEd766C08c35Dae35B321b18c` |
+| Coinbase MSTR  | `0xB3cE282CD188b35DA0E38D8Bc7d58e33173D202a` |
+| Coinbase NVDA  | `0x04689a41629776563E6822F76f2e57D148d28513` |
+| Coinbase SNDK  | `0x388b0dC46C0Fb05A74BeE0994fa5b02c6Fcca2eA` |
+| Coinbase SPCX  | `0x6A634B235903C4ad6376892180d6fF8612e3Fa68` |
+| Coinbase TSLA  | `0xFaf869185383a24F8cb00e27BdA6b63B9905DCb4` |
+
+### 链下 {#offchain}
+
+链下价格数据可以从 CoinGecko、CoinMarketCap 或 RWA 等提供商处获取。这些聚合器会从交易该 B20 代币的 DEX 追踪其实时市场价格；只要二级市场保持活跃，价格就会全天候 (24/7) 更新。
+
+确定价值通常有两种方式：
+
+* 直接从追踪该 B20 资产的提供商处读取代币的市场价格。
+* 读取底层参考价格，再手动执行乘数计算。
+
+### 历史数据 {#historical-data}
+
+如需历史 OHLC 数据和时间序列数据，请使用市场数据提供商，或按 `roundId` 查询 Chainlink 的轮次历史记录。
+
+由于价格为总回报价格 (已按乘数调整) ，如果以原始份额价格为起点，则需结合乘数历史记录 (即 [`MultiplierUpdated`](/specifications/b20/reference/interfaces/ib20-asset) 事件，计划乘数变更和即时乘数变更均会触发该事件) ，才能以一致的方式重建价格序列。
+
+## 合约地址 {#contract-addresses}
+
+如需以编程方式获取这些地址，代币合约地址请使用 [List Tokenized Stocks](/zh/sdks/tokenized-stocks/api-reference/list-tokenized-stocks) 端点，协议合约地址请使用 [List Protocol Contract Addresses](/zh/sdks/tokenized-stocks/api-reference/list-protocol-contract-addresses) 端点。
+
+| 股票代码   | 合约地址                                         |
+| ------ | -------------------------------------------- |
+| 链上注册表  | `0x3f3E8cf41cdd3b1D118c16471aB0113DfDDd5CaD` |
+| AAPLc  | `0xb200000000000000000000C2e324d24d7eEcd1fb` |
+| AMZNc  | `0xb200000000000000000000d9192b6B456483C2E8` |
+| GOOGLc | `0xb2000000000000000000002D0BA3164cc74f58B7` |
+| METAc  | `0xb2000000000000000000008bC8786B856E61707C` |
+| MSFTc  | `0xB200000000000000000000Ab99cFa739E253872B` |
+| MSTRc  | `0xb2000000000000000000004884b426556b92883d` |
+| NVDAc  | `0xb20000000000000000000078ee7ce2fE4908108C` |
+| SNDKc  | `0xb200000000000000000000397293Cb8cda9a10c5` |
+| SPCXc  | `0xb2000000000000000000007b9fcbd005511aCBd5` |
+| TSLAc  | `0xb2000000000000000000001e800a7f5189430cD0` |
+
+## 更多资源 {#additional-resources}
+
+* [Tokenized Stocks API](/zh/sdks/tokenized-stocks/overview)
+* [B20 标准](/zh/specifications/b20)
+* [Base 标准库](https://github.com/base/base-std/tree/main)
+
+## 免责声明 {#disclaimer}
+
+<p style={{ fontSize: "0.85rem", fontStyle: "italic" }}>Coinbase 代币化股票仅向美国境外符合条件的司法管辖区内的人士提供。</p>
+
+<p style={{ fontSize: "0.85rem", fontStyle: "italic" }}>本文列出的任何第三方协议或交易场所仅供开发者参考，不构成任何背书、合作关系或担保。集成前，请对照官方来源核实地址、数据源和代币列表。</p>
+
+<p style={{ fontSize: "0.85rem", fontStyle: "italic" }}>Base 是开源、无需许可的区块链基础设施。每个 B20 代币均由其发行方部署和配置，并由发行方设置和控制全部代币参数及管理权限；Base 不会配置、管理或控制部署在该协议上的代币。</p>

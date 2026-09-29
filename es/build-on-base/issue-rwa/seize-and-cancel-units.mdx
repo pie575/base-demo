@@ -1,0 +1,145 @@
+---
+title: "Incautar y cancelar unidades"
+description: "Transfiere las unidades de un titular que ya no es elegible a una cuenta de custodia con seizeWithMemo de B20 y, después, cancélalas mediante una quema con memo."
+keywords: ["incautar unidades tokenizadas", "B20 seizeWithMemo", "cancelar unidades", "titular bloqueado", "SEIZE_EXEMPT_POLICY"]
+---
+
+import { AssetDemo } from "/snippets/AssetDemo.jsx"
+import RwaDisclaimer from "/snippets/es/RwaDisclaimer.mdx"
+
+Cuando un titular deja de ser elegible, un tribunal ordena un decomiso o es necesario liquidar una posición, transfiera las unidades a una cuenta de custodia con `seizeWithMemo` y, a continuación, decida qué hacer con ellas. En esta guía, las unidades se incautan y se envían a la tesorería del emisor, y después se cancelan con `burnWithMemo`. Este mismo primer paso sirve también para el proceso de congelación y reemisión: primero se incautan las unidades y luego se transfieren desde la tesorería a una nueva dirección.
+
+<RwaDisclaimer />
+
+## Demostración {#demo}
+
+<AssetDemo flow="cancel" />
+
+<Tip>
+  La demostración usa una cuenta local generada en el navegador para enviar transacciones reales en **Base Vibenet**. Si Vibenet o sus funciones de B20 no están disponibles, cambia automáticamente a una versión ilustrativa sin conexión.
+</Tip>
+
+<Note>
+  ¿Es la primera vez que usas B20? Consulta el [estándar de tokens B20](/es/build-on-base/issue-rwa/create-an-asset-token) para conocer los conceptos y seguir una guía completa de lanzamiento. Estos ejemplos están pensados para `base-std@1505323`, `viem@2.55.11` y Base Foundry `v1.1.1`.
+</Note>
+
+<Warning>
+  `seizeWithMemo` forma parte de la superficie de B20 de Cobalt. Ya está disponible en Base Vibenet y llegará a Base Mainnet con el hard fork de Cobalt. Hasta entonces, los tokens de mainnet solo cuentan con la ruta obsoleta `burnBlocked`. Consulta la [entrada del registro de cambios sobre la incautación](/es/base-chain/specs/reference/b20/changelog/02-cobalt-b20-seize).
+</Warning>
+
+## Antes de empezar {#before-you-start}
+
+Necesitas todo lo siguiente:
+
+* Un B20 Asset que administres, con `DEFAULT_ADMIN_ROLE`, para poder otorgar roles y asociar políticas.
+* Una cuenta que llamará a `seizeWithMemo` y `burnWithMemo`. Otórgale `SEIZE_ROLE` y `BURN_ROLE`. La guía [Crear un token de activo](/es/build-on-base/issue-rwa/create-an-asset-token) otorga roles en la llamada a la fábrica; si no lo hiciste, agrega estos dos.
+* Una política de lista de bloqueo en el Policy Registry que incluya al titular. Si restringes la elegibilidad con una lista de permitidos, como en [Restringir titulares elegibles](/es/build-on-base/issue-rwa/restrict-eligible-holders), quitar al titular de esa lista congela sus transferencias, pero **no** lo hace incautable. La incautación consulta su propio ámbito.
+* `SEIZE` y `BURN` sin pausar. Pausar `TRANSFER` o `MINT` no desactiva la incautación.
+
+Cómo funciona el ámbito de incautación:
+
+| Ámbito                  | Cuenta verificada | Procede cuando              | Valor predeterminado si no está configurado           |
+| ----------------------- | ----------------- | --------------------------- | ----------------------------------------------------- |
+| `SEIZE_EXEMPT_POLICY`   | `from`            | `isAuthorized` es **false** | Todos están autorizados, así que nadie es incautable. |
+| `SEIZE_RECEIVER_POLICY` | `to`              | `isAuthorized` es **true**  | Se permite cualquier destino.                         |
+
+Como la verificación del titular está invertida, asocia una **lista de bloqueo** a `SEIZE_EXEMPT_POLICY`. Las cuentas incluidas en la lista no están autorizadas y, por lo tanto, son incautables; el resto de los titulares siguen exentos. Nunca asocies una lista de permitidos ni `ALWAYS_BLOCK` a este ámbito: una lista de permitidos vacía no autoriza a nadie, por lo que todos los titulares serían incautables.
+
+## Incautar, cancelar y verificar {#seize-cancel-and-verify}
+
+Otorga los roles una sola vez por token:
+
+```solidity Grant SEIZE_ROLE and BURN_ROLE
+asset.grantRole(asset.SEIZE_ROLE(), operator);
+asset.grantRole(asset.BURN_ROLE(), operator);
+```
+
+A continuación, vincula la lista de bloqueo, incauta los tokens y envíalos a la propia cuenta del llamador para quemarlos desde allí:
+
+<CodeGroup>
+  {/* sample: stock-seize-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={10,11,12}
+  import { parseUnits, stringToHex, type Address } from "viem";
+  import { account, publicClient } from "../../shared/clients.js";
+  import { b20Abi, scope } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function seizeAndCancelUnits(token: Address, blocklistId: bigint, holder: Address) {
+    const amount = parseUnits("100", 6);
+    const memo = stringToHex("cancel-2026-07", { size: 32 });
+    await sendContract({ address: token, abi: b20Abi, functionName: "updatePolicy", args: [scope("SEIZE_EXEMPT_POLICY"), blocklistId] });
+    await sendContract({ address: token, abi: b20Abi, functionName: "seizeWithMemo", args: [holder, account.address, amount, memo] });
+    await sendContract({ address: token, abi: b20Abi, functionName: "burnWithMemo", args: [amount, memo] });
+    return publicClient.readContract({ address: token, abi: b20Abi, functionName: "totalSupply" });
+  }
+  ```
+
+  {/* sample: stock-seize-solidity */}
+
+  ```solidity Solidity lines wrap expandable highlight={2,3,4}
+  function seizeAndCancelUnits(address token, uint64 blocklistId, address holder) public {
+      IB20(token).updatePolicy(B20Constants.SEIZE_EXEMPT_POLICY, blocklistId);
+      IB20(token).seizeWithMemo(holder, address(this), 100e6, bytes32("cancel-2026-07"));
+      IB20(token).burnWithMemo(100e6, bytes32("cancel-2026-07"));
+  }
+  ```
+
+  {/* sample: stock-seize-cli */}
+
+  ```bash CLI lines wrap expandable highlight={1,3,5}
+  base-cast send "$TOKEN_ADDRESS" "updatePolicy(bytes32,uint64)" "$(base-cast keccak SEIZE_EXEMPT_POLICY)" "$BLOCKLIST_ID" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  base-cast send "$TOKEN_ADDRESS" "seizeWithMemo(address,address,uint256,bytes32)" "$HOLDER" "$TREASURY" 100000000 \
+    "$(base-cast format-bytes32-string cancel-2026-07)" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  base-cast send "$TOKEN_ADDRESS" "burnWithMemo(uint256,bytes32)" 100000000 "$(base-cast format-bytes32-string cancel-2026-07)" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  base-cast call "$TOKEN_ADDRESS" "totalSupply()(uint256)" --rpc-url "$RPC_URL"
+  ```
+</CodeGroup>
+
+La incautación emite, por este orden, `Transfer(holder, treasury, amount)`, `Memo(caller, memo)` y `Seized(caller, holder, treasury, amount)`. En este punto, `totalSupply` se mantiene sin cambios. Después, la quema emite `Transfer(treasury, address(0), amount)` y `Memo`, y `totalSupply` disminuye. Al usar el mismo memo en ambas llamadas, la conciliación puede asociar los dos pasos a un mismo caso.
+
+`burnWithMemo` quema el saldo propio del llamador, así que la cuenta que realiza la incautación también debe ser la de destino; si no, primero tendrás que transferir los tokens desde la tesorería a la cuenta que los quema. Los destinatarios de una reemisión posterior deben superar `TRANSFER_RECEIVER_POLICY`, igual que en cualquier otra transferencia.
+
+Para anunciar la cancelación a los titulares y a los indexadores, envuelve `burnWithMemo` en `announce`; consulta [Anunciar un cambio a los titulares](/es/build-on-base/issue-rwa/announce-a-distribution).
+
+<Check>
+  `Seized` aparece en la primera transacción y el saldo del titular disminuye en 100 EXM. Tras la quema, `totalSupply` también disminuye en 100 EXM.
+</Check>
+
+## Errores comunes {#common-errors}
+
+Estos errores aparecen en el orden en que `seizeWithMemo` los comprueba, seguidos de los de la quema.
+
+| Error                                                  | Causa                                                                                                                                      | Solución                                                                                                                                           |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ContractPaused(SEIZE)`                                | `SEIZE` está en pausa.                                                                                                                     | Llama a `unpause` con `PausableFeature.SEIZE`.                                                                                                     |
+| `AccessControlUnauthorizedAccount(caller, SEIZE_ROLE)` | El llamador no tiene `SEIZE_ROLE`.                                                                                                         | Otorga `SEIZE_ROLE`.                                                                                                                               |
+| `InvalidReceiver(to)`                                  | `to` es `address(0)`, la propia dirección del token o coincide con `from`.                                                                 | Usa una dirección de custodia distinta de `from` y distinta de cero.                                                                               |
+| `InvalidSender(from)`                                  | `from` es `address(0)`.                                                                                                                    | Pasa la dirección del titular.                                                                                                                     |
+| `AccountNotSeizable(from)`                             | `from` sigue autorizado según `SEIZE_EXEMPT_POLICY`. La ranura no está configurada o el titular no figura en la lista de bloqueo asociada. | Asocia una lista de bloqueo a `SEIZE_EXEMPT_POLICY` y añade `from`. No basta con eliminar al titular de una lista de permitidos de transferencias. |
+| `PolicyForbids(SEIZE_RECEIVER_POLICY, policyId)`       | `to` no está autorizado según `SEIZE_RECEIVER_POLICY`.                                                                                     | Añade `to` a la lista de permitidos de receptores o restablece el ámbito a `0`.                                                                    |
+| `InsufficientBalance(from, balance, amount)`           | `from` tiene menos que `amount`.                                                                                                           | Incauta `balanceOf(from)` o menos.                                                                                                                 |
+| `AccessControlUnauthorizedAccount(caller, BURN_ROLE)`  | Quien quema no tiene `BURN_ROLE`.                                                                                                          | Otorga `BURN_ROLE`.                                                                                                                                |
+| `ContractPaused(BURN)`                                 | `BURN` está en pausa.                                                                                                                      | Llama a `unpause` con `PausableFeature.BURN`.                                                                                                      |
+| `PolicyNotFound(policyId)`                             | `updatePolicy` recibió un ID que no es un valor centinela y no existe en el registro.                                                      | Crea primero la política y, después, asocia el ID devuelto.                                                                                        |
+| `Unauthorized()`                                       | Una cuenta sin rol de administrador llamó a `updateBlocklist` o `updateAllowlist`.                                                         | Realiza la llamada como `policyAdmin` de la política.                                                                                              |
+
+Un saldo que ya se encuentra en la propia dirección del token aún puede recuperarse: `seizeWithMemo(address(token), treasury, amount, memo)` está permitido. Lo que no está permitido es incautar *hacia* la dirección del token.
+
+<Warning>
+  `burnBlocked` está obsoleto. Destruye unidades directamente de un titular denegado según `TRANSFER_SENDER_POLICY` y no emite ningún evento `Seized`, por lo que no queda ningún registro onchain de que las unidades se incautaron en lugar de canjearse. Es preferible incautar y después quemar.
+</Warning>
+
+## Consulta también {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="Restringir los titulares elegibles" icon="user-check" href="/es/build-on-base/issue-rwa/restrict-eligible-holders">
+    Controla mediante políticas quién puede poseer tokens.
+  </Card>
+
+  <Card title="Anunciar un cambio a los titulares" icon="bullhorn" href="/es/build-on-base/issue-rwa/announce-a-distribution">
+    Comunica una quema de tesorería u otra acción que afecte a los titulares.
+  </Card>
+</CardGroup>

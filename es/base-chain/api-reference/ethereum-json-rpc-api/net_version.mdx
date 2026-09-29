@@ -1,0 +1,38 @@
+---
+title: 'net_version'
+sidebarTitle: 'net_version'
+description: 'Devuelve el ID de la red actual como cadena.'
+---
+
+Devuelve el ID de la red actual como una cadena decimal.
+
+## Parámetros {#parameters}
+
+Sin parámetros.
+
+## Valor de retorno {#returns}
+
+<ResponseField name="result" type="string">
+  El ID de la red como cadena decimal: `"8453"` para Base Mainnet y `"84532"` para Base Sepolia.
+</ResponseField>
+
+## Ejemplo {#example}
+
+<CodeGroup>
+  ```json Solicitud
+  {
+    "jsonrpc": "2.0",
+    "method": "net_version",
+    "params": [],
+    "id": 1
+  }
+  ```
+
+  ```json Respuesta (Base Mainnet)
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "8453"
+  }
+  ```
+</CodeGroup>

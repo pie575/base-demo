@@ -1,0 +1,123 @@
+---
+title: "集成借贷功能"
+description: "让用户直接将 USDC 存入 Base 上的 Morpho 或 Aave 借贷市场。"
+keywords: ["在 Base 上集成借贷", "向 Morpho 存入 USDC", "在 Base 上向 Aave 存款", "DeFi 借贷应用"]
+---
+
+import { DeFiDemo } from "/snippets/DeFiDemo.jsx"
+
+让用户将 USDC 存入第三方货币市场，并直接在你的应用中管理由此产生的协议头寸。你的应用负责准备并模拟每次调用，用户则使用自己的钱包签名。
+
+## 演示 {#demo}
+
+<DeFiDemo flow="lend" />
+
+<Tip>
+  上方演示仅为模拟效果。如需查看 Vibenet 上的链上演示，请前往 [Base 链演示](https://chain.base.org/demos)。
+</Tip>
+
+## 存入 USDC {#supply-usdc}
+
+`clients.ts` 使用服务器端的 `PRIVATE_KEY` 创建 Base 主网的 public client 和 wallet client，所有示例都会导入该文件。
+
+<Info>
+  这些代码片段仅作演示，用于展示在 Base 上实现存款集成的大致结构，并非可直接用于生产环境的代码。最新地址、SDK 详情和风险参数请以各协议的官方文档为准：[Morpho](https://docs.morpho.org) 和 [Aave](https://aave.com/docs)。
+</Info>
+
+<Tabs>
+  <Tab title="Morpho">
+    向 Morpho 的 WETH/USDC 市场存款。通过市场 ID 获取参数，无需硬编码该市场的预言机、利率模型和 LLTV 参数。
+
+    {/* sample: defi-supply-morpho */}
+
+    ```typescript supply-morpho.ts lines wrap expandable highlight={5}
+    import { publicClient, walletClient } from './clients.js';
+    import { type MarketId } from '@morpho-org/blue-sdk';
+    import { fetchMarketParams } from '@morpho-org/blue-sdk-viem';
+    import {
+      isRequirementSignature,
+      morphoViemExtension,
+    } from '@morpho-org/morpho-sdk';
+    import { parseUnits } from 'viem';
+    import { base } from 'viem/chains';
+
+    const marketId =
+      '0x8793cf302b8ffd655ab97bd1c695dbd967807e8367a65cb2f4edaf1380ba1bda' as MarketId;
+    const user = walletClient.account.address;
+    const client = publicClient.extend(morphoViemExtension());
+    const params = await fetchMarketParams(marketId, publicClient);
+    const market = client.morpho.blue(params, base.id);
+    const action = market.supply({
+      amount: parseUnits('1000', 6),
+      userAddress: user,
+      marketData: await market.getMarketData(),
+    });
+
+    const signatures = [];
+    for (const requirement of await action.getRequirements()) {
+      if (isRequirementSignature(requirement)) {
+        signatures.push(await requirement.sign(walletClient, user));
+      } else {
+        const hash = await walletClient.sendTransaction(requirement);
+        await publicClient.waitForTransactionReceipt({ hash });
+      }
+    }
+    const request = action.buildTx(signatures);
+    await publicClient.call({ account: user, ...request });
+    const hash = await walletClient.sendTransaction(request);
+    await publicClient.waitForTransactionReceipt({ hash });
+    ```
+  </Tab>
+
+  <Tab title="Aave">
+    从 Aave 官方地址簿中获取 Base 上的 Pool 地址和资产地址，然后使用 viem 通过 Aave V3 Pool 完成授权和存款。
+
+    {/* sample: defi-supply-aave */}
+
+    ```typescript supply-aave.ts lines wrap expandable highlight={12,17,20,26}
+    import { publicClient, walletClient } from './clients.js';
+    import { AaveV3Base } from '@aave-dao/aave-address-book';
+    import { parseAbi, parseUnits } from 'viem';
+
+    const user = walletClient.account;
+    const amount = parseUnits('1000', 6);
+    const erc20Abi = parseAbi(['function approve(address,uint256) returns (bool)']);
+    const poolAbi = parseAbi([
+      'function supply(address,uint256,address,uint16)',
+    ]);
+
+    const approval = await publicClient.simulateContract({
+      account: user, address: AaveV3Base.ASSETS.USDC.UNDERLYING,
+      abi: erc20Abi, functionName: 'approve', args: [AaveV3Base.POOL, amount],
+    });
+    await publicClient.waitForTransactionReceipt({
+      hash: await walletClient.writeContract(approval.request),
+    });
+
+    const supply = await publicClient.simulateContract({
+      account: user, address: AaveV3Base.POOL, abi: poolAbi,
+      functionName: 'supply',
+      args: [AaveV3Base.ASSETS.USDC.UNDERLYING, amount, user.address, 0],
+    });
+    await publicClient.waitForTransactionReceipt({
+      hash: await walletClient.writeContract(supply.request),
+    });
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+  存款利率是浮动的，能否提款取决于市场流动性，且任何集成都会继承协议、预言机和授权方面的风险。在请求用户签名之前，请向其展示当前条款，并对将要执行的交易进行精确模拟。
+</Warning>
+
+## 另请参阅 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="集成借贷功能" icon="hand-holding-dollar" href="/zh/build-on-base/integrate-defi/integrate-borrowing">
+    以 WETH 作抵押发起贷款。
+  </Card>
+
+  <Card title="集成生息产品" icon="vault" href="/zh/build-on-base/integrate-defi/integrate-earn-product">
+    将存款导入生息金库。
+  </Card>
+</CardGroup>

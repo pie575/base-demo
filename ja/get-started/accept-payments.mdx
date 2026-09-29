@@ -1,0 +1,103 @@
+---
+title: "決済を受け付ける"
+keywords: ["Commerce Payments Protocol", "accept USDC payments Base", "authorize and capture Base", "x402 agentic payments"]
+description: "Base 上でのコマースのチェックアウト、エージェント決済、照合、返金、支払い（ペイアウト）に適したオンチェーン決済ライフサイクルを選択します。"
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+プロダクトに必要なライフサイクルに合わせて、Base で決済を受け付けましょう。[Commerce Payments Protocol](https://github.com/base/commerce-payments) を使えば、即時に課金することも、フルフィルメント前に資金をエスクローで確保しておくこともできます。その後、支払者が承認した条件のもとで、キャプチャ、取り消し (void) 、回収 (reclaim) 、返金を実行できます。このソリューション領域では、スケジュールに基づく集金、照合、ペイアウト、分配 (スプリット) 、x402 API も扱います。
+
+## デモ {#demo}
+
+<PaymentsDemo />
+
+<Tip>
+  上記のデモはモック (模擬) です。Vibenet 上で動作するオンチェーンデモをご覧になりたい場合は、[Base chain demos](https://chain.base.org/demos) にアクセスしてください。
+</Tip>
+
+## 支払いのライフサイクル {#payment-lifecycle}
+
+| ステージ                 | 処理内容                                    | 参照先                                                                     |
+| -------------------- | --------------------------------------- | ----------------------------------------------------------------------- |
+| Charge               | オペレーターがプロトコル上の支払いの回収と決済をアトミックに行います      | [支払いをリクエストする](/ja/build-on-base/accept-payments/request-a-payment)         |
+| Authorize            | オペレーターが支払者の資金をエスクローに移します                | [支払いをオーソリする](/ja/build-on-base/accept-payments/authorize-a-payment)        |
+| Capture              | オペレーターがエスクロー中の金額の全額または一部を決済します          | [オーソリをキャプチャする](/ja/build-on-base/accept-payments/capture-an-authorization) |
+| Confirm              | バックエンドが確定済みのプロトコルイベントを検証し、注文を一度だけ確定させます | [支払いを検証する](/ja/build-on-base/accept-payments/verify-a-payment)             |
+| Return or distribute | 支払者に返金するか、下流の受取人に支払います                  | [支払いを返金する](/ja/build-on-base/accept-payments/refund-a-payment)             |
+
+## 支払いを受け付ける {#take-a-payment}
+
+<CardGroup cols={2}>
+  <Card title="支払いをリクエストする" icon="credit-card" href="/ja/build-on-base/accept-payments/request-a-payment">
+    1 回のトランザクションで請求と決済を即時に完了します。
+  </Card>
+
+  <Card title="支払いをオーソリする" icon="signature" href="/ja/build-on-base/accept-payments/authorize-a-payment">
+    変更不可の支払い条件のもとで、資金をエスクローに確保します。
+  </Card>
+
+  <Card title="オーソリをキャプチャする" icon="check" href="/ja/build-on-base/accept-payments/capture-an-authorization">
+    オーソリの有効期限までに、エスクロー中の資金の全額または一部を決済します。
+  </Card>
+
+  <Card title="定期的に請求する" icon="calendar" href="/ja/build-on-base/accept-payments/charge-on-a-schedule">
+    支出許可 (spend permission) を使用して、請求期間ごとにプロトコル上の請求を 1 件作成します。
+  </Card>
+</CardGroup>
+
+## 確認と照合 {#confirm-and-reconcile}
+
+<CardGroup cols={2}>
+  <Card title="支払いを検証する" icon="shield-check" href="/ja/build-on-base/accept-payments/verify-a-payment">
+    決済イベントを検証し、各支払いが一度だけ処理されるようにします。
+  </Card>
+
+  <Card title="支払いを監視する" icon="eye" href="/ja/build-on-base/accept-payments/watch-for-payments">
+    エスクローイベントをサブスクライブし、確定済みブロックをバックフィルします。
+  </Card>
+
+  <Card title="支払いを照合する" icon="table" href="/ja/build-on-base/accept-payments/reconcile-payments">
+    チャージ、キャプチャ、手数料、取り消し、回収、返金をエクスポートします。
+  </Card>
+</CardGroup>
+
+## 返金と支払い {#refund-and-pay-out}
+
+<CardGroup cols={2}>
+  <Card title="支払いを返金する" icon="rotate-left" href="/ja/build-on-base/accept-payments/refund-a-payment">
+    返金用の流動性を調達し、キャプチャ済みの金額を支払者に返金します。
+  </Card>
+
+  <Card title="オーソリを取り消す" icon="ban" href="/ja/build-on-base/accept-payments/void-an-authorization">
+    残額を即時に返還するか、有効期限の経過後に支払者が回収できるようにします。
+  </Card>
+
+  <Card title="ペイアウトを送信する" icon="money-bill-transfer" href="/ja/build-on-base/accept-payments/send-a-payout">
+    上限付きの受取人バッチに対し、単一のリファレンスで支払いを行います。
+  </Card>
+
+  <Card title="支払いを分割する" icon="divide" href="/ja/build-on-base/accept-payments/split-a-payment">
+    端数 (ダスト) を残さず、ベーシスポイント単位で正確に分配します。
+  </Card>
+</CardGroup>
+
+## エージェント決済を受け付ける {#accept-agentic-payments}
+
+<CardGroup cols={2}>
+  <Card title="API で課金する" icon="server" href="/ja/build-on-base/accept-payments/charge-for-an-api">
+    x402 の `exact` を使って固定価格のルートを保護します。
+  </Card>
+
+  <Card title="従量課金の支払いを精算する" icon="gauge" href="/ja/build-on-base/accept-payments/settle-usage-based-payments">
+    `upto` で上限額を承認し、実際の使用量に応じて精算します。
+  </Card>
+
+  <Card title="高頻度の支払いをバッチ処理する" icon="layer-group" href="/ja/build-on-base/accept-payments/batch-high-frequency-payments">
+    リクエストごとにバウチャーを進め、チャネルをまとめて精算します。
+  </Card>
+
+  <Card title="有料サービスを呼び出す" icon="robot" href="/ja/build-on-base/accept-payments/call-a-paid-service">
+    エージェントが署名する前に、ネットワーク、アセット、支出に関するポリシーを適用します。
+  </Card>
+</CardGroup>

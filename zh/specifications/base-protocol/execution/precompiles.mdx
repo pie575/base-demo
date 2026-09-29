@@ -1,0 +1,42 @@
+---
+title: "预编译合约"
+description: "Base 上预编译合约的规范，涵盖位于预定义地址的原生 EVM 实现。"
+---
+
+## 概述 {#overview}
+
+[预编译合约](/zh/specifications/reference/glossary#precompiled-contract-precompile)部署在 Base 的
+预定义地址上。它们与 predeploy 类似，区别在于预编译合约以 EVM 原生代码而非
+字节码实现。预编译合约用于处理计算开销高昂的操作，这类操作若用 Solidity 实现，成本将高得难以承受。
+在可行的情况下，应优先使用 predeploy，因为预编译合约必须在每个执行客户端中分别实现。
+
+Base 包含[标准以太坊预编译合约](https://www.evm.codes/precompiled)以及少量
+额外的预编译合约。下表列出了所有额外的预编译合约，其中系统版本
+表示该预编译合约的引入时间。
+
+| 名称         | 地址                                         | 引入版本  | Gas 成本               |
+| ---------- | ------------------------------------------ | ----- | -------------------- |
+| P256VERIFY | 0x0000000000000000000000000000000000000100 | Fjord | 6,900 (已在 Azul 中更新)  |
+
+## P256VERIFY {#p256verify}
+
+`P256VERIFY` 预编译合约用于对 secp256r1 椭圆曲线执行签名验证。该曲线应用广泛，
+Passkeys、Apple Secure Enclave 以及许多其他系统都采用了它。
+
+它由 [RIP-7212](https://github.com/ethereum/RIPs/blob/master/RIPS/rip-7212.md) 定义，并在 Fjord 版本中
+加入 Base 协议，gas 成本为 3,450。
+
+自 [Azul 硬分叉](/zh/upgrades/azul/exec-engine#secp256r1-precompile-gas-cost)起，gas 成本调整为 **6,900**，以与 [EIP-7951](https://eips.ethereum.org/EIPS/eip-7951) 保持一致，并与 L1 预编译合约的定价保持严格等效。
+
+地址：`0x0000000000000000000000000000000000000100`
+
+## 标准以太坊预编译合约的变更 (Azul) {#standard-ethereum-precompile-modifications-azul}
+
+[Azul 硬分叉](/zh/upgrades/azul/exec-engine)对以下两个标准以太坊预编译合约进行了修改：
+
+### MODEXP (地址 `0x05`) {#modexp-address-0x05}
+
+* **[EIP-7823](https://eips.ethereum.org/EIPS/eip-7823)** — 每个输入字段的上限为 1,024 字节，输入超出该上限的调用将被拒绝。
+* **[EIP-7883](https://eips.ethereum.org/EIPS/eip-7883)** — 最低 gas 成本从 200 提高至 500；通用成本公式的计算结果提高为原来的三倍。
+
+上述变更自 Azul 激活时间戳起生效，与以太坊 L1 的行为保持一致。

@@ -1,0 +1,59 @@
+---
+title: 'eth_getBlockReceipts'
+sidebarTitle: 'eth_getBlockReceipts'
+description: '返回某个区块的所有交易收据。使用 pending 可获取预确认的收据。'
+---
+
+返回指定区块的所有交易收据。
+
+<Warning>
+  在公共 Base RPC 端点 (`mainnet.base.org`、`sepolia.base.org`) 上调用此方法会返回 HTTP 403，需使用专用或第三方 RPC 提供商。可选方案请参阅 [Builder Stack](/zh/get-started/builder-stack)。
+</Warning>
+
+<Tip>
+  **Flashblocks：** 向 `https://mainnet.base.org` 发起查询并传入 `"pending"`，即可获取当前 Flashblock 中所有预确认交易的收据。
+</Tip>
+
+## 参数 {#parameters}
+
+<ParamField body="block" type="string" required>
+  十六进制格式的区块号，或 `"latest"`、`"pending"`、`"safe"`、`"finalized"`、`"earliest"` 之一。
+</ParamField>
+
+## 返回值 {#returns}
+
+<ResponseField name="result" type="array">
+  由区块中每笔交易的收据对象组成的数组。收据对象的结构请参阅 [`eth_getTransactionReceipt`](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionReceipt)。
+</ResponseField>
+
+## 示例 {#example}
+
+<CodeGroup>
+  ```bash Standard (latest)
+  curl https://mainnet.base.org \
+    -X POST -H "Content-Type: application/json" \
+    -d '{"jsonrpc":"2.0","method":"eth_getBlockReceipts","params":["latest"],"id":1}'
+  ```
+
+  ```bash Flashblocks (pending)
+  curl https://mainnet.base.org \
+    -X POST -H "Content-Type: application/json" \
+    -d '{"jsonrpc":"2.0","method":"eth_getBlockReceipts","params":["pending"],"id":1}'
+  ```
+
+  ```json Response lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": [
+      {
+        "transactionHash": "0xabc123...",
+        "blockNumber": "0x158a0e9",
+        "status": "0x1",
+        "gasUsed": "0x5208",
+        "type": "0x2"
+      }
+    ]
+  }
+  ```
+</CodeGroup>

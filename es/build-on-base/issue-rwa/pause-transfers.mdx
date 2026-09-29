@@ -1,0 +1,79 @@
+---
+title: "Pausar transferencias"
+description: "Pausa las transferencias de un token B20 Asset durante un incidente, manteniendo disponibles la acuñación y la quema."
+keywords: ["pausar transferencias de activos tokenizados", "pausa de B20", "respuesta a incidentes de tokens", "pausa granular de tokens"]
+---
+
+import { AssetDemo } from "/snippets/AssetDemo.jsx"
+import RwaDisclaimer from "/snippets/es/RwaDisclaimer.mdx"
+
+Pausa la funcionalidad `TRANSFER` durante un incidente sin detener la emisión ni la cancelación. B20 asigna los permisos para pausar y reanudar a roles distintos, lo que te permite separar la respuesta ante emergencias de la autoridad de recuperación.
+
+<RwaDisclaimer />
+
+## Demostración {#demo}
+
+<AssetDemo flow="pause" />
+
+<Tip>
+  La demostración usa una cuenta local generada en el navegador para enviar transacciones reales en **Base Vibenet**. Si Vibenet o sus funciones B20 no están disponibles, pasa automáticamente a una versión ilustrativa sin conexión.
+</Tip>
+
+<Note>
+  ¿Es la primera vez que usas B20? Consulta el [estándar de tokens B20](/es/build-on-base/issue-rwa/create-an-asset-token) para conocer los conceptos y seguir una guía completa de lanzamiento. Estos ejemplos están pensados para `base-std@1505323`, `viem@2.55.11` y Base Foundry `v1.1.1`.
+</Note>
+
+## Pausar y reanudar las transferencias de acciones {#pause-and-resume-stock-transfers}
+
+<CodeGroup>
+  {/* sample: stock-pause-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={7}
+  import { type Address } from "viem";
+  import { publicClient } from "../../shared/clients.js";
+  import { b20Abi } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function setStockTransfersPaused(token: Address, paused: boolean) {
+    await sendContract({ address: token, abi: b20Abi, functionName: paused ? "pause" : "unpause", args: [[0]] });
+    const current = await publicClient.readContract({ address: token, abi: b20Abi, functionName: "isPaused", args: [0] });
+    if (current !== paused) throw new Error("Unexpected transfer pause state");
+  }
+  ```
+
+  {/* sample: stock-pause-cli */}
+
+  ```bash CLI lines wrap expandable highlight={1,4}
+  base-cast send "$TOKEN_ADDRESS" "pause(uint8[])" "[0]" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  base-cast call "$TOKEN_ADDRESS" "isPaused(uint8)(bool)" 0 --rpc-url "$RPC_URL"
+  base-cast send "$TOKEN_ADDRESS" "unpause(uint8[])" "[0]" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  ```
+</CodeGroup>
+
+Tanto `pause` como `unpause` aceptan un array `PausableFeature[]`. Pasa `[0]` para actuar únicamente sobre `TRANSFER`. Las cuatro funcionalidades pausables son `TRANSFER` (0), `MINT` (1), `BURN` (2) y `SEIZE` (3). Pausar una funcionalidad no afecta a las demás: un titular puede seguir transfiriendo mientras `MINT` está en pausa, y un minter puede seguir acuñando mientras `TRANSFER` está en pausa.
+
+Si se pasa un array vacío, la llamada revierte con `EmptyFeatureSet`. Si una funcionalidad ya se encuentra en el estado solicitado, la operación no tiene efecto y la llamada no revierte. Después de la llamada, consulta `isPaused(feature)` para confirmar el estado actual. El evento emitido (`Paused` o `Unpaused`) contiene exactamente el array que pasaste, no el conjunto resultante de funcionalidades en pausa.
+
+Si quien llama intenta una operación mientras su funcionalidad está en pausa, la llamada revierte con `ContractPaused(feature)`.
+
+<Check>
+  El estado de pausa de las transferencias cambia sin pausar la acuñación ni la quema.
+</Check>
+
+<Note>
+  `pause` requiere `PAUSE_ROLE` y `unpause` requiere `UNPAUSE_ROLE`. Al tratarse de roles independientes, otorga la autoridad de recuperación de forma más restringida que la autoridad de pausa de emergencia.
+</Note>
+
+## Consulta también {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="Restringir los titulares elegibles" icon="user-check" href="/es/build-on-base/issue-rwa/restrict-eligible-holders">
+    Controla mediante políticas quién puede ser titular.
+  </Card>
+
+  <Card title="Incautar y cancelar unidades" icon="ban" href="/es/build-on-base/issue-rwa/seize-and-cancel-units">
+    Transfiere a custodia las unidades de un titular no elegible y luego cancélalas.
+  </Card>
+</CardGroup>

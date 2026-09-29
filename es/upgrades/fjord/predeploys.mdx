@@ -1,0 +1,72 @@
+---
+title: "Contratos predesplegados"
+description: "Cambios en los contratos predesplegados introducidos por la actualización Fjord, que añaden al contrato GasPriceOracle constantes para calcular las tarifas con FastLZ."
+---
+
+## GasPriceOracle {#gaspriceoracle}
+
+Tras la actualización Fjord, se incorporan tres valores adicionales para calcular la tarifa de L1:
+
+* costIntercept
+* costFastlzCoef
+* minTransactionSize
+
+Estos valores son constantes fijadas en el código del contrato `GasPriceOracle`. El
+cálculo sigue la misma fórmula descrita en la sección
+[Cambios en la tarifa de costo de L1 de Fjord (estimador FastLZ)](./exec-engine#fjord-l1-cost-fee-changes-fastlz-estimator).
+
+Se introduce un nuevo método: `getL1FeeUpperBound(uint256)`. Este método devuelve una cota superior de la tarifa de L1
+para un tamaño de transacción determinado. Está pensado para quienes deseen estimar los costos de transacción de L1 en la
+ruta de escritura, y es mucho más eficiente en gas que `getL1Fee`.
+
+Se asume que la sobrecarga del límite superior es `original/255+16`, un valor tomado de LZ4. Según los datos históricos, este
+enfoque cubre más del 99,99 % de las transacciones.
+
+Se implementa de la siguiente manera:
+
+```solidity GasPriceOracle.sol lines wrap expandable
+function getL1FeeUpperBound(uint256 unsignedTxSize) external view returns (uint256) {
+    // Se suman 68 para compensar que la tx no está firmada
+    uint256 txSize = unsignedTxSize + 68;
+    // txSize / 255 + 16 es la cota superior práctica de fastlz, que cubre el 99,99 % de las txs.
+    uint256 flzUpperBound = txSize + txSize / 255 + 16;
+
+    int256 estimatedSize = costIntercept + costFastlzCoef * flzUpperBound;
+    if (estimatedSize < minTransactionSize) {
+        estimatedSize = minTransactionSize;
+    }
+  
+    uint256 l1FeeScaled = baseFeeScalar() * l1BaseFee() * 16 + blobBaseFeeScalar() * blobBaseFee();
+    return uint256(estimatedSize) * l1FeeScaled / (10 ** (DECIMALS * 2));
+}
+```
+
+### Estimación del uso de gas en L1 {#l1-gas-usage-estimation}
+
+El método `getL1GasUsed` se actualiza para reflejar la mayor precisión de la [estimación de compresión](./exec-engine#fees)
+introducida con la actualización Fjord.
+
+```solidity GasPriceOracle.sol lines wrap expandable
+function getL1GasUsed(bytes memory _data) public view returns (uint256) {
+    if (isFjord) {
+      // Se suman 68 al tamaño para tener en cuenta la tx sin firmar
+      int256 flzSize = LibZip.flzCompress(_data).length + 68;
+
+      int256 estimatedSize = costIntercept + costFastlzCoef * flzSize;
+      if (estimatedSize < minTransactionSize) {
+        estimatedSize = minTransactionSize;
+      }
+
+      // Se asume que los datos comprimidos son en su mayoría distintos de cero y que pagarían 16 de gas por byte de calldata
+      return estimatedSize * 16;
+    }
+    // ...
+}
+```
+
+El método `getL1GasUsed` está obsoleto a partir de Fjord porque no refleja que, con la introducción de los blobs, se consumen
+dos tipos de gas. En una actualización futura, esta función revertirá al
+ser invocada.
+
+Los usuarios pueden seguir utilizando el método `getL1Fee` para estimar la tarifa de L1 de una transacción determinada, o bien el
+nuevo método `getL1FeeUpperBound`, introducido en Fjord como alternativa que consume menos gas.

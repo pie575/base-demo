@@ -1,0 +1,119 @@
+---
+title: 'eth_call'
+sidebarTitle: 'eth_call'
+description: 'トランザクションを作成せずにメッセージ呼び出しを実行します。pending を指定すると、プレコンファーム済みの状態に対してシミュレーションできます。'
+---
+
+トランザクションをネットワークにブロードキャストせずに、メッセージ呼び出しを即座に実行します。オンチェーンでガスは消費されません。コントラクトの状態の読み取りや、呼び出しのシミュレーションに使用します。
+
+<Tip>
+  **Flashblocks:** `https://mainnet.base.org` に `"pending"` を指定してクエリすると、現在のプレコンファーム済みブロックの状態 (約 200ms ごとに更新) に対してシミュレーションできます。
+</Tip>
+
+<Note>
+  **Flashblocks ノードにおける `eth_call "pending"` のブロックコンテキスト:** ノードが過去の Flashblocks をキャッシュする仕組み上、ブロックコンテキストのプロパティ (`block.number`、`block.timestamp`、`block.basefee`) には、最新ブロックより数ブロック前の値が反映される場合があります。詳細は [FAQ](/ja/specifications/flashblocks#why-does-eth_call-pending-report-a-block-number-several-blocks-behind-tip) を参照してください。
+</Note>
+
+## パラメーター {#parameters}
+
+<ParamField body="transaction" type="object" required>
+  トランザクションの呼び出しオブジェクト。
+
+  <Expandable title="トランザクションのフィールド">
+    <ParamField body="from" type="string">
+      呼び出しの送信元アドレス。省略可能で、省略時はゼロアドレスが使用されます。
+    </ParamField>
+
+    <ParamField body="to" type="string" required>
+      呼び出しの宛先アドレス。
+    </ParamField>
+
+    <ParamField body="gas" type="string">
+      呼び出しに割り当てるガス量 (16進数の整数) 。省略した場合は、十分に高い上限値が使用されます。
+    </ParamField>
+
+    <ParamField body="gasPrice" type="string">
+      wei 単位のガス価格 (16進数の整数) 。レガシートランザクションで使用します。省略可能。
+    </ParamField>
+
+    <ParamField body="maxFeePerGas" type="string">
+      EIP-1559 における、ガスあたりの最大合計手数料。省略可能。
+    </ParamField>
+
+    <ParamField body="maxPriorityFeePerGas" type="string">
+      EIP-1559 における、ガスあたりの最大優先手数料。省略可能。
+    </ParamField>
+
+    <ParamField body="value" type="string">
+      送金額 (wei 単位、16進数の整数) 。省略可能。
+    </ParamField>
+
+    <ParamField body="data" type="string">
+      ABI エンコードされた呼び出しデータ。4 バイトの関数セレクターと、それに続くエンコード済みの引数で構成されます。省略可能。
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="block" type="string" required>
+  16進数のブロック番号、または `"latest"`、`"pending"`、`"safe"`、`"finalized"`、`"earliest"` のいずれか。プレコンファーム済みの状態に対して呼び出す場合は `"pending"` を指定します。
+</ParamField>
+
+## 戻り値 {#returns}
+
+<ResponseField name="result" type="string">
+  呼び出しの戻り値 (16進数エンコードされたバイト配列) 。
+</ResponseField>
+
+## エラーコード {#error-codes}
+
+| コード      | メッセージ              | 説明                                                                            |
+| -------- | ------------------ | ----------------------------------------------------------------------------- |
+| `-32000` | execution reverted | 呼び出しがリバートしました。リバート理由を取得できる場合は、エラーオブジェクトの `data` フィールドに ABI エンコードされた形式で格納されます。 |
+
+## 例 {#example}
+
+<CodeGroup>
+  ```bash 標準 (latest) lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_call",
+      "params": [
+        {
+          "to": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "data": "0x70a082310000000000000000000000004200000000000000000000000000000000000006"
+        },
+        "latest"
+      ],
+      "id": 1
+    }'
+  ```
+
+  ```bash Flashblocks (pending、約200ms) lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_call",
+      "params": [
+        {
+          "to": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "data": "0x70a082310000000000000000000000004200000000000000000000000000000000000006"
+        },
+        "pending"
+      ],
+      "id": 1
+    }'
+  ```
+
+  ```json レスポンス
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x0000000000000000000000000000000000000000000000000000000005f5e100"
+  }
+  ```
+</CodeGroup>

@@ -1,0 +1,98 @@
+---
+title: "Jovian: System Config"
+description: "Jovian アップグレードにおける SystemConfig の変更点。EIP-1559 手数料市場向けに、最小ベースフィーを設定する構成変数を追加します。"
+---
+
+## 最小ベースフィーの設定 {#minimum-base-fee-configuration}
+
+Jovian は、Base 上の EIP-1559 手数料市場で使用される最小ベースフィーを制御するための設定値を `SystemConfig` に追加します。
+この値は、wei 単位で指定する最小ベースフィーです。
+
+| 名前           | 型        | デフォルト | 意味              |
+| ------------ | -------- | ----- | --------------- |
+| `minBaseFee` | `uint64` | `0`   | wei 単位の最小ベースフィー |
+
+この設定は、`SystemConfig` に新たに追加されたメソッドで更新します。
+
+```solidity SystemConfig.sol
+function setMinBaseFee(uint64 minBaseFee) external onlyOwner;
+```
+
+### `ConfigUpdate` {#configupdate}
+
+設定が更新されたときは、以下のパラメータを指定して [`ConfigUpdate`](/ja/specifications/base-protocol/consensus/derivation#system-config-updates) イベントを
+発行しなければなりません (MUST) 。
+
+| `version`    | `updateType` | `data`                            | 用途                   |
+| ------------ | ------------ | --------------------------------- | -------------------- |
+| `uint256(0)` | `uint8(6)`   | `abi.encode(uint64(_minBaseFee))` | 最小ベースフィー (wei) を変更する |
+
+### 初期化 {#initialization}
+
+`SystemConfig` の初期化時には、以下のアクションを実行する必要があります。
+
+* `emit ConfigUpdate.BATCHER`
+* `emit ConfigUpdate.FEE_SCALARS`
+* `emit ConfigUpdate.GAS_LIMIT`
+* `emit ConfigUpdate.UNSAFE_BLOCK_SIGNER`
+
+`emit ConfigUpdate.EIP_1559_PARAMS` と `emit ConfigUpdate.MIN_BASE_FEE` は意図的に含めていません。
+これらの値が未設定の間は、デフォルト値が使用されます。
+初期化時にこれらのパラメータの設定を必須にすると、L1 コントラクトのアップグレードより前に
+L2 のハードフォークを完了させなければならないという厳格な要件が生じます。多数のチェーンが存在する
+環境では、これを管理するのは困難です。
+
+### 最小ベースフィーの変更 {#modifying-minimum-base-fee}
+
+更新時、コントラクトは上記の `ConfigUpdate` イベントを発行し、ノードが
+L1 のログから設定を導出できるようにします。
+
+実装は、`./exec-engine.md` の規定に従い、設定値をブロックヘッダーの `extraData` に組み込まなければなりません (MUST) 。
+このイベントが初めて発行されるまでは、デフォルト値として `0` を使用すべきです (should) 。
+
+### インターフェース {#interface}
+
+#### 最小ベースフィーのパラメーター {#minimum-base-fee-parameters}
+
+##### `minBaseFee` {#minbasefee}
+
+この関数は、現在設定されている最小ベースフィーを wei 単位で返します。
+
+```solidity SystemConfig.sol
+function minBaseFee() external view returns (uint64);
+```
+
+## DA フットプリントの設定 {#da-footprint-configuration}
+
+Jovian では、[`daFootprintGasScalar`](./derivation) を制御する `uint16` 型の設定値が `SystemConfig` に追加されます。
+
+この設定は、`SystemConfig` に新たに追加されたメソッドで更新します:
+
+```solidity SystemConfig.sol
+function setDAFootprintGasScalar(uint16 daFootprintGasScalar) external onlyOwner;
+```
+
+### `ConfigUpdate` {#configupdate-2}
+
+設定が更新された場合、以下のパラメータを指定して [`ConfigUpdate`](/ja/specifications/base-protocol/consensus/derivation#system-config-updates) イベントを発行しなければなりません (MUST) 。
+
+| `version`    | `updateType` | `data`                                      | 用途                   |
+| ------------ | ------------ | ------------------------------------------- | -------------------- |
+| `uint256(0)` | `uint8(7)`   | `abi.encode(uint16(_daFootprintGasScalar))` | DA フットプリントのガススカラーを変更 |
+
+### DA フットプリントガススカラーの変更 {#modifying-da-footprint-gas-scalar}
+
+更新が行われると、コントラクトは上記の`ConfigUpdate`イベントを発行します。これにより、ノードは
+L1のログから設定を導出できます。
+
+### インターフェース {#interface-2}
+
+#### DA フットプリントガススカラーのパラメータ {#da-footprint-gas-scalar-parameters}
+
+##### `daFootprintGasScalar` {#dafootprintgasscalar}
+
+この関数は、現在設定されている DA フットプリントガススカラーを返します。
+
+```solidity SystemConfig.sol
+function daFootprintGasScalar() external view returns (uint16);
+```

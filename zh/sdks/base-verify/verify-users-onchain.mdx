@@ -1,0 +1,416 @@
+---
+title: "在链上验证用户"
+description: "在任意 Base 合约中实现抗女巫攻击和策略门控。Base Verify 会签发一份短期有效的验证凭证，您的合约可在执行领取、存款或投票的同一笔交易中对其进行校验，确保每个真实身份只计一次，且只有达到您所设标准的钱包才能参与。"
+---
+
+## 概述 {#summary}
+
+**借助 Base Verify Onchain，你的智能合约可以强制执行“每个真人仅限一次”的规则，并根据现实世界中的属性 (例如有效的 Coinbase One 会员资格) 进行准入控制。检查直接在你的合约中执行，因此你无需自行运行验证后端。** Base Verify 会签发一个短时有效的验证凭证，你的合约在领取、存款或投票的同一笔交易中对其进行校验。
+
+<Note>
+  Base Verify Onchain 仅在 Base Sepolia 上运行，尚未部署到 Base Mainnet。你可以基于它进行构建和测试，但
+  请勿将其用于承载生产环境中的资产。欢迎试用[演示](https://verify.base.dev/onchain-demo)；如果你有具体的用例设想，也欢迎[联系
+  我们](https://forms.gle/WTcuWyKkvUV6gGik6)。
+</Note>
+
+集成只需三步：
+
+1. **部署或升级合约**，使其继承 `BaseVerifyConsumer`，并声明不可变的 `provider` 和 `conditions` (即你的资格策略) 。
+2. 在应用中**获取验证凭证**：用户签署一条指明你的合约的 SIWE 消息，你再将其 POST 到 `POST /v1/onchain_verifications`。
+3. 将返回的 `{ identityHash, expiration, signature }` **提交**到你的合约，合约会调用 `registry.verifyVerification(...)` 并基于 `identityHash` 去重。
+
+| 项目               | 值 (Base Sepolia)                                                                                                                |
+| :--------------- | :------------------------------------------------------------------------------------------------------------------------------ |
+| `SignerRegistry` | [`0x4f15593fbF7e3491d15080e1610E7AF8deBA1a02`](https://sepolia.basescan.org/address/0x4f15593fbF7e3491d15080e1610E7AF8deBA1a02) |
+| API 基础 URL       | `https://verify.base.dev/v1`                                                                                                    |
+| 链                | Base Sepolia (`84532`) ，仅限测试网                                                                                                   |
+| 消费者基础合约          | `BaseVerifyConsumer.sol`                                                                                                        |
+
+以下两个示例消费者合约可供直接参考：
+
+* [已验证 X 账户示例](https://sepolia.basescan.org/address/0x691fedA6dfCd10082b195b2453EBC7c87ff31678) — 根据已验证的 X 账户进行准入控制。
+* [Coinbase One 示例](https://sepolia.basescan.org/address/0x3ccD255C67a129e780F945Fa1773441Ec100059f) — 根据有效的 Coinbase One 会员资格进行准入控制。
+
+## 什么是 Base Verify Onchain？ {#what-is-base-verify-onchain}
+
+[Base Verify](/zh/sdks/base-verify/verify-social-accounts) 让用户能够证明自己拥有已验证的账户 (X、Coinbase、Instagram、TikTok) ，而无需透露账户详情。它解决了单靠钱包无法解决的两个问题：**抗女巫攻击** (同一个真实身份只计一次，无论它分散在多少个钱包中) 和**策略门控** (只允许达到某项现实世界门槛的用户参与，例如持有有效的 Coinbase One 会员资格，即便钱包几乎没有链上历史) 。
+
+**Base Verify Onchain 直接在你的合约中同时实现这两点。** Base Verify 后端会签发一份短时有效的 [EIP-712](https://eips.ethereum.org/EIPS/eip-712) 验证凭证，你的合约在执行领取、存款、铸造或投票的同一笔交易中对其进行校验。领取时无需后端参与，你的合约也永远不会知道用户是谁：
+
+* **抗女巫攻击**依靠 `identityHash` 实现。对于你的合约而言，同一个现实世界身份无论使用哪个钱包，生成的哈希值始终相同，因此你的合约对每个真实用户只计一次。
+* **策略门控**依靠你合约中的策略实现。你声明一个 `provider` 和一组 `conditions` (例如 X 粉丝数 ≥ 10,000，或持有有效的 Coinbase One 会员资格) ；Base Verify 会据此检查用户的真实凭证，只有通过时才会签名。
+
+一次检查即可兼顾两者：在同一笔交易中既按你的策略进行门控，&#95;又&#95;按身份去重。如果你的应用已经在链下 (通过你自己的后端和数据库) 实现了这些限制，请改从 [Verify Social Accounts](/zh/sdks/base-verify/verify-social-accounts) 入手。本指南讲的是如何在合约中实现这些限制。
+
+API 响应和你的合约都不会包含用户身份，但领取操作仍是一笔公开交易。它具体会公开哪些内容，请参阅[哪些内容会上链](#what-goes-onchain)。
+
+## 核心概念 {#core-concepts}
+
+### Verification {#verification}
+
+由 Base Verify 后端签名的短期有效对象，你的合约会通过 `SignerRegistry` 对其进行校验。该对象以 EIP-712 类型化数据格式签名，包含以下字段：
+
+* `identityHash` — 用户真实身份的单向哈希 (用作你的去重键) 。
+* `policyHash` — 将该验证绑定到你的合约在特定链上的策略。注册表会在链上重新计算该值，因此响应中不会包含它。
+* `expiration` — Unix 时间戳 (秒) ；验证的有效期很短 (仅几分钟) 。
+
+### identityHash {#identityhash}
+
+用于去重的键。它由身份和合约共同确定：同一个真实用户无论通过哪个钱包完成验证，在你的合约中始终会生成相同的 `identityHash`。你需要存储每个 `identityHash`，并拒绝重复值。
+
+* **单向性** — 无法通过它反推出用户身份。
+* **按合约区分** — 每个合约得到的值各不相同，因此无法跨应用关联身份。
+* **跨钱包一致** — 同一用户使用另一个钱包验证时会生成相同的哈希值，因此你的合约可以拦截重复验证。
+
+### 策略 (provider + conditions) {#policy-provider-conditions}
+
+你的合约会声明哪些用户符合资格：一个 `provider` 加上一个或多个 `conditions` (例如持有有效的 Coinbase One 会员资格，或 X 粉丝数不少于 1000) 。Base Verify 后端会直接从你的合约中读取该策略，并在签名前据此核验用户已存储的凭证。
+
+### 资格校验机制 {#how-eligibility-is-enforced}
+
+此处的“Base Verify”指的是 Base Verify 后端，即持有签名密钥的链下服务，而非 Base Chain。它会通过 `eth_call` 读取你的合约在链上的 `provider` 和 `conditions`，依据用户已存储的凭证进行评估，且仅在条件全部满足时才签发验证。条件始终来自你的合约，绝不来自用户，因此用户无法通过删除或伪造条件来获取本无资格获得的验证。
+
+## 架构与流程 {#architecture-and-flow}
+
+一次领取 (claim) 会依次经过你的应用、Base Verify API 和你的合约：
+
+1. 用户在你的应用中连接钱包。
+2. 你的应用构建一条 SIWE 消息 (在 `Resources` 行中指明你的合约) ，并让用户对其签名。
+3. 你的应用将该消息和签名提交到 Base Verify API。
+4. Base 从签名中恢复出钱包地址，从链上读取你的合约的 `provider` 和 `conditions`，并据此核验该钱包已存储的凭证。
+5. 验证成功后，Base 会返回一份已签名的验证结果 (`identityHash`、`expiration`、`signature`) 。如果用户未经验证或不满足条件，则会返回 `404` 或 `400`。
+6. 你的应用将该验证结果提交给你的合约的 `enroll` 函数 (或你的存款、借款或领取流程) 。
+7. 你的合约调用 `registry.verifyVerification(...)`，该函数会检查签名和有效期，并根据你当前生效的策略重新计算 `policyHash`。随后，你的合约根据 `identityHash` 去重，并允许用户参与。
+
+## 哪些内容会上链 {#what-goes-onchain}
+
+领取 (claim) 就是一笔普通的公开交易。交易一旦被打包上链，以下所有内容都将永久保存、任何人均可读取，并且不再受 Base Verify 控制。设计策略和合约时，请务必充分考虑这一点。
+
+### 写入链上的数据 {#written-onchain}
+
+| 数据                                     | 出现位置                               | 说明                          |
+| :------------------------------------- | :--------------------------------- | :-------------------------- |
+| `identityHash`                         | 交易 calldata、你的合约存储，以及你发出的任何包含该值的事件 | 在你的合约中将领取钱包与该身份永久绑定         |
+| 领取钱包地址                                 | 交易发送方，以及你发出的任何包含该地址的事件             | 签署 SIWE 消息并提交领取的钱包          |
+| `expiration` 和 Base Verify `signature` | 交易 calldata                        | 公开可见，但仅绑定你的合约和该钱包，且会在几分钟内过期 |
+| 你的 `provider` 和 `conditions`           | 已部署合约上的公开 view 函数                  | 任何人无需发送交易即可读取你的策略           |
+
+你的合约在处理领取时额外存储或发出的任何数据同样是公开的。上文链接的两个示例消费合约会维护一个 `mapping(bytes32 identityHash => bool)`，并发出 `Claimed(address indexed user, bytes32 indexed identityHash)` 事件，因此可以直接从日志中查到钱包与哈希的对应关系。
+
+### 绝不上链 {#never-onchain}
+
+* 提供方账户：不包括用户名、账号名 (handle) 、账户 ID 或个人主页链接。
+* 特征值：不包括粉丝数、订阅状态或其他凭证数据。
+* OAuth 令牌，以及 Base Verify 为用户保存的其他任何内容。
+* `policyHash`：注册表在验证时于内存中重新计算该值，从不存储，也不会通过事件发出。
+* 用户的真实身份：`identityHash` 是单向哈希，无法逆推。
+
+### 观察者可以推断出什么 {#what-an-observer-can-infer}
+
+你的策略是公开的，领取记录也是公开的，因此任何人都可以将两者对应起来。Coinbase One 示例消费者声明了 `provider = "coinbase"` 以及条件 `coinbase_one_active eq true`，因此任何人都能知道，其 `Claimed` 日志中的每个钱包在领取时都持有有效的 Coinbase One 会员资格。观察者无法得知具体是哪个 Coinbase 账户，但能确定该钱包背后确实有这样一个账户。
+
+策略越严格，每次领取暴露的信息就越多。以 `followers gte 10000` 作为门槛，意味着每个领取的钱包都会被标记为 X 大号；而以 `verified eq true` 作为门槛，透露的信息则要少得多。合约名称以及各类操作的命名同样如此。
+
+由于 `identityHash` 的作用域限定在单个合约内，同一个人在两个不同合约中领取会生成两个互不相关的哈希，观察者无法将它们关联起来。而在同一合约内，该用户的每次领取都对应同一个哈希，去重机制正是依赖这一点才得以生效。
+
+### 领取记录存放在哪里 {#where-claim-history-lives}
+
+`verify.base.dev` 只展示用户的链下凭证：即用户已通过哪些提供方的验证，以及 Base Verify 为其存储的特征信息。它看不到链上领取记录，也无法展示、编辑或撤销这些记录。
+
+链上领取记录存放在你的合约中：在你的存储里、你的事件里、你的链上。用户和观察者可以通过区块浏览器或你合约的公开 getter 函数读取这些记录。如果你希望用户能查看自己的领取记录，需要自行构建相应的视图。
+
+<Warning>
+  在 `verify.base.dev` 删除某项验证，会移除用户的链下凭证，Base Verify 也将不再为其签发新的验证。但这不会影响任何已写入链上的内容。你的合约已记录的领取仍然有效，
+  相关交易也会继续保留在链的历史记录中。
+</Warning>
+
+## 实现 {#implementation}
+
+<Steps>
+  <Step title="编写合约">
+    继承 `BaseVerifyConsumer`，让你的策略可在链上读取；通过注册表检查验证结果，并基于 `identityHash` 去重。本示例为每位真实用户仅登记一个经过验证、受策略约束的身份，因此单个薅羊毛者无法借助多个钱包重复领取奖励。
+
+    ```solidity IncentiveProgram.sol lines expandable highlight={15-23,25-33} theme={null}
+    // SPDX-License-Identifier: MIT
+    pragma solidity 0.8.28;
+
+    import {BaseVerifyConsumer} from "@baseverify/BaseVerifyConsumer.sol";
+
+    contract IncentiveProgram is BaseVerifyConsumer {
+        mapping(bytes32 identityHash => bool enrolled) public enrolled;
+        mapping(address wallet => bool active) public isParticipant;
+
+        error AlreadyEnrolled();
+
+        // 传入你所用链上的 SignerRegistry 地址。
+        constructor(address registry_) BaseVerifyConsumer(registry_) {}
+
+        // 你的资格策略。两者都必须（MUST）不可变（constant / pure）。
+        function provider() external pure override returns (string memory) {
+            return "coinbase";
+        }
+
+        function conditions() external pure override returns (Condition[] memory) {
+            Condition[] memory c = new Condition[](1);
+            c[0] = Condition({name: "coinbase_one_active", op: "eq", value: "true"});
+            return c;
+        }
+
+        function enroll(bytes32 identityHash, uint40 expiration, bytes calldata signature) external {
+            // 每个真实身份只能注册一次，无论其控制多少个钱包。
+            if (enrolled[identityHash]) revert AlreadyEnrolled();
+
+            // 将 msg.sender 绑定为已验证钱包；验证无效或已过期时回滚。
+            _verify(identityHash, expiration, signature);
+
+            enrolled[identityHash] = true;
+            isParticipant[msg.sender] = true;
+
+            // ... 开始为 msg.sender 累积加成奖励 ...
+        }
+    }
+    ```
+
+    <Warning>
+      `provider()` 和 `conditions()` 必须是不可变的 (返回常量) 。它们会参与 `policyHash` 的计算；一旦其值发生变化，所有现存的验证都将失效，而且同一身份可以在新的哈希下重新注册，从而破坏你的抗女巫攻击能力。
+    </Warning>
+  </Step>
+
+  <Step title="在应用中获取验证结果">
+    让用户签署一条注明你的合约的 [SIWE](https://eips.ethereum.org/EIPS/eip-4361) 消息，然后通过 POST 请求将其提交到 Base Verify API。
+
+    ```typescript lib/fetch-verification.ts lines expandable highlight={6-14,20-24} theme={null}
+    import { createSiweMessage, generateSiweNonce } from 'viem/siwe';
+
+    const MY_CONTRACT_ADDRESS = '0x...'; // 你部署的消费方合约
+    const CHAIN_ID = 84532; // Base Sepolia
+
+    export async function fetchVerification(
+      userAddress: `0x${string}`,
+      signMessageAsync: (args: { message: string }) => Promise<string>,
+    ) {
+      // 下方的 statement 和 Resources 行为 API 必填项，须严格按原样填写。
+      const message = createSiweMessage({
+        domain: window.location.host,
+        address: userAddress,
+        statement: 'Claim eligibility for a Base Verify onchain benefit.',
+        uri: window.location.origin,
+        version: '1',
+        chainId: CHAIN_ID,
+        nonce: generateSiweNonce(),
+        resources: [`eip155:${CHAIN_ID}:${MY_CONTRACT_ADDRESS}`],
+      });
+
+      const signature = await signMessageAsync({ message });
+
+      const res = await fetch('https://verify.base.dev/v1/onchain_verifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, signature }),
+      });
+
+      if (!res.ok) {
+        // 参见下文的错误处理（例如，404 表示应先引导用户前往 Base Verify）。
+        throw new Error(`verification failed: ${res.status}`);
+      }
+
+      // { identityHash, expiration, signature }
+      return res.json();
+    }
+    ```
+
+    <Note>
+      无需 API 密钥：该请求不需要 `Authorization` 请求头，因为 SIWE 签名本身即为凭证。
+    </Note>
+  </Step>
+
+  <Step title="将验证结果提交至你的合约">
+    将 API 响应直接传给合约的 `enroll` 函数 (或你的存款、借款、领取流程) 。
+
+    ```typescript enroll.ts highlight={7-9} theme={null}
+    import { INCENTIVE_PROGRAM_ABI } from './abi';
+
+    const { identityHash, expiration, signature } = await fetchVerification(userAddress, signMessageAsync);
+
+    await writeContract({
+      address: MY_CONTRACT_ADDRESS,
+      abi: INCENTIVE_PROGRAM_ABI,
+      functionName: 'enroll',
+      args: [identityHash, expiration, signature],
+    });
+    ```
+
+    你的合约会调用 `registry.verifyVerification(...)`；如果签名、有效期和策略均校验通过，`enroll()` 就会记录该 `identityHash`。同一个人使用第二个钱包时，会得到相同的 `identityHash`，因而会被拒绝。
+  </Step>
+</Steps>
+
+### 错误处理 {#error-handling}
+
+如果 API 未返回 `200`，请不要提交交易。请根据状态码处理响应：
+
+| 响应                                 | 处理方式                                                 |
+| :--------------------------------- | :--------------------------------------------------- |
+| **404** `contract_not_found`       | 指定的合约未部署在该链上，或未公开策略。请检查地址和链。                         |
+| **404** `verification_not_found`   | 该钱包没有你的合约所指定提供方的凭证。请将用户重定向到 Base Verify 完成验证。        |
+| **404** `needs_reauth`             | 该凭证早于你的合约设定的截止区块。请引导用户前往 Base Verify 重新认证。           |
+| **400** `conditions_not_satisfied` | 该钱包已通过验证，但不满足你设定的条件。请显示提示信息，不要重定向或重试。                |
+| **400** `invalid_policy`           | 你的合约所用的 provider/condition/operator 组合不受支持。请修正合约的策略。 |
+| **400** `invalid_argument`         | SIWE 消息格式错误或已过期、statement 不正确，或链不正确。请重新构建消息。         |
+| **200**                            | 将 `identityHash`、`expiration` 和 `signature` 提交到你的合约。 |
+
+如需引导用户前往 Base Verify 完成 OAuth，请重定向到 `https://verify.base.dev`，并附上你的应用 URL 和提供方：
+
+```text Base Verify redirect URL format theme={null}
+https://verify.base.dev?redirect_uri={your_app_url}&providers={provider}
+```
+
+## API 参考 {#api-reference}
+
+### POST /v1/onchain_verifications {#post-v1onchain_verifications}
+
+用 SIWE 签名换取一份已签名、短期有效的链上验证凭证。无需 API 密钥：SIWE 签名本身即为凭证，且该验证凭证只能由签名钱包在其指定的合约上使用。
+
+#### 请求 {#request}
+
+```json POST /v1/onchain_verifications request body theme={null}
+{
+  "message": "<SIWE message; its Resources line names your contract>",
+  "signature": "0x<wallet signature over the message>"
+}
+```
+
+<ParamField body="message" type="string" required>
+  SIWE 消息。其 `statement` 必须与 `Claim eligibility for a Base Verify onchain benefit.` 完全一致，`chainId` 必须是你进行申领的链 (目前仅支持 Base Sepolia `84532`) ，且 `Resources` 必须包含 `eip155:<chainId>:<yourContractAddress>`。
+</ParamField>
+
+<ParamField body="signature" type="string" required>
+  钱包对 SIWE 消息的签名。支持 Base Account 智能钱包签名
+  ([ERC-1271](https://eips.ethereum.org/EIPS/eip-1271) /
+  [ERC-6492](https://eips.ethereum.org/EIPS/eip-6492)) 。
+</ParamField>
+
+#### 请求示例 {#example-request}
+
+```bash POST /v1/onchain_verifications cURL example wrap theme={null}
+curl -X POST https://verify.base.dev/v1/onchain_verifications \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "app.example.com wants you to sign in with your Ethereum account:...",
+    "signature": "0x1234..."
+  }'
+```
+
+#### 响应 `200` {#response-200}
+
+```json 200 OK response theme={null}
+{
+  "identityHash": "0x88c9f0a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b",
+  "expiration": 1723497600,
+  "signature": "0x4d3c2b1a..."
+}
+```
+
+<ResponseField name="identityHash" type="string (bytes32)">
+  用户真实身份的单向哈希。同一身份在同一合约下始终生成相同的值。请存储该值，并据此去重。
+</ResponseField>
+
+<ResponseField name="expiration" type="integer">
+  Unix 时间戳 (秒) ，超过该时间后验证即失效。验证的有效期很短 (仅几分钟) ，请尽快提交交易。
+</ResponseField>
+
+<ResponseField name="signature" type="string">
+  由 Base 运营的签名方生成的 EIP-712 签名。请将其传给你的合约。
+</ResponseField>
+
+响应中不包含 `policyHash` 和合约地址：你的合约会根据自身策略重新计算 `policyHash`，而经过验证的钱包即为你的消费者合约传给注册表的 `msg.sender`。
+
+有关错误响应，请参阅[错误处理](#error-handling)。
+
+## 合约 {#contracts}
+
+### SignerRegistry {#signerregistry}
+
+由 Base 部署的无状态验证器。它仅保存一份签名者白名单，且只回答一个问题：该验证是否由受信任的签名者签署、是否仍在有效期内，并且是否绑定到调用方合约的策略？`identityHash` 的去重由各使用方自行负责。
+
+你的合约调用 `verifyVerification`，只要验证无效，该调用就会回滚：
+
+```solidity SignerRegistry.verifyVerification lines expandable theme={null}
+function verifyVerification(
+    address user,
+    bytes32 identityHash,
+    uint40 expiration,
+    bytes calldata signature
+) external view;
+// 当 block.timestamp > expiration 时，以 VerificationExpired(expiration) 回滚。
+// 当无法从签名中恢复出签名者时，以 InvalidSignature() 回滚。
+// 当恢复出的签名者不在允许列表中时，以 NotSigner(signer) 回滚。
+```
+
+`msg.sender` 即消费方合约，因此验证结果无法在其他合约上重放：注册表会根据调用方当前生效的策略重新计算 `policyHash`，而其他合约的策略会生成不同的哈希，从而导致签名恢复失败。
+
+### BaseVerifyConsumer {#baseverifyconsumer}
+
+你的消费者合约所继承的基础合约。它会在链上公开你的策略，并提供一个辅助函数，用于将调用者绑定为已验证的钱包。
+
+```solidity BaseVerifyConsumer interface lines expandable highlight={2-4,7,15-16} theme={null}
+abstract contract BaseVerifyConsumer {
+    struct Condition {
+        string name;  // 例如 "followers"
+        string op;    // eq | gt | gte | lt | lte | in
+        string value; // 例如 "1000"
+    }
+
+    // 你的资格策略——必须（MUST）不可变（constant / pure）。
+    function provider() external view virtual returns (string memory);
+    function conditions() external view virtual returns (Condition[] memory);
+
+    // 可选：拒绝最近一次认证早于此区块的凭证。返回 0 表示不设截止区块。
+    function cutoffBlock() external view virtual returns (uint256);
+
+    // 将 msg.sender 作为已验证钱包传入，确保验证结果只能由其所有者使用。
+    function _verify(bytes32 identityHash, uint40 expiration, bytes calldata signature) internal view;
+}
+```
+
+<Note>
+  `cutoffBlock()` 不属于 `policyHash` 的组成部分，因此修改它不会导致现有的有效验证失效。
+  你可以借助它强制要求用户重新进行身份验证 (例如，在策略或安全设置变更之后) 。
+</Note>
+
+### 支持的提供方与条件 {#supported-providers-and-conditions}
+
+一个策略由一个 `provider` 和一个或多个 `conditions` 组成。支持的运算符包括 `eq`、`gt`、`gte`、`lt`、`lte` 和 `in`。
+
+| 提供方         | 条件                                                | 类型     | 运算符                        | 示例                            |
+| :---------- | :------------------------------------------------ | :----- | :------------------------- | :---------------------------- |
+| `x`         | `followers`                                       | int    | `eq` `gt` `gte` `lt` `lte` | `followers gte 1000`          |
+| `x`         | `verified`                                        | bool   | `eq`                       | `verified eq true`            |
+| `x`         | `verified_type`                                   | string | `eq`                       | `verified_type eq blue`       |
+| `coinbase`  | `coinbase_one_active`                             | bool   | `eq`                       | `coinbase_one_active eq true` |
+| `coinbase`  | `coinbase_one_billed`                             | bool   | `eq`                       | `coinbase_one_billed eq true` |
+| `instagram` | `followers_count`                                 | int    | `eq` `gt` `gte` `lt` `lte` | `followers_count gte 5000`    |
+| `instagram` | `username`                                        | string | `eq`                       | `username eq base`            |
+| `tiktok`    | `follower_count`                                  | int    | `eq` `gt` `gte` `lt` `lte` | `follower_count gte 10000`    |
+| `tiktok`    | `following_count` / `likes_count` / `video_count` | int    | `eq` `gt` `gte` `lt` `lte` | `video_count gte 50`          |
+
+为同一提供方声明多个条件时，这些条件必须**全部**满足 (AND 逻辑) 。
+
+## 安全性 {#security}
+
+### Base Verify 提供的保障 {#what-base-verify-enforces}
+
+* **资格**依据用户的真实凭证进行校验，校验条件读取自你的合约策略，因此用户无法伪造条件。
+* **一个身份只能执行一次操作**，由确定性的 `identityHash` 保证，你可以基于它进行去重。
+* **验证与你的合约和链绑定**，且很快就会过期 (几分钟内) 。
+* **只有签名钱包**才能提交验证，因此验证无法在内存池 (mempool) 中被抢跑 (front-run)  (前提是你继承 `BaseVerifyConsumer` 并传入 `msg.sender`) 。
+
+### 要求 {#requirements}
+
+* 确保你的策略 (`provider` 和 `conditions`) 不可变更。
+* 在领取流程中基于 `identityHash` 去重。
+* 检查通过仅能证明存在一个唯一的已验证身份，而不能证明任何特定账户或个人数据。
+* 告知用户领取操作会公开哪些信息，并请牢记：所有面向用户的相关展示均由你负责。参见[哪些内容会上链](#what-goes-onchain)。
+
+## 支持 {#support}
+
+**想要集成 Base Verify Onchain？** 请填写[意向表](https://forms.gle/WTcuWyKkvUV6gGik6)，我们的团队会尽快与您联系。

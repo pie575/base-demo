@@ -1,0 +1,69 @@
+---
+title: "System Config"
+description: "Holocene アップグレードにおける SystemConfig の変更点。ConfigUpdate イベントによる EIP-1559 パラメータの動的な設定が追加されました。"
+---
+
+## 概要 {#overview}
+
+`SystemConfig` が更新され、EIP-1559 パラメータを動的に設定できるようになりました。
+
+### `ConfigUpdate` {#configupdate}
+
+設定が更新された際には、次のパラメータを指定して [`ConfigUpdate`](/ja/specifications/base-protocol/consensus/derivation#system-config-updates) イベントを
+発行しなければなりません (MUST) 。
+
+| `version`    | `updateType` | `data`                                                     | 用途                                        |
+| ------------ | ------------ | ---------------------------------------------------------- | ----------------------------------------- |
+| `uint256(0)` | `uint8(4)`   | `abi.encode((uint256(_denominator) << 32) \| _elasticity)` | EIP-1559 の分母と elasticity を変更する |
+
+なお、上記のエンコーディングは SystemConfig のイベントが発行する形式であり、ブロックヘッダーの extraData の形式とは
+異なります。
+
+### 初期化 {#initialization}
+
+`SystemConfig` の初期化時には、以下のアクションを実行する必要があります。
+
+* `emit ConfigUpdate.BATCHER`
+* `emit ConfigUpdate.FEE_SCALARS`
+* `emit ConfigUpdate.GAS_LIMIT`
+* `emit ConfigUpdate.UNSAFE_BLOCK_SIGNER`
+
+ここには `emit ConfigUpdate.EIP_1559_PARAMS` を意図的に含めていません。
+これらの値が未設定の間は、デフォルト値が使用されます。
+初期化時に 1559 パラメータの設定を必須にすると、L1 コントラクトのアップグレードより先に L2 のハードフォークを完了させなければならないという厳格な要件が生じます。
+多数のチェーンが存在する環境では、これを管理するのは困難です。
+
+### EIP-1559パラメータの変更 {#modifying-eip-1559-parameters}
+
+[EIP-1559](https://eips.ethereum.org/EIPS/eip-1559)パラメータを変更できるようにするため、`SystemConfig`に新しい`UpdateType`が導入されます。これにより、チェーンオペレーターは`BASE_FEE_MAX_CHANGE_DENOMINATOR`と`ELASTICITY_MULTIPLIER`を変更できるようになります。
+
+### インターフェース {#interface}
+
+#### EIP-1559 パラメータ {#eip-1559-params}
+
+##### `setEIP1559Params` {#seteip1559params}
+
+この関数は、チェーンガバナーのみが呼び出せるようにしなければなりません (MUST) 。
+
+```solidity SystemConfig.sol
+function setEIP1559Params(uint32 _denominator, uint32 _elasticity)
+```
+
+`_denominator` と `_elasticity` には、0 より大きい値を設定しなければなりません (MUST) 。
+チェーンオペレーターが、ユーザー体験を損なう EIP-1559 パラメータを設定してしまう可能性もあります。
+
+##### `eip1559Elasticity` {#eip1559elasticity}
+
+この関数は、現在設定されている EIP-1559 の elasticity を返します。
+
+```solidity SystemConfig.sol
+function eip1559Elasticity()(uint32)
+```
+
+##### `eip1559Denominator` {#eip1559denominator}
+
+この関数は、現在設定されている EIP-1559 の分母 (denominator) を返します。
+
+```solidity SystemConfig.sol
+function eip1559Denominator()(uint32)
+```

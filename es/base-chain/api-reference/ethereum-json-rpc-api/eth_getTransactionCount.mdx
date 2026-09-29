@@ -1,0 +1,63 @@
+---
+title: 'eth_getTransactionCount'
+sidebarTitle: 'eth_getTransactionCount'
+description: 'Devuelve el número de transacciones enviadas desde una dirección (el nonce). Usa pending para obtener el nonce preconfirmado.'
+---
+
+Devuelve el número de transacciones enviadas desde una dirección. Este valor es el nonce actual de la cuenta, es decir, el valor que debe usarse como `nonce` al construir la siguiente transacción.
+
+<Tip>
+  **Flashblocks:** Consulta `https://mainnet.base.org` con `"pending"` para obtener el nonce que incluye todas las transacciones preconfirmadas, actualizado cada ~200 ms. Esto es fundamental para que los agentes que envían transacciones con alta frecuencia eviten huecos en el nonce.
+</Tip>
+
+## Parámetros {#parameters}
+
+<ParamField body="address" type="string" required>
+  La dirección de 20 bytes que se va a consultar.
+</ParamField>
+
+<ParamField body="block" type="string" required>
+  Número de bloque en hexadecimal, o bien `"latest"`, `"pending"`, `"safe"`, `"finalized"` o `"earliest"`. Usa `"pending"` para incluir todas las transacciones preconfirmadas en el cálculo del nonce.
+</ParamField>
+
+## Valor devuelto {#returns}
+
+<ResponseField name="result" type="string">
+  El número de transacciones (nonce) como cadena hexadecimal.
+</ResponseField>
+
+## Ejemplo {#example}
+
+<CodeGroup>
+  ```bash Estándar (último confirmado) lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_getTransactionCount",
+      "params": ["0x742d35Cc6634C0532925a3b8D4C9dD0b4f3BaEa", "latest"],
+      "id": 1
+    }'
+  ```
+
+  ```bash Flashblocks (nonce pending, ~200 ms) lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_getTransactionCount",
+      "params": ["0x742d35Cc6634C0532925a3b8D4C9dD0b4f3BaEa", "pending"],
+      "id": 1
+    }'
+  ```
+
+  ```json Respuesta
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x4d2"
+  }
+  ```
+</CodeGroup>

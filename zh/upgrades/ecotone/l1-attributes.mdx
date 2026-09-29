@@ -1,0 +1,115 @@
+---
+title: "Ecotone L1 属性"
+description: "Ecotone 升级对 L1 属性交易所做的变更：更新 calldata 格式，以支持基于 blob 的新费用计算模型。"
+---
+
+## 概述 {#overview}
+
+在 Ecotone 激活区块上，如果 Ecotone 并未在创世时激活，
+则 L1 属性交易会调用 `setL1BlockValues()`。
+这是因为 L1 属性交易位于 [Ecotone 升级交易][ecotone-upgrade-txs]之前，
+此时无法保证 `setL1BlockValuesEcotone` 已经存在。
+
+此后的每一笔 L1 属性交易都应调用 `setL1BlockValuesEcotone()` 函数。
+其输入参数不再是经过 ABI 编码的函数参数，
+而是打包到 5 个 32 字节对齐的段中 (从函数选择器之后开始) 。
+每个无符号整数参数均以大端序编码，所占字节数与其底层类型一致。
+calldata 的整体布局如下：
+
+[ecotone-upgrade-txs]: derivation#network-upgrade-automation-transactions
+
+| 输入参数              | 类型      | Calldata 字节 | 段   |
+| ----------------- | ------- | ----------- | --- |
+| {0x440a5e20}      |         | 0-3         | n/a |
+| baseFeeScalar     | uint32  | 4-7         | 1   |
+| blobBaseFeeScalar | uint32  | 8-11        |     |
+| sequenceNumber    | uint64  | 12-19       |     |
+| l1BlockTimestamp  | uint64  | 20-27       |     |
+| l1BlockNumber     | uint64  | 28-35       |     |
+| basefee           | uint256 | 36-67       | 2   |
+| blobBaseFee       | uint256 | 68-99       | 3   |
+| l1BlockHash       | bytes32 | 100-131     | 4   |
+| batcherHash       | bytes32 | 132-163     | 5   |
+
+calldata 总长度 MUST 恰好为 164 字节，这意味着第六个 (也是最后一个) 段仅被
+部分填充。由于每个 L2 区块都包含一笔 L1 属性
+存款交易，这种做法有助于减缓数据库的增长。
+
+Ecotone L1 属性从 Ecotone 激活区块之后的第一个 L2 区块开始启用。
+
+Ecotone 之前的值按 1:1 迁移。
+Ecotone 激活区块之后的区块按 1:1 包含 Ecotone 之前的所有值，
+并额外设置以下新属性：
+
+* `baseFeeScalar` 设为 Ecotone 之前的 `scalar` 值。
+* `blobBaseFeeScalar` 设为 `0`。
+* 移除 Ecotone 之前的 `overhead` 属性。
+* `blobBaseFee` 设为 L1 源区块的 L1 blob 基础费用；
+  如果该 L1 区块不支持 blob，则设为 `1`。
+  `1` 这个值源自 EIP-4844 的 `MIN_BLOB_GASPRICE`。
+
+注意，L1 blob 基础费用&#95;并不&#95;作为 L1 源区块的一部分对外暴露，
+而必须通过一个参数化的链下公式计算得出。该公式以 L1 源区块头中的
+excess blob gas 字段作为输入，详见
+[EIP-4844](https://eips.ethereum.org/EIPS/eip-4844#base-fee-per-blob-gas-update-rule)。
+公式中的 `BLOB_BASE_FEE_UPDATE_FRACTION` 参数取决于源区块处
+所激活的 L1 分叉
+(例如参见 [EIP-7691](https://eips.ethereum.org/EIPS/eip-7691)) 。因此，
+L2 共识层客户端必须知道每个 L1 分叉的 blob 参数及激活
+时间，才能正确计算 `blobBaseFee`。[EIP-7892](https://eips.ethereum.org/EIPS/eip-7892) 引入的
+仅 Blob 参数 (Blob Parameter Only，BPO) 分叉
+可能导致 `BLOB_BASE_FEE_UPDATE_FRACTION` 频繁更新，
+因此客户端和证明程序需要及时跟进
+此类分叉。
+
+## L1 属性预部署合约 {#l1-attributes-predeployed-contract}
+
+[sys-config]: /specifications/base-protocol/consensus/derivation#system-configuration
+
+L1 属性预部署合约存储以下值：
+
+* L1 区块属性：
+  * `number` (`uint64`)
+  * `timestamp` (`uint64`)
+  * `basefee` (`uint256`)
+  * `hash` (`bytes32`)
+  * `blobBaseFee` (`uint256`)
+* `sequenceNumber` (`uint64`)：表示 L2 区块相对于当前纪元 (epoch) 起点的编号，
+  即当前 L2 区块与 L1 属性最近一次变化时的 L2 区块高度之间的距离，
+  在新纪元开始时重置为 0。
+* 与 L1 区块绑定的系统可配置项，参见[系统配置规范][sys-config]：
+  * `batcherHash` (`bytes32`)：对当前运行中的批次提交者的版本化承诺。
+  * `baseFeeScalar` (`uint32`)：系统可配置项，用于在 Ecotone L1 成本计算中缩放 `basefee`
+  * `blobBasefeeScalar` (`uint32`)：系统可配置项，用于在 Ecotone L1 成本计算中缩放 `blobBaseFee`
+
+Ecotone 激活区块之后，仍可访问 `overhead` 和 `scalar` 值，
+但它们已不再对系统运行产生任何影响。这两个字段也曾称为 `l1FeeOverhead`
+和 `l1FeeScalar`。
+
+在 `packages/contracts-bedrock` 目录中运行 `pnpm build` 后，需要添加到
+创世文件中的字节码位于构建产物文件
+`/packages/contracts-bedrock/forge-artifacts/L1Block.sol/L1Block.json` 的 `deployedBytecode` 字段中。
+
+### Ecotone L1Block 升级 {#ecotone-l1block-upgrade}
+
+L1 属性预部署合约 `L1Block.sol` 在 Ecotone 升级中进行了升级。
+其版本号递增至 `1.2.0`，新增一个存储槽，同时一个现有存储槽
+开始存储额外数据：
+
+* `blobBaseFee` (`uint256`)：L1 blob 基础费用。
+* `blobBaseFeeScalar` (`uint32`)：作用于 L1 成本中 L1 blob 基础费用部分的标量值。
+* `baseFeeScalar` (`uint32`)：作用于 L1 成本中 L1 基础费用部分的标量值。
+
+L1 属性交易调用哪个函数取决于所处的网络升级阶段：
+
+* Ecotone 激活之前：
+  * 调用 `setL1BlockValues`，遵循 Ecotone 之前的 L1 属性规则。
+* 在 Ecotone 激活区块中：
+  * MUST 调用 `setL1BlockValues` 函数，在创世区块激活的情况除外。
+    合约会在该区块的后续部分完成升级，以支持 `setL1BlockValuesEcotone`。
+* Ecotone 激活之后：
+  * `setL1BlockValues` 函数已弃用，MUST 永远不再调用。
+  * MUST 使用新的 Ecotone 属性调用 `setL1BlockValuesEcotone`。
+
+`setL1BlockValuesEcotone` 的参数采用紧凑打包编码，详见
+[L1 属性存款交易 Calldata](/zh/specifications/base-protocol/bridging/deposits#l1-attributes-deposited-transaction-calldata)。

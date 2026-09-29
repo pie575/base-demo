@@ -1,0 +1,90 @@
+---
+title: "为 API 收费"
+keywords: ["x402 exact payment", "charge API USDC", "x402 seller Base", "agent payment endpoint"]
+description: "在 Base 上使用 x402 exact 方案，为固定价格的 API 路由设置付费保护。"
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+在返回 API 响应之前，先收取一笔金额已知的费用。在本文使用的 Base USDC 流程中，x402 通过 HTTP `402 Payment Required` 握手传递 EIP-3009 授权，随后由 facilitator 对该授权进行验证和结算。
+
+## 演示 {#demo}
+
+<PaymentsDemo flow="x402" />
+
+<Tip>
+  上面的演示仅为模拟。如果想查看 Vibenet 上的链上演示，请前往 [Base 链演示](https://chain.base.org/demos)。
+</Tip>
+
+这些示例基于 Base Sepolia (`eip155:84532`) 和公共测试 facilitator。在进行实际测试之前，请先确认该 facilitator 支持的网络、资产和结算合约。
+
+<Steps>
+  <Step title="返回支付要求">未付费的请求会收到 402 响应，其中包含支付方案、网络、代币、价格和收款方。</Step>
+  <Step title="签名并重试">买方执行其支出策略，对服务端公布的支付信息进行签名，然后携带 `PAYMENT-SIGNATURE` 重新发送请求。</Step>
+  <Step title="先验证再处理">卖方中间件会先验证载荷，然后才运行受保护的处理程序。</Step>
+  <Step title="结算">facilitator 提交支付，并在响应中附带结算详情。</Step>
+</Steps>
+
+## 为路由设置固定价格 {#price-a-fixed-route}
+
+<CodeGroup>
+  {/* sample: x402-exact-ts */}
+
+  ```typescript TypeScript · Express lines wrap expandable highlight={1,3}
+  app.use(paymentMiddleware({
+    "GET /fixed": {
+      accepts: [{ scheme: "exact", price: "$0.01", network, payTo }],
+      description: "Fixed-price market report",
+      mimeType: "application/json",
+    },
+  }, resourceServer));
+  app.get("/fixed", (_request, response) => response.json({ report: "Base market summary" }));
+  ```
+
+  {/* sample: x402-exact-go */}
+
+  ```go Go · net/http lines wrap expandable highlight={3}
+  routes := x402http.RoutesConfig{
+  	"GET /fixed": {
+  		Accepts: x402http.PaymentOptions{{Scheme: "exact", Price: "$0.01", Network: network, PayTo: payTo}},
+  		Description: "Fixed-price market report", MimeType: "application/json",
+  	},
+  }
+  mux := http.NewServeMux()
+  mux.HandleFunc("GET /fixed", func(w http.ResponseWriter, _ *http.Request) {
+  	_ = json.NewEncoder(w).Encode(map[string]string{"report": "Base market summary"})
+  })
+  ```
+
+  {/* sample: x402-exact-python */}
+
+  ```python Python · FastAPI lines wrap expandable highlight={3}
+  routes = {
+      "GET /fixed": RouteConfig(
+          accepts=[PaymentOption(scheme="exact", price="$0.01", network=network, pay_to=pay_to)],
+          description="Fixed-price market report",
+          mime_type="application/json",
+      )
+  }
+
+
+  @app.get("/fixed")
+  async def fixed() -> dict[str, str]:
+      return {"report": "Base market summary"}
+  ```
+</CodeGroup>
+
+<Check>
+  未付款的请求会收到 402；附带有效付款的重试请求会进入处理程序，且资源仅返回一次。
+</Check>
+
+<Warning>
+  facilitator 的响应和你自己的履约记录应分别作为独立的检查项。请确保路由具有幂等性，避免已付款的重试请求导致同一个一次性资源被重复交付。
+</Warning>
+
+## 另请参阅 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="结算按用量计费的付款" icon="gauge" href="/zh/build-on-base/accept-payments/settle-usage-based-payments">在任务成功完成后确定最终扣费金额。</Card>
+  <Card title="调用付费服务" icon="robot" href="/zh/build-on-base/accept-payments/call-a-paid-service">在买方端配置网络、资产和支出策略。</Card>
+</CardGroup>

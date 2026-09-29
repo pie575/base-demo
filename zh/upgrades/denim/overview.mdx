@@ -1,0 +1,31 @@
+---
+title: "概述"
+description: "Denim 引入了以 200ms 为出块间隔的原生区块、通过 BaseTime 实现的链上毫秒级时间，以及毫秒级精度的 RPC 时间戳。"
+---
+
+|         | 状态  | 日期          |
+| ------- | --- | ----------- |
+| Sepolia | 规划中 | 2026 年 10 月 |
+| 主网      | 规划中 | 2026 年 10 月 |
+
+## 功能特性 {#features}
+
+<AccordionGroup>
+  <Accordion title="200ms 原生区块">
+    **Base** · RPC
+
+    Denim 将 Base 的出块频率从每两秒一个规范区块提升至每秒五个完整的规范区块，每个区块都拥有各自的哈希、状态根、收据以及 forkchoice 生命周期。Denim 将取代 Flashblocks，因此使用 Flashblocks 的应用必须迁移至规范区块和 RPC 流。请参阅 [200ms 原生区块](/zh/upgrades/denim/200ms-blocks)和[从 Flashblocks 迁移](/zh/upgrades/denim/migrate-from-flashblocks)。
+  </Accordion>
+
+  <Accordion title="BaseTime">
+    **Base** · 预部署合约
+
+    Denim 通过 BaseTime 预部署合约引入链上毫秒级时间。BaseTime 元数据存款交易为每个区块的时间戳提供亚秒部分，使合约能够读取当前区块时间戳的毫秒部分，而 EVM 的 `block.timestamp` 仍以秒为单位。
+  </Accordion>
+
+  <Accordion title="毫秒级 RPC 时间戳">
+    **Base** · RPC
+
+    区块、区块头、交易、日志和收据的响应中新增可选的毫秒精度时间戳字段 (`timestampMs`、`blockTimestampMs`) ，其值源自经过认证的 BaseTime 元数据。为保持向后兼容，现有以秒为单位的 `timestamp` 字段保持不变。
+  </Accordion>
+</AccordionGroup>

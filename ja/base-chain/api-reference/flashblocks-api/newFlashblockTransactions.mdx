@@ -1,0 +1,143 @@
+---
+title: 'newFlashblockTransactions'
+sidebarTitle: 'newFlashblockTransactions'
+description: 'トランザクションが Flashblock にプレコンファームされるたびに、各トランザクションを受信できるサブスクリプションです。Flashblocks WebSocket エンドポイントでのみ利用できます。'
+---
+
+`eth_subscribe` でサブスクライブすると、トランザクションが Flashblock にプレコンファームされるたびに、各トランザクションを受信できます。2 番目のパラメーターに `true` を渡すと、トランザクションとレシートの完全なデータを受信できます。
+
+<Info>
+  このサブスクリプションを利用するには、WebSocket に対応した RPC エンドポイントが必要です。Base の公開エンドポイント (`mainnet.base.org`、`sepolia.base.org`) は HTTP にのみ対応しています。[Builder Stack](/ja/get-started/builder-stack) から WebSocket 対応のプロバイダーを選択してください。
+</Info>
+
+<Note>
+  [base/base](https://github.com/base/base) クライアントのバージョン v0.8.0 以上が必要です。
+</Note>
+
+<Warning>
+  各サブスクリプションは、**WebSocket メッセージ 1 件につき 1 項目**を送信します。イベントは約 200ms ごとに届きます。ハンドラーでイベントごとに重い処理を行う場合は、ブロッキングを避けるためにスロットリングまたはデバウンスを適用してください。
+</Warning>
+
+## パラメーター {#parameters}
+
+<ParamField body="subscriptionType" type="string" required>
+  `"newFlashblockTransactions"` を指定する必要があります。
+</ParamField>
+
+<ParamField body="full" type="boolean">
+  `true` の場合、各通知にはレシートのフィールドを含む完全なトランザクションオブジェクトが含まれます。デフォルトは `false` (トランザクションハッシュのみ) です。
+</ParamField>
+
+## 戻り値 {#returns}
+
+<ResponseField name="result" type="string">
+  サブスクライブ時に返される、16進数エンコードされたサブスクリプション ID。
+</ResponseField>
+
+## 通知 {#notifications}
+
+各通知は標準的な `eth_subscription` メッセージです。`params.result` フィールドの内容は `full` パラメーターによって異なります。
+
+**`full: false`** — `result` はトランザクションハッシュです：
+
+```json Result (full: false)
+"0xe26de91f9037e903eefe70b28f613019253da603e67e0dbfe2f656dce5444311"
+```
+
+**`full: true`** — `result` は、レシートのフィールドが直接埋め込まれたトランザクションオブジェクトです (レシートはサブオブジェクトとしてネストされません) 。`base/v0.9.0` の実環境で検証済みです：
+
+<ResponseField name="type" type="string">トランザクションタイプ：`0x0` Legacy、`0x2` EIP-1559、`0x7e` Deposit。</ResponseField>
+<ResponseField name="chainId" type="string">チェーン ID (16 進数) 。</ResponseField>
+<ResponseField name="nonce" type="string">送信者の nonce (16 進数) 。</ResponseField>
+<ResponseField name="gas" type="string">ガスリミット (16 進数) 。</ResponseField>
+<ResponseField name="maxFeePerGas" type="string">EIP-1559 のガスあたりの最大手数料 (16 進数) 。</ResponseField>
+<ResponseField name="maxPriorityFeePerGas" type="string">EIP-1559 のガスあたりの最大優先手数料 (16 進数) 。</ResponseField>
+<ResponseField name="to" type="string">受信者のアドレス。</ResponseField>
+<ResponseField name="value" type="string">送金された ETH の額 (16 進数) 。</ResponseField>
+<ResponseField name="accessList" type="array">EIP-2930 のアクセスリスト。</ResponseField>
+<ResponseField name="input" type="string">トランザクションの入力データ (16 進数) 。</ResponseField>
+<ResponseField name="r" type="string">署名の r 成分。</ResponseField>
+<ResponseField name="s" type="string">署名の s 成分。</ResponseField>
+<ResponseField name="yParity" type="string">署名のパリティ (16 進数) 。</ResponseField>
+<ResponseField name="v" type="string">署名の v 値 (16 進数) 。</ResponseField>
+<ResponseField name="hash" type="string">トランザクションハッシュ。</ResponseField>
+<ResponseField name="blockHash" type="null">常に `null` です。トランザクションはプレコンファームの状態で、まだ確定済みのブロックには含まれていません。</ResponseField>
+<ResponseField name="blockNumber" type="string">構築中の Flashblock のブロック番号 (16 進数) 。</ResponseField>
+<ResponseField name="transactionIndex" type="string">ブロック内のインデックス (16 進数) 。</ResponseField>
+<ResponseField name="from" type="string">送信者のアドレス。</ResponseField>
+<ResponseField name="gasPrice" type="string">実効ガス価格 (16 進数) 。</ResponseField>
+<ResponseField name="gasUsed" type="string">このトランザクションで使用されたガス量 (16 進数) 。**注意：** v0.8.0 で整数から 16 進数文字列に変更されました。</ResponseField>
+<ResponseField name="status" type="string">成功時は `0x1`、失敗時は `0x0`。</ResponseField>
+<ResponseField name="cumulativeGasUsed" type="string">ブロック内でこのトランザクションまで (このトランザクションを含む) に使用されたガスの合計 (16 進数) 。</ResponseField>
+<ResponseField name="contractAddress" type="string | null">作成されたコントラクトのアドレス。作成されていない場合は `null`。</ResponseField>
+<ResponseField name="logsBloom" type="string">ログのブルームフィルター (16 進数) 。</ResponseField>
+<ResponseField name="logs" type="array">このトランザクションが発行したログオブジェクトの配列。</ResponseField>
+
+<Warning>
+  `gasUsed` は整数ではなく 16 進数文字列 (例：`"0x26132"`) です。この仕様は v0.8.0 で変更されました。数値を前提としているパーサーはすべて更新してください。
+</Warning>
+
+## 例 {#example}
+
+<CodeGroup>
+  ```json サブスクライブ
+  {"jsonrpc": "2.0", "id": 1, "method": "eth_subscribe", "params": ["newFlashblockTransactions"]}
+  ```
+
+  ```json サブスクライブ（完全なデータ）
+  {"jsonrpc": "2.0", "id": 1, "method": "eth_subscribe", "params": ["newFlashblockTransactions", true]}
+  ```
+
+  ```json サブスクリプションIDのレスポンス
+  {"jsonrpc": "2.0", "id": 1, "result": "0x1887ec8b9589ccad00000000000532da"}
+  ```
+
+  ```json 通知（full: false） lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_subscription",
+    "params": {
+      "subscription": "0x1887ec8b9589ccad00000000000532da",
+      "result": "0xe26de91f9037e903eefe70b28f613019253da603e67e0dbfe2f656dce5444311"
+    }
+  }
+  ```
+
+  ```json 通知（full: true） lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_subscription",
+    "params": {
+      "subscription": "0x1887ec8b9589ccad00000000000532da",
+      "result": {
+        "type": "0x2",
+        "chainId": "0x2105",
+        "nonce": "0x34ed",
+        "gas": "0x7a1200",
+        "maxFeePerGas": "0x257ab3c",
+        "maxPriorityFeePerGas": "0x419c7c",
+        "to": "0x6211a3742cf9d3b6677ecc7fd9dd102ab101d8e2",
+        "value": "0x0",
+        "accessList": [],
+        "input": "0x...",
+        "r": "0xa7cd30d21c30d4d60d27073c8bbc3ef5778527cf98eae0433e9d1f18c929dd5d",
+        "s": "0x08c75921e6bb75e19112300f80998f88a2b0f1adc52df2c3597b171d8c8de68d",
+        "yParity": "0x1",
+        "v": "0x1",
+        "hash": "0x6a010a5ce041ff0ee5a926db65d1ef512836cae822d5f2d58b63981bfa40aa7f",
+        "blockHash": null,
+        "blockNumber": "0x2c679a1",
+        "transactionIndex": "0x83",
+        "from": "0x2ad149d3d3099532d7c25c47cce37db6c4677b3a",
+        "gasPrice": "0x8de7bc",
+        "gasUsed": "0x26132",
+        "status": "0x1",
+        "cumulativeGasUsed": "0x16cb406",
+        "contractAddress": null,
+        "logsBloom": "0x00...00",
+        "logs": []
+      }
+    }
+  }
+  ```
+</CodeGroup>

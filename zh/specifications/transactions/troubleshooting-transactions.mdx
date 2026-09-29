@@ -1,0 +1,110 @@
+---
+title: 交易故障排查
+slug: /troubleshooting-transactions
+description: 本指南介绍如何诊断和解决 Base 上的交易问题。
+---
+
+## 交易未被打包 {#transaction-not-being-included}
+
+如果您的交易处于待处理状态的时间比预期更长，请检查以下几点：
+
+### Max Fee 过低 {#max-fee-too-low}
+
+如果你设置的 `maxFeePerGas` 低于当前的基础费用 (base fee) ，交易将一直处于待处理状态，直到基础费用回落到你指定的水平。
+
+**解决方案**：`maxFeePerGas` 必须足以同时覆盖基础费用和你的优先费 (priority fee) 。由于基础费用在每个区块都可能变化，请将 `maxFeePerGas` 设置得足够高，确保即使交易在待处理期间基础费用上涨，该值依然有效。常见做法如下：
+
+```text Max Fee Formula
+maxFeePerGas = baseFee * 2 + maxPriorityFeePerGas
+```
+
+该公式 ([ethers.js](https://github.com/ethers-io/ethers.js/blob/98c49d091eb84a9146dfba8476f18e4c3e3d1d31/src.ts/providers/abstract-provider.ts#L945-L950) 即采用此公式) 预留了充足的余量，即使基础费用翻倍，您的交易也仍可执行。交易被打包时，您只需支付当时实际的基础费用，而非设定的最高费用。
+
+<Note>
+  Base 设有[最低基础费用](/zh/specifications/transactions/network-fees#minimum-base-fee)。由于基础费用不会低于该最低值，`maxFeePerGas` 低于此值的交易将永远无法被打包。
+</Note>
+
+### 优先费过低 {#priority-fee-too-low}
+
+在需求高峰期，交易会通过优先费争夺区块空间。如果您设置的优先费低于其他交易，您的交易可能会被延迟。
+
+**解决方案**：大多数用户只需等待拥堵缓解即可。对于时间敏感的交易，可以调用 `eth_maxPriorityFeePerGas` 获取优先费估算值，该估算值足以在出价上胜过足够多的近期交易，确保您的交易被打包。
+
+<Note>
+  如果当前正在实施 DA 限流，目前没有任何 RPC 端点能在估算优先费时将限流因素考虑在内。在 DA 限流期间，sequencer 会限制 L2 交易以控制其 L1 数据可用性吞吐量，因此即使设置了较高的优先费，交易也可能被延迟。
+</Note>
+
+### Nonce 间隙 {#nonce-gap}
+
+如果你有一笔 nonce 为 N 的待处理交易，那么所有 nonce 大于等于 N+1 的交易都会排在它后面等待，无论费用多高。
+
+**解决方案**：可以等待该待处理交易被打包，也可以提交一笔 nonce 相同、费用更高的新交易来替换它 (`maxPriorityFeePerGas` 和 `maxFeePerGas` 均需至少提高 10%) 。
+
+### Nonce 过低 {#nonce-too-low}
+
+如果提交交易时使用了已用过的 nonce，该交易会被拒绝。
+
+**解决方法**：调用 `eth_getTransactionCount` 并指定 `pending` 标签查询当前 nonce，即可获取下一个可用的 nonce。
+
+## 交易被拒绝 {#transaction-rejected}
+
+### Gas 限制超出上限 {#gas-limit-exceeds-maximum}
+
+Base 对[单笔交易 gas 上限](/zh/specifications/transactions/throughput-and-limits#per-transaction-gas-maximum)的强制要求为 **16,777,216 gas (2^24)&#x20;**。gas 限制设置高于此值的交易会在区块验证阶段被拒绝。
+
+**错误**：`exceeds maximum per-transaction gas limit`
+
+**解决方案**：将 gas 限制降至 16,777,216 (2^24) 或更低。如果你的交易确实需要更多 gas，则需将其拆分为多笔交易。
+
+## 交易已上链但执行失败 {#transaction-included-but-failed}
+
+如果你的交易已被打包进区块，但状态显示为失败：
+
+### Gas 耗尽 {#out-of-gas}
+
+交易在执行过程中耗尽了 gas。
+
+**解决方案**：提高 gas 限制。先使用 `eth_estimateGas` 获取 gas 估算值，再额外预留一定余量 (例如 20%) ，以应对可能的波动。
+
+### 被合约回滚 {#reverted-by-contract}
+
+合约执行过程中触发了回滚 (revert) 条件。
+
+**解决方案**：在 [Basescan](https://basescan.org) 上查看该交易的回滚原因。常见原因包括 require 语句校验失败、算术错误或非法的状态转换。
+
+## 交易确认缓慢 {#slow-confirmation}
+
+### 了解确认时间 {#understanding-confirmation-times}
+
+Base 每 2 秒出一个区块，而 [Flashblocks](/zh/specifications/transactions/transaction-ordering#flashblocks) 每 200ms 提供一次预确认。
+
+| 确认级别           | 时间     | 说明                 |
+| -------------- | ------ | ------------------ |
+| Flashblock 预确认 | ~200ms | 交易已包含在预确认中         |
+| 纳入 L2 区块       | ~2s    | 交易已包含在已封存的 L2 区块中  |
+| 纳入 L1 批次       | ~2m    | 交易已发布到 Ethereum    |
+| L1 最终性         | ~20m   | Ethereum 上的批次已最终确定 |
+
+更多详情，请参阅[交易最终性](/zh/specifications/transactions/transaction-finality)。
+
+### 使用 Flashblocks 加快确认速度 {#using-flashblocks-for-faster-confirmations}
+
+如需尽可能快地获得确认，请使用支持 Flashblocks 的 RPC 端点：
+
+| 网络      | Flashblocks RPC            |
+| ------- | -------------------------- |
+| 主网      | `https://mainnet.base.org` |
+| Sepolia | `https://sepolia.base.org` |
+
+交易一旦被打包进某个 Flashblock，这些端点便会立即返回交易回执，无需等待完整的 L2 区块生成。
+
+## 调试工具 {#debugging-tools}
+
+* **[Basescan](https://basescan.org)**：查看交易状态、日志及回滚原因
+* **[Tenderly](https://tenderly.co)**：模拟并调试交易
+* **`eth_call`**：无需提交交易即可测试合约调用
+* **`eth_estimateGas`**：在提交交易前预估 gas 用量
+
+## 获取帮助 {#getting-help}
+
+如果问题仍未解决，请前往 [Base Discord](https://base.org/discord) 的 `#developer-chat` 频道寻求帮助。

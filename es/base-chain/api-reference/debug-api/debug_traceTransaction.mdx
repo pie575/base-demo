@@ -1,0 +1,157 @@
+---
+title: 'debug_traceTransaction'
+sidebarTitle: 'debug_traceTransaction'
+description: 'Devuelve la traza de ejecución completa de la EVM para una transacción. Requiere un nodo con las API de depuración habilitadas.'
+---
+
+Vuelve a ejecutar una transacción y devuelve su traza de ejecución completa de la EVM, con cada opcode ejecutado, el gas consumido en cada paso, el contenido de la pila y los cambios en el almacenamiento.
+
+<Warning>
+  Los métodos de depuración vuelven a ejecutar transacciones y tienen un alto coste computacional. La disponibilidad y los límites de solicitudes varían según el proveedor del [Builder Stack](/es/get-started/builder-stack). Evita llamarlos en rutas críticas de rendimiento.
+</Warning>
+
+## Parámetros {#parameters}
+
+<ParamField body="transactionHash" type="string" required>
+  El hash de 32 bytes de la transacción que se va a rastrear.
+</ParamField>
+
+<ParamField body="traceOptions" type="object">
+  Configuración opcional del rastreo.
+
+  <Expandable title="Opciones de rastreo">
+    <ParamField body="tracer" type="string">
+      Nombre del rastreador integrado. `"callTracer"` devuelve un árbol de llamadas. `"prestateTracer"` devuelve el estado de las cuentas previo a la ejecución. Omítalo para usar el rastreador predeterminado de struct logs.
+    </ParamField>
+
+    <ParamField body="tracerConfig" type="object">
+      Opciones del rastreador seleccionado. Para `"callTracer"`, `{ "onlyTopCall": true }` omite las llamadas internas.
+    </ParamField>
+
+    <ParamField body="disableStorage" type="boolean">
+      Si es `true`, no se captura el almacenamiento en los struct logs, lo que reduce el tamaño de la respuesta. El valor predeterminado es `false`.
+    </ParamField>
+
+    <ParamField body="disableMemory" type="boolean">
+      Si es `true`, no se captura la memoria en los struct logs, lo que reduce el tamaño de la respuesta. El valor predeterminado es `false`.
+    </ParamField>
+
+    <ParamField body="disableStack" type="boolean">
+      Si es `true`, no se captura la pila en los struct logs. El valor predeterminado es `false`.
+    </ParamField>
+
+    <ParamField body="timeout" type="string">
+      Tiempo de espera de la ejecución, expresado como cadena de duración de Go (p. ej., `"10s"`, `"30s"`). El valor predeterminado es `"5s"`.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Valores devueltos {#returns}
+
+<ResponseField name="result" type="object">
+  La traza de ejecución. El formato depende de la opción `tracer`.
+
+  <Expandable title="Traza de struct logs predeterminada">
+    <ResponseField name="gas" type="number">Gas total proporcionado para la transacción.</ResponseField>
+    <ResponseField name="failed" type="boolean">Indica si la transacción falló (se revirtió).</ResponseField>
+    <ResponseField name="returnValue" type="string">Valor de retorno de la ejecución, codificado en hexadecimal.</ResponseField>
+
+    <ResponseField name="structLogs" type="array">
+      Array de entradas de struct log, una por cada opcode de la EVM ejecutado.
+
+      <Expandable title="Campos de struct log">
+        <ResponseField name="pc" type="number">Posición del contador de programa.</ResponseField>
+        <ResponseField name="op" type="string">Nombre del opcode de la EVM (p. ej., `"PUSH1"`, `"SLOAD"`).</ResponseField>
+        <ResponseField name="gas" type="number">Gas restante en este paso.</ResponseField>
+        <ResponseField name="gasCost" type="number">Costo de gas de este opcode.</ResponseField>
+        <ResponseField name="depth" type="number">Profundidad de llamada (1 = llamada de nivel superior).</ResponseField>
+        <ResponseField name="stack" type="array">Valores de la pila de la EVM en este paso.</ResponseField>
+        <ResponseField name="memory" type="array">Contenido de la memoria de la EVM en fragmentos de 32 bytes.</ResponseField>
+        <ResponseField name="storage" type="object">Cambios en el almacenamiento del contrato en este paso (slot → valor).</ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+
+  <Expandable title="Resultado de callTracer">
+    <ResponseField name="type" type="string">Tipo de llamada: `"CALL"`, `"STATICCALL"`, `"DELEGATECALL"` o `"CREATE"`.</ResponseField>
+    <ResponseField name="from" type="string">Dirección del remitente.</ResponseField>
+    <ResponseField name="to" type="string">Dirección del destinatario.</ResponseField>
+    <ResponseField name="value" type="string">Valor en ETH enviado con la llamada.</ResponseField>
+    <ResponseField name="gas" type="string">Gas proporcionado para la llamada.</ResponseField>
+    <ResponseField name="gasUsed" type="string">Gas consumido realmente.</ResponseField>
+    <ResponseField name="input" type="string">Datos de llamada enviados.</ResponseField>
+    <ResponseField name="output" type="string">Datos devueltos por la llamada.</ResponseField>
+    <ResponseField name="error" type="string">Mensaje de error si la llamada se revirtió. Opcional.</ResponseField>
+    <ResponseField name="calls" type="array">Array de objetos de llamada anidados correspondientes a las llamadas internas.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Ejemplo {#example}
+
+<CodeGroup>
+  ```json Solicitud (struct log predeterminado) lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "method": "debug_traceTransaction",
+    "params": [
+      "0xb903239f8543d04b5dc1ba6579132b143087c68db1b2168786408fcbce568238",
+      {}
+    ],
+    "id": 1
+  }
+  ```
+
+  ```json Solicitud (callTracer) lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "method": "debug_traceTransaction",
+    "params": [
+      "0xb903239f8543d04b5dc1ba6579132b143087c68db1b2168786408fcbce568238",
+      { "tracer": "callTracer" }
+    ],
+    "id": 1
+  }
+  ```
+
+  ```json Respuesta (predeterminada) lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "gas": 21000,
+      "failed": false,
+      "returnValue": "",
+      "structLogs": [
+        {
+          "pc": 0,
+          "op": "PUSH1",
+          "gas": 21000,
+          "gasCost": 3,
+          "depth": 1,
+          "stack": [],
+          "memory": [],
+          "storage": {}
+        }
+      ]
+    }
+  }
+  ```
+
+  ```json Respuesta (callTracer) lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "type": "CALL",
+      "from": "0xd3cda913deb6f4967b2ef66ae97de114a83bcc01",
+      "to": "0x4200000000000000000000000000000000000006",
+      "value": "0x2c68af0bb14000",
+      "gas": "0x5208",
+      "gasUsed": "0x5208",
+      "input": "0x",
+      "output": "0x",
+      "calls": []
+    }
+  }
+  ```
+</CodeGroup>

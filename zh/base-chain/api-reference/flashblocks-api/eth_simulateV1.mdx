@@ -1,0 +1,153 @@
+---
+title: 'eth_simulateV1'
+sidebarTitle: 'eth_simulateV1'
+description: '基于当前预确认的 Flashblock 状态，模拟一个或多个交易包。仅适用于 Flashblocks 端点。'
+---
+
+基于当前预确认的 Flashblock 状态，模拟一个或多个交易包。支持状态覆盖、多区块模拟，并可选择启用转账追踪。
+
+<Info>
+  仅适用于 Flashblocks 端点：`https://mainnet.base.org` / `https://sepolia.base.org`。
+</Info>
+
+## 参数 {#parameters}
+
+<ParamField body="simulationPayload" type="object" required>
+  模拟配置。
+
+  <Expandable title="模拟负载字段">
+    <ParamField body="blockStateCalls" type="array" required>
+      区块状态调用对象数组，每个对象代表一个模拟区块。
+
+      <Expandable title="区块状态调用字段">
+        <ParamField body="calls" type="array">
+          要在该区块内模拟的交易调用对象数组。
+        </ParamField>
+
+        <ParamField body="stateOverrides" type="object">
+          模拟前按地址应用的状态覆盖 (例如 balance、nonce、code、storage) 。可选。
+        </ParamField>
+
+        <ParamField body="blockOverrides" type="object">
+          区块级覆盖 (例如 `number`、`timestamp`) 。可选。
+        </ParamField>
+      </Expandable>
+    </ParamField>
+
+    <ParamField body="traceTransfers" type="boolean">
+      若为 `true`，ETH 转账事件将以日志形式包含在结果中。默认为 `false`。
+    </ParamField>
+
+    <ParamField body="validation" type="boolean">
+      若为 `true`，将强制执行交易验证 (nonce、余额) 。默认为 `false`。
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="blockParameter" type="string" required>
+  使用 `"pending"` 可基于当前 Flashblock 状态进行模拟。
+</ParamField>
+
+## 返回值 {#returns}
+
+<ResponseField name="result" type="array">
+  模拟区块结果数组，与 `blockStateCalls` 中的条目一一对应。每个条目都是一个完整的区块对象，在标准区块字段之外还嵌入了 `calls` 字段。
+
+  <Expandable title="区块结果字段">
+    <ResponseField name="number" type="string">模拟区块号 (十六进制) 。</ResponseField>
+    <ResponseField name="hash" type="string">模拟区块哈希。</ResponseField>
+    <ResponseField name="parentHash" type="string">父区块哈希。</ResponseField>
+    <ResponseField name="timestamp" type="string">区块时间戳 (十六进制) 。</ResponseField>
+    <ResponseField name="gasLimit" type="string">Gas 上限 (十六进制) 。</ResponseField>
+    <ResponseField name="gasUsed" type="string">模拟调用消耗的 gas 总量 (十六进制) 。</ResponseField>
+    <ResponseField name="baseFeePerGas" type="string">每单位 gas 的基础费用 (十六进制) 。</ResponseField>
+    <ResponseField name="stateRoot" type="string">始终为 `"0x000...000"`，因为模拟不会将状态提交到状态树。</ResponseField>
+
+    <ResponseField name="calls" type="array">
+      由各调用结果组成的数组。
+
+      <Expandable title="调用结果字段">
+        <ResponseField name="status" type="string">`"0x1"` 表示成功，`"0x0"` 表示失败。</ResponseField>
+        <ResponseField name="gasUsed" type="string">消耗的 gas，以十六进制整数表示。</ResponseField>
+        <ResponseField name="returnData" type="string">十六进制编码的返回数据。</ResponseField>
+        <ResponseField name="logs" type="array">触发的日志 (若 `traceTransfers` 为 `true`，则包含 ETH 转账日志) 。</ResponseField>
+        <ResponseField name="error" type="string">调用失败时的回滚原因。可选。</ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## 示例 {#example}
+
+<CodeGroup>
+  ```bash cURL lines wrap expandable
+  curl https://sepolia.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_simulateV1",
+      "params": [
+        {
+          "blockStateCalls": [
+            {
+              "calls": [{"to": "0x...", "data": "0x..."}],
+              "stateOverrides": {}
+            }
+          ],
+          "traceTransfers": true,
+          "validation": true
+        },
+        "pending"
+      ],
+      "id": 1
+    }'
+  ```
+
+  ```json Response lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": [
+      {
+        "baseFeePerGas": "0x0",
+        "blobGasUsed": "0x39d0",
+        "calls": [
+          {
+            "gasUsed": "0x5208",
+            "logs": [],
+            "returnData": "0x",
+            "status": "0x1"
+          }
+        ],
+        "difficulty": "0x0",
+        "excessBlobGas": "0x0",
+        "extraData": "0x01000000640000000500000000004c4b40",
+        "gasLimit": "0x17d78400",
+        "gasUsed": "0x5208",
+        "hash": "0x2f2f692821995e39653f63164b2d5d0e0bba66c86c2a199fd3009c0b9906c7b0",
+        "logsBloom": "0x000...000",
+        "miner": "0x4200000000000000000000000000000000000011",
+        "mixHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "nonce": "0x0000000000000000",
+        "number": "0x2c31c49",
+        "parentBeaconBlockRoot": "0x64e625f8bc74f78539f962aa09d522c63576ff6ad57170c668882d99e669ef52",
+        "parentHash": "0x9653660afa4fca3976a21d42ebf849c337e9840993f050fee3affc673a573bf8",
+        "receiptsRoot": "0xf78dfb743fbd92ade140711c8bbc542b5e307f0ab7984eff35d751969fe57efa",
+        "requestsHash": "0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "sha3Uncles": "0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        "size": "0x2a6",
+        "stateRoot": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "timestamp": "0x6a10957f",
+        "transactions": [
+          "0xa401668a06b038c488c1abc013676dfe63fc645d182ece34d8b3f40f45689279"
+        ],
+        "transactionsRoot": "0x0b1328c457d7a8108ea9f2559142890491b680fdb691720b3d0c857c3d11002c",
+        "uncles": [],
+        "withdrawals": [],
+        "withdrawalsRoot": "0x0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    ]
+  }
+  ```
+</CodeGroup>

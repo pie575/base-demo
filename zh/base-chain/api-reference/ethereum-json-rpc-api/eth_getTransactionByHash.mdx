@@ -1,0 +1,98 @@
+---
+title: 'eth_getTransactionByHash'
+sidebarTitle: 'eth_getTransactionByHash'
+description: '根据交易哈希返回对应交易。'
+---
+
+根据给定的交易哈希返回该交易的信息。如果交易未知，则返回 `null`。
+
+## 参数 {#parameters}
+
+<ParamField body="transactionHash" type="string" required>
+  32 字节的交易哈希。
+</ParamField>
+
+## 返回值 {#returns}
+
+<ResponseField name="result" type="object | null">
+  交易对象；如果未找到该交易，则返回 `null`。
+
+  <Expandable title="交易字段">
+    <ResponseField name="hash" type="string">32 字节的交易哈希。</ResponseField>
+    <ResponseField name="nonce" type="string">发送方在此交易之前已发送的交易数量 (十六进制) 。</ResponseField>
+    <ResponseField name="blockHash" type="string">包含此交易的区块的 32 字节哈希。交易处于 pending 状态时为 `null`。</ResponseField>
+    <ResponseField name="blockNumber" type="string">区块号 (十六进制) 。交易处于 pending 状态时为 `null`。</ResponseField>
+    <ResponseField name="transactionIndex" type="string">交易在区块中的索引位置 (十六进制) 。交易处于 pending 状态时为 `null`。</ResponseField>
+    <ResponseField name="from" type="string">20 字节的发送方地址。</ResponseField>
+    <ResponseField name="to" type="string">20 字节的接收方地址。合约部署交易中为 `null`。</ResponseField>
+    <ResponseField name="value" type="string">转账的 ETH 金额，单位为 wei (十六进制) 。</ResponseField>
+    <ResponseField name="gas" type="string">发送方提供的 Gas 数量 (十六进制) 。</ResponseField>
+    <ResponseField name="gasPrice" type="string">Gas 价格，单位为 wei。对于 EIP-1559 交易，该值为实际支付的有效 Gas 价格 (十六进制) 。</ResponseField>
+    <ResponseField name="maxFeePerGas" type="string">EIP-1559 每单位 Gas 的最高总费用 (十六进制) 。仅存在于类型为 `0x2` 的交易中，类型 `0x7e` 中不存在。</ResponseField>
+    <ResponseField name="maxPriorityFeePerGas" type="string">EIP-1559 每单位 Gas 的最高优先费 (十六进制) 。仅存在于类型为 `0x2` 的交易中，类型 `0x7e` 中不存在。</ResponseField>
+    <ResponseField name="input" type="string">ABI 编码的调用数据。普通 ETH 转账中为 `"0x"`。</ResponseField>
+    <ResponseField name="type" type="string">交易类型：`"0x0"` Legacy、`"0x1"` Access List、`"0x2"` EIP-1559、`"0x7e"` Deposit (L1→L2) 。</ResponseField>
+    <ResponseField name="chainId" type="string">交易适用的链 ID。Base Mainnet 为 `"0x2105"`，Base Sepolia 为 `"0x14a34"`。类型 `0x7e` 中不存在。</ResponseField>
+    <ResponseField name="accessList" type="array">交易预先声明的地址和存储键列表 (EIP-2930) 。存在于类型为 `0x1` 和 `0x2` 的交易中，类型 `0x7e` 中不存在。</ResponseField>
+    <ResponseField name="v" type="string">ECDSA 恢复 ID (十六进制) 。</ResponseField>
+    <ResponseField name="r" type="string">32 字节的 ECDSA 签名分量 r (十六进制) 。类型 `0x7e` 中始终为 `"0x0"`。</ResponseField>
+    <ResponseField name="s" type="string">32 字节的 ECDSA 签名分量 s (十六进制) 。类型 `0x7e` 中始终为 `"0x0"`。</ResponseField>
+    <ResponseField name="sourceHash" type="string">存款来源标识 (bytes32 十六进制) 。仅存在于类型 `0x7e` 中。</ResponseField>
+    <ResponseField name="mint" type="string">此笔存款在 L2 上铸造的 ETH (十六进制) 。通常为 `"0x0"`。仅存在于类型 `0x7e` 中。</ResponseField>
+    <ResponseField name="depositReceiptVersion" type="string">存款收据格式的版本 (十六进制) 。仅存在于类型 `0x7e` 中。</ResponseField>
+    <ResponseField name="yParity" type="string">签名奇偶校验值 (十六进制) 。类型 `0x7e` 的存款交易中始终为 `"0x0"`。</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<Note>
+  **Base 上的交易类型：** Base 支持以太坊标准交易类型 (`0x0` legacy、`0x1` EIP-2930、`0x2` EIP-1559) ，以及 Base 存款交易 (`0x7e`) 。存款交易由 sequencer 注入到每个区块的开头。`0x7e` 交易不包含 `maxFeePerGas`、`accessList` 和 `chainId` 等字段，而是包含 `sourceHash`、`mint`、`depositReceiptVersion` 和 `yParity`。
+</Note>
+
+## 示例 {#example}
+
+<CodeGroup>
+  ```json Request
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_getTransactionByHash",
+    "params": ["0x03c8f106f18ad94190e763e21b584c5825b2f4c61f1274c0e8abe65b4476cd51"],
+    "id": 1
+  }
+  ```
+
+  ```json Response (type 0x7e deposit) lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "blockHash": "0x491bca01d4bc076d60833dbd973fe031a74e7ae31866bf70d077619e09edb6ff",
+      "blockNumber": "0x2c31b0b",
+      "depositReceiptVersion": "0x1",
+      "from": "0xdeaddeaddeaddeaddeaddeaddeaddeaddead0001",
+      "gas": "0xf4240",
+      "gasPrice": "0x0",
+      "hash": "0x03c8f106f18ad94190e763e21b584c5825b2f4c61f1274c0e8abe65b4476cd51",
+      "input": "0x3db6be2b...",
+      "mint": "0x0",
+      "nonce": "0x2c31b0e",
+      "r": "0x0",
+      "s": "0x0",
+      "sourceHash": "0xe40ffb1b9f98a24b21e90e3a3cfe49de1eed195618e943da4d029881d3b3e055",
+      "to": "0x4200000000000000000000000000000000000015",
+      "transactionIndex": "0x0",
+      "type": "0x7e",
+      "v": "0x0",
+      "value": "0x0",
+      "yParity": "0x0"
+    }
+  }
+  ```
+
+  ```json Not Found
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": null
+  }
+  ```
+</CodeGroup>

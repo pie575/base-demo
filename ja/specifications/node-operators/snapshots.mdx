@@ -1,0 +1,166 @@
+---
+title: ノードのスナップショット
+sidebarTitle: スナップショット
+description: Base ノードのスナップショットをダウンロードして復元し、ノードの初期同期時間を大幅に短縮します。
+---
+
+スナップショットを使用すると、Base ノードの初期同期にかかる時間を大幅に短縮できます。スナップショットは定期的に更新されています。
+
+Base ノードの運用を検討中の方も、すでに運用している方も、スナップショットから復元することで初期同期を高速化できます。以下の手順に慎重に従ってください。
+
+<Warning>
+  **対応が必要です: reth V2 ストレージへの移行。** Base Mainnet のオペレーターは、**8 月中旬までに**アップグレードを行い、reth V2 ストレージへ移行する必要があります。V1 スナップショットは今後数週間のうちに順次提供を終了するため、早めに移行を計画してください。
+
+  移行方法は 2 つあります。
+
+  * **新しい V2 スナップショットをダウンロードする** (推奨、より高速) — 後述の[スナップショットからの復元](#restoring-from-snapshot)の手順に従い、`base-reth-node download` を使用します。
+  * **既存の V1 データをその場で移行する** — `base-reth-node db migrate-v2` を実行します。この方法はダウンロードよりも**はるかに**時間がかかる見込みです。また、非アーカイブノードには対応していません。
+
+  移行には時間がかかる可能性があるため、今すぐ着手することを強くおすすめします。詳細については、[v1.2.0 リリースノート](https://github.com/base/base/releases/tag/v1.2.0)を参照してください。
+</Warning>
+
+## スナップショットからの復元 {#restoring-from-snapshot}
+
+以下の手順は、クローンした [base/base](https://github.com/base/base) ディレクトリ (`docker-compose.yml` があるディレクトリ) で作業していることを前提としています。
+
+<Note>
+  以下の手順では、`base-reth-node` CLI を使用してスナップショットをダウンロードします。まだインストールしていない場合は、先に[インストール手順](https://github.com/base/base#install-binaries)に従ってインストールしてください。
+</Note>
+
+1. **データディレクトリの準備**:
+   * **初めて Docker を実行する前に**、Docker コンテナにマッピングするデータディレクトリをホストマシン上に作成します。このディレクトリは、`docker-compose.yml` ファイル内の `volumes` マッピングと一致している必要があります。
+     ```bash
+     mkdir ./reth-data
+     ```
+   * 以前にノードを実行したことがあり、既存のデータディレクトリがある場合は、**ノードを停止** (`docker compose down`) し、既存ディレクトリの *中身* を削除 (例: `rm -rf ./reth-data/*`) してから先に進んでください。
+
+2. **チェーンの選択**: `--chain` フラグでネットワークを選択します
+
+   | ネットワーク       | `--chain` の値   |
+   | ------------ | -------------- |
+   | Base Mainnet | `base`         |
+   | Base Sepolia | `base-sepolia` |
+
+3. **スナップショットのダウンロード**: V2 スナップショットは、単一のアーカイブではなく、多数の小さな分割ファイルで構成されています。CLI に表示される `archive` スナップショットが 1 つだけなのは、利用可能なすべてのファイルがこれに含まれているためです。`full` と `minimal` オプションでは、そのアーカイブからより小さなサブセットを段階的に選択できます:
+
+   | 構成          | フラグ         | 取得できる内容                                                                   | 用途                                      |
+   | ----------- | ----------- | ------------------------------------------------------------------------- | --------------------------------------- |
+   | **Minimal** | `--minimal` | 起動に必要な最小限のセット: 最新のステート + ヘッダー (および必要最小限の履歴) 。                             | 最も高速かつ小容量でダウンロードしたく、履歴データが不要な場合。        |
+   | **Full**    | `--full`    | フルノードのデフォルトのプルーニング設定に合わせたフルノードデータ (ステート、ヘッダー、および一定期間分のトランザクション、レシート、履歴) 。 | アーカイブ全体を保持せずに、標準的なフルノードを運用したい場合。        |
+   | **Archive** | `--archive` | 利用可能なすべてのデータ — プルーニングなしで、すべてのトランザクション、レシート、アカウント/ストレージ履歴を含みます。            | 完全な履歴データが必要な場合 (例: アーカイブクエリ、インデックス作成) 。 |
+
+   <Note>
+     スナップショットのダウンロード *および* その内容の展開に十分な空きディスク容量があることを確認してください。展開後のデータはアーカイブよりも大幅に大きくなります。
+   </Note>
+
+   上記のプリセットは手軽に使えるデフォルト設定で、[chain.base.org/snapshots](https://chain.base.org/snapshots) から入手できます。`.env.mainnet` (または `.env.sepolia`) 内の [`RETH_PRUNING_ARGS` 変数](https://github.com/base/base/blob/main/.env.mainnet#L34) で、独自のプルーニングフラグを設定することも可能です。その場合は、アーカイブスナップショットをダウンロードしてから、独自のプルーニング引数を設定する必要があります。
+
+   ```bash
+   # Base Mainnet 上の Minimal ノード
+   base-reth-node download --minimal --datadir ./reth-data --chain base --resumable
+
+   # Base Sepolia 上の Full ノード
+   base-reth-node download --full --datadir ./reth-data --chain base-sepolia --resumable
+   ```
+
+   なお、アーカイブノードに限り、`base-reth-node db migrate-v2` を実行する方法もあります。ただし、ダウンロードよりも**はるかに**長い時間がかかると想定されます。また、`migrate-v2` では `--resumable` はサポートされていません。
+
+4. **&#x20;(任意) ダウンロード並列数の調整:**
+
+   `--download-concurrency` フラグは、スナップショットジョブ全体で同時に実行する HTTP ダウンロードの数を制御します。
+   デフォルトは `8` で、ほとんどのマシンではこれが適切な基準値です。
+
+   ハイエンドのハードウェアを使用している場合は、この値を引き上げてダウンロードを高速化しても問題ありません。
+   目安は **物理 CPU コア数の 2 倍** です:
+
+   ```bash
+   # 例: 物理コア数 16 のマシン
+   base-reth-node download --full --datadir ./reth-data --chain base --download-concurrency 32
+   ```
+
+5. <span id="start-the-node" />**ノードの起動**: スナップショットデータの配置が完了したら、Base ノードフォルダのルートに戻り、ノードを起動します:
+
+   ```bash
+   cd ..
+
+   # 公開済みイメージを取得
+   docker compose up
+
+   # または base/base ツリーをローカルでコンパイル
+   docker compose up --build
+   ```
+
+   ノードはスナップショット内の最後のブロックから同期を開始します。
+
+6. **確認**: ノードのログ (`docker compose logs -f <service_name>`) を監視するか、[同期監視](/ja/specifications/node-operators/run-a-node#syncing)コマンドを使用して、ノードがスナップショットのブロック高から同期を開始していることを確認してください。
+
+## プルーフのスナップショット {#proofs-snapshots}
+
+<Note>
+  V2 プルーフのスナップショットは近日提供予定です。
+</Note>
+
+[履歴プルーフ ExEx](/ja/specifications/node-operators/run-a-node#enable-historical-proofs-rpcs)を実行している場合は、プルーフデータベースのスナップショットを利用すると、24〜48時間かかるバックフィルを省略できます。
+
+プルーフのスナップショットは現在もアーカイブ形式で配布されているため、`aria2c` が必要です。`aria2c` はダウンロードの再開に対応したダウンローダーで、Cloudflare による定期的な接続の切断にも対応できます。インストールされていない場合は、次のコマンドでインストールしてください。
+
+<CodeGroup>
+  ```bash macOS
+  brew install aria2
+  ```
+
+  ```bash Ubuntu / Debian
+  sudo apt-get install aria2
+  ```
+</CodeGroup>
+
+| ネットワーク | ダウンロードコマンド                                                                                                                                |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| テストネット | `aria2c -c -x 16 -s 16 "https://sepolia-reth-proofs-snapshots.base.org/$(curl -s https://sepolia-reth-proofs-snapshots.base.org/latest)"` |
+| メインネット | `aria2c -c -x 16 -s 16 "https://mainnet-reth-proofs-snapshots.base.org/$(curl -s https://mainnet-reth-proofs-snapshots.base.org/latest)"` |
+
+<Note>
+  スナップショットのアーカイブ (`.tar.gz` / `.tar.zst` ファイル) のダウンロード*と*展開の両方に必要な空きディスク容量があることを確認してください。展開後のデータはアーカイブよりも大幅に大きくなります。
+</Note>
+
+ダウンロードが完了したら、アーカイブを展開します。`snapshot-filename` は実際にダウンロードしたファイル名に置き換えてください。
+
+```bash Extract the Snapshot
+tar -xzvf <snapshot-filename.tar.gz>
+
+# .tar.zst の場合
+tar -I zstd -xvf <snapshot-filename.tar.zst>
+```
+
+展開すると、多くの場合 `reth` ディレクトリが作成されます。そのディレクトリの*中身*を、前のセクションの [**データディレクトリの準備**](#restoring-from-snapshot) で作成したデータディレクトリに移動します。
+
+```bash Move Chain Data
+mv ./reth/* ./reth-data/
+rm -rf ./reth    # 展開後に空になったフォルダーを削除
+```
+
+チェーンデータのディレクトリ (`chaindata`、`nodes`、`segments` など) が、ネストされたサブフォルダではなく `./reth-data` の直下に配置されている状態にしてください。確認できたら、ダウンロードしたスナップショットのアーカイブ (`.tar.gz` ファイル) は削除しても問題ありません。削除するとディスク容量を空けられます。
+
+その後、上のセクションの **Start the Node** から作業を続けてください。
+
+## FAQ {#faq}
+
+<AccordionGroup>
+  <Accordion title="フルノードとミニマルノードの違いは何ですか？">
+    Reth における「フル」ノードは、独立したノードタイプではなく、特定のプリセットを適用したプルーニング済みノードにすぎません。Reth の `--full` プリセットは直近の **10,064 ブロック**を保持します (Ethereum では約 1.4 日分、Base ではブロック時間が短いため約 5〜6 時間分) 。
+
+    フルノードとミニマルノードの違いの詳細については、[Reth のドキュメント](https://reth.rs/run/storage/minimal)を参照してください。
+  </Accordion>
+
+  <Accordion title="以前のプルーニング済みノードの構成を v2 ストレージで実行するにはどうすればよいですか？">
+    v1 ストレージのプルーニング済みノードでプルーニング距離を 10064 ブロックより大きく設定していた場合は、アーカイブ スナップショットを取得したうえで、プルーニング用の引数を追加する必要があります。
+
+    フルプリセットでは直近の 10064 ブロックしか保持されないため、この用途には使えません。
+  </Accordion>
+
+  <Accordion title="「Archive Extracted, but Output Verification Failed.」と表示されます。">
+    これは、ダウンロード中に新しいスナップショットがアップロードされたことが原因です。ダウンロードコマンドを中断して、再実行してください。
+
+    注: ダウンロードは冪等なので、ダウンロード済みのファイルが再度ダウンロードされることはなく、差分のみが取得されます。
+  </Accordion>
+</AccordionGroup>

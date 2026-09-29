@@ -1,0 +1,111 @@
+---
+title: 'eth_estimateGas'
+sidebarTitle: 'eth_estimateGas'
+description: 'トランザクションに必要なガスを見積もります。pending を指定すると、プレコンファーム済みの状態に基づいて見積もることができます。'
+---
+
+トランザクションの実行に必要なガス量の見積もりを返します。見積もり値は、実行時に実際に消費されるガス量を上回る場合があります。
+
+<Tip>
+  **Flashblocks:** `https://mainnet.base.org` に `"pending"` を指定してクエリを送ると、現在のプレコンファーム済みの状態に基づいてガスを見積もれます。先行するプレコンファーム済みトランザクションに依存するトランザクションを送信する場合に便利です。
+</Tip>
+
+## パラメーター {#parameters}
+
+<ParamField body="transaction" type="object" required>
+  ガスを見積もる対象のトランザクションオブジェクト。
+
+  <Expandable title="トランザクションフィールド">
+    <ParamField body="from" type="string">
+      トランザクションの送信元アドレス。省略可能。
+    </ParamField>
+
+    <ParamField body="to" type="string">
+      トランザクションの送信先アドレス。コントラクトのデプロイ時は省略可能。
+    </ParamField>
+
+    <ParamField body="gas" type="string">
+      ガスリミット。省略可能。省略した場合は大きめのデフォルト値が使用されます。
+    </ParamField>
+
+    <ParamField body="gasPrice" type="string">
+      レガシートランザクションのガス価格 (wei 単位) 。省略可能。
+    </ParamField>
+
+    <ParamField body="maxFeePerGas" type="string">
+      EIP-1559 におけるガスあたりの最大合計手数料。省略可能。
+    </ParamField>
+
+    <ParamField body="maxPriorityFeePerGas" type="string">
+      EIP-1559 におけるガスあたりの最大優先手数料。省略可能。
+    </ParamField>
+
+    <ParamField body="value" type="string">
+      送金額 (wei 単位) 。省略可能。
+    </ParamField>
+
+    <ParamField body="data" type="string">
+      ABI エンコードされたコールデータ。省略可能。
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="block" type="string">
+  見積もりの基準とするブロック。省略可能。デフォルトは `"latest"` です。プレコンファーム済みの状態を基準に見積もるには `"pending"` を指定します。
+</ParamField>
+
+## 戻り値 {#returns}
+
+<ResponseField name="result" type="string">
+  推定ガス量 (16進数の整数) 。
+</ResponseField>
+
+## エラーコード {#error-codes}
+
+| コード      | メッセージ              | 説明                                                            |
+| -------- | ------------------ | ------------------------------------------------------------- |
+| `-32000` | execution reverted | トランザクションがリバートされることを示します。エラーの `data` フィールドにリバート理由が含まれる場合があります。 |
+
+## 例 {#example}
+
+<CodeGroup>
+  ```bash 標準 lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_estimateGas",
+      "params": [{
+        "from": "0xd3CdA913deB6f4967b2Ef66ae97DE114a83bcc01",
+        "to": "0x4200000000000000000000000000000000000006",
+        "value": "0x2c68af0bb14000"
+      }],
+      "id": 1
+    }'
+  ```
+
+  ```bash Flashblocks（pending 状態） lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_estimateGas",
+      "params": [{
+        "from": "0xd3CdA913deB6f4967b2Ef66ae97DE114a83bcc01",
+        "to": "0x4200000000000000000000000000000000000006",
+        "value": "0x2c68af0bb14000"
+      }, "pending"],
+      "id": 1
+    }'
+  ```
+
+  ```json レスポンス
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x5208"
+  }
+  ```
+</CodeGroup>

@@ -1,0 +1,53 @@
+---
+title: "Emitir una stablecoin"
+keywords: ["emitir stablecoin Base", "stablecoin B20", "emisor de stablecoin Base", "token respaldado por moneda fiduciaria Base"]
+description: "Opera en Base una stablecoin respaldada por moneda fiduciaria, con acuñación, cumplimiento normativo y conciliación integrados en la propia cadena."
+---
+
+import { StablecoinDemo } from "/snippets/StablecoinDemo.jsx"
+
+Emite una stablecoin respaldada por moneda fiduciaria en Base con [B20](/es/specifications/b20), el estándar de tokens nativo de Base. La acuñación, el canje, los controles de cumplimiento normativo y la conciliación vienen integrados en la cadena, así que no tienes que desarrollar ni auditar ningún contrato personalizado. Además, es totalmente compatible con ERC-20.
+
+## Demostración {#demo}
+
+<StablecoinDemo />
+
+<Tip>
+  La demostración utiliza una cuenta generada localmente en el navegador para enviar transacciones reales en **Base Vibenet**. Si Vibenet o sus funciones B20 no están disponibles, pasa automáticamente a una versión ilustrativa sin conexión.
+</Tip>
+
+## Guías {#guides}
+
+<CardGroup cols={2}>
+  <Card title="Emite tu stablecoin" icon="coins" href="/es/build-on-base/issue-stablecoins/issue-your-stablecoin">
+    Crea un token respaldado por moneda fiduciaria con una sola llamada.
+  </Card>
+
+  <Card title="Acuña suministro" icon="plus" href="/es/build-on-base/issue-stablecoins/mint-supply">
+    Emite nuevos tokens a medida que crecen las reservas.
+  </Card>
+
+  <Card title="Quema suministro" icon="fire" href="/es/build-on-base/issue-stablecoins/burn-supply">
+    Retira tokens de circulación cuando se canjean.
+  </Card>
+
+  <Card title="Restringe quién puede tenerla" icon="user-check" href="/es/build-on-base/issue-stablecoins/restrict-who-can-hold">
+    Limita las transferencias a cuentas aprobadas.
+  </Card>
+
+  <Card title="Bloquea una cuenta" icon="ban" href="/es/build-on-base/issue-stablecoins/block-an-account">
+    Inmoviliza una dirección por motivos de cumplimiento normativo.
+  </Card>
+
+  <Card title="Recupera fondos" icon="arrow-rotate-left" href="/es/build-on-base/issue-stablecoins/recover-funds">
+    Reclama y vuelve a emitir un saldo bloqueado.
+  </Card>
+
+  <Card title="Pausa la actividad" icon="pause" href="/es/build-on-base/issue-stablecoins/pause-activity">
+    Detén transferencias, acuñaciones o quemas.
+  </Card>
+
+  <Card title="Concilia con memos" icon="receipt" href="/es/build-on-base/issue-stablecoins/reconcile-with-memos">
+    Cuadra la actividad onchain con tu contabilidad.
+  </Card>
+</CardGroup>

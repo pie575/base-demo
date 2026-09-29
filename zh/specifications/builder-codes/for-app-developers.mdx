@@ -1,0 +1,242 @@
+---
+title: "面向应用开发者的 Builder Codes"
+sidebarTitle: "面向应用开发者"
+description: "使用 Wagmi 或 Viem 将 Builder Codes 集成到你的应用中，实现链上活动归因。"
+---
+
+## Base 上的自动归因 {#automatic-attribution-on-base}
+
+在 [base.dev](http://base.dev/) 上注册应用后，对于用户在你的应用中发起的交易 (例如通过你的应用或 Base App 内置浏览器) ，Base App 会自动附加你的 Builder Code。这将为你在 [base.dev](http://base.dev/) 中的链上分析提供数据支持，并让你有资格获得未来可能推出的奖励。
+
+## 在 Base App 之外集成 {#integrating-outside-the-base-app}
+
+如果用户还会通过网页或其他客户端访问你的应用，你需要集成 `dataSuffix` 参数来记录这些活动。
+
+在 [base.dev](https://base.dev/) 上注册后，你会获得一个 **Builder Code**，即一个随机字符串 (例如 `bc_b7k3p9da`) ，用于生成你的归因后缀。推荐在客户端层面配置 `dataSuffix`，这样你的 Builder Code 就会附加到所有交易中。
+
+<Tip>
+  你可以随时在 **Settings** → **Builder Code** 中查看你的代码。
+</Tip>
+
+## 使用 Wagmi 快速设置 {#quick-setup-with-wagmi}
+
+<Steps>
+  <Step title="安装依赖">
+    安装所需的软件包。viem 版本需为 `2.45.0` 或更高。
+
+    ```bash Install Wagmi attribution dependencies
+    npm i ox wagmi viem
+    ```
+  </Step>
+
+  <Step title="配置 Wagmi 客户端">
+    在 Wagmi 配置中添加 `dataSuffix` 选项，即可自动将你的 Builder Code 附加到所有交易中。
+
+    ```typescript config.ts lines expandable wrap
+    import { createConfig, http } from "wagmi";
+    import { base } from "wagmi/chains";
+    import { Attribution } from "ox/erc8021";
+
+    // 从 base.dev > Settings > Builder Codes 获取你的 Builder Code
+    const DATA_SUFFIX = Attribution.toDataSuffix({
+      codes: ["YOUR-BUILDER-CODE"],
+    });
+
+    export const config = createConfig({
+      chains: [base],
+      transports: {
+        [base.id]: http(),
+      },
+      dataSuffix: DATA_SUFFIX,
+    });
+    ```
+  </Step>
+
+  <Step title="照常使用 Wagmi Hooks">
+    配置完成后，所有交易都会自动包含你的 Builder Code，无需修改 hooks 或组件。`useSendTransaction` 和 `useSendCalls` 均适用。
+
+    ```tsx App.tsx lines expandable wrap
+    import { useSendTransaction } from "wagmi";
+    import { parseEther } from "viem";
+
+    function SendButton() {
+      const { sendTransaction } = useSendTransaction();
+
+      return (
+        <button
+          onClick={() =>
+            sendTransaction({
+              to: "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+              value: parseEther("0.01"),
+            })
+          }
+        >
+          Send ETH
+        </button>
+      );
+    }
+    ```
+  </Step>
+</Steps>
+
+## 使用 Viem 快速设置 {#quick-setup-with-viem}
+
+<Steps>
+  <Step title="安装依赖">
+    安装所需的软件包。viem 版本需为 `2.45.0` 或更高。
+
+    ```bash Install Viem attribution dependencies
+    npm i ox viem
+    ```
+  </Step>
+
+  <Step title="配置钱包客户端">
+    创建钱包客户端时添加 `dataSuffix` 选项。更多配置选项请参阅 [viem 钱包客户端文档](https://viem.sh/docs/clients/wallet)。
+
+    ```typescript client.ts lines expandable wrap
+    import { createWalletClient, http } from "viem";
+    import { base } from "viem/chains";
+    import { Attribution } from "ox/erc8021";
+
+    // 在 base.dev > Settings > Builder Codes 中获取你的 Builder Code
+    const DATA_SUFFIX = Attribution.toDataSuffix({
+      codes: ["YOUR-BUILDER-CODE"],
+    });
+
+    export const walletClient = createWalletClient({
+      chain: base,
+      transport: http(),
+      dataSuffix: DATA_SUFFIX,
+    });
+    ```
+  </Step>
+
+  <Step title="照常发送交易">
+    通过此客户端发送的所有交易都会自动附带你的 Builder Code。
+
+    ```typescript send-transaction.ts lines expandable wrap
+    import { parseEther } from "viem";
+    import { walletClient } from "./client";
+
+    const hash = await walletClient.sendTransaction({
+      to: "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+      value: parseEther("0.01"),
+    });
+    ```
+  </Step>
+</Steps>
+
+## 使用 CDP Wallets {#using-cdp-wallets}
+
+[Coinbase Developer Platform (CDP) Wallets](https://docs.cdp.coinbase.com/wallets/non-custodial-wallets/overview) 支持在智能账户发起的用户操作中使用 Builder Codes。发送用户操作时传入 `dataSuffix`，即可附加你的 Builder Code，无需修改合约。React hooks (`useSendUserOperation`) 、Node (TypeScript) 和 Python SDK 均支持此功能。
+
+有关设置说明 (包括如何使用 `ox/erc8021` 中的 `Attribution.toDataSuffix` 生成后缀) ，请参阅 CDP Wallets 文档中的 [Builder Codes](https://docs.cdp.coinbase.com/wallets/using-wallets/smart-accounts#builder-codes)。
+
+## 使用 Privy {#using-privy}
+
+Privy 提供了一个 `dataSuffix` 插件，可自动将你的 Builder Code 附加到所有交易中，包括 EOA 交易和 ERC-4337 智能钱包的用户操作 (user operation) 。
+
+设置说明请参阅 [Privy Builder Codes 集成指南](https://docs.privy.io/recipes/evm/base-builder-codes)。
+
+## 旧版方式：按交易追加 {#legacy-per-transaction-approach}
+
+<Accordion title="按交易追加 dataSuffix">
+  如果需要针对单笔交易追加后缀，而不是在客户端层面统一配置，可以直接在交易中传入 `dataSuffix`。
+
+  <Tabs>
+    <Tab title="useSendTransaction">
+      ```tsx App.tsx lines expandable wrap
+      import { useSendTransaction } from "wagmi";
+      import { parseEther } from "viem";
+      import { Attribution } from "ox/erc8021";
+
+      const DATA_SUFFIX = Attribution.toDataSuffix({
+        codes: ["YOUR-BUILDER-CODE"],
+      });
+
+      function App() {
+        const { sendTransaction } = useSendTransaction();
+
+        return (
+          <button
+            onClick={() =>
+              sendTransaction({
+                to: "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+                value: parseEther("0.01"),
+                dataSuffix: DATA_SUFFIX,
+              })
+            }
+          >
+            Send ETH
+          </button>
+        );
+      }
+      ```
+    </Tab>
+
+    <Tab title="useSendCalls">
+      使用 `useSendCalls` 时，需通过 `capabilities` 对象传入后缀。这要求已连接的钱包支持 `dataSuffix` 能力。
+
+      ```tsx App.tsx lines expandable wrap
+      import { useSendCalls } from "wagmi";
+      import { parseEther } from "viem";
+      import { Attribution } from "ox/erc8021";
+
+      const DATA_SUFFIX = Attribution.toDataSuffix({
+        codes: ["YOUR-BUILDER-CODE"],
+      });
+
+      function App() {
+        const { sendCalls } = useSendCalls();
+
+        return (
+          <button
+            onClick={() =>
+              sendCalls({
+                calls: [
+                  {
+                    to: "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+                    value: parseEther("1"),
+                  },
+                ],
+                capabilities: {
+                  dataSuffix: {
+                    value: DATA_SUFFIX,
+                    optional: true,
+                  },
+                },
+              })
+            }
+          >
+            Send calls
+          </button>
+        );
+      }
+      ```
+    </Tab>
+  </Tabs>
+</Accordion>
+
+## 验证归因 {#verify-attribution}
+
+要确认您的 Builder Code 已正确附加，可以通过以下方式检查：
+
+**1. 查看 base.dev**
+
+* 访问 [base.dev](https://base.dev)
+* 在交易类型下拉菜单中选择 **Onchain**
+* 在 Total Transactions 部分中，每当包含您代码的交易被处理，归因计数就会相应增加
+
+**2. 使用区块浏览器 (Basescan、Etherscan 等)&#x20;**
+
+* 找到您的交易哈希
+* 查看输入数据 (input data) 字段
+* 确认最后 16 个字节为重复的 `8021`
+* 解码后缀，确认其中包含您的 Builder Code
+
+**3. 开源工具**
+
+* 使用 [Builder Code Validation](https://builder-code-checker.vercel.app/) 工具
+* 选择交易类型
+* 输入交易哈希或 UserOperation 哈希
+* 点击 **Check Attribution** 按钮

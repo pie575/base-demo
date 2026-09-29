@@ -1,0 +1,1113 @@
+---
+title: "Derivación"
+description: "Especificación del pipeline de derivación de la cadena L2, que describe cómo los bloques de L2 se derivan de forma determinista a partir de los datos de L1 y de los lotes del sequencer."
+---
+
+[g-derivation]: /specifications/reference/glossary#l2-chain-derivation
+
+[g-payload-attr]: /specifications/reference/glossary#payload-attributes
+
+[g-block]: /specifications/reference/glossary#block
+
+[g-exec-engine]: /specifications/reference/glossary#execution-engine
+
+[g-reorg]: /specifications/reference/glossary#chain-re-organization
+
+[g-receipts]: /specifications/reference/glossary#receipt
+
+[g-deposit-contract]: /specifications/reference/glossary#deposit-contract
+
+[g-deposited]: /specifications/reference/glossary#deposited-transaction
+
+[g-l1-attr-deposit]: /specifications/reference/glossary#l1-attributes-deposited-transaction
+
+[g-l1-origin]: /specifications/reference/glossary#l1-origin
+
+[g-user-deposited]: /specifications/reference/glossary#user-deposited-transaction
+
+[g-deposits]: /specifications/reference/glossary#deposits
+
+[g-sequencing]: /specifications/reference/glossary#sequencing
+
+[g-sequencer]: /specifications/reference/glossary#sequencer
+
+[g-sequencing-epoch]: /specifications/reference/glossary#sequencing-epoch
+
+[g-sequencing-window]: /specifications/reference/glossary#sequencing-window
+
+[g-sequencer-batch]: /specifications/reference/glossary#sequencer-batch
+
+[g-l2-genesis]: /specifications/reference/glossary#l2-genesis-block
+
+[g-l2-chain-inception]: /specifications/reference/glossary#l2-chain-inception
+
+[g-l2-genesis-block]: /specifications/reference/glossary#l2-genesis-block
+
+[g-batcher-transaction]: /specifications/reference/glossary#batcher-transaction
+
+[g-avail-provider]: /specifications/reference/glossary#data-availability-provider
+
+[g-batcher]: /specifications/reference/glossary#batcher
+
+[g-l2-output]: /specifications/reference/glossary#l2-output-root
+
+[g-fault-proof]: /specifications/reference/glossary#fault-proof
+
+[g-channel]: /specifications/reference/glossary#channel
+
+[g-channel-frame]: /specifications/reference/glossary#channel-frame
+
+[g-rollup-node]: /specifications/reference/glossary#rollup-node
+
+[g-block-time]: /specifications/reference/glossary#block-time
+
+[g-time-slot]: /specifications/reference/glossary#time-slot
+
+[g-consolidation]: /specifications/reference/glossary#unsafe-block-consolidation
+
+[g-safe-l2-head]: /specifications/reference/glossary#safe-l2-head
+
+[g-safe-l2-block]: /specifications/reference/glossary#safe-l2-block
+
+[g-unsafe-l2-head]: /specifications/reference/glossary#unsafe-l2-head
+
+[g-unsafe-l2-block]: /specifications/reference/glossary#unsafe-l2-block
+
+[g-unsafe-sync]: /specifications/reference/glossary#unsafe-sync
+
+[g-deposit-tx-type]: /specifications/reference/glossary#deposited-transaction-type
+
+[g-finalized-l2-head]: /specifications/reference/glossary#finalized-l2-head
+
+[g-system-config]: /specifications/reference/glossary#system-configuration
+
+## Descripción general {#overview}
+
+> **Nota:** lo siguiente presupone un único sequencer y un único batcher. En el futuro, el diseño se adaptará para
+> admitir varias entidades de este tipo.
+
+La [derivación de la cadena L2][g-derivation] —derivar [bloques][g-block] L2 a partir de datos de L1— es una de las principales responsabilidades
+del [nodo de rollup][g-rollup-node], tanto en modo validador como en modo sequencer (donde la derivación sirve como comprobación
+de coherencia de la secuenciación y permite detectar [reorganizaciones][g-reorg] de la cadena L1).
+
+La cadena L2 se deriva de la cadena L1. En concreto, cada bloque L1 posterior al [inicio de la cadena
+L2][g-l2-chain-inception] se asigna a una [época de secuenciación][g-sequencing-epoch] que comprende
+al menos un bloque L2. Cada bloque L2 pertenece exactamente a una época, y al bloque L1
+correspondiente lo llamamos su [L1 origin][g-l1-origin]. El número de la época coincide con el de su bloque L1 origin.
+
+Para derivar los bloques L2 de la época número `E`, necesitamos las siguientes entradas:
+
+* Los bloques L1 del rango `[E, E + SWS)`, denominado [ventana de secuenciación][g-sequencing-window] de la época, donde `SWS`
+  es el tamaño de la ventana de secuenciación. (Tenga en cuenta que las ventanas de secuenciación se solapan).
+* Las [transacciones del batcher][g-batcher-transaction] de los bloques de la ventana de secuenciación.
+  * Estas transacciones nos permiten reconstruir los [lotes del sequencer][g-sequencer-batch] de la época, cada uno
+    de los cuales producirá un bloque L2. Tenga en cuenta que:
+    * El L1 origin nunca contendrá datos necesarios para construir lotes del sequencer, ya que
+      cada lote [debe contener](#batch-format) el hash del L1 origin.
+    * Es posible que una época no tenga lotes del sequencer.
+* Los [depósitos][g-deposits] realizados en el L1 origin (en forma de eventos emitidos por el [contrato de
+  depósito][g-deposit-contract]).
+* Los atributos del bloque L1 del L1 origin (para derivar la [transacción depositada de L1 Attributes][g-l1-attr-deposit]).
+* El estado de la cadena L2 tras el último bloque L2 de la época anterior, o el [estado génesis de L2][g-l2-genesis]
+  si `E` es la primera época.
+
+Para derivar toda la cadena L2 desde cero, partimos del [estado génesis de L2][g-l2-genesis] y
+del [bloque génesis de L2][g-l2-genesis-block] como primer bloque L2. A continuación, derivamos en orden los bloques L2 de cada época,
+empezando por el primer bloque L1 posterior al [inicio de la cadena L2][g-l2-chain-inception]. Consulte la
+[sección de Arquitectura][architecture] para obtener más información sobre cómo lo implementamos en la práctica.
+La cadena L2 puede contener historial anterior a Bedrock, pero aquí el génesis de L2 hace referencia al bloque génesis
+L2 de Bedrock.
+
+Cada `block` L2 con origen `l1_origin` está sujeto a las siguientes restricciones (cuyos valores se
+expresan en segundos):
+
+* `block.timestamp = prev_l2_timestamp + l2_block_time`
+
+  * `prev_l2_timestamp` es la marca de tiempo del bloque L2 inmediatamente anterior. Si no
+    hay bloque anterior, se trata del bloque génesis, cuya marca de tiempo se especifica
+    explícitamente.
+  * `l2_block_time` es un parámetro configurable que indica el tiempo entre bloques L2 (2 s en Base).
+
+* `l1_origin.timestamp <= block.timestamp <= max_l2_timestamp`, donde
+  * `max_l2_timestamp = max(l1_origin.timestamp + max_sequencer_drift, prev_l2_timestamp + l2_block_time)`
+    * `max_sequencer_drift` es un parámetro configurable que limita cuánto puede adelantarse el sequencer
+      respecto a L1.
+
+Por último, cada época debe tener al menos un bloque L2.
+
+La primera restricción implica que debe haber un bloque L2 cada `l2_block_time` segundos a partir del
+inicio de la cadena L2.
+
+La segunda restricción garantiza que la marca de tiempo de un bloque L2 nunca sea anterior a la de su L1 origin
+ni la supere en más de `max_sequencer_drift`, salvo en el caso excepcional en que esto
+impidiera producir un bloque L2 cada l2&#95;block&#95;time segundos. (Estos casos podrían darse,
+por ejemplo, en una L1 de prueba de trabajo que atraviese un periodo de producción rápida de bloques L1). En cualquiera de los
+casos, el sequencer impone `len(batch.transactions) == 0` mientras se supere
+`max_sequencer_drift`. Consulte [Batch Queue](#batch-queue) para obtener más detalles.
+
+El último requisito, según el cual cada época debe tener al menos un bloque L2, garantiza que toda la información relevante
+de la L1 (p. ej., los depósitos) quede reflejada en la L2, incluso si la época no tiene lotes del sequencer.
+
+Desde el merge, Ethereum tiene un [tiempo de bloque][g-block-time] fijo de 12 s, aunque algunos slots pueden
+omitirse. Con un tiempo de bloque L2 de 2 s, cabe esperar, por tanto, que cada época contenga normalmente `12/2 = 6` bloques
+L2. No obstante, el sequencer producirá épocas más grandes para mantener la disponibilidad (liveness) si
+se omite un slot en la L1 o se pierde temporalmente la conexión con ella. En caso de pérdida de conexión,
+podrían producirse épocas más pequeñas una vez restablecida esta, para evitar que las marcas de tiempo de la L2
+se adelanten cada vez más.
+
+## Derivación anticipada de bloques {#eager-block-derivation}
+
+Para derivar un bloque de L2, es necesario haber construido su lote del sequencer y haber derivado todos los bloques
+y actualizaciones de estado de L2 anteriores. Esto significa que, por lo general, podemos derivar los bloques de L2 de una época
+de forma *anticipada*, sin esperar a que transcurra la ventana de secuenciación completa. Solo es necesario esperar a la ventana de secuenciación completa
+antes de la derivación en el peor de los casos, cuando alguna parte del lote del sequencer correspondiente al
+primer bloque de la época aparece en el último bloque de L1 de la ventana. Tenga en cuenta que esto solo
+se aplica a la derivación de *bloques*. Los lotes del sequencer pueden seguir derivándose y ponerse en cola de forma provisional
+sin que se deriven bloques a partir de ellos.
+
+## Parámetros del protocolo {#protocol-parameters}
+
+La siguiente tabla ofrece una visión general de algunos parámetros del protocolo y de cómo les afectan
+las actualizaciones del protocolo.
+
+| Parámetro                      | Valor (predeterminado) en Bedrock | Valor (predeterminado) más reciente | Cambios                                                                                                                             | Notas                                                             |
+| ------------------------------ | --------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `max_sequencer_drift`          | 600                               | 1800                                | [Fjord](/es/upgrades/fjord/derivation#constant-maximum-sequencer-drift)                                                                | Con Fjord, pasó de ser un parámetro de la cadena a una constante. |
+| `MAX_RLP_BYTES_PER_CHANNEL`    | 10,000,000                        | 100,000,000                         | [Fjord](/es/upgrades/fjord/derivation#increasing-max_rlp_bytes_per_channel-and-max_channel_bank_size)                                  | Constante incrementada con Fjord.                                 |
+| `MAX_CHANNEL_BANK_SIZE`        | 100,000,000                       | 1,000,000,000                       | [Fjord](/es/upgrades/fjord/derivation#increasing-max_rlp_bytes_per_channel-and-max_channel_bank_size)                                  | Constante incrementada con Fjord.                                 |
+| `MAX_SPAN_BATCH_ELEMENT_COUNT` | 10,000,000                        | 10,000,000                          | Introducido de forma efectiva en [Fjord](/es/upgrades/fjord/derivation#increasing-max_rlp_bytes_per_channel-and-max_channel_bank_size) | Número de elementos                                               |
+
+## Configuración del sistema {#system-configuration}
+
+`SystemConfig` es un contrato de L1 que emite los cambios de configuración del rollup como eventos de log.
+El pipeline de derivación recoge estos eventos y los aplica al estado de L2, lo que garantiza que todos los
+nodos converjan en la misma configuración a la misma altura de bloque de L2. `SystemConfig` es la
+fuente de verdad de los valores de configuración en Base.
+
+### Actualizaciones de System Config {#system-config-updates}
+
+Las actualizaciones de la configuración del sistema se señalan mediante el evento `ConfigUpdate(uint256,uint8,bytes)`. La estructura
+del evento incluye:
+
+* El primer topic determina la versión
+* El segundo topic determina el tipo de actualización
+* Los datos restantes del evento codifican la actualización de configuración
+
+En la versión `0`, se admiten los siguientes tipos de actualización:
+
+* Tipo `0`: sobrescritura de `batcherHash`, con un payload `bytes32`
+* Tipo `1`: antes de Ecotone, sobrescritura de `overhead` y `scalar`, como dos entradas `uint256` empaquetadas. Tras la
+  actualización Ecotone, `overhead` se ignora y `scalar` se interpreta como una codificación versionada que
+  actualiza `baseFeeScalar` y `blobBaseFeeScalar`
+* Tipo `2`: sobrescritura de `gasLimit`, con un payload `uint64`
+* Tipo `3`: sobrescritura de `unsafeBlockSigner`, con un payload `address`
+* Tipo `4`: sobrescritura de `eip1559Params`, con un payload `uint256` que codifica la denominación y la elasticidad
+* Tipo `5`: sobrescritura de `operatorFeeParams`, con un payload `uint256` que codifica el escalar y la constante
+* Tipo `6`: sobrescritura de `minBaseFee`, con un payload `uint64`
+* Tipo `7`: sobrescritura de `daFootprintGasScalar`, con un payload `uint16`
+
+Si una actualización de System Config no puede analizarse por cualquier motivo, no se aplica, sino que se omite.
+
+***
+
+## Envío de lotes {#batch-submission}
+
+## Descripción general de la secuenciación y el envío de lotes {#sequencing-batch-submission-overview}
+
+El [sequencer][g-sequencer] acepta transacciones de L2 de los usuarios y se encarga de construir bloques a partir de ellas. Para
+cada uno de esos bloques, crea además un [lote del sequencer][g-sequencer-batch] correspondiente. También se encarga de
+enviar cada lote a un [proveedor de disponibilidad de datos][g-avail-provider] (p. ej., calldata de Ethereum), lo que hace mediante
+su componente [batcher][g-batcher].
+
+La diferencia entre un bloque de L2 y un lote es sutil pero importante: el bloque incluye una raíz de estado de L2, mientras que el
+lote solo compromete las transacciones en una marca de tiempo de L2 determinada (o, lo que es lo mismo, un número de bloque de L2). Un bloque también incluye una
+referencia al bloque anterior (*).
+
+(*) Esto es relevante en algún caso límite en el que se produjera un reorg de L1 y un lote se volviera a publicar en la cadena de L1, pero no
+el lote anterior, mientras que el predecesor de un bloque de L2 no puede cambiar en ningún caso.
+
+Esto significa que, aunque el sequencer aplique una transición de estado de forma incorrecta, las transacciones del lote se seguirán
+considerando parte de la cadena canónica de L2. Los lotes siguen sujetos a comprobaciones de validez (es decir, deben estar codificados
+correctamente), al igual que las transacciones individuales que contienen (p. ej., las firmas deben ser válidas). Los nodos que funcionan correctamente descartan los lotes no válidos,
+así como las transacciones no válidas incluidas en un lote que, por lo demás, sea válido.
+
+Si el sequencer aplica una transición de estado de forma incorrecta y publica un [output root][g-l2-output], ese output root
+será incorrecto. El output root incorrecto se impugnará mediante una [prueba][g-fault-proof] y, a continuación, se sustituirá
+por un output root correcto **para los lotes del sequencer existentes.**
+
+Consulta la [especificación de envío de lotes][batcher-spec] para obtener más información.
+
+[batcher-spec]: /specifications/base-protocol/batcher
+
+## Formato de transmisión para el envío de lotes {#batch-submission-wire-format}
+
+[wire-format]: #batch-submission-wire-format
+
+El envío de lotes está estrechamente vinculado a la derivación de la cadena L2, ya que el proceso de derivación debe decodificar los lotes que se
+han codificado para su envío.
+
+El [batcher][g-batcher] envía [transacciones del batcher][g-batcher-transaction] a un [proveedor de disponibilidad
+de datos][g-avail-provider]. Estas transacciones contienen una o varias [tramas de channel][g-channel-frame], que son
+fragmentos de datos que pertenecen a un [channel][g-channel].
+
+Un [channel][g-channel] es una secuencia de [lotes del sequencer][g-sequencer-batch] (de cualquier bloque de L2) comprimidos
+conjuntamente. Agrupar varios lotes tiene como único fin obtener una mejor tasa de compresión y, con ello, reducir
+los costos de disponibilidad de datos.
+
+Es posible que los canales sean demasiado grandes para caber en una sola [transacción del batcher][g-batcher-transaction], por lo que es necesario dividirlos
+en fragmentos denominados [tramas de canal][g-channel-frame]. Además, una sola transacción del batcher puede contener varias tramas
+(del mismo canal o de canales distintos).
+
+Este diseño nos ofrece la máxima flexibilidad a la hora de agrupar lotes en channels y de repartir los channels entre las transacciones del batcher. En particular, nos permite aprovechar al máximo el espacio de datos de una transacción del batcher: por ejemplo, podemos
+empaquetar la última trama (pequeña) de un channel junto con una o más tramas del channel siguiente.
+
+Tenga en cuenta también que usamos un esquema de compresión en flujo, por lo que no necesitamos saber cuántos lotes acabará conteniendo un canal
+cuando lo iniciamos, ni siquiera mientras enviamos sus primeras tramas.
+
+Además, al dividir los canales en varias transacciones de datos, la L2 puede tener datos de bloque de mayor tamaño que los que
+admite la capa de disponibilidad de datos.
+
+El siguiente diagrama ilustra todo esto. A continuación se incluyen las explicaciones.
+
+<img src="/static/assets/batch-deriv-chain.svg" alt="diagrama de la cadena de derivación de lotes" width="10662" height="6124" style={{ margin: 0 }} />
+
+La primera línea representa los bloques de L1 con su número. Los recuadros bajo los bloques de L1 representan las [transacciones del
+batcher][g-batcher-transaction] incluidas en cada bloque. Las líneas onduladas bajo los bloques de L1 representan
+[depósitos][g-deposits] (más concretamente, eventos emitidos por el [contrato de depósito][g-deposit-contract]).
+
+Cada fragmento de color dentro de los recuadros representa una [trama de canal][g-channel-frame]. Es decir, `A` y `B` son
+[canales][g-channel], mientras que `A0`, `A1`, `B0`, `B1` y `B2` son tramas. Observe que:
+
+* se intercalan varios canales
+* no es necesario transmitir las tramas en orden
+* una sola transacción del batcher puede transportar tramas de varios canales
+
+En la línea siguiente, los recuadros redondeados representan [lotes del sequencer][g-sequencer-batch] individuales extraídos de
+los channels. Los cuatro azules/morados/rosas se derivaron del channel `A`, mientras que los demás se derivaron del channel `B`.
+Aquí, estos lotes aparecen en el orden en que se decodificaron a partir de los lotes (en este caso, `B` se decodifica primero).
+
+> **Nota** El pie de figura dice &quot;El channel B se detectó primero y será el primero en decodificarse en lotes&quot;, pero esto no es un
+> requisito. Por ejemplo, también sería aceptable que una implementación examinara el contenido de los channels y decodificara
+> primero el que contenga los lotes más antiguos.
+
+El resto del diagrama es conceptualmente independiente de la primera parte e ilustra la derivación de la cadena L2 una vez
+que se han reordenado los canales.
+
+La primera línea muestra las transacciones del batcher. Tenga en cuenta que, en este caso, existe un orden de los lotes que hace
+que todas las tramas de los channels aparezcan de forma contigua. Esto no se cumple en general. Por ejemplo, en la segunda
+transacción, se podría haber invertido la posición de `A1` y `B0` y el resultado sería exactamente el mismo, sin necesidad de cambiar
+nada en el resto del diagrama.
+
+La segunda línea muestra los channels reconstruidos en el orden correcto. La tercera línea muestra los lotes extraídos del
+channel. Como los channels están ordenados y los lotes dentro de cada channel son secuenciales, los lotes también quedan
+ordenados. La cuarta línea muestra el [bloque de L2][g-block] derivado de cada lote. Tenga en cuenta que aquí hay una correspondencia 1 a 1 entre lotes y
+bloques, pero, como veremos más adelante, pueden insertarse bloques vacíos que no corresponden a ningún lote cuando
+hay &quot;huecos&quot; en los lotes publicados en L1.
+
+La quinta línea muestra la [transacción depositada de atributos de L1][g-l1-attr-deposit], que, en cada bloque de L2, registra
+información sobre el bloque de L1 correspondiente a la época del bloque de L2. El primer número indica el número de época/L1x, y
+el segundo (el &quot;número de secuencia&quot;), la posición dentro de la época.
+
+Por último, la sexta línea muestra [transacciones depositadas por usuarios][g-user-deposited] derivadas del evento del [contrato de
+depósito][g-deposit-contract] mencionado anteriormente.
+
+Observe la transacción de atributos de L1 `101-0` en la parte inferior derecha del diagrama. Solo puede aparecer ahí si
+la trama `B2` indica que es la última trama del canal y (2) no es necesario insertar bloques vacíos.
+
+El diagrama no especifica el tamaño de la ventana de secuenciación utilizada, pero de esto podemos deducir que debe ser de al menos 4
+bloques, ya que la última trama del canal `A` aparece en el bloque 102, pero pertenece a la época 99.
+
+En cuanto al comentario sobre los &quot;tipos de seguridad&quot;, explica cómo se clasifican los bloques en L1 y L2.
+
+* [Bloques de L2 no seguros][g-unsafe-l2-block]:
+* [Bloques de L2 seguros][g-safe-l2-block]:
+* Bloques de L2 finalizados: son los bloques que se han derivado de datos de L1 [finalizados][g-finalized-l2-head].
+
+Estos niveles de seguridad se corresponden con los valores `headBlockHash`, `safeBlockHash` y `finalizedBlockHash` que se transmiten al
+interactuar con la [API del motor de ejecución][exec-engine].
+
+### Formato de las transacciones del batcher {#batcher-transaction-format}
+
+Las transacciones del batcher se codifican como `version_byte ++ rollup_payload` (donde `++` indica concatenación).
+
+| `version_byte` | `rollup_payload`                                                                |
+| -------------- | ------------------------------------------------------------------------------- |
+| 0              | `frame ...` (una o más tramas, concatenadas)                                    |
+| 1              | `da_commitment` (formato experimental de compromiso de disponibilidad de datos) |
+
+Una versión desconocida invalida la transacción del batcher (el nodo del rollup debe ignorarla).
+Todas las tramas de una transacción del batcher deben poder analizarse. Si el análisis de cualquiera de ellas falla, se rechazan todas las tramas de la
+transacción.
+
+Las transacciones de lotes se autentican verificando que la dirección `to` de la transacción coincida con la dirección de la bandeja de entrada de lotes
+y que la dirección `from` coincida con la dirección del remitente de lotes que figura en la [configuración del sistema][g-system-config] en el
+momento del bloque de L1 del que se leen los datos de la transacción.
+
+### Formato de trama {#frame-format}
+
+Una [trama de canal][g-channel-frame] se codifica así:
+
+```text Frame Format
+frame = channel_id ++ frame_number ++ frame_data_length ++ frame_data ++ is_last
+
+channel_id        = bytes16
+frame_number      = uint16
+frame_data_length = uint32
+frame_data        = bytes
+is_last           = bool
+```
+
+Donde `uint32` y `uint16` son enteros sin signo en formato big-endian. Los nombres de tipo deben interpretarse y
+codificarse según [la ABI de Solidity][solidity-abi].
+
+[solidity-abi]: https://docs.soliditylang.org/en/v0.8.16/abi-spec.html
+
+Todos los datos de una trama tienen tamaño fijo, excepto `frame_data`. La sobrecarga fija es de `16 + 2 + 4 + 1 = 23 bytes`.
+Al tener metadatos de trama de tamaño fijo, se evita una dependencia circular con la longitud total de datos objetivo,
+lo que simplifica el empaquetado de tramas con contenido de longitud variable.
+
+donde:
+
+* `channel_id` es un identificador opaco del canal. No debe reutilizarse y se recomienda que sea aleatorio; sin embargo,
+  aparte de las reglas de tiempo de espera, no se verifica su validez
+* `frame_number` identifica el índice de la trama dentro del canal
+* `frame_data_length` es la longitud de `frame_data` en bytes. Su límite máximo es de 1.000.000 de bytes.
+* `frame_data` es una secuencia de bytes que pertenece al canal y que, lógicamente, sigue a los bytes de las tramas anteriores
+* `is_last` es un único byte con valor 1 si la trama es la última del canal, o 0 si quedan más tramas en el
+  canal. Cualquier otro valor invalida la trama (el nodo del rollup debe ignorarla).
+
+### Formato del canal {#channel-format}
+
+[channel-format]: #channel-format
+
+Un canal se codifica aplicando un algoritmo de compresión por *streaming* a una lista de lotes:
+
+```text Batch Encoding
+encoded_batches = []
+for batch in batches:
+    encoded_batches ++ batch.encode()
+rlp_batches = rlp_encode(encoded_batches)
+```
+
+donde:
+
+* `batches` es la entrada, una secuencia de lotes, cada uno con una función de codificación a bytes
+  `.encode()`, según se describe en la siguiente sección (&quot;Codificación de lotes&quot;)
+* `encoded_batches` es un arreglo de bytes: la concatenación de los lotes codificados
+* `rlp_batches` es la codificación RLP de la concatenación de los lotes codificados
+
+```text Channel Encoding
+channel_encoding = zlib_compress(rlp_batches)
+```
+
+donde zlib&#95;compress es el algoritmo ZLIB (tal como se especifica en [RFC-1950][rfc1950]) sin diccionario.
+
+[rfc1950]: https://www.rfc-editor.org/rfc/rfc1950.html
+
+La actualización Fjord introduce un [formato de codificación de canal
+versionado](/es/upgrades/fjord/derivation#brotli-channel-compression) adicional para admitir algoritmos de compresión
+alternativos.
+
+Al descomprimir un canal, limitamos la cantidad de datos descomprimidos a `MAX_RLP_BYTES_PER_CHANNEL` (definido en la
+[tabla de parámetros del protocolo](#protocol-parameters)) para evitar ataques de tipo «bomba zip» (en los que una pequeña
+entrada comprimida se descomprime en una cantidad desmesurada de datos).
+Si los datos descomprimidos superan el límite, se procede como si el canal contuviera
+únicamente los primeros `MAX_RLP_BYTES_PER_CHANNEL` bytes descomprimidos. El límite se aplica a la decodificación RLP, por lo que se aceptarán todos los lotes que
+puedan decodificarse dentro de `MAX_RLP_BYTES_PER_CHANNEL`, aunque el tamaño del canal supere
+`MAX_RLP_BYTES_PER_CHANNEL`. El requisito exacto es que `length(input) <= MAX_RLP_BYTES_PER_CHANNEL`.
+
+Aunque el pseudocódigo anterior da a entender que todos los lotes se conocen de antemano, es posible comprimir y
+descomprimir en streaming los lotes codificados en RLP. Esto significa que se pueden empezar a incluir tramas del canal en una
+[transacción del batcher][g-batcher-transaction] antes de saber cuántos lotes (y cuántas tramas) contendrá
+el canal.
+
+### Formato de lote {#batch-format}
+
+[batch-format]: #batch-format
+
+Recuerde que un lote contiene una lista de transacciones que se incluirán en un bloque de L2 específico.
+
+Un lote se codifica como `batch_version ++ content`, donde `content` depende de `batch_version`.
+Antes de la actualización Delta, todos los lotes tienen batch&#95;version 0 y se codifican como se describe a continuación.
+
+| `batch_version` | `content`                                                                          |
+| --------------- | ---------------------------------------------------------------------------------- |
+| 0               | `rlp_encode([parent_hash, epoch_number, epoch_hash, timestamp, transaction_list])` |
+
+donde:
+
+* `batch_version` es un único byte que se antepone al contenido RLP, de forma análoga a la tipificación de transacciones.
+* `rlp_encode` es una función que codifica un lote según el [formato RLP][RLP format], y `[x, y, z]` denota una lista
+  que contiene los elementos `x`, `y` y `z`
+* `parent_hash` es el hash del bloque de L2 anterior
+* `epoch_number` y `epoch_hash` son el número y el hash del bloque de L1 correspondiente a la [época de
+  secuenciación][g-sequencing-epoch] del bloque de L2
+* `timestamp` es la marca de tiempo del bloque de L2
+* `transaction_list` es una lista codificada en RLP de transacciones codificadas según [EIP-2718].
+
+[RLP format]: https://ethereum.org/en/developers/docs/data-structures-and-encoding/rlp/
+
+[EIP-2718]: https://eips.ethereum.org/EIPS/eip-2718
+
+La actualización Delta introdujo un tipo de lote adicional: los [span lotes][span-batches].
+
+[span-batches]: /upgrades/delta/span-batches
+
+Las versiones desconocidas invalidan el lote (el nodo de rollup debe ignorarlo), al igual que el contenido mal formado.
+
+> **Nota:** si la versión y el contenido del lote pueden decodificarse correctamente con RLP, pero hay contenido adicional después del lote,
+> esos datos adicionales pueden ignorarse durante el análisis. Los datos *entre* lotes codificados en RLP no pueden ignorarse
+> (ya que se consideran lotes mal formados), pero si un lote puede describirse por completo mediante la decodificación RLP,
+> el contenido adicional no invalida el lote decodificado.
+
+El `epoch_number` y el `timestamp` también deben respetar las restricciones indicadas en la sección [Cola de lotes][batch-queue];
+de lo contrario, el lote se considera inválido y se ignorará.
+
+***
+
+## Arquitectura {#architecture}
+
+[architecture]: #architecture
+
+Lo anterior describe principalmente las codificaciones generales que se usan en la derivación de la cadena L2,
+sobre todo cómo se codifican los lotes dentro de las [transacciones del batcher][g-batcher-transaction].
+
+En esta sección se describe cómo se genera la cadena L2 a partir de los lotes de L1 mediante una arquitectura de pipeline.
+
+Un verificador puede implementarlo de otra forma, pero debe ser semánticamente equivalente para no divergir de la cadena L2.
+
+## Pipeline de derivación de la cadena L2 {#l2-chain-derivation-pipeline}
+
+Nuestra arquitectura descompone el proceso de derivación en un pipeline compuesto por las siguientes etapas:
+
+1. Recorrido de L1 (L1 Traversal)
+2. Recuperación de L1 (L1 Retrieval)
+3. Cola de tramas (Frame Queue)
+4. Banco de canales (Channel Bank)
+5. Lector de canales (decodificación de lotes)
+6. Batch Queue (Batch Queue)
+7. Derivación de atributos de payload
+8. Cola del motor (Engine Queue)
+
+Los datos fluyen desde el inicio (exterior) del pipeline hacia el final (interior).
+La etapa más interna extrae los datos de la etapa más externa.
+
+Sin embargo, los datos se *procesan* en orden inverso. Es decir, si hay datos pendientes de procesar en la última etapa,
+estos se procesarán primero. El procesamiento avanza en «pasos» que pueden ejecutarse en cada etapa. Intentamos ejecutar tantos pasos como
+sea posible en la última etapa (la más interna) antes de ejecutar ningún paso en la etapa exterior, y así sucesivamente.
+
+Así nos aseguramos de usar los datos que ya tenemos antes de extraer más, y se minimiza la latencia de los datos que recorren
+el pipeline de derivación.
+
+Cada etapa puede mantener su propio estado interno según sea necesario. En concreto, cada etapa mantiene una referencia de bloque de L1
+(número + hash) al último bloque de L1 para el que todos los datos procedentes de bloques anteriores se han procesado por completo y
+los datos de dicho bloque se están procesando o ya se han procesado. Esto permite que la etapa más interna tenga en cuenta la finalización de
+la disponibilidad de datos de L1 empleada para producir la cadena L2, de modo que se refleje en el forkchoice de la cadena L2 cuando las entradas de la cadena L2
+pasen a ser irreversibles.
+
+Veamos brevemente cada etapa del pipeline.
+
+### Recorrido de L1 {#l1-traversal}
+
+En la etapa de *Recorrido de L1*, simplemente leemos el encabezado del siguiente bloque de L1. En condiciones normales, se tratará de nuevos
+bloques de L1 a medida que se crean, aunque también podemos leer bloques antiguos durante la sincronización o en caso de un [reorg][g-reorg] de L1.
+
+Al recorrer el bloque de L1, se actualiza la copia de la [configuración del sistema][g-system-config] que utiliza la etapa de recuperación de L1,
+de modo que la autenticación del remitente de lotes siempre se corresponda exactamente con el bloque de L1 que lee la etapa.
+
+### Recuperación de L1 {#l1-retrieval}
+
+En la etapa de *recuperación de L1*, leemos el bloque que recibimos de la etapa exterior (recorrido de L1) y
+extraemos los datos de sus [transacciones del batcher][g-batcher-transaction]. Una transacción del batcher
+es aquella que cumple las siguientes propiedades:
+
+* El campo [`to`] es igual a la dirección de la bandeja de entrada del batcher configurada.
+
+* El tipo de transacción es `0`, `1`, `2`, `3` o `0x7e` ([tipo de transacción depositada][g-deposit-tx-type] de L2, para
+  admitir la inclusión forzada de transacciones del batcher en Base).
+
+* El remitente, recuperado a partir de la firma de la transacción (`v`, `r` y `s`), es la dirección del batcher
+  cargada desde la configuración del sistema correspondiente al bloque de L1 de los datos.
+
+Cada transacción del batcher está versionada y contiene una serie de [tramas de canal][g-channel-frame] que
+lee la cola de tramas (consulta [Formato de transmisión del envío de lotes][wire-format]). Las transacciones del batcher
+del bloque se procesan en el orden en que aparecen en él, y su calldata se pasa
+a la siguiente fase.
+
+[`to`]: https://github.com/ethereum/execution-specs/blob/3fe6514f2d9d234e760d11af883a47c1263eff51/src/ethereum/frontier/fork_types.py#L52C31-L52C31
+
+### Cola de tramas {#frame-queue}
+
+La cola de tramas almacena en búfer una sola transacción de datos a la vez,
+decodificada en [tramas de canal][g-channel-frame], para que la siguiente etapa la consuma.
+Consulta las especificaciones del [formato de transacción del batcher](#batcher-transaction-format) y del [formato de trama](#frame-format).
+
+### Banco de canales {#channel-bank}
+
+La etapa de *banco de canales* (Channel Bank) se encarga de gestionar el almacenamiento en búfer del banco de canales en el que escribe la etapa de
+recuperación de L1. Cada paso de la etapa del banco de canales intenta leer datos de los canales que están «listos».
+
+Actualmente, los canales se almacenan íntegramente en búfer hasta que se leen o se descartan;
+es posible que una versión futura de ChannelBank admita canales en streaming.
+
+Para acotar el uso de recursos, el banco de canales poda canales en función de su tamaño y aplica tiempos de espera a los canales antiguos.
+
+Los canales se registran en orden FIFO en una estructura llamada *cola de canales*. Un canal se añade a la cola de
+canales la primera vez que se detecta una trama perteneciente a él.
+
+#### Poda {#pruning}
+
+Tras insertar correctamente una nueva trama, se poda el ChannelBank:
+se descartan canales en orden FIFO hasta que se cumpla `total_size <= MAX_CHANNEL_BANK_SIZE`, donde:
+
+* `total_size` es la suma de los tamaños de todos los canales; el tamaño de cada canal es la suma de todos los datos de trama que tiene almacenados en búfer,
+  más una sobrecarga adicional de `200` bytes por trama.
+* `MAX_CHANNEL_BANK_SIZE` es una constante del protocolo definida en la [tabla de parámetros del protocolo](#protocol-parameters).
+
+#### Tiempos de espera {#timeouts}
+
+El L1 origin en el que se abrió el canal se registra junto con el canal como `channel.open_l1_block`,
+y determina el intervalo máximo de bloques de L1 durante el cual se conservan los datos del canal antes de depurarse.
+
+Un canal ha agotado su tiempo de espera si: `current_l1_block.number > channel.open_l1_block.number + CHANNEL_TIMEOUT`, donde:
+
+* `current_l1_block` es el L1 origin que la etapa está recorriendo actualmente.
+* `CHANNEL_TIMEOUT` es un parámetro configurable del rollup, expresado en número de bloques de L1.
+
+Las nuevas tramas de canales que han agotado su tiempo de espera se descartan en lugar de almacenarse en búfer.
+
+#### Lectura {#reading}
+
+Durante la lectura, mientras el primer canal abierto haya agotado su tiempo de espera, se elimina del banco de canales.
+
+Antes de la actualización de red Canyon, si existe un primer canal abierto que no ha agotado su tiempo de espera y está listo,
+se lee y se elimina del banco de canales. Después de la actualización de red Canyon, se recorre todo el banco de canales
+en orden FIFO (por momento de apertura) y se devuelve el primer canal listo (es decir, que no haya agotado su tiempo de espera).
+
+El comportamiento de Canyon se activará cuando las tramas de un bloque de L1 cuyo timestamp sea mayor o igual que el
+tiempo de activación de Canyon entren por primera vez en la cola de canales.
+
+Un canal está listo si:
+
+* El canal está cerrado
+* El canal tiene una secuencia contigua de tramas hasta la trama de cierre
+
+Si ningún canal está listo, se lee la siguiente trama y se incorpora al banco de canales.
+
+#### Carga de tramas {#loading-frames}
+
+Cuando el ID de canal al que hace referencia una trama aún no está presente en el banco de canales,
+se abre un nuevo canal, se etiqueta con el bloque de L1 actual y se añade a la cola de canales.
+
+Condiciones de inserción de tramas:
+
+* Se descartan las nuevas tramas que correspondan a canales cuyo tiempo de espera haya expirado y que aún no se hayan podado del banco de canales.
+* Se descartan las tramas duplicadas (según el número de trama) de tramas que no se hayan podado del banco de canales.
+* Se descartan los cierres duplicados (nueva trama con `is_last == 1` cuando el canal ya ha recibido una trama de cierre y aún no se ha
+  podado del banco de canales).
+
+Si una trama es de cierre (`is_last == 1`), se eliminan del canal todas las tramas existentes con un número superior.
+
+Tenga en cuenta que, aunque esto permite reutilizar los ID de canal una vez podados del banco de canales, se recomienda
+que las implementaciones del batcher utilicen ID de canal únicos.
+
+### Lector de canales (decodificación de lotes) {#channel-reader-batch-decoding}
+
+En esta etapa, descomprimimos el canal obtenido de la etapa anterior y, a continuación, analizamos
+los [lotes][g-sequencer-batch] a partir del flujo de bytes descomprimido.
+
+Consulta [Formato de canal][channel-format] y [Formato de lote][batch-format] para ver la especificación de la descompresión y la
+decodificación.
+
+### Cola de lotes {#batch-queue}
+
+[batch-queue]: #batch-queue
+
+Durante la etapa de *almacenamiento en búfer de lotes*, reordenamos los lotes según sus marcas de tiempo. Si faltan lotes para algunas [franjas
+de tiempo][g-time-slot] y existe un lote válido con una marca de tiempo posterior, esta etapa también genera lotes vacíos para cubrir
+los huecos.
+
+Los lotes se envían a la siguiente etapa siempre que haya un lote secuencial inmediatamente posterior a la marca de tiempo
+de la [cabeza L2 segura][g-safe-l2-head] actual (el último bloque que puede derivarse de la cadena L1 canónica).
+Además, el hash padre del lote debe coincidir con el hash de la cabeza L2 segura actual.
+
+Tenga en cuenta que, si hay huecos en los lotes derivados de L1, esta etapa deberá almacenar en búfer durante toda una
+[ventana de secuenciación][g-sequencing-window] antes de poder generar lotes vacíos (porque, en el peor de los casos, el lote o los lotes faltantes podrían tener
+datos en el último bloque L1 de la ventana).
+
+Un lote puede tener 4 estados de validez distintos:
+
+* `drop`: el lote no es válido y seguirá sin serlo en el futuro, a menos que se produzca un reorg. Puede eliminarse del búfer.
+* `accept`: el lote es válido y debe procesarse.
+* `undecided`: falta información de L1 para poder continuar con el filtrado de lotes.
+* `future`: el lote puede ser válido, pero aún no puede procesarse y debe volver a comprobarse más adelante.
+
+Los lotes se procesan en el orden de inclusión en L1: si hay varios lotes que pueden marcarse como `accept`, se aplica el primero.
+Una implementación puede aplazar los lotes `future` a un paso de derivación posterior para reducir el trabajo de validación.
+
+La validez de los lotes se determina de la siguiente manera:
+
+Definiciones:
+
+* `batch`, tal como se define en la [sección Formato de lotes][batch-format].
+* `epoch = safe_l2_head.l1_origin`, un [L1 origin][g-l1-origin] asociado al lote, con las propiedades:
+  `number` (número de bloque L1), `hash` (hash del bloque L1) y `timestamp` (marca de tiempo del bloque L1).
+* `inclusion_block_number` es el número de bloque L1 en el que `batch` se derivó *completamente* por primera vez,
+  es decir, cuando la etapa anterior lo decodificó y lo emitió.
+* `next_timestamp = safe_l2_head.timestamp + block_time` es la marca de tiempo L2 que se espera que tenga el siguiente lote;
+  consulte la [información sobre el tiempo de bloque][g-block-time].
+* `next_epoch` puede no conocerse todavía, pero sería el bloque L1 posterior a `epoch`, si está disponible.
+* `batch_origin` es `epoch` o `next_epoch`, según la validación.
+
+Tenga en cuenta que el procesamiento de un lote puede aplazarse hasta que `batch.timestamp <= next_timestamp`,
+ya que los lotes `future` tendrán que conservarse de todos modos.
+
+Reglas, en orden de validación:
+
+* `batch.timestamp > next_timestamp` -&gt; `future`: es decir, el lote debe estar listo para procesarse.
+* `batch.timestamp < next_timestamp` -&gt; `drop`: es decir, el lote no debe ser demasiado antiguo.
+* `batch.parent_hash != safe_l2_head.hash` -&gt; `drop`: es decir, el hash padre debe ser igual al hash del bloque safe head de L2.
+* `batch.epoch_num + sequence_window_size < inclusion_block_number` -&gt; `drop`: es decir, el lote debe incluirse a tiempo.
+* `batch.epoch_num < epoch.number` -&gt; `drop`: es decir, el origen del lote no es anterior al del safe head de L2.
+* `batch.epoch_num == epoch.number`: se define `batch_origin` como `epoch`.
+* `batch.epoch_num == epoch.number+1`:
+  * Si no se conoce `next_epoch` -&gt; `undecided`:
+    es decir, un lote que cambia el L1 origin no puede procesarse hasta que dispongamos de los datos del L1 origin.
+  * Si se conoce, se define `batch_origin` como `next_epoch`
+* `batch.epoch_num > epoch.number+1` -&gt; `drop`: es decir, el L1 origin no puede avanzar más de un bloque de L1 por cada bloque de L2.
+* `batch.epoch_hash != batch_origin.hash` -&gt; `drop`: es decir, un lote debe hacer referencia a un L1 origin canónico,
+  para evitar que los lotes se reproduzcan en cadenas de L1 inesperadas.
+* `batch.timestamp < batch_origin.time` -&gt; `drop`: se aplica la regla de marca de tiempo mínima de L2.
+* `batch.timestamp > batch_origin.time + max_sequencer_drift`: se aplica la regla de desviación de la marca de tiempo de L2,
+  pero con excepciones para preservar el invariante de marca de tiempo mínima de L2 indicado anteriormente:
+  * `len(batch.transactions) == 0`:
+    * `epoch.number == batch.epoch_num`:
+      esto implica que el lote todavía no hace avanzar el L1 origin y, por lo tanto, debe comprobarse con respecto a `next_epoch`.
+      * Si no se conoce `next_epoch` -&gt; `undecided`:
+        sin el siguiente L1 origin, aún no podemos determinar si se podría haber mantenido el invariante de tiempo.
+      * Si `batch.timestamp >= next_epoch.time` -&gt; `drop`:
+        el lote podría haber adoptado el siguiente L1 origin sin romper el invariante `L2 time >= L1 time`.
+  * `len(batch.transactions) > 0`: -&gt; `drop`:
+    cuando se supera la desviación de tiempo del sequencer, nunca se permite que el sequencer incluya transacciones.
+* `batch.transactions`: `drop` si la lista `batch.transactions` contiene una transacción
+  que no es válida o que se deriva exclusivamente por otros medios:
+  * cualquier transacción vacía (cadena de bytes de longitud cero)
+  * cualquier [transacción depositada][g-deposit-tx-type] (identificada por el byte de prefijo del tipo de transacción)
+  * cualquier transacción de un tipo futuro &gt; 2 (ten en cuenta que
+    [Isthmus añade compatibilidad](/es/upgrades/isthmus/derivation#activation)
+    con las transacciones `SetCode` de tipo 4)
+
+Si ningún lote puede aceptarse (`accept`), la etapa ha terminado de almacenar en búfer todos los lotes que pueden leerse por completo desde el bloque de L1
+a la altura `epoch.number + sequence_window_size` y `next_epoch` está disponible,
+entonces se puede derivar un lote vacío con las siguientes propiedades:
+
+* `parent_hash = safe_l2_head.hash`
+* `timestamp = next_timestamp`
+* `transactions` está vacío, es decir, no hay transacciones del sequencer. Las transacciones depositadas pueden añadirse en la siguiente etapa.
+* Si `next_timestamp < next_epoch.time`: se repite el L1 origin actual para preservar el invariante de tiempo de L2.
+  * `epoch_num = epoch.number`
+  * `epoch_hash = epoch.hash`
+* Si el lote es el primero de la época, se usa esa época en lugar de avanzar a la siguiente, para garantizar que
+  haya al menos un bloque de L2 por época.
+  * `epoch_num = epoch.number`
+  * `epoch_hash = epoch.hash`
+* En caso contrario:
+  * `epoch_num = next_epoch.number`
+  * `epoch_hash = next_epoch.hash`
+
+### Derivación de atributos de payload {#payload-attributes-derivation}
+
+En la etapa de *derivación de atributos de payload*, convertimos los lotes obtenidos en la etapa anterior en instancias de
+la estructura [`PayloadAttributes`][g-payload-attr]. Esta estructura codifica las transacciones que deben incluirse en
+un bloque, así como otras entradas del bloque (marca de tiempo, destinatario de las comisiones, etc.). La derivación de atributos de payload se detalla en la
+sección [Derivación de atributos de payload][deriving-payload-attr], más adelante.
+
+Esta etapa mantiene su propia copia de la [configuración del sistema][g-system-config], independiente de la de la etapa de recuperación de L1.
+La configuración del sistema se actualiza con los eventos de log de L1 cada vez que cambia la época de L1 a la que hace referencia la entrada del lote.
+
+### Engine Queue {#engine-queue}
+
+En la etapa *Engine Queue*, las estructuras `PayloadAttributes` derivadas previamente se almacenan en búfer y se envían al
+[motor de ejecución][g-exec-engine] para que se ejecuten y se conviertan en un bloque L2 propiamente dicho.
+
+La etapa mantiene referencias a tres bloques L2:
+
+* La [cabeza L2 finalizada][g-finalized-l2-head]: todo lo que hay hasta este bloque, inclusive, puede derivarse por completo de la
+  parte [finalizada][l1-finality] (es decir, canónica e irreversible para siempre) de la cadena L1.
+* La [cabeza L2 segura][g-safe-l2-head]: todo lo que hay hasta este bloque, inclusive, puede derivarse por completo de la
+  cadena L1 canónica actual.
+* La [cabeza L2 no segura][g-unsafe-l2-head]: los bloques situados entre las cabezas segura y no segura son [bloques
+  inseguros][g-unsafe-l2-block] que no se han derivado de L1. Estos bloques provienen de la secuenciación (en modo
+  sequencer) o de la [sincronización insegura][g-unsafe-sync] con el sequencer (en modo validador).
+  También se conoce como la cabeza «latest».
+
+Además, almacena en búfer un breve historial de referencias a los bloques L2 seguros procesados recientemente, junto con referencias
+a los bloques L1 de los que se derivó cada uno.
+Este historial no tiene por qué estar completo, pero permite convertir más adelante las señales de finalidad de L1 en finalidad de L2.
+
+#### Uso de la Engine API {#engine-api-usage}
+
+Para interactuar con el motor, se utiliza la [API del motor de ejecución][exec-engine] mediante los siguientes métodos JSON-RPC:
+
+[exec-engine]: /specifications/base-protocol/execution/l2-execution-engine
+
+##### Bedrock, Canyon, Delta: uso de la API {#bedrock-canyon-delta-api-usage}
+
+* [`engine_forkchoiceUpdatedV2`] — actualiza el forkchoice (es decir, la cabeza de la cadena) a `headBlockHash` si es distinto, e
+  indica al motor que empiece a construir un payload de ejecución si el parámetro de atributos del payload no es `null`.
+* [`engine_getPayloadV2`] — obtiene un payload de ejecución cuya construcción se solicitó previamente.
+* [`engine_newPayloadV2`] — ejecuta un payload de ejecución para crear un bloque.
+
+##### Ecotone: uso de la API {#ecotone-api-usage}
+
+* [`engine_forkchoiceUpdatedV3`] — actualiza el forkchoice (es decir, la cabeza de la cadena) a `headBlockHash` si es diferente, e
+  indica al motor que comience a construir un payload de ejecución si el parámetro de atributos del payload no es `null`.
+* [`engine_getPayloadV3`] — recupera un payload de ejecución cuya construcción se solicitó previamente.
+* `engine_newPayload`
+  * [`engine_newPayloadV2`] — ejecuta un payload de ejecución de Bedrock/Canyon/Delta para crear un bloque.
+  * [`engine_newPayloadV3`] — ejecuta un payload de ejecución de Ecotone para crear un bloque.
+  * [`engine_newPayloadV4`] - ejecuta un payload de ejecución de Isthmus para crear un bloque.
+
+`base-consensus` utiliza [`engine_forkchoiceUpdatedV3`] y [`engine_getPayloadV4`], así como
+`engine_newPayloadV3` y `engine_newPayloadV2`, ya que `engine_newPayloadV4` solo admite payloads de ejecución
+de Isthmus. `engine_forkchoiceUpdatedV3` es retrocompatible con los payloads de Ecotone, Bedrock, Canyon
+y Delta.
+
+Las versiones anteriores utilizaban los métodos `v3`, `v2` y `v1`.
+
+[`engine_forkchoiceUpdatedV2`]: /specifications/base-protocol/execution/l2-execution-engine#engine_forkchoiceupdatedv2
+
+[`engine_forkchoiceUpdatedV3`]: /specifications/base-protocol/execution/l2-execution-engine#engine_forkchoiceupdatedv3
+
+[`engine_getPayloadV2`]: /specifications/base-protocol/execution/l2-execution-engine#engine_getpayloadv2
+
+[`engine_getPayloadV3`]: /specifications/base-protocol/execution/l2-execution-engine#engine_getpayloadv3
+
+[`engine_getPayloadV4`]: /specifications/base-protocol/execution/l2-execution-engine#engine_getpayloadv4
+
+[`engine_newPayloadV2`]: /specifications/base-protocol/execution/l2-execution-engine#engine_newpayloadv2
+
+[`engine_newPayloadV3`]: /specifications/base-protocol/execution/l2-execution-engine#engine_newpayloadv3
+
+[`engine_newPayloadV4`]: /specifications/base-protocol/execution/l2-execution-engine#engine_newpayloadv4
+
+El payload de ejecución es un objeto de tipo [`ExecutionPayloadV3`][eth-payload].
+
+[eth-payload]: https://github.com/ethereum/execution-apis/blob/main/src/engine/cancun.md
+
+El `ExecutionPayload` debe cumplir los siguientes requisitos:
+
+* Bedrock
+  * El campo de retiros DEBE ser nil
+  * El campo de gas de blob utilizado DEBE ser nil
+  * El campo de límite de gas de blob DEBE ser nil
+* Canyon, Delta
+  * El campo de retiros NO DEBE ser nil
+  * El campo de retiros DEBE ser una lista vacía
+  * El campo de gas de blob utilizado DEBE ser nil
+  * El campo de límite de gas de blob DEBE ser nil
+* Ecotone
+  * El campo de retiros NO DEBE ser nil
+  * El campo de retiros DEBE ser una lista vacía
+  * El campo de gas de blob utilizado DEBE ser 0
+  * El campo de límite de gas de blob DEBE ser 0
+
+#### Sincronización de forkchoice {#forkchoice-synchronization}
+
+Si hay actualizaciones de forkchoice pendientes, estas se aplican primero al motor, antes de derivar o procesar
+entradas adicionales.
+
+Esta sincronización puede producirse en los siguientes casos:
+
+* Una señal de finalidad de L1 finaliza uno o más bloques de L2: se actualiza el bloque de L2 &quot;finalized&quot;.
+* Se consolidan correctamente bloques de L2 no seguros: se actualiza el bloque de L2 &quot;safe&quot;.
+* Justo después de un reinicio del pipeline de derivación, para garantizar un estado de forkchoice coherente en el motor de ejecución.
+
+El nuevo estado de forkchoice se aplica llamando a [fork choice updated](#engine-api-usage) en la API del motor.
+Ante errores de validez del estado de forkchoice, el pipeline de derivación debe reiniciarse para recuperar un estado coherente.
+
+#### Consolidación con L1: coincidencia de atributos de payload {#l1-consolidation-payload-attributes-matching}
+
+Si el unsafe head está por delante del safe head, se intenta la [consolidación][g-consolidation], que verifica que
+la cadena L2 no segura existente coincide con las entradas L2 derivadas a partir de los datos canónicos de L1.
+
+Durante la consolidación, se toma el bloque L2 no seguro más antiguo, es decir, el bloque L2 no seguro inmediatamente posterior al safe head. Si
+los atributos de payload coinciden con este bloque L2 no seguro más antiguo, dicho bloque puede considerarse «seguro» y pasa a ser el nuevo
+safe head.
+
+Se comprueba que los siguientes campos de los atributos de payload L2 derivados sean iguales a los del bloque L2:
+
+* Bloques Bedrock, Canyon, Delta y Ecotone
+  * `parent_hash`
+  * `timestamp`
+  * `randao`
+  * `fee_recipient`
+  * `transactions_list` (primero la longitud y luego la igualdad de cada una de las transacciones codificadas, incluidos los depósitos)
+  * `gas_limit`
+* Bloques Canyon, Delta y Ecotone
+  * `withdrawals` (primero la presencia, luego la longitud y después la igualdad de cada uno de los retiros codificados)
+* Bloques Ecotone
+  * `parent_beacon_block_root`
+
+Si la consolidación tiene éxito, el cambio de forkchoice se sincronizará como se describe en la sección anterior.
+
+Si la consolidación falla, los atributos de payload L2 se procesarán de inmediato como se describe en la sección siguiente.
+Se da prioridad a los atributos de payload frente al bloque L2 no seguro anterior, lo que provoca un reorg de la cadena L2 sobre el
+bloque seguro actual. Procesar de inmediato los nuevos atributos alternativos permite que los motores de ejecución
+apliquen el cambio, ya que es posible que no admitan retrocesos lineales de la punta de la cadena.
+
+#### Sincronización con L1: procesamiento de los atributos de payload {#l1-sync-payload-attributes-processing}
+
+[exec-engine-comm]: /specifications/base-protocol/execution/l2-execution-engine#engine-api
+
+Si las cabezas safe y unsafe de L2 son idénticas (se deba o no a una consolidación fallida), enviamos los atributos de payload
+de L2 al motor de ejecución para que construya con ellos un bloque de L2 válido.
+Este bloque de L2 pasará entonces a ser tanto la nueva cabeza safe como la nueva cabeza unsafe de L2.
+
+Si unos atributos de payload creados a partir de un lote no pueden insertarse en la cadena debido a un error de validación (es decir,
+el bloque contenía una transacción o una transición de estado no válida), el lote debe descartarse y la cabeza safe no debe
+avanzar. La Engine Queue intentará usar el siguiente lote de la cola de lotes para esa marca de tiempo. Si no se encuentra ningún lote
+válido, el nodo del rollup creará un lote compuesto solo por depósitos, que siempre debería superar la validación, ya que los depósitos
+son siempre válidos.
+
+La interacción con el motor de ejecución a través de su API se detalla en la sección [Comunicación con el motor
+de ejecución][exec-engine-comm].
+
+A continuación, los atributos de payload se procesan mediante la siguiente secuencia:
+
+* [Engine: Fork choice updated](#engine-api-usage) con el estado de forkchoice actual de la etapa y los atributos para
+  iniciar la construcción del bloque.
+  * Las fuentes no deterministas, como el tx-pool, deben deshabilitarse para reconstruir el bloque esperado.
+* [Engine: Get Payload](#engine-api-usage) para obtener el payload a partir del payload-ID devuelto en el paso
+  anterior.
+* [Engine: New Payload](#engine-api-usage) para importar el nuevo payload en el motor de ejecución.
+* [Engine: Fork Choice Updated](#engine-api-usage) para convertir el nuevo payload en canónico,
+  esta vez modificando los campos `safe` y `unsafe` para que hagan referencia al payload, y sin atributos de payload.
+
+Gestión de errores de la Engine API:
+
+* Ante errores de tipo RPC, el procesamiento de los atributos de payload debe reintentarse en un paso posterior.
+* Ante errores de procesamiento del payload, los atributos deben descartarse y el estado de forkchoice debe permanecer sin cambios.
+  * Tarde o temprano, el pipeline de derivación producirá atributos de payload alternativos, con o sin lotes.
+  * Si los atributos de payload solo contenían depósitos y estos no son válidos, se trata de un error crítico de derivación.
+* Ante errores de validez del estado de forkchoice, el pipeline de derivación debe reiniciarse para recuperar un estado coherente.
+
+#### Procesamiento de atributos de payload no seguros {#processing-unsafe-payload-attributes}
+
+Si no quedan actualizaciones de forkchoice ni datos de L1 por procesar, y si el siguiente bloque de L2 posible ya está disponible
+a través de una fuente no segura, como cuando el sequencer lo publica mediante la red p2p, entonces se procesa de forma optimista como
+un bloque «no seguro». En el caso favorable, esto reduce el trabajo de derivación posterior a una simple consolidación con L1, y permite al
+usuario ver la cabeza de la cadena L2 antes de que L1 pueda confirmar los lotes de L2.
+
+Para procesar payloads no seguros, el payload debe:
+
+* Tener un número de bloque superior a la cabeza segura actual de L2.
+  * La cabeza segura de L2 solo puede quedar excluida por un reorg a causa de reorgs de L1.
+* Tener un blockhash padre que coincida con la cabeza no segura actual de L2.
+  * Esto evita que el motor de ejecución sincronice por su cuenta un hueco mayor en la cadena L2 no segura.
+  * Esto evita que los bloques de L2 no seguros provoquen un reorg de otros bloques de L2 validados previamente.
+  * Esta comprobación puede cambiar en versiones futuras para adoptar, por ejemplo, el protocolo snap-sync de L1.
+
+A continuación, el payload se procesa mediante la siguiente secuencia:
+
+* Payloads de Bedrock/Canyon/Delta
+  * `engine_newPayloadV2`: procesa el payload. Todavía no pasa a ser canónico.
+  * `engine_forkchoiceUpdatedV2`: convierte el payload en la cabeza no segura canónica de L2 y conserva las cabezas seguras/finalizadas de L2.
+* Payloads de Ecotone
+  * `engine_newPayloadV3`: procesa el payload. Todavía no pasa a ser canónico.
+  * `engine_forkchoiceUpdatedV3`: convierte el payload en la cabeza no segura canónica de L2 y conserva las cabezas seguras/finalizadas de L2.
+* Payloads de Isthmus
+  * `engine_newPayloadV4`: procesa el payload. Todavía no pasa a ser canónico.
+
+Gestión de errores de la Engine API:
+
+* Ante errores de tipo RPC, se debería reintentar el procesamiento del payload en un paso posterior.
+* Ante errores de procesamiento del payload, el payload debe descartarse y no marcarse como canónico.
+* Ante errores de validez del estado de forkchoice, el pipeline de derivación debe restablecerse para recuperar un estado consistente.
+
+### Restablecimiento del pipeline {#resetting-the-pipeline}
+
+Es posible restablecer el pipeline, por ejemplo, si detectamos un [reorg (reorganización)][g-reorg] de L1.
+**Esto permite que el nodo del rollup gestione los eventos de reorg de la cadena L1.**
+
+El restablecimiento devuelve el pipeline a un estado que produce las mismas salidas que un proceso completo de derivación de L2,
+pero partiendo de una cadena L2 existente que se recorre hacia atrás lo justo para conciliarla con la cadena L1 actual.
+
+Tenga en cuenta que este algoritmo cubre varios casos de uso importantes:
+
+* Inicializar el pipeline sin empezar desde 0, p. ej., cuando el nodo del rollup se reinicia con una instancia existente del motor.
+* Recuperar el pipeline si deja de ser coherente con la cadena del motor de ejecución, p. ej., cuando el motor se sincroniza o cambia.
+* Recuperar el pipeline cuando la cadena L1 se reorganiza, p. ej., cuando un bloque L1 tardío queda huérfano o ante un fallo de atestación de mayor alcance.
+* Inicializar el pipeline para derivar un bloque L2 en disputa con el historial previo de L1 y L2 dentro de un programa de prueba.
+
+Gestionar estos casos también significa que un nodo puede configurarse para sincronizar de forma anticipada los datos de L1 con 0 confirmaciones,
+ya que puede deshacer los cambios si posteriormente L1 no reconoce los datos como canónicos, lo que permite un uso seguro y de baja latencia.
+
+Primero se restablece la Engine Queue para determinar los puntos de partida de L1 y L2 desde los que continuar la derivación.
+Después, las demás etapas se restablecen de forma independiente entre sí.
+
+#### Encontrar el punto de inicio de la sincronización {#finding-the-sync-starting-point}
+
+Para encontrar el punto de inicio se siguen varios pasos, partiendo de la cabeza de la cadena y recorriéndola hacia atrás:
+
+1. Encontrar el estado actual de forkchoice de L2
+   * Si no se encuentra ningún bloque `finalized`, comenzar en el bloque génesis de Bedrock.
+   * Si no se encuentra ningún bloque `safe`, recurrir al bloque `finalized`.
+   * El bloque `unsafe` siempre debería estar disponible y ser coherente con lo anterior
+     (puede no estarlo en casos poco frecuentes de recuperación por corrupción del motor; esto se está revisando).
+2. Encontrar el primer bloque de L2 con una referencia de L1 plausible para que sea el nuevo punto de inicio `unsafe`,
+   empezando desde el `unsafe` anterior y retrocediendo hasta `finalized`, sin ir más allá.
+   * Es plausible si y solo si el L1 origin del bloque de L2 es conocido y canónico, o bien es desconocido y tiene un número de bloque por delante de L1.
+3. Encontrar el primer bloque de L2 con una referencia de L1 más antigua que la ventana de secuenciación para que sea el nuevo punto de inicio `safe`,
+   empezando en la cabeza `unsafe` plausible obtenida antes y retrocediendo hasta `finalized`, sin ir más allá.
+   * Si en algún momento el L1 origin es conocido pero no canónico, la cabeza `unsafe` se corrige y pasa a ser el padre del bloque actual.
+   * El bloque de L2 más alto con un L1 origin canónico conocido se guarda como `highest`.
+   * Si en algún momento el L1 origin del bloque está corrupto con respecto a las reglas de derivación, se produce un error. La corrupción incluye:
+     * Número de bloque o hash del padre del L1 origin incoherente con el L1 origin del padre
+     * Número de secuencia de L1 incoherente (siempre pasa a `0` cuando cambia el L1 origin y, si no cambia, se incrementa en `1`)
+   * Si el L1 origin del bloque de L2 `n` es más antiguo que el L1 origin de `highest` en más de una ventana de secuenciación
+     y `n.sequence_number == 0`, entonces el bloque de L2 padre de `n` será el punto de inicio `safe`.
+4. El bloque de L2 `finalized` se mantiene como punto de inicio `finalized`.
+5. Encontrar el primer bloque de L2 con una referencia de L1 más antigua que el tiempo de espera del channel
+   * El L1 origin al que hace referencia este bloque, que llamamos `l2base`, será la `base` para la derivación del pipeline de L2:
+     al comenzar aquí, las etapas pueden almacenar en búfer los datos necesarios y descartar las salidas de derivación incompletas hasta que
+     el recorrido de L1 alcance la cabeza segura real de L2.
+
+Al recorrer hacia atrás la cadena de L2, una implementación puede comprobar que el punto de inicio nunca se sitúe demasiado
+atrás respecto al estado de forkchoice existente, para evitar un reorg costoso provocado por una configuración incorrecta.
+
+Nota para implementadores: los pasos 1-4 se conocen como `FindL2Heads`. Actualmente, el paso 5 forma parte del restablecimiento de la Engine Queue.
+Esto podría cambiar para separar la búsqueda del punto de inicio de la lógica básica de restablecimiento.
+
+#### Restablecimiento de las etapas de derivación {#resetting-derivation-stages}
+
+1. L1 Traversal: comienza en el bloque L1 `base` como primer bloque que extraerá la siguiente etapa.
+2. Recuperación de L1: vacía los datos anteriores y obtiene los datos L1 de `base`, o bien pospone la obtención a un paso posterior del pipeline.
+3. Frame Queue: vacía la cola.
+4. Banco de canales: vacía el banco de canales.
+5. Lector de canales: restablece cualquier estado de decodificación de lotes.
+6. Cola de lotes: vacía la cola de lotes y usa `base` como punto de referencia inicial en L1.
+7. Derivación de atributos de payload: vacía cualquier estado de lotes/atributos.
+8. Engine Queue:
+   * Inicializa el estado de forkchoice de L2 con el estado del punto de inicio de la sincronización. (`finalized`/`safe`/`unsafe`)
+   * Inicializa en `base` el punto de referencia L1 de la etapa.
+   * Exige una actualización de forkchoice como primera tarea
+   * Restablece cualquier dato de finalidad
+
+Cuando sea necesario, las etapas que comienzan en `base` pueden inicializar su configuración del sistema a partir de los datos codificados en el bloque `l2base`.
+
+#### Acerca de los reorgs posteriores a la fusión {#about-reorgs-post-merge}
+
+Tenga en cuenta que, después de la [fusión][merge], la profundidad de los reorgs estará limitada por el [retraso de finalidad de L1][l1-finality]
+(2 épocas de la beacon chain de L1, o aproximadamente 13 minutos, salvo que más de 1/3 de la red esté en desacuerdo de forma sostenida).
+Pueden finalizarse nuevos bloques de L1 en cada época de la beacon chain de L1 (aproximadamente 6,4 minutos) y, en función de estas
+señales de finalidad y de la inclusión de lotes, la cadena L2 derivada también pasará a ser irreversible.
+
+Tenga en cuenta que esta forma de finalización solo afecta a las entradas; a partir de ahí, los nodos pueden afirmar subjetivamente que la cadena es irreversible,
+reproduciéndola a partir de estas entradas irreversibles y de las reglas y parámetros establecidos del protocolo.
+
+Sin embargo, esto no guarda ninguna relación con las salidas publicadas en L1, que requieren algún tipo de prueba, como una prueba de fallos o una
+prueba zk, para finalizarse. Las salidas de un optimistic rollup, como los retiros en L1, solo se marcan como «finalizadas» tras transcurrir una semana
+sin disputas (ventana de impugnación de la prueba de fallos), lo que provoca una colisión de nombres con la finalización de la prueba de participación (proof-of-stake).
+
+[merge]: https://ethereum.org/en/upgrades/merge/
+
+[l1-finality]: https://ethereum.org/en/developers/docs/consensus-mechanisms/pos/#finality
+
+***
+
+## Derivación de los atributos del payload {#deriving-payload-attributes}
+
+[deriving-payload-attr]: #deriving-payload-attributes
+
+Para cada bloque de L2 derivado de datos de L1, necesitamos construir [atributos del payload][g-payload-attr],
+representados por una [versión ampliada][expanded-payload] del objeto [`PayloadAttributesV2`][eth-payload],
+que incluye los campos adicionales `transactions` y `noTxPool`.
+
+Este proceso tiene lugar en la cola de atributos del payload que ejecuta un nodo verificador, así como durante la producción de bloques
+que ejecuta un nodo sequencer (el sequencer puede habilitar el uso del tx-pool si las transacciones se envían por lotes).
+
+[expanded-payload]: /specifications/base-protocol/execution/l2-execution-engine#extended-payloadattributesv1
+
+## Derivación de la lista de transacciones {#deriving-the-transaction-list}
+
+Para cada bloque L2 que debe crear el sequencer, partimos de un [lote del sequencer][g-sequencer-batch] que coincida con el
+número de bloque L2 objetivo. Podría tratarse de un lote vacío generado automáticamente si la cadena L1 no incluyó ningún lote
+para el número de bloque L2 objetivo. [Recuerde][batch-format] que el lote incluye un número de [época de
+secuenciación][g-sequencing-epoch], una marca de tiempo L2 y una lista de transacciones.
+
+Este bloque forma parte de una [época de secuenciación][g-sequencing-epoch],
+cuyo número coincide con el de un bloque L1 (su *[L1 origin][g-l1-origin]*).
+Este bloque L1 se utiliza para derivar los L1 attributes y (en el primer bloque L2 de la época) los depósitos de usuarios.
+
+Por lo tanto, un objeto [`PayloadAttributesV2`][expanded-payload] debe incluir las siguientes transacciones:
+
+* una o más [transacciones depositadas][g-deposited], de dos tipos:
+  * una única *[transacción depositada de L1 attributes][g-l1-attr-deposit]*, derivada del L1 origin.
+  * en el primer bloque L2 de la época, cero o más *[transacciones depositadas por usuarios][g-user-deposited]*, derivadas de
+    los [recibos][g-receipts] del L1 origin.
+* cero o más [transacciones de automatización de actualizaciones de red][network upgrade automation transactions]: transacciones especiales para llevar a cabo actualizaciones de la red.
+* cero o más *[transacciones secuenciadas][g-sequencing]*: transacciones normales firmadas por usuarios de L2 e incluidas en el
+  lote del sequencer.
+
+Las transacciones **deben** aparecer en este orden en los atributos del payload.
+
+Los L1 attributes se leen del encabezado del bloque L1, mientras que los depósitos se leen de los [recibos][g-receipts] del bloque L1.
+Consulte la [**especificación del contrato de depósitos**][deposit-contract-spec] para obtener más información sobre cómo se codifican los depósitos como entradas
+de log.
+
+[deposit-contract-spec]: /specifications/base-protocol/bridging/deposits#deposit-contract
+
+Los logs se derivan de las transacciones mediante el proceso de mejor esfuerzo y preparado para el futuro que se describe en
+[Sobre la derivación de logs de transacciones preparada para el futuro](#on-future-proof-transaction-log-derivation)
+
+### Transacciones de automatización de actualizaciones de red {#network-upgrade-automation-transactions}
+
+[network upgrade automation transactions]: #network-upgrade-automation-transactions
+
+Algunas actualizaciones de red requieren cambios o despliegues automatizados de contratos en bloques concretos.
+Para automatizarlos sin introducir cambios persistentes en la capa de ejecución,
+se pueden insertar transacciones especiales como parte del proceso de derivación.
+
+## Construcción de atributos de payload individuales {#building-individual-payload-attributes}
+
+Tras derivar la lista de transacciones, el nodo del rollup construye un [`PayloadAttributesV2`][extended-attributes] de la
+siguiente manera:
+
+* `timestamp` se establece en la marca de tiempo del lote.
+* `random` se establece en el atributo `prev_randao` del bloque de L1.
+* `suggestedFeeRecipient` se establece en la dirección del Sequencer Fee Vault. Consulta la especificación de [Fee Vaults].
+* `transactions` es el arreglo de las transacciones derivadas: transacciones depositadas y transacciones secuenciadas, todas
+  codificadas con [EIP-2718].
+* `noTxPool` se establece en `true` para que el bloque se construya exactamente con la lista `transactions` anterior.
+* `gasLimit` se establece en el valor actual de `gasLimit` en la [configuración del sistema][g-system-config] de este payload.
+* `withdrawals` se establece en nil antes de Canyon y en un arreglo vacío a partir de Canyon
+
+[extended-attributes]: /specifications/base-protocol/execution/l2-execution-engine#extended-payloadattributesv1
+
+[Fee Vaults]: /specifications/base-protocol/execution/l2-execution-engine#fee-vaults
+
+## Sobre la derivación de logs de transacciones preparada para el futuro {#on-future-proof-transaction-log-derivation}
+
+Como se describe en [Recuperación de L1](#l1-retrieval), los tipos de las transacciones del batcher deben pertenecer a una lista de permitidos fija.
+
+Sin embargo, queremos que las transacciones de depósito y los eventos de actualización de `SystemConfig` puedan derivarse incluso a partir de recibos de
+tipos de transacción futuros, siempre que dichos recibos puedan decodificarse mediante un proceso de mejor esfuerzo:
+
+Siempre que un tipo de transacción futuro siga la especificación [EIP-2718](https://eips.ethereum.org/EIPS/eip-2718), el
+tipo puede decodificarse a partir del primer byte de la codificación binaria de la transacción (o de su recibo). A partir de ahí, podemos proceder de la
+siguiente manera para obtener los logs de dicha transacción futura o descartar su recibo como inválido.
+
+* Si es un tipo de transacción conocido, es decir, legacy (el primer byte de la codificación está en el rango `[0xc0, 0xfe]`) o su
+  primer byte está en el rango `[0, 4]` o es `0x7e` (*depositada*), entonces no es una *transacción futura*: sabemos cómo
+  decodificar el recibo y este proceso no aplica.
+* Si el primer byte de una transacción está en el rango `[0x05, 0x7d]`, se espera que sea una transacción EIP-2718 *futura*, por lo que
+  podemos pasar al recibo. Ten en cuenta que excluimos `0x7e` porque es el tipo de transacción de depósito, que ya es conocido.
+* El primer byte de la codificación del recibo *futuro* debe coincidir con el primer byte de la codificación de la transacción; de lo contrario, se
+  descarta como inválido, ya que para continuar exigimos que sea un recibo codificado según EIP-2718.
+* La carga útil del recibo se decodifica como si estuviera codificada como `rlp([status, cumulative_transaction_gas_used, logs_bloom,
+  logs])`, que es la codificación de los tipos de transacción conocidos que no son legacy.
+  * Si esta decodificación falla, el recibo de la transacción se descarta como inválido.
+  * Si esta decodificación tiene éxito, se obtienen los `logs`, que pueden procesarse igual que los de los tipos de transacción conocidos.
+
+El objetivo de este proceso de decodificación de mejor esfuerzo es preparar el protocolo para futuros tipos de transacción de L1.

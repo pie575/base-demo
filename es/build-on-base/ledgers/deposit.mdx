@@ -1,0 +1,40 @@
+---
+title: "Depositar en un libro mayor"
+keywords: ["depósito en libro mayor de Base", "destinatario cifrado", "depósito mediante el contrato Portal", "depósito privado en Base"]
+description: "Transfiere fondos de Base a un libro mayor privado mediante el contrato Portal, con el destinatario cifrado onchain."
+---
+
+import { LedgersDemo } from "/snippets/LedgersDemo.jsx"
+
+Un depósito transfiere fondos desde Base al libro mayor mediante el contrato `Portal`. El activo, el importe y el remitente se liquidan públicamente en Base, pero el destinatario está cifrado, de modo que no es posible vincular entre sí varios depósitos a una misma cuenta. Consulta [Transacciones privadas](/es/get-started/private-transactions).
+
+## Demostración {#demo}
+
+<LedgersDemo flow="deposit" />
+
+<Tip>
+  La demostración anterior es solo una simulación. Si quieres ver demostraciones onchain en Vibenet, visita [Demostraciones de la cadena Base](https://chain.base.org/demos).
+</Tip>
+
+## Qué se expone onchain {#whats-exposed-onchain}
+
+| Dato         | ¿Público? | Motivo                                                                                 |
+| ------------ | --------- | -------------------------------------------------------------------------------------- |
+| Activo       | Público   | El Portal liquida la transferencia en Base.                                            |
+| Importe      | Público   | El Portal liquida la transferencia en Base.                                            |
+| Remitente    | Público   | La dirección que envía el depósito.                                                    |
+| Destinatario | Oculto    | Se cifra para que los depósitos a una misma cuenta no puedan vincularse ni atribuirse. |
+
+Un depósito también puede requerir una atestación o un permiso, por ejemplo, para restringir quién puede depositar.
+
+## Ver también {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="Transferir dentro de un libro mayor" icon="arrow-right-arrow-left" href="/es/build-on-base/ledgers/transfer">
+    Transfiere valor de forma privada entre cuentas.
+  </Card>
+
+  <Card title="Retirar de un libro mayor" icon="upload" href="/es/build-on-base/ledgers/withdraw">
+    Devuelve fondos de un libro mayor a Base.
+  </Card>
+</CardGroup>

@@ -1,0 +1,125 @@
+---
+title: 'eth_getLogs'
+sidebarTitle: 'eth_getLogs'
+description: '返回与过滤器匹配的日志。使用 pending 可查询预确认交易中的日志。'
+---
+
+返回与给定过滤器对象匹配的所有日志数组，尤其适用于为链上事件建立索引。
+
+<Warning>
+  跨越较大区块范围或涉及高活跃度合约的查询可能会超时或被拒绝。为确保结果可靠，请将 `fromBlock` 到 `toBlock` 的范围控制在 2,000 个区块以内。节点提供商可能另有限制。
+</Warning>
+
+<Tip>
+  **Flashblocks：** 设置 `"fromBlock": "pending"` 和 `"toBlock": "pending"`，即可查询预确认交易中的日志，数据约每 200ms 更新一次。如需实时数据流，建议改用 [`pendingLogs`](/zh/base-chain/api-reference/flashblocks-api/pendingLogs) WebSocket 订阅。
+</Tip>
+
+## 参数 {#parameters}
+
+<ParamField body="filter" type="object" required>
+  过滤选项。应至少提供一个过滤条件。
+
+  <Expandable title="过滤字段">
+    <ParamField body="fromBlock" type="string">
+      区块范围的起始区块。可以是十六进制区块号或区块标签。使用 `"pending"` 可包含已预确认的日志。默认为 `"latest"`。
+    </ParamField>
+
+    <ParamField body="toBlock" type="string">
+      区块范围的结束区块。可以是十六进制区块号或区块标签。默认为 `"latest"`。
+    </ParamField>
+
+    <ParamField body="address" type="string | array">
+      用于过滤的合约地址或地址数组。可选。
+    </ParamField>
+
+    <ParamField body="topics" type="array">
+      32 字节 topic 过滤器数组。每个位置可以是 `null` (匹配任意值) 、单个十六进制 topic 字符串，或十六进制字符串数组 (匹配数组中的任意一项) 。位置 0 通常是事件签名的 `keccak256` 哈希。可选。
+    </ParamField>
+
+    <ParamField body="blockHash" type="string">
+      仅返回该哈希对应区块中的日志。若提供此参数，将忽略 `fromBlock` 和 `toBlock`。可选。
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## 返回值 {#returns}
+
+<ResponseField name="result" type="array">
+  与过滤条件匹配的日志对象数组。
+
+  <Expandable title="日志对象字段">
+    <ResponseField name="address" type="string">发出该日志的合约的 20 字节地址。</ResponseField>
+    <ResponseField name="topics" type="array">由 0–4 个已索引的 32 字节 topic 组成的数组。topic 0 通常为事件签名哈希。</ResponseField>
+    <ResponseField name="data" type="string">经 ABI 编码的非索引事件参数。</ResponseField>
+    <ResponseField name="blockNumber" type="string">发出该日志的区块号 (十六进制) 。</ResponseField>
+    <ResponseField name="blockTimestamp" type="string">包含该日志的区块的 Unix 时间戳，以十六进制字符串表示。此字段是 Base L2 对标准以太坊日志结构的扩展。</ResponseField>
+    <ResponseField name="transactionHash" type="string">发出该日志的交易的 32 字节哈希。</ResponseField>
+    <ResponseField name="transactionIndex" type="string">该交易在区块中的索引 (十六进制) 。</ResponseField>
+    <ResponseField name="blockHash" type="string">区块的 32 字节哈希。</ResponseField>
+    <ResponseField name="logIndex" type="string">该日志在区块内的索引位置 (十六进制) 。</ResponseField>
+    <ResponseField name="removed" type="boolean">若该日志因链重组 (Reorg) 而被移除，则为 `true`。</ResponseField>
+  </Expandable>
+</ResponseField>
+
+## 示例 {#example}
+
+<CodeGroup>
+  ```bash 标准（区块范围） lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_getLogs",
+      "params": [{
+        "fromBlock": "0x12ced00",
+        "toBlock": "0x12ced28",
+        "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "topics": ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"]
+      }],
+      "id": 1
+    }'
+  ```
+
+  ```bash Flashblocks（pending，约 200ms） lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_getLogs",
+      "params": [{
+        "fromBlock": "pending",
+        "toBlock": "pending",
+        "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "topics": ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"]
+      }],
+      "id": 1
+    }'
+  ```
+
+  ```json 响应 lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": [
+      {
+        "address": "0x4200000000000000000000000000000000000006",
+        "blockHash": "0x89f4c9e23a2f706f0afa9ca8f770c4b7dcbcb73ba7e9b1c29c4a8c1b90c31d24",
+        "blockNumber": "0x2c31b0a",
+        "blockTimestamp": "0x6a1092f7",
+        "data": "0x00000000000000000000000000000000000000000000000080134424aad49d08",
+        "logIndex": "0x0",
+        "removed": false,
+        "topics": [
+          "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+          "0x000000000000000000000000b2cc224c1c9fee385f8ad6a55b4d94e92359dc59",
+          "0x00000000000000000000000051c72848c68a965f66fa7a88855f9f7784502a7f"
+        ],
+        "transactionHash": "0x2ca798df9d399b886fb3735414e8d35a20fec080e48eb5e2e75c0f6ec349a725",
+        "transactionIndex": "0x1"
+      }
+    ]
+  }
+  ```
+</CodeGroup>

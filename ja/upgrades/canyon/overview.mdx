@@ -1,0 +1,56 @@
+---
+title: "Canyon"
+description: "Ethereum Shanghai の EIP（EIP-3651、EIP-3855、EIP-3860）を Base の実行レイヤーに導入する Canyon ハードフォークの概要。"
+---
+
+## アクティベーションのタイムスタンプ {#activation-timestamps}
+
+| ネットワーク    | アクティベーションのタイムスタンプ                      |
+| --------- | -------------------------------------- |
+| `mainnet` | `1704992401` (2024-01-11 17:00:01 UTC) |
+| `sepolia` | `1699981200` (2023-11-14 17:00:00 UTC) |
+
+[eip3651]: https://eips.ethereum.org/EIPS/eip-3651
+
+[eip3855]: https://eips.ethereum.org/EIPS/eip-3855
+
+[eip3860]: https://eips.ethereum.org/EIPS/eip-3860
+
+[eip4895]: https://eips.ethereum.org/EIPS/eip-4895
+
+[eip6049]: https://eips.ethereum.org/EIPS/eip-6049
+
+[block-validation]: /specifications/base-protocol/consensus/p2p#block-validation
+
+[payload-attributes]: /specifications/base-protocol/consensus/derivation#building-individual-payload-attributes
+
+[1559-params]: /specifications/base-protocol/execution/l2-execution-engine#1559-parameters
+
+[channel-reading]: /specifications/base-protocol/consensus/derivation#reading
+
+[deposit-reading]: /specifications/base-protocol/bridging/deposits#deposit-receipt
+
+[create2deployer]: /specifications/base-protocol/execution/predeploys#create2deployer
+
+Canyon アップグレードには、L1 の Shapella アップグレードと、いくつかの軽微なプロトコル修正が含まれています。
+Canyon アップグレードは *L2 ブロックタイムスタンプ* に基づくアクティベーションルールを採用しており、
+rollup-node (`canyon_time`) と実行エンジン (`config.canyonTime`) の両方で指定します。実行エンジンの
+Shanghai の時刻は、Canyon の時刻と同じ値に設定してください。
+
+## 実行レイヤー {#execution-layer}
+
+* Shapella アップグレード
+  * [EIP-3651: COINBASE のウォーム化][eip3651]
+  * [EIP-3855: PUSH0 命令][eip3855]
+  * [EIP-3860: initcode の制限と計測][eip3860]
+  * [EIP-4895: ビーコンチェーンのプッシュ型出金をオペレーションとして扱う][eip4895]
+    * [P2P ブロックでは出金を禁止][block-validation]
+    * [Canyon 以降、出金は空の配列に設定する必要がある][payload-attributes]
+  * [EIP-6049: SELFDESTRUCT の非推奨化][eip6049]
+* [EIP-1559 の Denominator を変更][1559-params]
+* [デポジットレシートのハッシュにデポジット nonce とデポジット nonce バージョンを追加][deposit-reading]
+* [create2Deployer を `0x13b0D85CcB8bf860b6b79AF3029fCA081AE9beF2` にデプロイ][create2deployer]
+
+## コンセンサスレイヤー {#consensus-layer}
+
+* [チャネル順序の修正][channel-reading]

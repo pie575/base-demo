@@ -1,0 +1,44 @@
+---
+title: 交易排序
+description: 交易按优先费和到达时间排序，排序结果决定交易会被打包进哪个 Flashblock。
+---
+
+## 概述 {#overview}
+
+本节介绍 Base 网络上的交易排序方式。排序与用户体验彼此独立，
+例如，sequencer 可以每 200ms 构建一次 Flashblocks，而不对外公开这些 Flashblocks。在这种情况下，区块排序
+会发生变化，但用户体验保持不变。
+
+## 配置 {#configurations}
+
+### Flashblocks {#flashblocks}
+
+区块由 [base-builder](https://github.com/base/base/tree/main/crates/builder) 构建，每 **200ms** 进行一次优先费竞价。借助预确认机制，有效出块时间从 2 秒缩短至 200 毫秒。
+
+*与常规排序相比，主要有三点区别：*
+
+1. **时序** — 每 200ms 构建一个 Flashblock，每个 Flashblock 负责对区块中的一部分交易进行排序。Flashblock 一经构建并广播，其中的交易顺序即被锁定。之后到达的交易即使优先费更高，也无法被纳入更早的 Flashblock。
+
+2. **Gas 分配** — 每个 Flashblock 的 gas 预算逐步递增。Flashblock 1 可使用区块 gas 上限的 1/10，Flashblock 2 可使用 2/10，依此类推，直至 Flashblock 10 可使用全部上限。
+
+   | Flashblock | 可用 Gas           |
+   | ---------- | ---------------- |
+   | 1          | ~40M gas (1/10)  |
+   | 2          | ~80M gas (2/10)  |
+   | 3          | ~120M gas (3/10) |
+   | ...        | ...              |
+   | 10         | ~400M gas (全部)   |
+
+   <Note>
+     由于 gas 按累计方式分配，交易所需的 gas 必须在其被选入的 Flashblock 的可用预算之内。Base 的[单笔交易 gas 上限](/zh/specifications/transactions/throughput-and-limits#per-transaction-gas-maximum) (约 16.7M) 低于 Flashblock 1 约 40M 的预算，因此任何有效交易从第一个 Flashblock 起即可被纳入。
+   </Note>
+
+3. **动态 Mempool** — 构建器在构建每个 Flashblock 期间会持续接收新交易。这能最大限度降低纳入延迟，但也意味着交易是按照*被选中时*的费用排序，而非在 200ms 窗口内到达的所有交易之间进行全局排序。较晚到达的高费用交易可能排在已提交的低费用交易之后。
+
+   <Note>
+     这是有意为之的权衡：以偶尔&quot;打破&quot; Flashblock 内预期的优先 gas 竞价 (PGA) 排序为代价，换取更快的交易纳入。
+   </Note>
+
+### Vanilla {#vanilla}
+
+`base-reth-node` 每 2 秒构建一个区块，区块内的交易按优先费排序。

@@ -1,0 +1,200 @@
+---
+title: "应用乘数"
+description: "为 B20 Asset 安排乘数更新，使显示的单位数量在未来指定时间发生变化，而无需改写原始余额。股票拆分就是一个典型例子。"
+keywords: ["资产代币乘数", "B20 乘数", "缩放代币余额", "股票拆分", "updateUIMultiplier", "ERC-8056"]
+---
+
+import { AssetDemo } from "/snippets/AssetDemo.jsx"
+import RwaDisclaimer from "/snippets/zh/RwaDisclaimer.mdx"
+
+乘数 (multiplier) 只会调整持有者看到的数值，而不会改动其实际持有量。到了约定时间，所有显示余额都会按同一系数变化，而原始的 `balanceOf`、`totalSupply` 和转账金额保持不变，因此读取原始单位的 DeFi 应用仍可正常运行。交易所、托管机构、钱包和会计系统需要提前获知这一时间，因此你需要在此之前通过 `updateUIMultiplier` ([ERC-8056](https://eips.ethereum.org/EIPS/eip-8056)) 在链上预先安排此次更新。本指南以 1 股拆 2 股的股票拆分为例；反向拆分或红利再投资的流程与此相同，只是取值不同。
+
+<RwaDisclaimer />
+
+<Warning>
+  常规做法是使用 `updateUIMultiplier`。已弃用的 `updateMultiplier` 会立即应用新值，并清除所有待生效的更新，请仅在紧急情况下用它强制覆盖。
+</Warning>
+
+## 演示 {#demo}
+
+<AssetDemo flow="split" />
+
+<Tip>
+  该演示使用浏览器本地生成的账户，在 **Base Vibenet** 上提交真实交易。如果 Vibenet 或其 B20 功能不可用，演示会自动切换为离线示意版本。
+</Tip>
+
+<Note>
+  初次接触 B20？请参阅 [B20 代币标准](/zh/build-on-base/issue-rwa/create-an-asset-token)，了解相关概念及完整的发行流程。这些示例基于 `base-std@1505323`、`viem@2.55.11` 和 Base Foundry `v1.1.1`。
+</Note>
+
+## 开始之前 {#before-you-start}
+
+你需要准备好以下全部条件：
+
+* 一个由你管理的 B20 Asset，且你拥有 `DEFAULT_ADMIN_ROLE`，以便授予 `OPERATOR_ROLE`。
+* 一个用于调用乘数设置函数的账户 (即操作员) 。`updateUIMultiplier`、`cancelUIMultiplierUpdate` 以及已弃用的 `updateMultiplier` 均需要 `OPERATOR_ROLE`。按照[创建资产代币](/zh/build-on-base/issue-rwa/create-an-asset-token)创建的代币会将该角色授予部署者。
+* 一个未来时间点的 `effectiveAt` 时间戳，以及一个取值范围为 `(0, MAX_UI_MULTIPLIER]` 的 `newMultiplier`。
+
+此接口仅适用于 **B20 Asset**，Stablecoin 不支持乘数。暂停状态不会影响这些设置函数：`PausableFeature` 仅冻结 `TRANSFER`、`MINT`、`BURN` 和 `SEIZE`。
+
+### 乘数会改变什么 {#what-a-multiplier-changes}
+
+乘数不会改变原始的 `balanceOf`。只有派生的 UI 视图才会应用乘数：
+
+| 读取                                                  | 公式                                           |
+| --------------------------------------------------- | -------------------------------------------- |
+| `uiMultiplier()` / `multiplier()`                   | `block.timestamp` 时刻的有效乘数                    |
+| `balanceOfUI(account)` / `scaledBalanceOf(account)` | `balanceOf(account) * uiMultiplier() / 1e18` |
+| `totalSupplyUI()`                                   | `totalSupply() * uiMultiplier() / 1e18`      |
+| `toUIAmount(raw)` / `fromUIAmount(ui)`              | 按有效乘数进行换算                                    |
+
+乘数是一个 18 位小数的 WAD 值：`1e18` 表示 `1.0`。一拆二的拆股使用 `2e18`，二合一的并股使用 `5e17`。整数除法向下取整，因此舍入损失仅出现在缩放后的视图中，且至多为缩放金额的一个单位。当乘数小于 `1e18` 时，经 `fromUIAmount` 往返换算后，原始值一侧的差额可能更大。建议股票代币采用 18 位 Decimals，以尽可能减小这一影响。
+
+### 调度的生命周期 {#how-a-schedule-lives}
+
+该资产同一时间只允许存在**一个**待生效的乘数。
+
+1. **调度。** `updateUIMultiplier(newMultiplier, effectiveAt)` 会存储待生效的数值对。`effectiveAt` 必须严格大于 `block.timestamp`。
+2. **待生效期间。** 当 `effectiveAt() > block.timestamp` 时，`uiMultiplier()` 仍返回当前值，`newUIMultiplier()` 返回已调度的值，`effectiveAt()` 返回切换时间。此时若再次调度，交易将回滚并报 `UIMultiplierUpdateExists` 错误。
+3. **生效。** 当 `block.timestamp >= effectiveAt` 时，读取操作将返回新的乘数。生效过程不会写入任何存储，也不会触发任何事件。
+4. **生效之后。** 在下一次更新之前，`newUIMultiplier()` 与 `uiMultiplier()` 保持一致，`effectiveAt()` 则保留已过去的时间戳。要检测是否存在待生效的更新，应使用 `effectiveAt() > block.timestamp`，切勿使用 `effectiveAt() == 0`。
+
+## 安排并验证乘数更新 {#schedule-and-verify-the-multiplier-update}
+
+如果操作员尚未持有 `OPERATOR_ROLE`，需为每个代币授予一次该角色：
+
+```solidity Grant OPERATOR_ROLE
+asset.grantRole(asset.OPERATOR_ROLE(), operator);
+```
+
+然后安排更新。以下示例安排在明天执行一次 1 拆 2 的拆股 (每 1 股拆分为 2 股) ：
+
+<CodeGroup>
+  {/* sample: stock-split-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={8}
+  import { type Address } from "viem";
+  import { publicClient } from "../../shared/clients.js";
+  import { assetAbi } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function scheduleTwoForOneSplit(token: Address) {
+    const effectiveAt = BigInt(Math.floor(Date.now() / 1000) + 86_400);
+    await sendContract({ address: token, abi: assetAbi, functionName: "updateUIMultiplier", args: [2n * 10n ** 18n, effectiveAt] });
+    const pending = await publicClient.readContract({ address: token, abi: assetAbi, functionName: "newUIMultiplier" });
+    if (pending !== 2n * 10n ** 18n) throw new Error("Split was not scheduled");
+    return effectiveAt;
+  }
+  ```
+
+  {/* sample: stock-split-solidity */}
+
+  ```solidity Solidity lines wrap expandable highlight={3}
+  function scheduleSplit(address token) public returns (uint256 effectiveAt) {
+      effectiveAt = block.timestamp + 1 days;
+      IB20Asset(token).updateUIMultiplier(2e18, effectiveAt);
+      require(IB20Asset(token).newUIMultiplier() == 2e18, "split not scheduled");
+      require(IB20Asset(token).effectiveAt() == effectiveAt, "effectiveAt mismatch");
+  }
+  ```
+
+  {/* sample: stock-split-cli */}
+
+  ```bash CLI lines wrap expandable highlight={2}
+  EFFECTIVE_AT=$(( $(date +%s) + 86400 ))
+  base-cast send "$TOKEN_ADDRESS" "updateUIMultiplier(uint256,uint256)" 2000000000000000000 "$EFFECTIVE_AT" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  base-cast call "$TOKEN_ADDRESS" "newUIMultiplier()(uint256)" --rpc-url "$RPC_URL"
+  ```
+</CodeGroup>
+
+调用成功后，该资产会发出 `UIMultiplierUpdated(oldMultiplier, newMultiplier, effectiveAtTimestamp)` 事件。该事件在更新被记录时触发，而非在乘数实际生效时触发。如需在不触发 `InvalidMultiplier` 的前提下获取乘数上限，请读取 `MAX_UI_MULTIPLIER()`。
+
+### 读取实时待生效状态 {#read-the-live-pending-state}
+
+```solidity Read the pending state
+asset.uiMultiplier();     // 仍为当前乘数
+asset.newUIMultiplier();  // 计划设定的目标值
+asset.effectiveAt();      // 切换生效时间戳
+```
+
+若已有待生效的更新，再次调用 `updateUIMultiplier` 将回滚并抛出 `UIMultiplierUpdateExists`。如需替换待生效的更新，请先将其取消，再重新调度。
+
+### 在生效时间后确认 {#confirm-after-the-effective-time}
+
+当 `block.timestamp >= effectiveAt` 时，`uiMultiplier()` 返回新的乘数。乘数生效时不会触发任何事件，因此无需等待切换时出现第二个事件。
+
+<Check>
+  `UIMultiplierUpdated` 会出现在调度交易中。在待生效期间，`uiMultiplier()` 等于旧值，`newUIMultiplier()` 等于 `2e18`。到达 `effectiveAt` 时或之后，`uiMultiplier()` 返回 `2e18`，原始 `balanceOf` 保持不变，而 `balanceOfUI` 翻倍。
+</Check>
+
+如需在同一笔交易中向持有者和索引器公开该调度，请将调用包装在 `announce` 中；参见[向持有者公告变更](/zh/build-on-base/issue-rwa/announce-a-distribution)。
+
+## 取消待生效的更新 {#cancel-a-pending-update}
+
+如果某个待生效的更新不应生效 (例如乘数有误、时间戳有误或操作已推迟) ，请使用此方法。必须在 `effectiveAt` 之前调用：
+
+```solidity Cancel the pending update
+asset.cancelUIMultiplierUpdate();
+```
+
+触发 `UIMultiplierUpdateCancelled(cancelledMultiplier, cancelledEffectiveAt)` 事件。`uiMultiplier()` 保持原值不变。如果调用时不存在有效的待生效更新 (包括更新已到期生效之后) ，调用将回滚并返回 `UIMultiplierUpdateDoesNotExist`。
+
+如需以原子方式取消并重新安排更新，请将这两个调用包装在 `announce` 中：
+
+```solidity Cancel and reschedule in one announcement wrap
+bytes[] memory calls = new bytes[](2);
+calls[0] = abi.encodeCall(IB20Asset.cancelUIMultiplierUpdate, ());
+calls[1] = abi.encodeCall(IB20Asset.updateUIMultiplier, (secondMultiplier, secondEffectiveAt));
+asset.announce(calls, "2026-multiplier-02", "Rescheduled multiplier update", "https://example.com/announcements/2026-multiplier-02");
+```
+
+<Note>
+  在乘数更新前后暂停 `TRANSFER` 虽然可行，但不建议在常规更新中使用。这会在整个时间窗口内冻结所有持有者的转账，对大多数变更来说代价过高；而且除了操作员之外，还需要 `PAUSE_ROLE` 和 `UNPAUSE_ROLE`。建议优先采用计划更新，让钱包和托管方根据待生效状态自行协调。
+</Note>
+
+## 紧急覆盖 {#emergency-override}
+
+仅当待生效的更新有误且无法等到 `effectiveAt` 时，才使用 `updateMultiplier(newMultiplier)`。该函数会立即应用新值，并清除所有待生效的更新。如果可以等待，应优先取消更新；如果修正后的值仍需在未来某个时间戳生效，则应先取消再重新调度。
+
+| 情形                                             | 事件 (按顺序)                                                                                                        |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| 存在尚未生效的待生效更新 (`effectiveAt > block.timestamp`)  | `UIMultiplierUpdateCancelled`，然后是 `MultiplierUpdated(new)`，最后是 `UIMultiplierUpdated(old, new, block.timestamp)` |
+| 待生效更新已到期或不存在待生效更新                                | `MultiplierUpdated(new)`，然后是 `UIMultiplierUpdated(old, new, block.timestamp)`                                   |
+
+`MultiplierUpdated` 已弃用。请仅处理 `UIMultiplierUpdated`，以免重复处理同一次更新。
+
+## 集成方规则 {#integrator-rules}
+
+* 请监听 `UIMultiplierUpdated`，而非已弃用的 `MultiplierUpdated`。
+* 如果 `effectiveAtTimestamp > block.timestamp`，则在到达该时间之前，应将此更新视为待生效状态。
+* 更新到期生效时不会触发任何事件。不要在生效切换时等待第二个事件。
+* 收到 `UIMultiplierUpdateCancelled` 时，应丢弃待生效的更新。
+* 请使用 `effectiveAt() > block.timestamp` 判断当前是否存在待生效的更新，而不要检查 `effectiveAt() == 0`。
+
+## 常见错误 {#common-errors}
+
+以下错误按 `updateUIMultiplier` 的检查顺序列出，随后是取消和 announce 相关的错误。
+
+| 错误                                                        | 原因                                                        | 修复方法                                      |
+| --------------------------------------------------------- | --------------------------------------------------------- | ----------------------------------------- |
+| `AccessControlUnauthorizedAccount(caller, OPERATOR_ROLE)` | 调用方没有 `OPERATOR_ROLE`。                                    | 为操作员授予 `OPERATOR_ROLE`。                   |
+| `InvalidMultiplier()`                                     | `newMultiplier` 为零或超过 `MAX_UI_MULTIPLIER`。                | 传入 `(0, MAX_UI_MULTIPLIER]` 范围内的值。        |
+| `EffectiveAtInPast(effectiveAt)`                          | `effectiveAt <= block.timestamp`。                         | 传入严格晚于当前时间的时间戳。                           |
+| `EffectiveAtTooFar(effectiveAt)`                          | `effectiveAt > type(uint64).max`。                         | 传入可用 `uint64` 表示的时间戳。                     |
+| `UIMultiplierUpdateExists(effectiveAt)`                   | 已存在一个尚未生效的有效更新。                                           | 先取消该更新，或在一次 `announce` 中完成取消和重新调度。        |
+| `UIMultiplierUpdateDoesNotExist()`                        | 在没有尚未生效的有效更新时调用了 `cancelUIMultiplierUpdate` (包括更新已生效之后) 。 | 仅在 `effectiveAt() > block.timestamp` 时调用。 |
+| `AnnouncementIdAlreadyUsed(id)`                           | `announce` 重复使用了某个 `id`。                                  | 改用一个新的、仅使用一次的 `id`。                       |
+| `InternalCallFailed(call)`                                | `announce` 中的某个内部调用发生回滚。                                  | 修正编码后的 calldata 并重试。                      |
+
+## 另请参阅 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="向持有者公告变更" icon="bullhorn" href="/zh/build-on-base/issue-rwa/announce-a-distribution">
+    在同一笔交易中向持有者和索引器披露本次更新。
+  </Card>
+
+  <Card title="暂停转账" icon="circle-pause" href="/zh/build-on-base/issue-rwa/pause-transfers">
+    在紧急情况下暂停转账。
+  </Card>
+</CardGroup>

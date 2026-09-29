@@ -1,0 +1,179 @@
+---
+title: "Jovian: motor de ejecución"
+description: "Cambios en el motor de ejecución introducidos por la actualización Jovian, que incorpora una tarifa base mínima configurable mediante SystemConfig para acortar la duración de las subastas de tarifas de prioridad."
+---
+
+## Tarifa base mínima {#minimum-base-fee}
+
+Jovian introduce una
+[tarifa base mínima configurable](https://github.com/ethereum-optimism/design-docs/blob/main/protocol/minimum-base-fee.md)
+para acortar la duración de las subastas de tarifas de prioridad en Base.
+
+La tarifa base mínima se configura mediante `SystemConfig` (consulta [Configuración del sistema](/es/specifications/base-protocol/consensus/derivation#system-configuration)) y el motor de ejecución la aplica
+a través de la codificación del campo `extraData` del encabezado del bloque y de los parámetros `PayloadAttributesV3` de la Engine API.
+
+### Tarifa base mínima en el encabezado del bloque {#minimum-base-fee-in-block-header}
+
+Al igual que los [parámetros dinámicos de EIP-1559 de Holocene](../holocene/exec-engine#dynamic-eip-1559-parameters), Jovian codifica
+los parámetros de tarifas en el campo `extraData` del encabezado de cada bloque de L2. El formato se amplía con un campo
+`u64` adicional que contiene la tarifa base mínima en wei.
+
+| Nombre       | Tipo               | Desplazamiento en bytes |
+| ------------ | ------------------ | ----------------------- |
+| `minBaseFee` | `u64 (big-endian)` | `[9, 17)`               |
+
+Restricciones:
+
+* `version` DEBE ser `1` (se incrementa respecto al `0` de Holocene).
+* NO DEBE haber datos más allá de estos 17 bytes.
+
+El campo `minBaseFee` es un mínimo absoluto expresado en wei. Durante el cálculo de la tarifa base, si el
+`baseFee` calculado es inferior a `minBaseFee`, DEBE ajustarse a `minBaseFee`.
+
+```javascript Minimum Base Fee Clamp
+if (baseFee < minBaseFee) {
+  baseFee = minBaseFee
+}
+```
+
+Nota: `extraData` tiene una capacidad máxima de 32 bytes (para ajustarse al tipo `extraData` de la beacon chain de L1) y podría
+ampliarse en futuras actualizaciones.
+
+### Tarifa base mínima en `PayloadAttributesV3` {#minimum-base-fee-in-payloadattributesv3}
+
+El [`PayloadAttributesV3`](/es/specifications/base-protocol/execution/l2-execution-engine#extended-payloadattributesv3) de la Engine API se amplía con un nuevo
+campo, `minBaseFee`. El campo `eip1559Params` existente sigue ocupando 8 bytes (formato Holocene).
+
+```text Extended PayloadAttributesV3 lines wrap expandable
+PayloadAttributesV3: {
+    timestamp: QUANTITY
+    prevRandao: DATA (32 bytes)
+    suggestedFeeRecipient: DATA (20 bytes)
+    withdrawals: array of WithdrawalV1
+    parentBeaconBlockRoot: DATA (32 bytes)
+    transactions: array of DATA
+    noTxPool: bool
+    gasLimit: QUANTITY or null
+    eip1559Params: DATA (8 bytes) or null
+    minBaseFee: QUANTITY or null
+}
+```
+
+El campo `minBaseFee` DEBE ser `null` antes del fork Jovian y DEBE ser distinto de `null` después del fork Jovian.
+
+### Justificación {#rationale}
+
+Al igual que con los [parámetros dinámicos de EIP-1559 de Holocene](../holocene/exec-engine#rationale), incluir la
+tarifa base mínima en el encabezado del bloque nos permite evitar el acceso al estado durante el sellado del bloque.
+Así se preserva la pureza de la función que calcula la tarifa base del siguiente bloque a partir del encabezado de su bloque
+padre, sin dejar de permitir que estos valores se configuren dinámicamente. La configuración dinámica se gestiona
+de forma similar a `gasLimit`: el pipeline de derivación proporciona los valores correspondientes del contrato `SystemConfig`
+al constructor de bloques mediante los parámetros de `PayloadAttributesV3`.
+
+## Límite de bloque por huella de DA {#da-footprint-block-limit}
+
+Se introduce un *límite de bloque por huella de DA* para limitar la cantidad total estimada de datos de transacciones comprimidos
+que caben en un bloque.
+Para cada transacción, además de su consumo de gas, se contabiliza un nuevo recurso denominado huella de DA.
+Este recurso se escala a la dimensión del gas, de modo que su total por bloque también pueda quedar limitado por
+el límite de gas del bloque, igual que el consumo total de gas de un bloque.
+
+Definimos el `daFootprint` de un bloque de la siguiente manera:
+
+```python DA Footprint Calculation lines wrap expandable
+def daFootprint(block: Block) -> int:
+  daFootprint = 0
+
+  for tx in block.transactions:
+      if tx.type == DEPOSIT_TX_TYPE:
+          continue
+
+      daUsageEstimate = max(
+          minTransactionSize,
+          (intercept + fastlzCoef * tx.fastlzSize) // 1e6
+      )
+      daFootprint += daUsageEstimate * daFootprintGasScalar
+
+  return daFootprint 
+```
+
+donde `intercept`, `minTransactionSize`, `fastlzCoef` y `fastlzSize`
+se definen en las [especificaciones de Fjord](../fjord/exec-engine), `DEPOSIT_TX_TYPE` es `0x7E`
+y `//` representa la división entera con redondeo hacia abajo.
+
+A partir de Jovian, la propiedad `blobGasUsed` del encabezado de cada bloque se establece en el `daFootprint` de ese bloque. Tenga en cuenta que, antes de Jovian
+y desde Ecotone, se establecía en 0, ya que Base no admite blobs. Ahora se reutiliza para almacenar la huella de DA.
+
+Durante la construcción de bloques y la validación de encabezados, se debe garantizar y comprobar, respectivamente, que el
+`daFootprint` del bloque se mantenga por debajo del `gasLimit`, al igual que ocurre con la propiedad `gasUsed`.
+Tenga en cuenta que esto implica que los bloques no pueden superar los `gasLimit/daFootprintGasScalar` bytes de uso total estimado de DA.
+
+Además, a partir de Jovian, el cálculo de actualización de la tarifa base utiliza `gasMetered := max(gasUsed, blobGasUsed)`
+en lugar del valor `gasUsed` que se usaba anteriormente.
+Por lo tanto, los bloques con un uso elevado de DA pueden hacer que la tarifa base aumente en los bloques posteriores.
+
+### Carga del escalar {#scalar-loading}
+
+El `daFootprintGasScalar` se carga de forma similar a `operatorFeeScalar` y `operatorFeeConstant`,
+[introducidos](../isthmus/exec-engine#operator-fee) en el fork Isthmus. Puede leerse de dos formas intercambiables:
+
+* desde los L1 Attributes depositados (`daFootprintGasScalar`) del bloque L2 actual
+  (decodificados según el [esquema de Jovian](./l1-attributes))
+* desde el contrato L1 Block Info (`0x4200000000000000000000000000000000000015`)
+  * mediante la función getter de Solidity `daFootprintGasScalar`
+  * mediante una lectura directa del almacenamiento: `uint16` big-endian en el slot `8` con desplazamiento `12`.
+
+Toma un valor predeterminado, tal como se describe en la sección sobre [L1 Attributes](./l1-attributes).
+
+### Recibos {#receipts}
+
+Tras la activación de Jovian, se añade a los recibos de transacción un nuevo campo `daFootprintGasScalar`, que se rellena
+con el escalar de gas de la huella de DA del bloque de la transacción.
+Además, el campo `blobGasUsed` del recibo pasa a contener la huella de DA de la transacción.
+
+### Justificación {#rationale-2}
+
+Aunque el mecanismo actual de tarifa de L1 cobra por el uso de DA en función de una estimación de la huella de DA de una transacción,
+actualmente ningún mecanismo del protocolo refleja el limitado *rendimiento de DA disponible en L1*. Por ejemplo, en Ethereum L1 con Pectra
+habilitado, el rendimiento de blobs disponible es de `~96 kB/s` (con un objetivo de `~64 kB/s`), pero el precio mínimo del gas de calldata de
+`40` para transacciones de L2 con mucho calldata permite incluir en la mayoría de las cadenas de Base más datos de transacción incompresibles
+de los que podría absorber el espacio de blobs de Ethereum. Actualmente, esto se mitiga a nivel de políticas mediante la limitación entre batcher y sequencer:
+un mecanismo que restringe artificialmente la construcción de bloques. Esto puede hacer que bajen las tarifas base, lo que supone
+pérdidas innecesarias para los operadores de la cadena y una experiencia de usuario negativa (retrasos en la inclusión de transacciones, subastas de
+tarifas de prioridad). Por ello, imponer un límite estricto a la huella de DA de un bloque de forma que también influya en la tarifa base mitiga los
+problemas antes mencionados de las soluciones basadas en políticas.
+
+## Tarifa del operador {#operator-fee}
+
+### Actualización de la fórmula de la tarifa {#fee-formula-update}
+
+Jovian actualiza el cálculo de la tarifa del operador para permitir el cobro de tarifas más altas.
+A partir de la activación de Jovian, la tarifa del operador DEBE calcularse de la siguiente manera:
+
+$$
+\text{operatorFee} = (\text{gas} \times \text{operatorFeeScalar} \times 100) + \text{operatorFeeConstant}
+$$
+
+Por lo tanto, el escalar efectivo que se aplica por unidad de gas es `100 * operatorFeeScalar`. Por lo demás, los tipos de datos y la semántica de la tarifa del operador
+descritos en la [especificación de Isthmus](../isthmus/exec-engine#operator-fee) siguen vigentes.
+
+### Valor máximo {#maximum-value}
+
+Con la nueva fórmula, el valor máximo de la tarifa del operador ocupa 103 bits:
+
+```text Maximum Operator Fee
+operatorFee_max = (uint64_max * uint32_max * 100) + uint64_max ≈ 7.924660923989131 * 10^30
+```
+
+Las implementaciones que usan `uint256` para los cálculos aritméticos intermedios no necesitan comprobaciones adicionales de desbordamiento.
+
+## Cambios en la EVM {#evm-changes}
+
+### Restricciones del tamaño de entrada de los precompilados {#precompile-input-size-restrictions}
+
+Se han modificado las restricciones del tamaño de entrada de algunos precompilados. Las nuevas restricciones son:
+
+* `bn256Pairing`: 81.984 bytes (427 pares)
+* `BLS12-381 G1 MSM`: 288.960 bytes (1806 pares)
+* `BLS12-381 G2 MSM`: 278.784 bytes (968 pares)
+* `BLS12-381 Pairing`: 156.672 bytes (408 pares)

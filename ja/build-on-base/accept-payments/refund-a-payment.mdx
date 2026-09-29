@@ -1,0 +1,83 @@
+---
+title: "支払いを返金する"
+keywords: ["Commerce Payments refund", "OperatorRefundCollector", "partial USDC refund", "PaymentRefunded"]
+description: "返金期間内に、キャプチャ済みの金額を元の支払者へ返金します。"
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+`refundExpiry` より前であれば、プロトコルのチャージまたはキャプチャの全額または一部を返金できます。返金可能な上限額はオンチェーンで管理され、返金先は常に `paymentInfo.payer` です。
+
+<Info>
+  このガイドの支払いフローは [Commerce Payments Protocol](https://github.com/base/commerce-payments) に基づいています。
+</Info>
+
+## デモ {#demo}
+
+<PaymentsDemo flow="refund" />
+
+<Tip>
+  上記のデモはモックのみです。Vibenet 上のオンチェーンデモを確認したい場合は、[Base チェーンのデモ](https://chain.base.org/demos)をご覧ください。
+</Tip>
+
+## 返金の資金準備と送信 {#fund-and-submit-the-refund}
+
+キャプチャ済みの資金は、すでにエスクローから引き出されています。デプロイ済みの `OperatorRefundCollector` は、返金に充てる流動性を `paymentInfo.operator` から調達します。そのため、`refund` を呼び出す前に、このコントラクトに対して返金額分を承認 (approve) しておいてください。
+
+{/* sample: refund-payment-ts */}
+
+```typescript TypeScript lines wrap expandable highlight={8-11,16-17,26-27}
+export async function refundPayment(
+  payment: StoredProtocolPayment,
+  refundAmount: bigint,
+) {
+  const [, , refundableAmount] = await publicClient.readContract({
+    address: AUTH_CAPTURE_ESCROW,
+    abi: authCaptureEscrowAbi,
+    functionName: "paymentState",
+    args: [payment.paymentInfoHash],
+  });
+  if (refundAmount > refundableAmount) throw new Error("Refund exceeds captured amount");
+  const approval = await publicClient.simulateContract({
+    account,
+    address: payment.paymentInfo.token,
+    abi: refundApprovalAbi,
+    functionName: "approve",
+    args: [OPERATOR_REFUND_COLLECTOR, refundAmount],
+  });
+  const approvalHash = await walletClient.writeContract(approval.request);
+  await publicClient.waitForTransactionReceipt({ hash: approvalHash, confirmations: 2 });
+
+  const refund = await publicClient.simulateContract({
+    account,
+    address: AUTH_CAPTURE_ESCROW,
+    abi: authCaptureEscrowAbi,
+    functionName: "refund",
+    args: [payment.paymentInfo, refundAmount, OPERATOR_REFUND_COLLECTOR, "0x"],
+  });
+  const hash = await walletClient.writeContract(refund.request);
+  return publicClient.waitForTransactionReceipt({ hash, confirmations: 2 });
+}
+```
+
+チャージまたはキャプチャが行われるたびに、`refundableAmount` はその総額分だけ増加します。手数料が差し引かれても、この上限は減りません。返金が行われるたびに、返金額の分だけ減少します。
+
+<Check>
+  返金処理を完了する前に、`PaymentRefunded(paymentInfoHash, amount, tokenCollector)`、保存されている支払者への送金、および更新後の `refundableAmount` を確認してください。
+</Check>
+
+<Warning>
+  返金の会計上の管理と、返金に充てる資金の確保は別物です。トークンは、オペレーターまたは独立して認可された別の資金源から提供する必要があります。支払者の認可の残りを返金の資金に流用しないでください。
+</Warning>
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="支払いを検証する" icon="shield-check" href="/ja/build-on-base/accept-payments/verify-a-payment">
+    元のプロトコル決済と支払いハッシュを確認します。
+  </Card>
+
+  <Card title="支払いを照合する" icon="table" href="/ja/build-on-base/accept-payments/reconcile-payments">
+    返金を対応するチャージおよびキャプチャと照合します。
+  </Card>
+</CardGroup>

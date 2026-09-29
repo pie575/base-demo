@@ -1,0 +1,50 @@
+---
+title: "base-anvil CLI"
+description: "Base 版 Foundry：安装 base-forge、base-cast 和 base-anvil，让 Foundry 支持 Base 的原生预编译合约。"
+---
+
+[base-anvil](https://github.com/base/base-anvil) 是 Foundry 的一个分叉版本，让 `forge`、`cast`、`anvil` 和 `chisel` 能够识别 Base 的原生预编译合约，包括 [B20 代币工厂](/zh/build-on-base/issue-rwa/create-an-asset-token)、B20 代币、PolicyRegistry 和 ActivationRegistry。原版 Foundry 无法访问这些预编译合约地址，会报出 `call to non-contract address` 错误并中止运行；base-anvil 则将这些地址注册到自身的 EVM 中，让你能够在本地构建和测试 Base 应用。
+
+## 安装 {#install}
+
+它会与你现有的 Foundry 共存安装，既不会覆盖原版的 `foundryup`，也不会覆盖你已有的 `forge`/`cast`/`anvil`/`chisel`：
+
+```bash Terminal
+curl -L https://raw.githubusercontent.com/base/base-anvil/HEAD/foundryup/install | bash
+base-foundryup
+```
+
+这会安装 `base-foundryup`，以及带命名空间的 `base-forge`、`base-cast`、`base-anvil` 和 `base-chisel` 命令，这些命令默认启用 Base 预编译合约。
+
+## 选择 Base 版本 {#pick-a-base-version}
+
+base-anvil 的各个版本均以其对应的 Base 链版本命名。可通过以下方式固定到某个版本：
+
+```bash Terminal
+base-foundryup --install <version>
+```
+
+{/* TODO(verify): 向工程团队确认当前 Base 发布版本与 base-anvil 版本的对应关系（base-anvil 文档中 Beryl 对应 v1.1.0）。 */}
+
+## 命令 {#commands}
+
+| 命令            | 对应原命令    | 用途                           |
+| ------------- | -------- | ---------------------------- |
+| `base-forge`  | `forge`  | 针对 Base 预编译合约构建、测试和部署合约      |
+| `base-cast`   | `cast`   | 发送交易、读取链上数据，包括调用预编译合约        |
+| `base-anvil`  | `anvil`  | 运行已启用预编译合约的本地 Base 节点        |
+| `base-chisel` | `chisel` | 支持 Base 预编译合约的 Solidity REPL |
+
+其余功能均继承自上游 [Foundry](https://book.getfoundry.sh/)，用法保持不变；此分叉版本仅新增了上述 Base 专属命令。
+
+## 后续步骤 {#next-steps}
+
+<CardGroup cols={2}>
+  <Card title="智能合约" icon="file-contract" href="/zh/specifications/reference/smart-contracts">
+    使用 base-anvil 完整演示如何将合约部署到 Base Sepolia。
+  </Card>
+
+  <Card title="B20 代币标准" icon="coins" href="/zh/build-on-base/issue-rwa/create-an-asset-token">
+    通过命令行发行采用 Base 原生代币标准的代币。
+  </Card>
+</CardGroup>

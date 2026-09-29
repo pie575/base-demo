@@ -1,0 +1,69 @@
+---
+title: "有效性交易 RPC"
+sidebarTitle: "有效性交易 RPC"
+description: "提交附带有效性谓词的已签名原始交易。"
+---
+
+提交一笔已签名的 Legacy、EIP-2930 或 EIP-1559 交易，并附带谓词，用于控制 Base 何时可以打包该交易。推荐使用 EIP-1559。
+
+<Warning>
+  此实验性方法目前可在 Vibenet 上使用。生产环境的 API 约定尚未最终确定。
+</Warning>
+
+## 参数 {#parameters}
+
+需传入两个参数：第一个是已签名并序列化的交易，第二个是包含非空 `validity` 数组的对象。
+
+<RequestExample>
+  ```json Request lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "base_sendRawTransactionValidity",
+    "params": [
+      "0x<signed-raw-transaction>",
+      {
+        "validity": [
+          {
+            "type": "storage",
+            "params": {
+              "address": "0x8ba1f109551bD432803012645Ac136ddd64DBA72",
+              "slot": "0x8",
+              "mask": "0xff",
+              "op": "=",
+              "value": "0x2a"
+            }
+          }
+        ]
+      }
+    ]
+  }
+  ```
+</RequestExample>
+
+## 谓词 {#predicates}
+
+| 类型                 | 参数                                         |
+| ------------------ | ------------------------------------------ |
+| `balance`          | `address`、`op`、`value`                     |
+| `storage`          | `address`、`slot`、`op`、`value`，以及可选的 `mask` |
+| `block_number`     | `op`、`value`                               |
+| `flashblock_index` | `op`、`value`                               |
+
+支持的运算符有 `<`、`<=`、`=`、`!=`、`>` 和 `>=`。谓词值采用带 `0x` 前缀的十六进制字符串。`mask` 默认为全 1。
+
+## 返回值 {#returns}
+
+<ResponseField name="result" type="string">
+  已提交交易的 32 字节哈希。
+</ResponseField>
+
+返回哈希仅表示交易已被接受，并不代表交易已被打包进区块。
+
+## 错误 {#errors}
+
+该方法返回 JSON-RPC 错误。请处理以下几种情况：方法不可用、参数无效以及缺少交易哈希。
+
+错误码和错误消息尚未稳定。
+
+有关评估规则，请参阅 [Predicates and Safety](/zh/specifications/build-transaction/predicates-and-safety)。如果交易未被打包，请参阅 [Troubleshooting](/zh/specifications/build-transaction/troubleshooting)。

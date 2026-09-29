@@ -1,0 +1,150 @@
+---
+title: 'Base RPC の概要'
+sidebarTitle: '概要'
+description: 'Base ノードで利用できるすべての JSON-RPC メソッドおよび Flashblocks メソッドの完全なリファレンスです。'
+---
+
+Base は、完全な EVM 互換性を備えた単一の JSON-RPC API を、2 つのパフォーマンスティアで提供しています。URL とブロックタグをそれぞれ 1 つ切り替えるだけで、2 秒のブロック確認から 200ms のプレコンファメーションに移行できます。
+
+## ネットワーク {#networks}
+
+ネットワークの詳細、RPC エンドポイント、ウォレットの設定については、[Base への接続](/base-chain/quickstart/connecting-to-base)を参照してください。
+
+<Note>
+  Base の公開エンドポイントは **HTTP のみ**に対応しています。公開 Base エンドポイントでは WebSocket RPC 接続 (`eth_subscribe`、`newHeads`、`logs`) は利用できません。WebSocket を利用する場合は、[Builder Stack](/ja/get-started/builder-stack) から WebSocket に対応したプロバイダーを選択してください。
+</Note>
+
+## Flashblocks {#flashblocks}
+
+Base のすべてのパブリックエンドポイントは Flashblocks に対応しています。標準の `eth_` メソッドはすべて通常どおりに動作し、`pending` ブロックタグは現在構築中の**プレコンファーム済みブロック**の状態を反映します。このブロックは約 200ms ごとに更新され、シーケンサーが順序付けしたトランザクションの新しいバッチが追加されていきます。
+
+`eth_getBalance`、`eth_getStorageAt`、`eth_call` などの呼び出しは、ブロックがシールされる最大 1.8 秒前の時点から、シーケンサーの実際の状態に対して実行され、レイテンシは 1 秒未満です。
+
+## API リファレンス {#api-reference}
+
+### Ethereum JSON-RPC API {#ethereum-json-rpc-api}
+
+アカウントの照会、ブロックおよびトランザクションデータの取得、ガス見積もり、ログのフィルタリングを行うための、Ethereum プロトコルのコアメソッドです。
+
+<Info>
+  ✓ が付いているメソッドは `"pending"` ブロックタグに対応しており、構築中の現在のプレコンファーム済み Flashblock の状態を反映します。
+</Info>
+
+| メソッド                                                                                                                                   | 説明                              | Flashblocks `pending` |
+| :------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------ | :-------------------- |
+| [eth&#95;blockNumber](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_blockNumber)                                                 | 現在のブロック番号                       | —                     |
+| [eth&#95;getBalance](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_getBalance)                                                   | アカウントの ETH 残高                   | ✓                     |
+| [eth&#95;getTransactionCount](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionCount)                                 | アカウントの nonce／トランザクション数          | ✓                     |
+| [eth&#95;getCode](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_getCode)                                                         | デプロイ済みコントラクトのバイトコード             | ✓                     |
+| [eth&#95;getStorageAt](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_getStorageAt)                                               | コントラクトのストレージスロットの値              | ✓                     |
+| [eth&#95;call](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_call)                                                               | 読み取り専用の呼び出しを実行                  | ✓                     |
+| [eth&#95;getBlockByNumber](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_getBlockByNumber)                                       | ブロック番号を指定してブロックデータを取得           | ✓                     |
+| [eth&#95;getBlockByHash](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_getBlockByHash)                                           | ハッシュを指定してブロックデータを取得             | —                     |
+| [eth&#95;getBlockReceipts](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_getBlockReceipts)                                       | ブロック内のすべてのレシート                  | ✓                     |
+| [eth&#95;getBlockTransactionCountByNumber](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_getBlockTransactionCountByNumber)       | ブロック番号を指定してトランザクション数を取得         | ✓                     |
+| [eth&#95;getBlockTransactionCountByHash](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_getBlockTransactionCountByHash)           | ブロックハッシュを指定してトランザクション数を取得       | —                     |
+| [eth&#95;getTransactionByHash](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionByHash)                               | ハッシュを指定してトランザクションデータを取得         | —                     |
+| [eth&#95;getTransactionByBlockHashAndIndex](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionByBlockHashAndIndex)     | ブロックハッシュとインデックスを指定してトランザクションを取得 | —                     |
+| [eth&#95;getTransactionByBlockNumberAndIndex](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionByBlockNumberAndIndex) | ブロック番号とインデックスを指定してトランザクションを取得   | —                     |
+| [eth&#95;getTransactionReceipt](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionReceipt)                             | マイニング済みトランザクションのレシート            | —                     |
+| [eth&#95;sendRawTransaction](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_sendRawTransaction)                                   | 署名済みトランザクションを送信                 | —                     |
+| [eth&#95;gasPrice](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_gasPrice)                                                       | 現在のガス価格                         | —                     |
+| [eth&#95;maxPriorityFeePerGas](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_maxPriorityFeePerGas)                               | 最大優先手数料の見積もり                    | —                     |
+| [eth&#95;feeHistory](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_feeHistory)                                                   | 過去の基本手数料と報酬                     | —                     |
+| [eth&#95;estimateGas](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_estimateGas)                                                 | トランザクションのガス量を見積もり               | ✓                     |
+| [eth&#95;getLogs](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_getLogs)                                                         | フィルターを指定してイベントログを照会             | ✓                     |
+| [eth&#95;chainId](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_chainId)                                                         | ネットワークのチェーン ID                  | —                     |
+| [eth&#95;syncing](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_syncing)                                                         | ノードの同期状態                        | —                     |
+| [net&#95;version](/ja/base-chain/api-reference/ethereum-json-rpc-api/net_version)                                                         | ネットワークバージョン ID                  | —                     |
+| [web3&#95;clientVersion](/ja/base-chain/api-reference/ethereum-json-rpc-api/web3_clientVersion)                                           | クライアントのバージョン文字列                 | —                     |
+| [eth&#95;subscribe](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_subscribe)                                                     | イベントを購読 (WSS)                   | ✓                     |
+| [eth&#95;unsubscribe](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_unsubscribe)                                                 | 購読を解除 (WSS)                     | —                     |
+
+### Flashblocks API {#flashblocks-api}
+
+Base 上で 1 秒未満でトランザクションのシグナルを取得するための、プレコンファメーション用メソッドです。これらのメソッドを使うと、ブロックが確定する最大約 1.8 秒前から、状態の読み取り、バンドルのシミュレーション、イベントのストリーミングを実行できます。
+
+| メソッド                                                                                             | 説明                                  |
+| ------------------------------------------------------------------------------------------------ | ----------------------------------- |
+| [eth&#95;simulateV1](/ja/base-chain/api-reference/flashblocks-api/eth_simulateV1)                   | プレコンファーム済みの状態に対してトランザクションバンドルをシミュレートします |
+| [base&#95;transactionStatus](/ja/base-chain/api-reference/flashblocks-api/base_transactionStatus)   | トランザクションがメンプールに受信されたかどうかを確認します      |
+| [newFlashblockTransactions](/ja/base-chain/api-reference/flashblocks-api/newFlashblockTransactions) | プレコンファーム済みのトランザクションを個別に購読します            |
+| [pendingLogs](/ja/base-chain/api-reference/flashblocks-api/pendingLogs)                             | プレコンファーム済みトランザクションのログをフィルタリングして購読します    |
+| [newFlashblocks](/ja/base-chain/api-reference/flashblocks-api/newFlashblocks)                       | Flashblock のペイロード全体をストリームで購読します     |
+
+### Debug API {#debug-api}
+
+トランザクションの詳細な調査やブロックのリプレイを行うための、開発・デバッグ用ユーティリティです。Debug メソッドはトランザクションを再実行するため計算負荷が高く、提供状況やレート制限は [Builder Stack](/ja/get-started/builder-stack) に掲載されているプロバイダーごとに異なります。
+
+| メソッド                                                                                         | 説明                                   |
+| -------------------------------------------------------------------------------------------- | ------------------------------------ |
+| [debug&#95;traceTransaction](/ja/base-chain/api-reference/debug-api/debug_traceTransaction)     | トランザクションの完全な EVM 実行トレース              |
+| [debug&#95;traceBlockByHash](/ja/base-chain/api-reference/debug-api/debug_traceBlockByHash)     | ハッシュで指定したブロック内の全トランザクションの EVM トレース   |
+| [debug&#95;traceBlockByNumber](/ja/base-chain/api-reference/debug-api/debug_traceBlockByNumber) | ブロック番号で指定したブロック内の全トランザクションの EVM トレース |
+
+## リクエストとレスポンスの形式 {#request-response-format}
+
+すべてのリクエストは、`Content-Type: application/json` を指定した HTTP POST で送信します。
+
+| フィールド     | 型      | 説明                  |                   |
+| :-------- | :----- | :------------------ | ----------------- |
+| `jsonrpc` | string | 常に `"2.0"`          |                   |
+| `method`  | string | RPC メソッド名           |                   |
+| `params`  | array  | 順序どおりに指定するメソッドパラメータ |                   |
+| `id`      | number | string              | レスポンスにそのまま返される識別子 |
+
+**リクエスト:**
+
+```json Request
+{
+  "jsonrpc": "2.0",
+  "method": "eth_getBalance",
+  "params": ["0x742d35Cc6634C0532925a3b8D4C9dD0b4f3BaEa", "pending"],
+  "id": 1
+}
+```
+
+**成功時のレスポンス：**
+
+```json Success Response
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": "0x1a055690d9db80000"
+}
+```
+
+**エラーレスポンス：**
+
+```json Error Response lines wrap expandable
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "error": {
+    "code": -32602,
+    "message": "Invalid params"
+  }
+}
+```
+
+## エラーコード {#error-codes}
+
+| コード      | 名前               | 説明                          |
+| -------- | ---------------- | --------------------------- |
+| `-32700` | Parse error      | 無効な JSON                    |
+| `-32600` | Invalid request  | 有効な JSON-RPC 2.0 オブジェクトではない |
+| `-32601` | Method not found | メソッドが存在しないか、利用できない          |
+| `-32602` | Invalid params   | 無効なメソッドパラメータ               |
+| `-32603` | Internal error   | JSON-RPC の内部エラー             |
+| `-32000` | Server error     | ノード固有のエラー (メッセージを参照)        |
+
+## ブロックパラメータ {#block-parameters}
+
+| 値             | 標準                    | Flashblocks                                  |
+| ------------- | --------------------- | -------------------------------------------- |
+| `"latest"`    | 直近でシールされたブロック         | 直近でシールされたブロック                                |
+| `"pending"`   | 未マイニングのトランザクションプールの状態 | **構築中の現在の Flashblock (約 200ms 単位で更新)&#x20;**&#x20;|
+| `"safe"`      | 最新の safe ブロック         | 最新の safe ブロック                                |
+| `"finalized"` | 最新のファイナライズ済みブロック      | 最新のファイナライズ済みブロック                             |
+| `"earliest"`  | ジェネシスブロック             | ジェネシスブロック                                    |
+| `"0x<n>"`     | 番号で指定した特定のブロック        | 番号で指定した特定のブロック                               |

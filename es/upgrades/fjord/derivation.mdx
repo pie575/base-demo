@@ -1,0 +1,245 @@
+---
+title: "Cambios en la derivación de la cadena L2 en Fjord"
+description: "Cambios en la derivación introducidos por la actualización Fjord, que modifican los parámetros del protocolo para la deriva máxima del sequencer y el tamaño del banco de canales, y añaden compatibilidad con la compresión brotli."
+---
+
+## Cambios en los parámetros del protocolo {#protocol-parameter-changes}
+
+La siguiente tabla resume los cambios en los parámetros.
+
+| Parámetro                   | Valor previo a Fjord (predeterminado) | Valor en Fjord | Notas                                                                         |
+| --------------------------- | ------------------------------------- | -------------- | ----------------------------------------------------------------------------- |
+| `max_sequencer_drift`       | 600                                   | 1800           | Era un parámetro del protocolo desde Bedrock. Ahora pasa a ser una constante. |
+| `MAX_RLP_BYTES_PER_CHANNEL` | 10,000,000                            | 100,000,000    | Se aumenta esta constante del protocolo.                                      |
+| `MAX_CHANNEL_BANK_SIZE`     | 100,000,000                           | 1,000,000,000  | Se aumenta esta constante del protocolo.                                      |
+
+## Activación por marca de tiempo {#timestamp-activation}
+
+Fjord, al igual que otras actualizaciones de red, se activa en una marca de tiempo determinada.
+Los cambios en las reglas de ejecución de bloques de L2 se aplican cuando `L2 Timestamp >= activation time`.
+Los cambios en la derivación se aplican cuando esta procesa datos de un bloque de L1 cuya marca de tiempo
+sea mayor o igual que la marca de tiempo de activación.
+El cambio del parámetro `max_sequencer_drift` se activa según la marca de tiempo del bloque de origen de L1.
+
+Si Fjord no se activa en el bloque génesis, debe activarse al menos un bloque después del bloque de activación
+de Ecotone. Así se garantiza que las transacciones de actualización de la red no entren en conflicto.
+
+## Deriva máxima constante del sequencer {#constant-maximum-sequencer-drift}
+
+Con Fjord, el parámetro `max_sequencer_drift` pasa a ser una constante con un valor de `1800` *segundos*,
+lo que equivale a una deriva máxima fija del sequencer de 30 minutos.
+
+Antes de Fjord, se trataba de un parámetro de la cadena que se establecía una única vez al crearla, con un valor
+predeterminado de `600` segundos, es decir, 10 minutos. Actualmente, la mayoría de las cadenas usan este valor.
+
+### Justificación {#rationale}
+
+Las discusiones entre los operadores de cadena llegaron a la conclusión unánime de que sería más fácil trabajar con un valor mayor que el
+predeterminado actual. Si se interrumpe la conexión del sequencer con la L1, este valor de deriva
+determina durante cuánto tiempo puede seguir produciendo bloques sin infringir las reglas de derivación
+relativas a la deriva de las marcas de tiempo.
+
+Además, se acordó que, tras este aumento, la posibilidad de configurarlo deja de ser importante. Por ello, pasa a
+ser una constante. Una alternativa que se está evaluando para un futuro hardfork es convertirlo
+en un parámetro del protocolo configurable desde la L1 mediante el mecanismo de actualización de `SystemConfig`.
+
+### Consideraciones de seguridad {#security-considerations}
+
+Las reglas relativas al momento de activación se mantienen deliberadamente simples, de modo que no es necesario
+aplicar ninguna otra lógica aparte de convertir el parámetro en una constante. En teoría, el primer bloque de Fjord
+aceptaría marcas de tiempo de origen L1 más antiguas que su predecesor. Sin embargo, dado que la marca de tiempo de origen L1 también
+debe aumentar, el único escenario reseñable que puede darse es que los primeros bloques de Fjord
+pertenezcan a la misma época que los últimos bloques anteriores a Fjord, aunque las reglas anteriores a Fjord no permitirían
+que estos bloques tuvieran dichas marcas de tiempo de origen L1. Así, una época mixta, con bloques anteriores y posteriores a Fjord,
+compartiría la misma marca de tiempo de L1. Esto se considera una característica, no
+un problema de seguridad.
+
+## Aumento de `MAX_RLP_BYTES_PER_CHANNEL` y `MAX_CHANNEL_BANK_SIZE` {#increasing-max_rlp_bytes_per_channel-and-max_channel_bank_size}
+
+Con Fjord, `MAX_RLP_BYTES_PER_CHANNEL` pasará de 10.000.000 bytes a 100.000.000 bytes,
+y `MAX_CHANNEL_BANK_SIZE` pasará de 100.000.000 bytes a 1.000.000.000 bytes.
+
+El uso de `MAX_RLP_BYTES_PER_CHANNEL` se define en [Formato de canal](/es/specifications/base-protocol/consensus/derivation#channel-format).
+El uso de `MAX_CHANNEL_BANK_SIZE` se define en [Poda del banco de canales](/es/specifications/base-protocol/consensus/derivation#pruning).
+
+Anteriormente, los Span Batches tenían un límite, `MAX_SPAN_BATCH_SIZE`, igual a `MAX_RLP_BYTES_PER_CHANNEL`.
+Fjord introduce una nueva constante, `MAX_SPAN_BATCH_ELEMENT_COUNT`, para limitar la cantidad de elementos, y elimina
+`MAX_SPAN_BATCH_SIZE`. El tamaño del canal se sigue comprobando con `MAX_RLP_BYTES_PER_CHANNEL`.
+
+El nuevo valor se aplicará cuando la marca de tiempo del origen L1 del pipeline de derivación sea &gt;= la marca de tiempo
+de activación de Fjord.
+
+### Justificación {#rationale-2}
+
+Un bloque con un límite de gas de 30 millones tiene un tamaño teórico máximo de 7,5 megabytes si se llena
+con transacciones compuestas únicamente por ceros. Actualmente, un byte con el valor `0` consume 4 de gas.
+Si el límite de gas por bloque supera los 40 millones, es posible crear un bloque de tamaño superior a
+`MAX_RLP_BYTES_PER_CHANNEL`.
+Los bloques de L2 no pueden dividirse entre varios canales, por lo que un bloque mayor que `MAX_RLP_BYTES_PER_CHANNEL`
+no puede enviarse en lotes.
+Al elevar este límite a 100.000.000 bytes, podemos enviar en lotes bloques con un límite de gas de hasta 400 millones.
+Además, podemos mejorar las tasas de compresión al aumentar la cantidad de datos que caben en un
+único canal.
+Con una tasa de compresión del 33 % sobre 6 blobs, actualmente enviamos 2,2 MB de datos comprimidos y 0,77 MB de datos sin comprimir
+por canal.
+Esto nos permitirá usar hasta unos 275 blobs por canal.
+
+Elevar `MAX_CHANNEL_BANK_SIZE` ayuda a garantizar que podamos procesar estos canales más grandes. Mantenemos la
+misma proporción de 10 entre `MAX_RLP_BYTES_PER_CHANNEL` y `MAX_CHANNEL_BANK_SIZE`.
+
+### Consideraciones de seguridad {#security-considerations-2}
+
+Aumentar estos límites incrementa la cantidad de recursos que necesitaría un nodo del rollup.
+En concreto, los nodos podrían tener que asignar grandes bloques de memoria para un canal y, potencialmente, tendrán que asignar más
+memoria al banco de canales.
+`MAX_RLP_BYTES_PER_CHANNEL` se añadió originalmente para evitar ataques de bomba zip.
+El sistema sigue expuesto a estos ataques, pero estos límites son fáciles de gestionar en un nodo.
+
+El entorno de Fault Proof está más restringido que un nodo típico, y aumentar estos límites exigirá más
+recursos de los que se necesitan actualmente.
+El cambio en `MAX_CHANNEL_BANK_SIZE` no es relevante para la primera implementación de Fault Proofs, porque este límite
+solo indica al nodo cuándo empezar a podar y, una vez que se asigna memoria en la FPVM, el recolector de basura no la libera.
+Esto significa que aumentar `MAX_CHANNEL_BANK_SIZE` no incrementa el uso máximo de recursos del FPP.
+
+Aumentar `MAX_RLP_BYTES_PER_CHANNEL` podría provocar un mayor uso de recursos en la FPVM; sin embargo, consideramos
+razonable este aumento, ya que afecta a la cantidad de datos que se procesan de una sola vez y no a la cantidad total
+de datos que se procesan en el programa. Antes de este cambio, en lugar de usar un único canal, el batcher podía enviar 10 canales,
+lo que haría que el Fault Proof Program consumiera una cantidad de recursos muy similar.
+
+## Compresión de canales con Brotli {#brotli-channel-compression}
+
+[legacy-channel-format]: /specifications/base-protocol/consensus/derivation#channel-format
+
+Fjord introduce un nuevo formato versionado de codificación de canales para admitir algoritmos
+de compresión alternativos, sin dejar de admitir el [formato de canal heredado][legacy-channel-format]. El
+formato versionado es el siguiente:
+
+```text Versioned Channel Encoding
+channel_encoding = channel_version_byte ++ compress(rlp_batches)
+```
+
+El `channel_version_byte` nunca debe tener sus 4 bits de menor orden establecidos en `0b1000 = 8` ni en `0b1111 =
+15`, ya que estos valores están reservados para el byte de encabezado de los datos codificados con zlib (consulte la página 5 de
+[RFC-1950][rfc1950]). Así, un decodificador de canales puede determinar si una codificación de canal usa el formato heredado o el
+versionado comprobando estos valores de bits. Si se determina que la codificación del canal usa el formato
+versionado, el único `channel_version_byte` válido es `1`, que indica que `compress()` es el algoritmo de compresión
+Brotli (según se especifica en [RFC-7932][rfc7932]) sin diccionario personalizado.
+
+[rfc7932]: https://datatracker.ietf.org/doc/html/rfc7932
+
+[rfc1950]: https://www.rfc-editor.org/rfc/rfc1950.html
+
+## Transacciones de automatización de la actualización de red {#network-upgrade-automation-transactions}
+
+El bloque de activación del hardfork Fjord contiene las siguientes transacciones, en este orden:
+
+* Transacción de atributos de L1
+* Depósitos de usuarios desde L1
+* Transacciones de actualización de red
+  * Despliegue de GasPriceOracle
+  * Actualización del slot de implementación ERC-1967 del proxy de GasPriceOracle
+  * Habilitación de Fjord en GasPriceOracle
+
+Para no modificar ni interrumpir el comportamiento del sistema en lo relativo al cálculo del gas, este bloque no incluirá ninguna transacción
+secuenciada, para lo cual se establece `noTxPool: true`.
+
+## Despliegue de GasPriceOracle {#gaspriceoracle-deployment}
+
+El contrato `GasPriceOracle` se actualiza para admitir el nuevo cálculo de la tarifa de datos de L1 de Fjord. Tras el fork, este contrato
+usará FastLZ para calcular la tarifa de datos de L1.
+
+Para realizar esta actualización, se deriva una transacción de depósito con los siguientes atributos:
+
+* `from`: `0x4210000000000000000000000000000000000002`
+* `to`: `null`,
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `1,450,000`
+* `data`: `0x60806040523...`
+* `sourceHash`: `0x86122c533fdcb89b16d8713174625e44578a89751d96c098ec19ab40a51a8ea3`
+  calculado con el tipo &quot;Upgrade-deposited&quot;, con &#96;intent = &quot;Fjord: Gas Price Oracle Deployment&quot;
+
+Como resultado, el contrato GasPriceOracle de Fjord se despliega en `0xa919894851548179A0750865e7974DA599C0Fac7`.
+Para verificarlo:
+
+```bash Terminal
+cast compute-address --nonce=0 0x4210000000000000000000000000000000000002
+Computed Address: 0xa919894851548179A0750865e7974DA599C0Fac7
+```
+
+Verifica `sourceHash`:
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Fjord: Gas Price Oracle Deployment"))
+# 0x86122c533fdcb89b16d8713174625e44578a89751d96c098ec19ab40a51a8ea3
+```
+
+Verifica `data`:
+
+```bash Terminal
+git checkout 52abfb507342191ae1f960b443ae8aec7598755c
+pnpm clean && pnpm install && pnpm build
+jq -r ".bytecode.object" packages/contracts-bedrock/forge-artifacts/GasPriceOracle.sol/GasPriceOracle.json
+```
+
+Esta transacción DEBE desplegar un contrato con el siguiente hash de código
+`0xa88fa50a2745b15e6794247614b5298483070661adacb8d32d716434ed24c6b2`.
+
+## Actualización del proxy de GasPriceOracle {#gaspriceoracle-proxy-update}
+
+Esta transacción actualiza el slot de implementación ERC-1967 del proxy de GasPriceOracle para que apunte al nuevo despliegue
+de GasPriceOracle.
+
+Se deriva una transacción de depósito con los siguientes atributos:
+
+* `from`: `0x0000000000000000000000000000000000000000`
+* `to`: `0x420000000000000000000000000000000000000F` (proxy de Gas Price Oracle)
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `50,000`
+* `data`: `0x3659cfe6000000000000000000000000a919894851548179a0750865e7974da599c0fac7`
+* `sourceHash`: `0x1e6bb0c28bfab3dc9b36ffb0f721f00d6937f33577606325692db0965a7d58c6`
+  calculado con el tipo &quot;Upgrade-deposited&quot;, con `intent = "Fjord: Gas Price Oracle Proxy Update"`
+
+Verificación de los datos:
+
+```bash Terminal
+cast concat-hex $(cast sig "upgradeTo(address)") $(cast abi-encode "upgradeTo(address)" 0xa919894851548179A0750865e7974DA599C0Fac7)
+# 0x3659cfe6000000000000000000000000a919894851548179a0750865e7974da599c0fac7
+```
+
+Verifica el `sourceHash`:
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Fjord: Gas Price Oracle Proxy Update"))
+# 0x1e6bb0c28bfab3dc9b36ffb0f721f00d6937f33577606325692db0965a7d58c6
+```
+
+## Habilitación de Fjord en GasPriceOracle {#gaspriceoracle-enable-fjord}
+
+Esta transacción indica al GasPriceOracle que empiece a usar la fórmula de cálculo de gas de Fjord.
+
+Se deriva una transacción de depósito con los siguientes atributos:
+
+* `from`: `0xDeaDDEaDDeAdDeAdDEAdDEaddeAddEAdDEAd0001` (cuenta depositante)
+* `to`: `0x420000000000000000000000000000000000000F` (proxy del Gas Price Oracle)
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `90,000`
+* `data`: `0x8e98b106`
+* `sourceHash`: `0xbac7bb0d5961cad209a345408b0280a0d4686b1b20665e1b0f9cdafd73b19b6b`,
+  calculado con el tipo &quot;Upgrade-deposited&quot;, con &#96;intent = &quot;Fjord: Gas Price Oracle Set Fjord&quot;
+
+Verifica los datos:
+
+```bash Terminal
+cast sig "setFjord()"
+0x8e98b106
+```
+
+Verifica `sourceHash`:
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Fjord: Gas Price Oracle Set Fjord"))
+# 0xbac7bb0d5961cad209a345408b0280a0d4686b1b20665e1b0f9cdafd73b19b6b
+```

@@ -1,0 +1,69 @@
+---
+title: "谓词与安全性"
+description: "安全地使用有效性谓词。"
+---
+
+谓词是打包条件，既不保证交易一定会被打包，也不保证其能够成功执行。
+
+## 谓词类型 {#predicate-types}
+
+| 类型                 | 参数                                         |
+| ------------------ | ------------------------------------------ |
+| `balance`          | `address`、`op`、`value`                     |
+| `storage`          | `address`、`slot`、`op`、`value`，以及可选的 `mask` |
+| `block_number`     | `op`、`value`                               |
+| `flashblock_index` | `op`、`value`                               |
+
+支持的运算符包括 `<`、`<=`、`=`、`!=`、`>` 和 `>=`。谓词值须为带 `0x` 前缀的十六进制字符串。
+
+## 评估 {#evaluation}
+
+Base 会在交易被打包前对其进行检查。如果任一谓词为假，该交易将保持待处理状态。
+
+先前的交易可能会改变某笔待处理交易所监听的余额或存储值，从而使该待处理交易在同一个 Flashblock 中满足打包条件。
+
+## 余额示例 {#balance-example}
+
+```json Balance predicate lines wrap expandable
+{
+  "type": "balance",
+  "params": {
+    "address": "0x2222222222222222222222222222222222222222",
+    "op": ">=",
+    "value": "0x1"
+  }
+}
+```
+
+## 存储示例 {#storage-example}
+
+```json Storage predicate lines wrap expandable
+{
+  "type": "storage",
+  "params": {
+    "address": "0x2222222222222222222222222222222222222222",
+    "slot": "0x7",
+    "mask": "0xff",
+    "op": "=",
+    "value": "0x2a"
+  }
+}
+```
+
+Base 会将 `(storage[address][slot] & mask)` 与 `value` 进行比较。若省略 `mask`，则比较完整的存储字。
+
+## 区块与 Flashblock 位置 {#block-and-flashblock-position}
+
+使用 `block_number` 定位区块，使用 `flashblock_index` 定位该 Flashblock 内的位置。若需同时满足两个条件，请分别添加独立的谓词。
+
+## 安全性 {#safety}
+
+谓词不会模拟交易。关键检查仍应放在应用调用中执行。
+
+谓词读取的是原始存储，无法调用 view 函数，也无法计算派生值。使用存储谓词之前，请先核实目标合约的存储布局。
+
+区块构建期间，状态可能发生变化。在交易被打包之前，条件可能由真变假，也可能由假变真。
+
+不要将交易在区块中的位置用作随机性来源。不要因为某个槽位的值为零，就认为调用 CREATE2 地址、代理合约或未初始化的合约是安全的。
+
+有效性条件不会记录在链上。不要在 calldata 或谓词值中包含机密信息。

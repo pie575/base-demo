@@ -1,0 +1,238 @@
+---
+title: "Fjord における L2 チェーン導出の変更点"
+description: "Fjord アップグレードにおける導出の変更点。最大シーケンサードリフトやチャネルバンクサイズなどのプロトコルパラメータを更新し、brotli 圧縮のサポートを追加します。"
+---
+
+## プロトコルパラメータの変更 {#protocol-parameter-changes}
+
+次の表は、パラメータの変更点をまとめたものです。
+
+| パラメータ                       | Fjord 以前の (デフォルト) 値 | Fjord での値     | 備考                                     |
+| --------------------------- | ------------------- | ------------- | -------------------------------------- |
+| `max_sequencer_drift`       | 600                 | 1800          | Bedrock 以降はプロトコルパラメータでしたが、今回から定数になります。 |
+| `MAX_RLP_BYTES_PER_CHANNEL` | 10,000,000          | 100,000,000   | プロトコル定数の値が引き上げられます。                    |
+| `MAX_CHANNEL_BANK_SIZE`     | 100,000,000         | 1,000,000,000 | プロトコル定数の値が引き上げられます。                    |
+
+## タイムスタンプによるアクティベーション {#timestamp-activation}
+
+Fjord は、他のネットワークアップグレードと同様に、タイムスタンプに基づいてアクティベートされます。
+L2 ブロックの実行ルールに対する変更は、`L2 Timestamp >= activation time` のときに適用されます。
+導出に対する変更は、タイムスタンプがアクティベーションタイムスタンプ以上である L1 ブロックのデータを
+処理する時点から適用されます。
+`max_sequencer_drift` パラメータの変更は、L1 オリジンブロックのタイムスタンプを基準としてアクティベートされます。
+
+Fjord をジェネシス時点でアクティベートしない場合は、Ecotone のアクティベーションブロックより少なくとも 1 ブロック後に
+アクティベートしなければなりません。これにより、ネットワークアップグレードのトランザクション同士の競合を防ぎます。
+
+## 最大シーケンサードリフトの定数化 {#constant-maximum-sequencer-drift}
+
+Fjord では、`max_sequencer_drift` パラメータが `1800` *秒* の定数となり、
+最大シーケンサードリフトは 30 分に固定されます。
+
+Fjord 以前は、これはチェーン作成時に一度だけ設定されるチェーンパラメータで、デフォルト
+値は `600` 秒 (10 分) でした。現在、ほとんどのチェーンがこの値を使用しています。
+
+### 根拠 {#rationale}
+
+チェーンオペレーター間で議論した結果、現在のデフォルト値よりも大きな値のほうが扱いやすいという点で全員の意見が一致しました。シーケンサーの L1 接続が切断された場合、このドリフト値によって、タイムスタンプのドリフトに関する導出ルールに違反することなくブロックを生成し続けられる時間が決まります。
+
+さらに、この引き上げ後は値を設定可能にしておく必要性は低いという点でも合意しました。そのため、この値は定数として定義されます。将来のハードフォークに向けた代替案として、`SystemConfig` の更新メカニズムを通じて L1 から設定可能なプロトコルパラメータにすることも検討されています。
+
+### セキュリティ上の考慮事項 {#security-considerations}
+
+アクティベーション時刻に関するルールは意図的にシンプルにしてあり、パラメータを定数に変更する以外に
+追加のロジックを適用する必要はありません。理論上、最初のFjordブロックは、その直前のブロックよりも古いL1オリジンのタイムスタンプを
+受け入れる可能性があります。しかし、L1オリジンのタイムスタンプは
+増加しなければならないという制約もあるため、起こり得る注目すべきシナリオは、最初の数個のFjordブロックが
+Fjord以前の最後のブロックと同じエポックに含まれるケースだけです。これは、Fjord以前のルールではこれらのブロックに
+そのL1オリジンのタイムスタンプが許可されない場合でも起こり得ます。その結果、Fjord以前と以後のブロックが混在するエポック内で
+同じL1タイムスタンプが共有されることになります。これは意図された仕様とみなされており、
+セキュリティ上の問題とはみなされません。
+
+## `MAX_RLP_BYTES_PER_CHANNEL` と `MAX_CHANNEL_BANK_SIZE` の引き上げ {#increasing-max_rlp_bytes_per_channel-and-max_channel_bank_size}
+
+Fjord では、`MAX_RLP_BYTES_PER_CHANNEL` が 10,000,000 バイトから 100,000,000 バイトに、
+`MAX_CHANNEL_BANK_SIZE` が 100,000,000 バイトから 1,000,000,000 バイトに引き上げられます。
+
+`MAX_RLP_BYTES_PER_CHANNEL` の用途は [Channel Format](/ja/specifications/base-protocol/consensus/derivation#channel-format) で定義されています。
+`MAX_CHANNEL_BANK_SIZE` の用途は [Channel Bank Pruning](/ja/specifications/base-protocol/consensus/derivation#pruning) で定義されています。
+
+これまでスパンバッチには、`MAX_RLP_BYTES_PER_CHANNEL` と同じ値の `MAX_SPAN_BATCH_SIZE` という上限がありました。
+Fjord では、要素数の上限を表す新しい定数 `MAX_SPAN_BATCH_ELEMENT_COUNT` を導入し、
+`MAX_SPAN_BATCH_SIZE` を廃止します。チャネルのサイズは引き続き `MAX_RLP_BYTES_PER_CHANNEL` でチェックされます。
+
+新しい値は、導出パイプラインの L1 オリジンのタイムスタンプが Fjord のアクティベーション
+タイムスタンプ以上の場合に適用されます。
+
+### 根拠 {#rationale-2}
+
+ガスリミットが 3,000 万ガスのブロックは、ゼロのみで構成されたトランザクションで埋め尽くすと、理論上最大 7.5 メガバイトのサイズになります。現在、値が `0` のバイトは 4 ガスを消費します。
+ブロックのガスリミットを 4,000 万ガスより高く引き上げると、
+`MAX_RLP_BYTES_PER_CHANNEL` を超えるサイズのブロックを作成できてしまいます。
+L2 ブロックは複数のチャネルにまたがって分割できないため、`MAX_RLP_BYTES_PER_CHANNEL` を超えるブロックは
+バッチ送信できません。
+この上限を 100,000,000 バイトに引き上げれば、ガスリミットが最大 4 億ガスのブロックまでバッチ送信できるようになります。
+さらに、単一のチャネルに格納できるデータ量が増えるため、
+圧縮率も改善できます。
+6 つの blob で圧縮率 33% の場合、現在はチャネルあたり 2.2 MB の圧縮データ (非圧縮時 0.77 MB 相当) を
+送信しています。
+今回の変更により、チャネルあたり最大約 275 個の blob を使用できるようになります。
+
+`MAX_CHANNEL_BANK_SIZE` を引き上げることで、こうした大きなチャネルも確実に処理できるようになります。`MAX_RLP_BYTES_PER_CHANNEL` と `MAX_CHANNEL_BANK_SIZE` の比率は、
+従来どおり 10 を維持します。
+
+### セキュリティ上の考慮事項 {#security-considerations-2}
+
+これらの上限を引き上げると、ロールアップノードに必要なリソース量が増加します。
+具体的には、ノードはチャネルのために大きなメモリ領域を確保する必要が生じる可能性があり、チャネルバンクにもより多くの
+メモリを割り当てなければならない場合があります。
+`MAX_RLP_BYTES_PER_CHANNEL` は、もともと zip 爆弾攻撃を防ぐために追加されたものです。
+システムは依然としてこうした攻撃にさらされていますが、これらの上限はノード側で容易に扱えるものです。
+
+Fault Proof の環境は一般的なノードよりも制約が厳しく、これらの上限を引き上げると、現在よりも多くの
+リソースが必要になります。
+`MAX_CHANNEL_BANK_SIZE` の変更は、Fault Proofs の最初の実装には影響しません。この上限は
+ノードがプルーニングを開始するタイミングを示すにすぎず、FPVM ではいったん確保されたメモリはガベージコレクションされないためです。
+つまり、`MAX_CHANNEL_BANK_SIZE` を引き上げても、FPP の最大リソース使用量は増加しません。
+
+`MAX_RLP_BYTES_PER_CHANNEL` を引き上げると、FPVM のリソース使用量が増加する可能性があります。ただし、この増加は
+プログラム全体で処理されるデータの総量ではなく、一度に処理されるデータ量に関するものであるため、
+妥当な範囲であると考えています。この変更以前でも、バッチャーは単一のチャネルの代わりに 10 個のチャネルを
+送信でき、その場合も Fault Proof Program はほぼ同程度のリソースを消費します。
+
+## Brotli チャネル圧縮 {#brotli-channel-compression}
+
+[legacy-channel-format]: /specifications/base-protocol/consensus/derivation#channel-format
+
+Fjord では、別の圧縮アルゴリズムに対応するため、バージョン付きの新しいチャネルエンコーディング形式が導入されます。
+なお、[レガシーチャネル形式][legacy-channel-format]も引き続きサポートされます。
+バージョン付き形式は次のとおりです。
+
+```text Versioned Channel Encoding
+channel_encoding = channel_version_byte ++ compress(rlp_batches)
+```
+
+`channel_version_byte` の下位4ビットを `0b1000 = 8` または `0b1111 =
+15` に設定してはなりません。これらの値は、zlib でエンコードされたデータのヘッダーバイト用に予約されています ([RFC-1950][rfc1950] の5ページを参照) 。
+これにより、チャネルデコーダーはこれらのビット値を検査することで、チャネルエンコーディングがレガシー形式か
+バージョン付き形式かを判別できます。チャネルエンコーディングがバージョン付き形式であると判別された場合、有効な `channel_version_byte` は `1` のみです。これは、`compress()` が
+カスタム辞書を使用しない Brotli 圧縮アルゴリズム ([RFC-7932][rfc7932] で規定) であることを示します。
+
+[rfc7932]: https://datatracker.ietf.org/doc/html/rfc7932
+
+[rfc1950]: https://www.rfc-editor.org/rfc/rfc1950.html
+
+## ネットワークアップグレード自動化トランザクション {#network-upgrade-automation-transactions}
+
+Fjord ハードフォークのアクティベーションブロックには、以下のトランザクションがこの順序で含まれます。
+
+* L1 属性トランザクション
+* L1 からのユーザーデポジット
+* ネットワークアップグレードトランザクション
+  * GasPriceOracle のデプロイ
+  * GasPriceOracle Proxy の ERC-1967 実装スロットの更新
+  * GasPriceOracle での Fjord の有効化
+
+ガス計算に関するシステムの動作を変更したり中断したりしないよう、このブロックでは `noTxPool: true` を設定し、シーケンサーによる
+トランザクションを一切含めないようにします。
+
+## GasPriceOracle のデプロイ {#gaspriceoracle-deployment}
+
+`GasPriceOracle` コントラクトは、Fjord で導入される新しい L1 データ手数料の計算方式に対応するためにアップグレードされます。フォーク後、このコントラクトは
+FastLZ を使用して L1 データ手数料を計算します。
+
+このアップグレードを行うために、以下の属性を持つデポジットトランザクションが導出されます。
+
+* `from`: `0x4210000000000000000000000000000000000002`
+* `to`: `null`,
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `1,450,000`
+* `data`: `0x60806040523...`
+* `sourceHash`: `0x86122c533fdcb89b16d8713174625e44578a89751d96c098ec19ab40a51a8ea3`
+  &quot;Upgrade-deposited&quot; タイプと &#96;intent = &quot;Fjord: Gas Price Oracle Deployment&quot; を使用して計算されます
+
+これにより、Fjord の GasPriceOracle コントラクトが `0xa919894851548179A0750865e7974DA599C0Fac7` にデプロイされます。
+検証方法は次のとおりです。
+
+```bash Terminal
+cast compute-address --nonce=0 0x4210000000000000000000000000000000000002
+Computed Address: 0xa919894851548179A0750865e7974DA599C0Fac7
+```
+
+`sourceHash` を検証します：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Fjord: Gas Price Oracle Deployment"))
+# 0x86122c533fdcb89b16d8713174625e44578a89751d96c098ec19ab40a51a8ea3
+```
+
+`data` を検証します：
+
+```bash Terminal
+git checkout 52abfb507342191ae1f960b443ae8aec7598755c
+pnpm clean && pnpm install && pnpm build
+jq -r ".bytecode.object" packages/contracts-bedrock/forge-artifacts/GasPriceOracle.sol/GasPriceOracle.json
+```
+
+このトランザクションは、次のコードハッシュを持つコントラクトをデプロイしなければなりません (MUST) ：
+`0xa88fa50a2745b15e6794247614b5298483070661adacb8d32d716434ed24c6b2`。
+
+## GasPriceOracle Proxy の更新 {#gaspriceoracle-proxy-update}
+
+このトランザクションは、GasPriceOracle Proxy の ERC-1967 実装スロットを更新し、新しくデプロイされた GasPriceOracle
+を指すようにします。
+
+以下の属性を持つデポジットトランザクションが導出されます。
+
+* `from`: `0x0000000000000000000000000000000000000000`
+* `to`: `0x420000000000000000000000000000000000000F` (Gas Price Oracle Proxy)
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `50,000`
+* `data`: `0x3659cfe6000000000000000000000000a919894851548179a0750865e7974da599c0fac7`
+* `sourceHash`: `0x1e6bb0c28bfab3dc9b36ffb0f721f00d6937f33577606325692db0965a7d58c6`
+  &quot;Upgrade-deposited&quot; タイプと `intent = "Fjord: Gas Price Oracle Proxy Update"` を用いて計算されます
+
+データの検証:
+
+```bash Terminal
+cast concat-hex $(cast sig "upgradeTo(address)") $(cast abi-encode "upgradeTo(address)" 0xa919894851548179A0750865e7974DA599C0Fac7)
+# 0x3659cfe6000000000000000000000000a919894851548179a0750865e7974da599c0fac7
+```
+
+`sourceHash` を検証します：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Fjord: Gas Price Oracle Proxy Update"))
+# 0x1e6bb0c28bfab3dc9b36ffb0f721f00d6937f33577606325692db0965a7d58c6
+```
+
+## GasPriceOracle Enable Fjord {#gaspriceoracle-enable-fjord}
+
+このトランザクションは、Fjordのガス計算式の使用を開始するようGasPriceOracleに通知します。
+
+以下の属性を持つデポジットトランザクションが導出されます。
+
+* `from`: `0xDeaDDEaDDeAdDeAdDEAdDEaddeAddEAdDEAd0001` (Depositerアカウント)
+* `to`: `0x420000000000000000000000000000000000000F` (Gas Price Oracle Proxy)
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `90,000`
+* `data`: `0x8e98b106`
+* `sourceHash`: `0xbac7bb0d5961cad209a345408b0280a0d4686b1b20665e1b0f9cdafd73b19b6b` (
+  &quot;Upgrade-deposited&quot;タイプと&#96;intent = &quot;Fjord: Gas Price Oracle Set Fjord&quot;を使用して計算)
+
+dataの検証：
+
+```bash Terminal
+cast sig "setFjord()"
+0x8e98b106
+```
+
+`sourceHash` を検証します：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Fjord: Gas Price Oracle Set Fjord"))
+# 0xbac7bb0d5961cad209a345408b0280a0d4686b1b20665e1b0f9cdafd73b19b6b
+```

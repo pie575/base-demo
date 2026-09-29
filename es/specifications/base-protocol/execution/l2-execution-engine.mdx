@@ -1,0 +1,519 @@
+---
+title: "Motor de ejecución de L2"
+description: "Especificación del motor de ejecución de L2, que detalla los parámetros de EIP-1559, las bóvedas de tarifas, el uso de la Engine API y el comportamiento de la capa de ejecución."
+---
+
+Este documento describe las modificaciones, la configuración y el uso de un motor de ejecución de L1 para L2.
+
+Para ver la referencia completa de la API JSON-RPC (incluidos los endpoints de Flashblocks y la etiqueta `"pending"` para consultar el estado preconfirmado), consulta la [Referencia de la API](/es/base-chain/api-reference/rpc-overview).
+
+## Parámetros de 1559 {#1559-parameters}
+
+El motor de ejecución debe poder recibir una configuración por cadena que especifique el denominador de EIP-1559
+y la elasticidad de EIP-1559. A partir de Canyon, también debería recibir un nuevo valor `EIP1559DenominatorCanyon` y usarlo como
+denominador en la fórmula de 1559 en lugar del denominador anterior.
+
+Por lo demás, la fórmula de EIP-1559 no cambia.
+
+A partir de Holocene, los parámetros de EIP-1559 pasan a ser [configurables dinámicamente](/es/upgrades/holocene/exec-engine#dynamic-eip-1559-parameters).
+
+A partir de Jovian, se introduce una [tarifa base mínima configurable](/es/upgrades/jovian/exec-engine#minimum-base-fee).
+
+## Datos adicionales {#extra-data}
+
+Antes de Holocene, el bloque génesis puede contener un valor arbitrario de `extraData`, mientras que todos los bloques
+normales deben tener un campo `extraData` **vacío**.
+
+A partir de Holocene, el campo `extraData` [codifica los parámetros de EIP-1559](/es/upgrades/holocene/exec-engine#dynamic-eip-1559-parameters).
+
+A partir de Jovian, la codificación de `extraData` se amplía para [incluir `minBaseFee`](/es/upgrades/jovian/exec-engine#minimum-base-fee).
+
+## Procesamiento de transacciones depositadas {#deposited-transaction-processing}
+
+Las interfaces de Engine abstraen los tipos de transacción mediante [EIP-2718][eip-2718].
+
+Para admitir la funcionalidad de rollup, el motor implementa el procesamiento de un nuevo [`TransactionType`][eip-2718-transactions] de depósito;
+consulta la [especificación de depósitos][deposit-spec].
+
+Este tipo de transacción puede acuñar ETH en L2, ejecutar la EVM
+e introducir información de L1 en contratos integrados de forma nativa en el estado de ejecución.
+
+[deposit-spec]: /specifications/base-protocol/bridging/deposits
+
+### Límites de las transacciones depositadas {#deposited-transaction-boundaries}
+
+No se puede confiar ciegamente en las transacciones: la confianza se establece mediante la autenticación.
+A diferencia de otros tipos de transacciones, los depósitos no se autentican mediante una firma:
+es el nodo del rollup quien los autentica, fuera del motor.
+
+Para procesar transacciones depositadas de forma segura, los depósitos DEBEN autenticarse primero:
+
+* Mediante ingesta directa a través de la Engine API de confianza
+* Como parte de la sincronización hacia un hash de bloque de confianza (cuya confianza se establece mediante una instrucción previa de la Engine API)
+
+Las transacciones depositadas NUNCA DEBEN consumirse desde el pool de transacciones.
+*El pool de transacciones puede deshabilitarse en un rollup que solo admite depósitos*
+
+## Tarifas {#fees}
+
+A las transacciones secuenciadas (es decir, no a los depósitos) se les cobran 3 tipos de tarifas:
+tarifas de prioridad, tarifas base y tarifas por costo de L1.
+
+### Bóvedas de tarifas {#fee-vaults}
+
+Los tres tipos de tarifas se recaudan en 3 despliegues distintos de bóvedas de tarifas en L2 a efectos contables:
+los pagos de tarifas no se registran como llamadas internas de la EVM, por lo que así se distinguen mejor.
+
+Se trata de direcciones fijas en el código que apuntan a contratos proxy predesplegados.
+Los proxies están respaldados por despliegues de contratos de bóveda basados en `FeeVault`, que permiten enviar los fondos de las bóvedas a L1 de forma segura.
+
+| Nombre de la bóveda             | Predeploy                                                                                   |
+| ------------------------------- | ------------------------------------------------------------------------------------------- |
+| Bóveda de tarifas del sequencer | [`SequencerFeeVault`](/es/specifications/base-protocol/execution/predeploys#sequencerfeevault) |
+| Bóveda de tarifas base          | [`BaseFeeVault`](/es/specifications/base-protocol/execution/predeploys#basefeevault)           |
+| Bóveda de tarifas de L1         | [`L1FeeVault`](/es/specifications/base-protocol/execution/predeploys#l1feevault)               |
+
+### Tarifas de prioridad (Sequencer Fee Vault) {#priority-fees-sequencer-fee-vault}
+
+Las tarifas de prioridad siguen la especificación [eip-1559] y las recauda el destinatario de tarifas (fee-recipient) del bloque de L2.
+El destinatario de tarifas del bloque (también conocido como dirección coinbase) se configura con la dirección del Sequencer Fee Vault.
+
+### Tarifas base (Base Fee Vault) {#base-fees-base-fee-vault}
+
+Las tarifas base siguen en gran medida la especificación [eip-1559], salvo que no se queman,
+sino que se acumulan en el saldo de ETH de la cuenta Base Fee Vault.
+
+### Tarifas por costo de L1 (L1 Fee Vault) {#l1-cost-fees-l1-fee-vault}
+
+El protocolo financia el envío por lotes de las transacciones de L2 secuenciadas mediante una tarifa adicional que se cobra a los usuarios de L2
+en función de los costos estimados del envío de lotes.
+Esta tarifa se descuenta del saldo de ETH del remitente de la transacción de L2 y se acumula en el L1 Fee Vault.
+
+La función de costo de L1 exacta que determina el componente de tarifa por costo de L1 de una transacción de L2 depende de
+las actualizaciones que estén activas.
+
+#### Pre-Ecotone {#pre-ecotone}
+
+Antes de la activación de Ecotone, el costo de L1 se calcula así:
+`(rollupDataGas + l1FeeOverhead) * l1BaseFee * l1FeeScalar / 1e6` (cálculo con enteros grandes; el resultado
+se expresa en Wei y está dentro del rango de `uint256`)
+Donde:
+
+* `rollupDataGas` se determina a partir de la transacción codificada *completa*
+  (codificación de transacciones estándar EIP-2718, incluidos los campos de firma):
+  * `rollupDataGas = zeroes * 4 + ones * 16`
+* `l1FeeOverhead` es el valor `overhead` del Gas Price Oracle.
+* `l1FeeScalar` es el valor `scalar` del Gas Price Oracle.
+* `l1BaseFee` es la tarifa base de L1 del L1 origin más reciente registrado en la cadena L2.
+
+Ten en cuenta que `rollupDataGas` utiliza la misma contabilización del costo por byte definida en [eip-2028],
+salvo que ahora la transacción L2 completa cuenta para los bytes cobrados en el calldata de L1.
+Este comportamiento coincide con la estimación del costo de L1 de las transacciones L2 que se usaba antes de Bedrock.
+
+El protocolo contabiliza los costos de compresión, de agrupación en lotes y de gas intrínseco de las transacciones de lote
+mediante los parámetros `overhead` y `scalar` del Gas Price Oracle.
+
+Los valores `l1FeeOverhead` y `l1FeeScalar` del Gas Price Oracle, así como el `l1BaseFee` del L1 origin,
+pueden obtenerse de dos formas intercambiables:
+
+* leyéndolos de los L1 Attributes depositados (`l1FeeOverhead`, `l1FeeScalar`, `basefee`) del bloque L2 actual
+* leyéndolos del contrato L1 Block Info (`0x4200000000000000000000000000000000000015`)
+  * mediante las funciones getter `uint256` de Solidity correspondientes (`l1FeeOverhead`, `l1FeeScalar`, `basefee`)
+  * mediante lecturas directas del almacenamiento:
+    * Tarifa base de L1 como `uint256` big-endian en el slot `1`
+    * Overhead como `uint256` big-endian en el slot `5`
+    * Scalar como `uint256` big-endian en el slot `6`
+
+#### Cambios en la comisión por costo de L1 en Ecotone (DA de EIP-4844) {#ecotone-l1-cost-fee-changes-eip-4844-da}
+
+Ecotone permite publicar lotes mediante blobs, que están sujetos a un nuevo mercado de comisiones. Para tener en cuenta esta funcionalidad,
+el costo de L1 se calcula así:
+
+`(zeroes*4 + ones*16) * (16*l1BaseFee*l1BaseFeeScalar + l1BlobBaseFee*l1BlobBaseFeeScalar) / 16e6`
+
+Donde:
+
+* el cálculo se realiza con enteros de precisión ilimitada, y el resultado se expresa en Wei y tiene
+  rango `uint256`.
+
+* zeroes y ones son, respectivamente, la cantidad de bytes cero y distintos de cero en la transacción firmada
+  y codificada *completa*.
+
+* `l1BaseFee` es la tarifa base de L1 del L1 origin más reciente registrado en la cadena L2.
+
+* `l1BlobBaseFee` es el precio del gas de blob, calculado como se describe en [EIP-4844][4844-gas] a partir del
+  encabezado del bloque L1 origin registrado más reciente.
+
+Conceptualmente, la función anterior expresa la fórmula siguiente, donde `compressedTxSize =
+(zeroes*4 + ones*16) / 16` puede entenderse como una estimación aproximada de cuántos bytes ocupa la
+transacción en un lote comprimido.
+
+`(compressedTxSize) * (16*l1BaseFee*lBaseFeeScalar + l1BlobBaseFee*l1BlobBaseFeeScalar) / 1e6`
+
+La función de costo exacta que utiliza Ecotone, mostrada al principio de esta sección, conserva la precisión en
+aritmética de enteros al posponer la división interna entre 16 hasta el último paso.
+
+[4844-gas]: https://github.com/ethereum/EIPs/blob/master/EIPS/eip-4844.md#gas-accounting
+
+Los dos valores de tarifa base y sus respectivos escalares se pueden obtener de dos formas intercambiables:
+
+* leyéndolos de los L1 Attributes depositados (`l1BaseFeeScalar`, `l1BlobBaseFeeScalar`, `basefee`,
+  `blobBaseFee`) del bloque L2 actual
+* leyéndolos del contrato L1 Block Info (`0x4200000000000000000000000000000000000015`)
+  * mediante las funciones getter de Solidity correspondientes
+  * mediante lecturas directas del almacenamiento:
+    * basefee `uint256` en el slot `1`
+    * blobBaseFee `uint256` en el slot `7`
+    * l1BaseFeeScalar `uint32` big-endian en el slot `3` con desplazamiento `12`
+    * l1BlobBaseFeeScalar `uint32` big-endian en el slot `3` con desplazamiento `8`
+
+## Engine API {#engine-api}
+
+### `engine_forkchoiceUpdatedV2` {#engine_forkchoiceupdatedv2}
+
+Este método actualiza qué bloques de L2 considera canónicos el motor (argumento `forkchoiceState`)
+y, opcionalmente, inicia la producción de bloques (argumento `payloadAttributes`).
+
+Dentro del rollup, los tipos de actualizaciones de forkchoice se interpretan así:
+
+* `headBlockHash`: hash del bloque que encabeza la cadena canónica. Se etiqueta como `"unsafe"` en el JSON-RPC de usuario.
+  Los nodos pueden aplicar bloques de L2 fuera de banda por adelantado y luego hacer un reorg si los datos de L1 entran en conflicto.
+* `safeBlockHash`: hash de bloque de la cadena canónica, derivado de datos de L1, con pocas probabilidades de sufrir un reorg.
+* `finalizedBlockHash`: hash de bloque irreversible, que coincide con el límite inferior del período de disputa.
+
+Para admitir la funcionalidad del rollup, se introduce un cambio retrocompatible
+en [`engine_forkchoiceUpdatedV2`][engine&#95;forkchoiceUpdatedV2]: el `PayloadAttributesV2` extendido
+
+#### PayloadAttributesV2 extendido {#extended-payloadattributesv2}
+
+[`PayloadAttributesV2`][PayloadAttributesV2] se extiende de la siguiente forma:
+
+```js Extended PayloadAttributesV2 lines wrap expandable
+PayloadAttributesV2: {
+    timestamp: QUANTITY
+    prevRandao: DATA (32 bytes)
+    suggestedFeeRecipient: DATA (20 bytes)
+    withdrawals: array of WithdrawalV1
+    transactions: array of DATA
+    noTxPool: bool
+    gasLimit: QUANTITY or null
+}
+```
+
+La notación de tipos utilizada aquí hace referencia a la [HEX value encoding] empleada por la [especificación de la API JSON-RPC de
+Ethereum][JSON-RPC-API], ya que esta estructura deberá enviarse mediante JSON-RPC. `array` se refiere
+a un array JSON.
+
+Cada elemento del array `transactions` es una lista de bytes que codifica una transacción: `TransactionType ||
+TransactionPayload` o `LegacyTransaction`, según se define en [EIP-2718][eip-2718].
+Equivale al campo `transactions` de [`ExecutionPayloadV2`][ExecutionPayloadV2]
+
+El campo `transactions` es opcional:
+
+* Si está vacío o ausente: el comportamiento del motor no cambia. Los sequencers (si están habilitados) construirán un bloque
+  consumiendo transacciones del pool de transacciones.
+* Si está presente y no está vacío: el payload DEBE producirse empezando exactamente por esta lista de transacciones.
+  El [rollup driver][rollup-driver] determina la lista de transacciones a partir de entradas deterministas de L1.
+
+El campo `noTxPool` también es opcional y amplía el significado de `transactions`:
+
+* Si es `false`, el motor de ejecución puede añadir al payload transacciones adicionales de fuentes externas, como el pool de transacciones,
+  después de las `transactions` indicadas. Este es el comportamiento predeterminado que implementa un nodo de L1.
+* Si es `true`, el motor de ejecución no debe modificar en absoluto la lista de `transactions` proporcionada.
+
+Si el campo `transactions` está presente, el motor debe ejecutar las transacciones en orden y devolver `STATUS_INVALID`
+si se produce un error al procesarlas. Debe devolver `STATUS_VALID` si todas las transacciones pudieron
+ejecutarse sin errores. **Nota**: Las reglas de transición de estado se han modificado para que los depósitos nunca fallen,
+por lo que, si `engine_forkchoiceUpdatedV2` devuelve `STATUS_INVALID`, se debe a que una transacción del lote no es válida.
+
+El campo `gasLimit` es opcional en lo que respecta a la compatibilidad con L1, pero obligatorio cuando se usa como rollup.
+Este campo sobrescribe el límite de gas utilizado durante la construcción del bloque.
+Si no se especifica al usarse como rollup, se devuelve `STATUS_INVALID`.
+
+[rollup-driver]: /specifications/base-protocol/consensus/specification
+
+### `engine_forkchoiceUpdatedV3` {#engine_forkchoiceupdatedv3}
+
+Consulta [`engine_forkchoiceUpdatedV2`](#engine_forkchoiceupdatedv2) para ver una descripción del método de actualización de forkchoice.
+`engine_forkchoiceUpdatedV3` **solo debe invocarse con payloads de Ecotone.**
+
+Para admitir la funcionalidad de rollup, se introduce un cambio retrocompatible
+en [`engine_forkchoiceUpdatedV3`][engine&#95;forkchoiceUpdatedV3]: el `PayloadAttributesV3` extendido
+
+#### PayloadAttributesV3 extendido {#extended-payloadattributesv3}
+
+[`PayloadAttributesV3`][PayloadAttributesV3] se extiende de la siguiente manera:
+
+```js Extended PayloadAttributesV3 lines wrap expandable
+PayloadAttributesV3: {
+    timestamp: QUANTITY
+    prevRandao: DATA (32 bytes)
+    suggestedFeeRecipient: DATA (20 bytes)
+    withdrawals: array of WithdrawalV1
+    parentBeaconBlockRoot: DATA (32 bytes)
+    transactions: array of DATA
+    noTxPool: bool
+    gasLimit: QUANTITY or null
+    eip1559Params: DATA (8 bytes) or null
+    minBaseFee: QUANTITY or null
+}
+```
+
+Los requisitos de este objeto son los mismos que los de [`PayloadAttributesV2`](#extended-payloadattributesv2) extendido, con
+la adición de `parentBeaconBlockRoot`, que es la raíz del bloque beacon padre del bloque L1 origin del bloque de L2.
+
+A partir de Ecotone, `parentBeaconBlockRoot` debe establecerse en el `parentBeaconBlockRoot` del L1 origin,
+o en un `bytes32` cero si la funcionalidad de Dencun con `parentBeaconBlockRoot` no está activa en L1.
+
+A partir de Holocene, el campo `eip1559Params` debe codificar los parámetros de EIP-1559. Antes de Holocene, debe ser `null`.
+Consulta [Parámetros dinámicos de EIP-1559](/es/upgrades/holocene/exec-engine#dynamic-eip-1559-parameters) para más detalles.
+
+A partir de Jovian, se añade el campo `minBaseFee`. Antes de Jovian, debe ser `null`.
+Consulta [Tarifa base mínima de Jovian](/es/upgrades/jovian/exec-engine#minimum-base-fee) para más detalles.
+
+### `engine_newPayloadV2` {#engine_newpayloadv2}
+
+Sin modificaciones en [`engine_newPayloadV2`][engine&#95;newPayloadV2].
+Aplica un bloque de L2 al estado del motor.
+
+### `engine_newPayloadV3` {#engine_newpayloadv3}
+
+[`engine_newPayloadV3`][engine&#95;newPayloadV3] aplica un bloque L2 de Ecotone al estado del motor. Esta API no
+tiene modificaciones.
+`engine_newPayloadV3` **solo debe llamarse con payloads de Ecotone.**
+
+Los parámetros adicionales deben establecerse de la siguiente manera:
+
+* `expectedBlobVersionedHashes` DEBE ser un array vacío.
+* `parentBeaconBlockRoot` DEBE ser la raíz del bloque beacon padre tomada del bloque L1 origin del bloque L2.
+
+### `engine_newPayloadV4` {#engine_newpayloadv4}
+
+[`engine_newPayloadV4`][engine&#95;newPayloadV4] aplica un bloque de L2 de Isthmus al estado del motor.
+A partir del hardfork Isthmus, el parámetro `ExecutionPayload` contendrá un campo adicional, `withdrawalsRoot`.
+
+`engine_newPayloadV4` **solo debe llamarse con payloads de Isthmus.**
+
+Los parámetros adicionales deben establecerse de la siguiente manera:
+
+* `executionRequests` DEBE ser un array vacío.
+
+### `engine_getPayloadV2` {#engine_getpayloadv2}
+
+Sin modificaciones respecto a [`engine_getPayloadV2`][engine&#95;getPayloadV2].
+Recupera por su ID un payload preparado por `engine_forkchoiceUpdatedV2` cuando se invoca con `payloadAttributes`.
+
+### `engine_getPayloadV3` {#engine_getpayloadv3}
+
+[`engine_getPayloadV3`][engine&#95;getPayloadV3] recupera por su ID un payload preparado por `engine_forkchoiceUpdatedV3`
+cuando este se llama con `payloadAttributes`.
+`engine_getPayloadV3` **solo debe llamarse con payloads de Ecotone.**
+
+#### Respuesta ampliada {#extended-response}
+
+La [respuesta][GetPayloadV3Response] se amplía de la siguiente manera:
+
+```js Extended GetPayloadV3 Response
+{
+    executionPayload: ExecutionPayload
+    blockValue: QUANTITY
+    blobsBundle: BlobsBundle
+    shouldOverrideBuilder: BOOLEAN
+    parentBeaconBlockRoot: DATA (32 bytes)
+}
+```
+
+[GetPayloadV3Response]: https://github.com/ethereum/execution-apis/blob/main/src/engine/cancun.md#response-2
+
+En Ecotone, DEBE establecerse en el valor de parentBeaconBlockRoot del bloque L1 origin del bloque L2.
+
+### `engine_getPayloadV4` {#engine_getpayloadv4}
+
+[`engine_getPayloadV4`][engine&#95;getPayloadV4] recupera por ID un payload preparado por `engine_forkchoiceUpdatedV3`
+cuando este se invoca con `payloadAttributes`.
+`engine_getPayloadV4` **solo debe invocarse con un payload de Isthmus.**
+
+### `engine_signalSuperchainV1` {#engine_signalsuperchainv1}
+
+Extensión opcional de la Engine API. Comunica información de la superchain al Engine:
+V1 indica qué versión del protocolo se recomienda y cuál se requiere.
+
+Tipos:
+
+```javascript SuperchainSignal Type
+SuperchainSignal: {
+  recommended: ProtocolVersion;
+  required: ProtocolVersion;
+}
+```
+
+`ProtocolVersion`: codificado para RPC según se define en la especificación del formato de versión del protocolo.
+
+Parámetros:
+
+* `signal`: `SuperchainSignal`, la información de la superchain señalizada.
+
+Devuelve:
+
+* `ProtocolVersion`: la versión más reciente del protocolo de Base compatible con el motor de ejecución.
+
+El motor de ejecución DEBERÍA (SHOULD) advertir al usuario cuando la versión recomendada sea más reciente que
+la versión actual compatible con el motor de ejecución.
+
+El motor de ejecución DEBERÍA (SHOULD) tomar medidas de seguridad si no cumple la versión de protocolo requerida.
+Esto puede incluir detener el motor, con el consentimiento del operador del motor de ejecución.
+
+## Redes {#networking}
+
+El motor de ejecución puede obtener todos los datos a través del nodo de rollup, tal como se derivan de L1:
+*La red P2P es estrictamente opcional.*
+
+Sin embargo, para que la velocidad de obtención de datos de L1 no se convierta en un cuello de botella, la funcionalidad de red P2P DEBERÍA estar habilitada para ofrecer:
+
+* Descubrimiento de pares ([Disc v5][discv5])
+* [`eth/66`][eth66]:
+  * Pool de transacciones (utilizado por los nodos sequencer)
+  * Sincronización de estado (ruta ideal para replicar la base de datos de forma rápida y sin confianza)
+  * Obtención de encabezados y cuerpos de bloques históricos
+  * *Los bloques nuevos, en cambio, se obtienen a través de la capa de consenso (nodo de rollup)*
+
+No se requieren modificaciones en la funcionalidad de red de L1, salvo en la configuración:
+
+* [`networkID`][network-id]: distingue la red L2 de L1 y de las redes de prueba.
+  Es igual al [`chainID`][chain-id] de la red de rollup.
+* Activar el fork Merge: habilita la Engine API y deshabilita la propagación de bloques,
+  ya que los encabezados de bloque no pueden autenticarse sin la capa de consenso.
+* Lista de bootnodes: DiscV5 es una red compartida,
+  por lo que el [arranque][discv5-rationale] es más rápido si primero se conecta con nodos L2.
+
+[discv5]: https://github.com/ethereum/devp2p/blob/master/discv5/discv5.md
+
+[eth66]: https://github.com/ethereum/devp2p/blob/master/caps/eth.md
+
+[network-id]: https://github.com/ethereum/devp2p/blob/master/caps/eth.md#status-0x00
+
+[chain-id]: https://github.com/ethereum/EIPs/blob/master/EIPS/eip-155.md
+
+[discv5-rationale]: https://github.com/ethereum/devp2p/blob/master/discv5/discv5-rationale.md
+
+## Sincronización {#sync}
+
+El motor de ejecución puede sincronizarse de distintas maneras:
+
+* Caso ideal: el nodo de rollup indica al motor la cabeza de cadena deseada, determinada por L1, y la sincronización se completa a través de la red P2P del motor.
+* Peor caso: el nodo de rollup detecta que el motor se ha estancado y completa la sincronización únicamente a partir de los datos de L1, sin necesidad de pares.
+
+El caso ideal es más adecuado para poner en marcha nuevos nodos con rapidez,
+ya que la implementación del motor puede sincronizar el estado más rápido mediante métodos como [snap-sync][snap-sync].
+
+[snap-sync]: https://github.com/ethereum/devp2p/blob/master/caps/snap.md
+
+### Sincronización en el caso ideal {#happy-path-sync}
+
+1. El nodo de rollup informa al motor de la cabeza de la cadena L2, de forma incondicional (como parte del funcionamiento normal del nodo):
+   * Payloads de Bedrock / Canyon / Delta
+     * Se llama a [`engine_newPayloadV2`][engine&#95;newPayloadV2] con el bloque L2 más reciente recibido por P2P.
+     * Se llama a [`engine_forkchoiceUpdatedV2`][engine&#95;forkchoiceUpdatedV2] con los hashes actuales de los bloques L2
+       `unsafe`/`safe`/`finalized`.
+   * Payloads de Ecotone
+     * Se llama a [`engine_newPayloadV3`][engine&#95;newPayloadV3] con el bloque L2 más reciente recibido por P2P.
+     * Se llama a [`engine_forkchoiceUpdatedV3`][engine&#95;forkchoiceUpdatedV3] con los hashes actuales de los bloques L2
+       `unsafe`/`safe`/`finalized`.
+2. El motor solicita encabezados a los pares, en orden inverso, hasta que el hash del padre coincide con la cadena local
+3. El motor se pone al día:
+   a) Se activa algún tipo de sincronización de estado hacia el hash del bloque finalizado o del bloque cabeza
+   b) Algún tipo de sincronización de bloques descarga los cuerpos de los bloques y los procesa hasta el hash del bloque cabeza
+
+Los detalles de la sincronización basada en P2P quedan fuera del alcance de la especificación de L2:
+la operación dentro del motor es exactamente la misma que en L1 (aunque con una EVM que admite depósitos).
+
+### Sincronización en el peor caso {#worst-case-sync}
+
+1. El motor está desincronizado, no tiene pares o está detenido por otros motivos.
+2. El nodo de rollup mantiene la cabeza más reciente del motor (consultando periódicamente `eth_getBlockByNumber` o manteniendo una suscripción a los encabezados, o ambas cosas)
+3. El nodo de rollup activa la sincronización si el motor está desincronizado pero no se está sincronizando mediante P2P (`eth_syncing`)
+4. El nodo de rollup inserta uno a uno los bloques derivados de L1, adaptándose, si es necesario, a posibles reorgs de L1,
+   tal como se describe en la [especificación del nodo de rollup][rollup node spec].
+
+[rollup node spec]: /specifications/base-protocol/consensus/specification
+
+## Ecotone: deshabilitar las transacciones de blobs {#ecotone-disable-blob-transactions}
+
+[EIP-4844] introduce las transacciones de blobs, que ofrecen toda la funcionalidad de una transacción [EIP-1559]
+y, además, una lista de «blobs» («Binary Large Object», objeto binario grande), es decir, un tipo de datos dedicado a ofrecer disponibilidad de datos como capa base.
+
+Con la actualización Ecotone, se habilitan todas las funcionalidades de ejecución de Cancun en L1, salvo [EIP-4844]:
+como L2, Base no proporciona blobs y, por lo tanto, deshabilita este nuevo tipo de transacción.
+
+EIP-4844 se deshabilita de la siguiente manera:
+
+* Se ignoran los anuncios en la capa de red que anuncian transacciones de tipo blob.
+* Las transacciones de tipo blob no se admiten en el pool de transacciones, ya lleguen a través del RPC o por cualquier otro medio.
+* El código de construcción de bloques no selecciona transacciones EIP-4844.
+* Una transición de estado de un bloque de L2 que contenga transacciones EIP-4844 es inválida.
+
+El [opcode BLOBBASEFEE](https://eips.ethereum.org/EIPS/eip-7516) está presente, pero su semántica se ha
+modificado, ya que L2 no procesa ningún blob. El opcode siempre insertará un valor de 1 en
+la pila.
+
+## Ecotone: Beacon Block Root {#ecotone-beacon-block-root}
+
+[EIP-4788] introduce una &quot;beacon block root&quot; en el encabezado de bloque de la capa de ejecución y en la EVM.
+Esta raíz de bloque es un [SSZ hash-tree-root] del contenido de la capa de consenso del bloque de consenso anterior.
+
+Con la adopción de [EIP-4399] en la actualización Bedrock, Base ya incluye el `PREVRANDAO` de L1.
+Así, con [EIP-4788] también queda disponible la beacon block root de L1.
+
+Para la actualización Ecotone, esto implica lo siguiente:
+
+* La `parent_beacon_block_root` del L1 origin ahora se incluye en el encabezado del bloque de L2.
+* El &quot;Beacon roots contract&quot; se despliega en el momento de la actualización Ecotone, o se incluye en el génesis si la actualización se activa en el génesis.
+* El proceso de transición de estado del bloque ahora incluye el mismo procesamiento especial de la beacon block root en la EVM que en la L1 de Ethereum.
+
+[SSZ hash-tree-root]: https://github.com/ethereum/consensus-specs/blob/master/ssz/simple-serialize.md#merkleization
+
+[EIP-4399]: https://eips.ethereum.org/EIPS/eip-4399
+
+[EIP-4788]: https://eips.ethereum.org/EIPS/eip-4788
+
+[EIP-4844]: https://eips.ethereum.org/EIPS/eip-4844
+
+[eip-1559]: https://eips.ethereum.org/EIPS/eip-1559
+
+[eip-2028]: https://eips.ethereum.org/EIPS/eip-2028
+
+[eip-2718]: https://eips.ethereum.org/EIPS/eip-2718
+
+[eip-2718-transactions]: https://eips.ethereum.org/EIPS/eip-2718#transactions
+
+[PayloadAttributesV3]: https://github.com/ethereum/execution-apis/blob/cea7eeb642052f4c2e03449dc48296def4aafc24/src/engine/cancun.md#payloadattributesv3
+
+[PayloadAttributesV2]: https://github.com/ethereum/execution-apis/blob/584905270d8ad665718058060267061ecfd79ca5/src/engine/shanghai.md#PayloadAttributesV2
+
+[ExecutionPayloadV2]: https://github.com/ethereum/execution-apis/blob/main/src/engine/shanghai.md#executionpayloadv2
+
+[engine_forkchoiceUpdatedV3]: https://github.com/ethereum/execution-apis/blob/cea7eeb642052f4c2e03449dc48296def4aafc24/src/engine/cancun.md#engine_forkchoiceupdatedv3
+
+[engine_forkchoiceUpdatedV2]: https://github.com/ethereum/execution-apis/blob/584905270d8ad665718058060267061ecfd79ca5/src/engine/shanghai.md#engine_forkchoiceupdatedv2
+
+[engine_newPayloadV2]: https://github.com/ethereum/execution-apis/blob/584905270d8ad665718058060267061ecfd79ca5/src/engine/shanghai.md#engine_newpayloadv2
+
+[engine_newPayloadV3]: https://github.com/ethereum/execution-apis/blob/cea7eeb642052f4c2e03449dc48296def4aafc24/src/engine/cancun.md#engine_newpayloadv3
+
+[engine_newPayloadV4]: https://github.com/ethereum/execution-apis/blob/869b7f062830ba51a7fd8a51dfa4678c6d36b6ec/src/engine/prague.md#engine_newpayloadv4
+
+[engine_getPayloadV2]: https://github.com/ethereum/execution-apis/blob/584905270d8ad665718058060267061ecfd79ca5/src/engine/shanghai.md#engine_getpayloadv2
+
+[engine_getPayloadV3]: https://github.com/ethereum/execution-apis/blob/a0d03086564ab1838b462befbc083f873dcf0c0f/src/engine/cancun.md#engine_getpayloadv3
+
+[engine_getPayloadV4]: https://github.com/ethereum/execution-apis/blob/869b7f062830ba51a7fd8a51dfa4678c6d36b6ec/src/engine/prague.md#engine_getpayloadv4
+
+[HEX value encoding]: https://ethereum.org/en/developers/docs/apis/json-rpc/#hex-encoding
+
+[JSON-RPC-API]: https://github.com/ethereum/execution-apis
+
+## Modificaciones de P2P {#p2p-modifications}
+
+El Ethereum Node Record (ENR) de un nodo de ejecución de Base debe contener un par clave-valor `opel`, donde la clave es
+`opel` y el valor es un identificador de fork conforme a [EIP-2124](https://eips.ethereum.org/EIPS/eip-2124).
+La EL usa una clave distinta a la de la CL para evitar que los nodos de la EL y de la CL se conecten entre sí.

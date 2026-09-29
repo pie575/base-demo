@@ -1,0 +1,157 @@
+---
+title: 'debug_traceTransaction'
+sidebarTitle: 'debug_traceTransaction'
+description: '返回交易的完整 EVM 执行追踪。需要节点启用 debug API。'
+---
+
+重放一笔交易并返回其完整的 EVM 执行追踪，包括执行的每个操作码、每一步消耗的 gas、栈内容以及存储变更。
+
+<Warning>
+  Debug 方法需要重放交易，计算开销很大。[Builder Stack](/zh/get-started/builder-stack) 中各提供商的可用性和速率限制不尽相同。请避免在热路径中调用这些方法。
+</Warning>
+
+## 参数 {#parameters}
+
+<ParamField body="transactionHash" type="string" required>
+  要追踪的 32 字节交易哈希。
+</ParamField>
+
+<ParamField body="traceOptions" type="object">
+  可选的追踪配置。
+
+  <Expandable title="追踪选项">
+    <ParamField body="tracer" type="string">
+      内置追踪器名称。`"callTracer"` 返回调用树，`"prestateTracer"` 返回执行前的账户状态。若省略，则使用默认的 struct log 追踪器。
+    </ParamField>
+
+    <ParamField body="tracerConfig" type="object">
+      所选追踪器的配置选项。例如对于 `"callTracer"`，设置 `{ "onlyTopCall": true }` 可跳过内部调用。
+    </ParamField>
+
+    <ParamField body="disableStorage" type="boolean">
+      若为 `true`，则 struct log 中不捕获存储数据，可减小响应体积。默认为 `false`。
+    </ParamField>
+
+    <ParamField body="disableMemory" type="boolean">
+      若为 `true`，则 struct log 中不捕获内存数据，可减小响应体积。默认为 `false`。
+    </ParamField>
+
+    <ParamField body="disableStack" type="boolean">
+      若为 `true`，则 struct log 中不捕获栈数据。默认为 `false`。
+    </ParamField>
+
+    <ParamField body="timeout" type="string">
+      执行超时时间，采用 Go duration 字符串格式 (例如 `"10s"`、`"30s"`) 。默认为 `"5s"`。
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## 返回值 {#returns}
+
+<ResponseField name="result" type="object">
+  执行追踪结果，格式取决于 `tracer` 选项。
+
+  <Expandable title="默认 Struct Log 追踪">
+    <ResponseField name="gas" type="number">为该交易提供的 gas 总量。</ResponseField>
+    <ResponseField name="failed" type="boolean">交易是否失败 (即是否发生回滚) 。</ResponseField>
+    <ResponseField name="returnValue" type="string">执行返回值，采用十六进制编码。</ResponseField>
+
+    <ResponseField name="structLogs" type="array">
+      struct log 条目数组，每执行一个 EVM 操作码对应一条记录。
+
+      <Expandable title="Struct Log 字段">
+        <ResponseField name="pc" type="number">程序计数器位置。</ResponseField>
+        <ResponseField name="op" type="string">EVM 操作码名称 (例如 `"PUSH1"`、`"SLOAD"`) 。</ResponseField>
+        <ResponseField name="gas" type="number">当前步骤的剩余 gas。</ResponseField>
+        <ResponseField name="gasCost" type="number">该操作码消耗的 gas。</ResponseField>
+        <ResponseField name="depth" type="number">调用深度 (1 = 顶层调用) 。</ResponseField>
+        <ResponseField name="stack" type="array">当前步骤的 EVM 栈值。</ResponseField>
+        <ResponseField name="memory" type="array">EVM 内存内容，以 32 字节为一块表示。</ResponseField>
+        <ResponseField name="storage" type="object">当前步骤的合约存储变更 (槽位 → 值) 。</ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+
+  <Expandable title="callTracer 结果">
+    <ResponseField name="type" type="string">调用类型：`"CALL"`、`"STATICCALL"`、`"DELEGATECALL"` 或 `"CREATE"`。</ResponseField>
+    <ResponseField name="from" type="string">发送方地址。</ResponseField>
+    <ResponseField name="to" type="string">接收方地址。</ResponseField>
+    <ResponseField name="value" type="string">随调用发送的 ETH 数额。</ResponseField>
+    <ResponseField name="gas" type="string">为该调用提供的 gas。</ResponseField>
+    <ResponseField name="gasUsed" type="string">实际消耗的 gas。</ResponseField>
+    <ResponseField name="input" type="string">发送的调用数据。</ResponseField>
+    <ResponseField name="output" type="string">调用的返回数据。</ResponseField>
+    <ResponseField name="error" type="string">调用回滚时的错误信息。可选。</ResponseField>
+    <ResponseField name="calls" type="array">内部调用对应的嵌套调用对象数组。</ResponseField>
+  </Expandable>
+</ResponseField>
+
+## 示例 {#example}
+
+<CodeGroup>
+  ```json 请求（默认 struct log） lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "method": "debug_traceTransaction",
+    "params": [
+      "0xb903239f8543d04b5dc1ba6579132b143087c68db1b2168786408fcbce568238",
+      {}
+    ],
+    "id": 1
+  }
+  ```
+
+  ```json 请求（callTracer） lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "method": "debug_traceTransaction",
+    "params": [
+      "0xb903239f8543d04b5dc1ba6579132b143087c68db1b2168786408fcbce568238",
+      { "tracer": "callTracer" }
+    ],
+    "id": 1
+  }
+  ```
+
+  ```json 响应（默认） lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "gas": 21000,
+      "failed": false,
+      "returnValue": "",
+      "structLogs": [
+        {
+          "pc": 0,
+          "op": "PUSH1",
+          "gas": 21000,
+          "gasCost": 3,
+          "depth": 1,
+          "stack": [],
+          "memory": [],
+          "storage": {}
+        }
+      ]
+    }
+  }
+  ```
+
+  ```json 响应（callTracer） lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "type": "CALL",
+      "from": "0xd3cda913deb6f4967b2ef66ae97de114a83bcc01",
+      "to": "0x4200000000000000000000000000000000000006",
+      "value": "0x2c68af0bb14000",
+      "gas": "0x5208",
+      "gasUsed": "0x5208",
+      "input": "0x",
+      "output": "0x",
+      "calls": []
+    }
+  }
+  ```
+</CodeGroup>

@@ -1,0 +1,370 @@
+---
+title: "Cambios en la derivación de la cadena L2 en Isthmus"
+description: "Cambios en la derivación introducidos por la actualización Isthmus, que especifican las transacciones de automatización de la actualización de red que se ejecutan en la activación del hardfork."
+---
+
+## Transacciones de automatización de la actualización de red {#network-upgrade-automation-transactions}
+
+El bloque de activación del hardfork Isthmus contiene las siguientes transacciones, en este orden:
+
+* Transacción de L1 Attributes
+* Depósitos de usuarios desde L1
+* Transacciones de actualización de red
+  * Despliegue de L1Block
+  * Despliegue de GasPriceOracle
+  * Despliegue de la bóveda de tarifas del operador
+  * Actualización de la implementación ERC-1967 del proxy de L1Block
+  * Actualización de la implementación ERC-1967 del proxy de GasPriceOracle
+  * Actualización de la implementación ERC-1967 del proxy de la bóveda de tarifas del operador
+  * Habilitación de Isthmus en GasPriceOracle
+  * Despliegue del contrato EIP-2935
+
+Para no modificar ni interrumpir el comportamiento del sistema relacionado con el cálculo del gas, este bloque no incluirá ninguna transacción
+secuenciada; para ello, se establece `noTxPool: true`.
+
+## Despliegue de L1Block {#l1block-deployment}
+
+El contrato `L1Block` se actualiza para admitir la funcionalidad de tarifa del operador de Isthmus.
+
+Se deriva una transacción de depósito con los siguientes atributos:
+
+* `from`: `0x4210000000000000000000000000000000000003`
+* `to`: `null`
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `425,000`
+* `data`: `0x60806040523480156100105...`
+* `sourceHash`: `0x3b2d0821ca2411ad5cd3595804d1213d15737188ae4cbd58aa19c821a6c211bf`,
+  calculado con el tipo &quot;Upgrade-deposited&quot;, con &#96;intent = &quot;Isthmus: L1 Block Deployment&quot;
+
+Como resultado, el contrato L1Block de Isthmus se despliega en `0xFf256497D61dcd71a9e9Ff43967C13fdE1F72D12`. Para verificarlo:
+
+```bash Terminal
+cast compute-address --nonce=0 0x4210000000000000000000000000000000000003
+Computed Address: 0xFf256497D61dcd71a9e9Ff43967C13fdE1F72D12
+```
+
+Verifica `sourceHash`:
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Isthmus: L1 Block Deployment"))
+# 0x3b2d0821ca2411ad5cd3595804d1213d15737188ae4cbd58aa19c821a6c211bf
+```
+
+Verifica `data`:
+
+```bash Terminal
+git checkout 9436dba8c4c906e36675f5922e57d1b55582889e
+make build-contracts
+jq -r ".bytecode.object" packages/contracts-bedrock/forge-artifacts/L1Block.sol/L1Block.json
+```
+
+Esta transacción DEBE desplegar un contrato con el siguiente hash de código
+`0x8e3fe7a416d3e5f3b7be74ddd4e7e58e516fa3f80b67c6d930e3cd7297da4a4b`.
+
+Para verificar el hash de código:
+
+```bash Terminal
+git checkout 9436dba8c4c906e36675f5922e57d1b55582889e
+make build-contracts
+cast k $(jq -r ".deployedBytecode.object" packages/contracts-bedrock/forge-artifacts/L1Block.sol/L1Block.json)
+```
+
+## Despliegue de GasPriceOracle {#gaspriceoracle-deployment}
+
+El contrato `GasPriceOracle` también se actualiza para admitir la funcionalidad de tarifa del operador de Isthmus.
+
+Se deriva una transacción de depósito con los siguientes atributos:
+
+* `from`: `0x4210000000000000000000000000000000000004`
+* `to`: `null`
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `1,625,000`
+* `data`: `0x60806040523480156100105...`
+* `sourceHash`: `0xfc70b48424763fa3fab9844253b4f8d508f91eb1f7cb11a247c9baec0afb8035`,
+  calculado con el tipo &quot;Upgrade-deposited&quot;, con &#96;intent = &quot;Isthmus: Gas Price Oracle Deployment&quot;
+
+Como resultado, el contrato GasPriceOracle de Isthmus se despliega en `0x93e57A196454CB919193fa9946f14943cf733845`. Para verificarlo:
+
+```bash Terminal
+cast compute-address --nonce=0 0x4210000000000000000000000000000000000003
+Computed Address: 0xFf256497D61dcd71a9e9Ff43967C13fdE1F72D12
+```
+
+Verifica `sourceHash`:
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Isthmus: Gas Price Oracle Deployment"))
+# 0xfc70b48424763fa3fab9844253b4f8d508f91eb1f7cb11a247c9baec0afb8035
+```
+
+Verifica `data`:
+
+```bash Terminal
+git checkout 9436dba8c4c906e36675f5922e57d1b55582889e
+make build-contracts
+jq -r ".bytecode.object" packages/contracts-bedrock/forge-artifacts/GasPriceOracle.sol/GasPriceOracle.json
+```
+
+Esta transacción DEBE desplegar un contrato con el siguiente hash de código
+`0x4d195a9d7caf9fb6d4beaf80de252c626c853afd5868c4f4f8d19c9d301c2679`.
+
+Para verificar el hash de código:
+
+```bash Terminal
+git checkout 9436dba8c4c906e36675f5922e57d1b55582889e
+make build-contracts
+cast k $(jq -r ".deployedBytecode.object" packages/contracts-bedrock/forge-artifacts/GasPriceOracle.sol/GasPriceOracle.json)
+```
+
+## Despliegue del Operator Fee Vault {#operator-fee-vault-deployment}
+
+Se ha creado un nuevo contrato `OperatorFeeVault` para recibir las tarifas del operador. El contrato se crea
+con los siguientes argumentos:
+
+* Dirección del destinatario: el vault de la tarifa base
+* Monto mínimo de retiro: 0
+* Red de retiro: L2
+
+Se deriva una transacción de depósito con los siguientes atributos:
+
+* `from`: `0x4210000000000000000000000000000000000005`
+* `to`: `null`
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `500,000`
+* `data`: `0x60806040523480156100105...`
+* `sourceHash`: `0x107a570d3db75e6110817eb024f09f3172657e920634111ce9875d08a16daa96`,
+  calculado con el tipo &quot;Upgrade-deposited&quot;, con &#96;intent = &quot;Isthmus: Operator Fee Vault Deployment&quot;
+
+Como resultado, el contrato OperatorFeeVault de Isthmus se despliega en
+`0x4fa2Be8cd41504037F1838BcE3bCC93bC68Ff537`. Para verificarlo:
+
+```bash Terminal
+cast compute-address --nonce=0 0x4210000000000000000000000000000000000003
+Computed Address: 0x4fa2Be8cd41504037F1838BcE3bCC93bC68Ff537
+```
+
+Verifica `sourceHash`:
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Isthmus: Operator Fee Vault Deployment"))
+# 0x107a570d3db75e6110817eb024f09f3172657e920634111ce9875d08a16daa96
+```
+
+Verifica `data`:
+
+```bash Terminal
+git checkout 9436dba8c4c906e36675f5922e57d1b55582889e
+make build-contracts
+jq -r ".bytecode.object" packages/contracts-bedrock/forge-artifacts/OperatorFeeVault.sol/OperatorFeeVault.json
+```
+
+Esta transacción DEBE desplegar un contrato con el siguiente hash de código
+`0x57dc55c9c09ca456fa728f253fe7b895d3e6aae0706104935fe87c7721001971`.
+
+Para verificar el hash de código:
+
+```bash Terminal
+git checkout 9436dba8c4c906e36675f5922e57d1b55582889e
+make build-contracts
+export ETH_RPC_URL=<YOUR_ETHEREUM_L1_RPC_URL> # Cualquier RPC de L1 de Ethereum con Cancun o Prague
+cast k $(cast call --create $(jq -r ".bytecode.object" packages/contracts-bedrock/forge-artifacts/OperatorFeeVault.sol/OperatorFeeVault.json))
+```
+
+Tenga en cuenta que esta verificación difiere de las demás implementaciones porque `OperatorFeeVault`
+hereda del contrato `FeeVault`, que contiene variables inmutables. Por ello, el bytecode de implementación debe
+ejecutarse en una EVM para obtener el bytecode real del contrato implementado. No obstante, como todas las variables inmutables se fijan en valores
+constantes, el hash de código resultante es siempre el mismo.
+
+## Actualización del proxy de L1Block {#l1block-proxy-update}
+
+Esta transacción actualiza la ranura de implementación ERC-1967 del proxy de L1Block para que apunte al nuevo despliegue de L1Block.
+
+Se deriva una transacción de depósito con los siguientes atributos:
+
+* `from`: `0x0000000000000000000000000000000000000000`
+* `to`: `0x4200000000000000000000000000000000000015` (proxy de L1Block)
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `50,000`
+* `data`: `0x3659cfe6000000000000000000000000ff256497d61dcd71a9e9ff43967c13fde1f72d12`
+* `sourceHash`: `0xebe8b5cb10ca47e0d8bda8f5355f2d66711a54ddeb0ef1d30e29418c9bf17a0e`
+  calculado con el tipo &quot;Upgrade-deposited&quot;, con &#96;intent = &quot;Isthmus: L1 Block Proxy Update&quot;
+
+Verifica los datos:
+
+```bash Terminal
+cast concat-hex $(cast sig "upgradeTo(address)") $(cast abi-encode "upgradeTo(address)" 0xff256497d61dcd71a9e9ff43967c13fde1f72d12)
+0x3659cfe6000000000000000000000000ff256497d61dcd71a9e9ff43967c13fde1f72d12
+```
+
+Verifica `sourceHash`:
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Isthmus: L1 Block Proxy Update"))
+# 0xebe8b5cb10ca47e0d8bda8f5355f2d66711a54ddeb0ef1d30e29418c9bf17a0e
+```
+
+## Actualización del proxy de GasPriceOracle {#gaspriceoracle-proxy-update}
+
+Esta transacción actualiza la ranura de implementación ERC-1967 del proxy de GasPriceOracle para que apunte al nuevo despliegue de GasPriceOracle.
+
+Se deriva una transacción de depósito con los siguientes atributos:
+
+* `from`: `0x0000000000000000000000000000000000000000`
+* `to`: `0x420000000000000000000000000000000000000F` (proxy de Gas Price Oracle)
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `50,000`
+* `data`: `0x3659cfe600000000000000000000000093e57a196454cb919193fa9946f14943cf733845`
+* `sourceHash`: `0xecf2d9161d26c54eda6b7bfdd9142719b1e1199a6e5641468d1bf705bc531ab0`,
+  calculado con el tipo &quot;Upgrade-deposited&quot; y con `intent = "Isthmus: Gas Price Oracle Proxy Update"`
+
+Verifica los datos:
+
+```bash Terminal
+cast concat-hex $(cast sig "upgradeTo(address)") $(cast abi-encode "upgradeTo(address)" 0x93e57a196454cb919193fa9946f14943cf733845)
+0x3659cfe600000000000000000000000093e57a196454cb919193fa9946f14943cf733845
+```
+
+Verifica `sourceHash`:
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Isthmus: Gas Price Oracle Proxy Update"))
+# 0xecf2d9161d26c54eda6b7bfdd9142719b1e1199a6e5641468d1bf705bc531ab0
+```
+
+## Actualización del proxy de OperatorFeeVault {#operatorfeevault-proxy-update}
+
+Esta transacción actualiza la ranura de implementación ERC-1967 del proxy de GasPriceOracle para que apunte al nuevo despliegue de GasPriceOracle.
+
+Se deriva una transacción de depósito con los siguientes atributos:
+
+* `from`: `0x0000000000000000000000000000000000000000`
+* `to`: `0x420000000000000000000000000000000000001B` (proxy de Operator Fee Vault)
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `50,000`
+* `data`: `0x3659cfe60000000000000000000000004fa2be8cd41504037f1838bce3bcc93bc68ff537`
+* `sourceHash`: `0xad74e1adb877ccbe176b8fa1cc559388a16e090ddbe8b512f5b37d07d887a927`
+  calculado con el tipo &quot;Upgrade-deposited&quot;, con `intent = "Isthmus: Operator Fee Vault Proxy Update"`
+
+Verificación de los datos:
+
+```bash Terminal
+cast concat-hex $(cast sig "upgradeTo(address)") $(cast abi-encode "upgradeTo(address)" 0x4fa2be8cd41504037f1838bce3bcc93bc68ff537)
+0x3659cfe60000000000000000000000004fa2be8cd41504037f1838bce3bcc93bc68ff537
+```
+
+Verifica `sourceHash`:
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Isthmus: Operator Fee Vault Proxy Update"))
+# 0xad74e1adb877ccbe176b8fa1cc559388a16e090ddbe8b512f5b37d07d887a927
+```
+
+## Habilitación de Isthmus en GasPriceOracle {#gaspriceoracle-enable-isthmus}
+
+Esta transacción indica al GasPriceOracle que empiece a usar la fórmula de cálculo de gas de Isthmus.
+
+Se deriva una transacción de depósito con los siguientes atributos:
+
+* `from`: `0xDeaDDEaDDeAdDeAdDEAdDEaddeAddEAdDEAd0001` (cuenta del depositante)
+* `to`: `0x420000000000000000000000000000000000000F` (proxy del Gas Price Oracle)
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `90,000`
+* `data`: `0x291b0383`
+* `sourceHash`: `0x3ddf4b1302548dd92939826e970f260ba36167f4c25f18390a5e8b194b295319`,
+  calculado con el tipo &quot;Upgrade-deposited&quot;, con &#96;intent = &quot;Isthmus: Gas Price Oracle Set Isthmus&quot;
+
+Verifica los datos:
+
+```bash Terminal
+cast sig "setIsthmus()"
+0x8e98b106
+```
+
+Verifica `sourceHash`:
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Isthmus: Gas Price Oracle Set Isthmus"))
+# 0x3ddf4b1302548dd92939826e970f260ba36167f4c25f18390a5e8b194b295319
+```
+
+## Despliegue del contrato de EIP-2935 {#eip-2935-contract-deployment}
+
+[EIP-2935](https://eips.ethereum.org/EIPS/eip-2935) requiere desplegar un contrato. Para ello,
+se crea una transacción de depósito con atributos que se ajustan al EIP:
+
+* `from`: `0x3462413Af4609098e1E27A490f554f260213D685`
+* `to`: `null`
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `250,000`
+* `data`: `0x60538060095f395ff33373fffffffffffffffffffffffffffffffffffffffe14604657602036036042575f35600143038111604257611fff81430311604257611fff9006545f5260205ff35b5f5ffd5b5f35611fff60014303065500`
+* `sourceHash`: `0xbfb734dae514c5974ddf803e54c1bc43d5cdb4a48ae27e1d9b875a5a150b553a`
+  calculado con el tipo &quot;Upgrade-deposited&quot;, con &#96;intent = &quot;Isthmus: EIP-2935 Contract Deployment&quot;
+
+Como resultado, el contrato de EIP-2935 se despliega en `0x0000F90827F1C53a10cb7A02335B175320002935`. Para verificarlo:
+
+```bash Terminal
+cast compute-address --nonce=0 0x3462413Af4609098e1E27A490f554f260213D685
+Computed Address: 0x0000F90827F1C53a10cb7A02335B175320002935
+```
+
+Verifica `sourceHash`:
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Isthmus: EIP-2935 Contract Deployment"))
+# 0xbfb734dae514c5974ddf803e54c1bc43d5cdb4a48ae27e1d9b875a5a150b553a
+```
+
+Esta transacción DEBE desplegar un contrato con el siguiente hash de código
+`0x6e49e66782037c0555897870e29fa5e552daf4719552131a0abce779daec0a5d`.
+
+## Actualizaciones de span batch {#span-batch-updates}
+
+Los [span batch](../delta/span-batches) son un intervalo de bloques L2 consecutivos que se envían agrupados en lotes.
+
+Los span batch contienen las transacciones L1 y los tipos de transacción que se publican con el intervalo de bloques L2.
+Dado que [EIP-7702] introduce un nuevo tipo de transacción, el span batch debe actualizarse para admitir la transacción
+[EIP-7702].
+
+Esto se traduce en una nueva codificación RLP de la lista `tx_datas`, tal como se especifica en
+[la especificación de span batch de Delta](../delta/span-batches), que añade un nuevo tipo de transacción:
+
+Tipo de transacción `4` ([EIP-7702] `SetCode`):
+`0x04 ++ rlp_encode(value, max_priority_fee_per_gas, max_fee_per_gas, data, access_list, authorization_list)`
+
+La transacción [EIP-7702] amplía [EIP-1559] con un nuevo campo `authorization_list`.
+`authorization_list` es una lista codificada en RLP de tuplas de autorización.
+El formato de la transacción [EIP-7702] es el siguiente:
+
+* `value`: el valor de la transacción, como `u256`.
+* `max_priority_fee_per_gas`: la comisión de prioridad máxima permitida por unidad de gas, como `u256`.
+* `max_fee_per_gas`: la comisión máxima por unidad de gas, como `u256`.
+* `data`: los bytes de datos de la transacción.
+* `access_list`: la lista de acceso de [EIP-2930].
+* `authorization_list`: la lista de autorizaciones firmadas de [EIP-7702].
+
+## Activación {#activation}
+
+Los singular batches con transacciones de tipo `4` solo deben aceptarse si Isthmus está activo en el
+timestamp del batch. Si un singular batch contiene una transacción de tipo `4` antes de que Isthmus esté
+activo, este batch debe *descartarse*. Tenga en cuenta que, si Holocene está activo, esto también
+provocará que se descarten el resto del span batch y el canal que lo contenía.
+
+Tenga en cuenta también que esta comprobación debe realizarse a nivel de cada batch individual derivado de los span
+batches, no de los span batches en su conjunto. En concreto, se permite que un span batch abarque el
+timestamp de activación de Isthmus y contenga transacciones SetCode en singular batches cuyo
+timestamp sea igual o posterior al momento de activación de Isthmus, aunque el timestamp del span batch sea anterior
+al momento de activación de Isthmus.
+
+[EIP-1559]: https://eips.ethereum.org/EIPS/eip-1559
+
+[EIP-7702]: https://eips.ethereum.org/EIPS/eip-7702
+
+[EIP-2930]: https://eips.ethereum.org/EIPS/eip-2930

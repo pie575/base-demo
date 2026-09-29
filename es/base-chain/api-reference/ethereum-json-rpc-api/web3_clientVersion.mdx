@@ -1,0 +1,42 @@
+---
+title: 'web3_clientVersion'
+sidebarTitle: 'web3_clientVersion'
+description: 'Devuelve la cadena de versión actual del cliente.'
+---
+
+Devuelve la cadena de versión del software cliente del nodo.
+
+<Note>
+  Este método no está disponible en todos los endpoints públicos. En el nodo público de Sepolia (`sepolia.base.org`) devuelve `-32601 Method not found`, pero en mainnet funciona correctamente.
+</Note>
+
+## Parámetros {#parameters}
+
+Sin parámetros.
+
+## Valor devuelto {#returns}
+
+<ResponseField name="result" type="string">
+  La cadena de versión del cliente. Formato: `<client>/<version>-<commit>/<platform>/base/<base-version>`. No te bases en el análisis de esta cadena, ya que puede cambiar con las actualizaciones del software del nodo.
+</ResponseField>
+
+## Ejemplo {#example}
+
+<CodeGroup>
+  ```json Request
+  {
+    "jsonrpc": "2.0",
+    "method": "web3_clientVersion",
+    "params": [],
+    "id": 1
+  }
+  ```
+
+  ```json Response
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "reth/v1.11.3-2ac58a2/x86_64-unknown-linux-gnu/base/v0.9.0"
+  }
+  ```
+</CodeGroup>

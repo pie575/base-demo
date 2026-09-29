@@ -1,0 +1,98 @@
+---
+title: "L2 执行引擎"
+description: "Holocene 升级对执行引擎的变更：支持动态 EIP-1559 参数，这些参数编码在区块头中，并通过 SystemConfig 进行配置。"
+---
+
+## 概述 {#overview}
+
+EIP-1559 参数编码在区块头的 `extraData` 字段中，并可通过
+`SystemConfig` 动态配置。
+
+## 基于时间戳的激活 {#timestamp-activation}
+
+与其他网络升级一样，Holocene 通过时间戳激活。当 `L2 Timestamp >= activation time` 时，
+L2 区块执行规则的变更即开始生效。
+
+## 动态 EIP-1559 参数 {#dynamic-eip-1559-parameters}
+
+### 区块头中的 EIP-1559 参数 {#eip-1559-parameters-in-block-header}
+
+自 Holocene 升级起，每个区块的 `extraData` 头字段必须采用以下格式：
+
+| 名称            | 类型                 | 字节偏移     |
+| ------------- | ------------------ | -------- |
+| `version`     | `u8`               | `[0, 1)` |
+| `denominator` | `u32 (big-endian)` | `[1, 5)` |
+| `elasticity`  | `u32 (big-endian)` | `[5, 9)` |
+
+此外：
+
+* `version` 必须为 `0`；
+* `denominator` 和 `elasticity` 必须为非零值；
+* 这 9 个字节之后不得有任何额外数据。
+
+请注意，`extraData` 的最大容量为 32 字节 (以兼容 L1 信标链的 `extraData` 数据类型) ，且其格式可能会在未来的升级中修改或扩展。
+
+另请注意，如果链在创世时即启用 Holocene，则创世区块必须包含符合上述格式的 `extraData`，用以表示该链所使用的初始参数。
+
+### `PayloadAttributesV3` 中的 EIP-1559 参数 {#eip-1559-parameters-in-payloadattributesv3}
+
+[`PayloadAttributesV3`](https://github.com/ethereum/execution-apis/blob/cea7eeb642052f4c2e03449dc48296def4aafc24/src/engine/cancun.md#payloadattributesv3)
+类型新增了一个字段 `eip1559Params`：
+
+```rs Extended PayloadAttributesV3 lines wrap expandable
+PayloadAttributesV3: {
+    timestamp: QUANTITY
+    prevRandao: DATA (32 bytes)
+    suggestedFeeRecipient: DATA (20 bytes)
+    withdrawals: array of WithdrawalV1
+    parentBeaconBlockRoot: DATA (32 bytes)
+    transactions: array of DATA
+    noTxPool: bool
+    gasLimit: QUANTITY or null
+    eip1559Params: DATA (8 bytes) or null
+}
+```
+
+#### 编码 {#encoding}
+
+自 Holocene 激活起，`PayloadAttributeV3` 中的 `eip1559Parameters` 必须恰好为 8 字节，格式如下：
+
+| 名称            | 类型                 | 字节偏移     |
+| ------------- | ------------------ | -------- |
+| `denominator` | `u32 (big-endian)` | `[0, 4)` |
+| `elasticity`  | `u32 (big-endian)` | `[4, 8)` |
+
+#### PayloadID 计算 {#payloadid-computation}
+
+如果 `eip1559Params != null`，则 `eip1559Params` 会紧跟在 `gasLimit` 字段之后写入
+`PayloadID` 哈希器。
+
+### 执行 {#execution}
+
+#### Payload Attributes 处理 {#payload-attributes-processing}
+
+在 Holocene 激活之前，`PayloadAttributesV3` 中的 `eip1559Parameters` 必须为 null，否则视为
+无效。
+
+自 Holocene 激活起 (含激活时) ，与某个 `PayloadAttributesV3` 对应的任何 `ExecutionPayload` 都必须包含
+按[区块头值](#eip-1559-parameters-in-block-header)格式编码的 `extraData`。该 `extraData` 中的 `denominator` 和 `elasticity`
+值必须与 `eip1559Parameters` 中的对应值一致，除非两者均为 0。若两者均为 0，则必须改用
+[先前的 EIP-1559 常量](/zh/specifications/base-protocol/execution/l2-execution-engine#1559-parameters)填充 `extraData`。
+
+#### 基础费用计算 {#base-fee-computation}
+
+在 Holocene 升级之前，用于计算区块基础费用的 EIP-1559 分母和弹性参数均为[常量](/zh/specifications/base-protocol/execution/l2-execution-engine#1559-parameters)。
+
+自 Holocene 升级起，这些参数改为按以下方式确定：
+
+* 如果 Holocene 在 `parent_header.timestamp` 时尚未激活，则使用[先前的 EIP-1559
+  常量](/zh/specifications/base-protocol/execution/l2-execution-engine#1559-parameters)。请注意，在 Holocene 之前，除创世区块可能例外，
+  `parent_header.extraData` 均为空。
+* 如果 Holocene 在 `parent_header.timestamp` 时已激活，则使用 `parent_header.extraData` 中的参数。
+
+### 设计原理 {#rationale}
+
+将 EIP-1559 参数置于 L2 区块头中，既能保持“根据父区块头计算下一个区块基础费用”这一函数的纯函数特性，
+又能让这些参数支持动态配置。动态配置的处理方式与 `gasLimit` 类似：由派生管道通过 `PayloadAttributesV3` 参数，
+将相应的 `SystemConfig` 合约值提供给区块构建器。

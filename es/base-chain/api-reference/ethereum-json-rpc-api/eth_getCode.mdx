@@ -1,0 +1,63 @@
+---
+title: 'eth_getCode'
+sidebarTitle: 'eth_getCode'
+description: 'Devuelve el bytecode del contrato en una dirección. Usa pending para detectar contratos recién desplegados antes de que el bloque se finalice.'
+---
+
+Devuelve el bytecode compilado almacenado en una dirección determinada. Devuelve `"0x"` para las cuentas de propiedad externa (EOA).
+
+<Tip>
+  **Flashblocks:** Consulta `https://mainnet.base.org` con `"pending"` para detectar despliegues de contratos antes de que se selle el bloque.
+</Tip>
+
+## Parámetros {#parameters}
+
+<ParamField body="address" type="string" required>
+  La dirección de 20 bytes que se va a consultar.
+</ParamField>
+
+<ParamField body="block" type="string" required>
+  Número de bloque en hexadecimal, o bien `"latest"`, `"pending"`, `"safe"`, `"finalized"` o `"earliest"`.
+</ParamField>
+
+## Valor devuelto {#returns}
+
+<ResponseField name="result" type="string">
+  El bytecode almacenado en la dirección, como cadena hexadecimal. `"0x"` si no hay código.
+</ResponseField>
+
+## Ejemplo {#example}
+
+<CodeGroup>
+  ```bash Estándar (latest) lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_getCode",
+      "params": ["0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", "latest"],
+      "id": 1
+    }'
+  ```
+
+  ```bash Flashblocks (pending, ~200ms) lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_getCode",
+      "params": ["0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", "pending"],
+      "id": 1
+    }'
+  ```
+
+  ```json Respuesta
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x608060405234801561001057600080fd5b50..."
+  }
+  ```
+</CodeGroup>

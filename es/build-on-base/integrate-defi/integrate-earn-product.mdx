@@ -1,0 +1,79 @@
+---
+title: "Integrar un producto de rendimiento"
+description: "Ofrece a los usuarios una experiencia de rendimiento en USDC con un solo depósito gracias a los vaults de Morpho en Base."
+keywords: ["integrar producto de rendimiento Base", "vault de Morpho Base", "vault de rendimiento ERC-4626", "app de rendimiento USDC"]
+---
+
+import { DeFiDemo } from "/snippets/DeFiDemo.jsx"
+
+Integra un producto de rendimiento basado en vaults a través de protocolos de terceros en Base. El usuario deposita una sola vez y recibe participaciones del vault; esta abstrae la asignación de fondos entre sus mercados subyacentes, mientras tu aplicación muestra el valor canjeable actual y el riesgo.
+
+## Demostración {#demo}
+
+<DeFiDemo flow="earn" />
+
+<Tip>
+  La demostración anterior es solo una simulación. Si quieres ver demostraciones onchain en Vibenet, visita [Demostraciones de la cadena Base](https://chain.base.org/demos).
+</Tip>
+
+## Depositar en un vault de USDC {#deposit-into-a-usdc-vault}
+
+Este ejemplo utiliza `viem@2.55.11` y `@morpho-org/morpho-sdk@5.4.1`.
+
+<Info>
+  Este fragmento es solo ilustrativo. Muestra cómo se estructura una integración con un vault en Base; no es código listo para producción. Consulta la [documentación de Morpho](https://docs.morpho.org) para obtener las direcciones vigentes, los detalles del SDK y los parámetros de riesgo.
+</Info>
+
+Deposita en Steakhouse Prime USDC, un Morpho Vault V2 en Base. Trata la dirección como una configuración fija y revísala cada vez que actualices la integración.
+
+{/* sample: defi-deposit-morpho-vault */}
+
+```typescript deposit-morpho-vault.ts lines wrap expandable highlight={3}
+import { publicClient, walletClient } from './clients.js';
+import {
+  isRequirementSignature,
+  morphoViemExtension,
+} from '@morpho-org/morpho-sdk';
+import { parseUnits } from 'viem';
+import { base } from 'viem/chains';
+
+const vaultAddress = '0xBEeF0e0834849Acc03F0089F01F4F1EeB06873c9';
+const user = walletClient.account.address;
+const client = publicClient.extend(morphoViemExtension());
+const vault = client.morpho.vaultV2(vaultAddress, base.id);
+const action = await vault.deposit({
+  amount: parseUnits('1000', 6),
+  userAddress: user,
+  vaultData: await vault.getData(),
+});
+
+const signatures = [];
+for (const requirement of await action.getRequirements()) {
+  if (isRequirementSignature(requirement)) {
+    signatures.push(await requirement.sign(walletClient, user));
+  } else {
+    const hash = await walletClient.sendTransaction(requirement);
+    await publicClient.waitForTransactionReceipt({ hash });
+  }
+}
+const request = action.buildTx(signatures);
+await publicClient.call({ account: user, ...request });
+const hash = await walletClient.sendTransaction(request);
+await publicClient.waitForTransactionReceipt({ hash });
+```
+
+<Warning>
+  El rendimiento de un vault es variable y no está garantizado. Antes de listar un vault, revisa el curador, la estrategia de asignación, las comisiones, la liquidez disponible para retiros y el riesgo de los contratos inteligentes. Además, muestra a los usuarios el valor actual de cada participación en activos, en lugar de un rendimiento fijo.
+</Warning>
+
+## Ver también {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="Integrar préstamos (lending)" icon="landmark" href="/es/build-on-base/integrate-defi/integrate-lending">
+    Permite que los usuarios depositen USDC en un mercado monetario.
+  </Card>
+
+  <Card title="Integrar la toma de préstamos" icon="hand-holding-dollar" href="/es/build-on-base/integrate-defi/integrate-borrowing">
+    Abre un préstamo colateralizado con WETH como garantía.
+  </Card>
+</CardGroup>

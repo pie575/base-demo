@@ -1,0 +1,99 @@
+---
+title: "支払いの照合"
+keywords: ["Commerce Payments の照合", "paymentInfoHash レポート", "支払い決済台帳", "AuthCaptureEscrow の会計処理"]
+description: "エスクローで発生したチャージ、キャプチャ、手数料、取り消し、回収（reclaim）、返金をもとに決済レポートを作成します。"
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+確定済みのプロトコルログを、`paymentInfoHash` をキーとする台帳レコードに変換します。最初のオーソリゼーションまたはチャージで変更不可の支払い条件が確定し、以降のイベントによってキャプチャ可能額と返金可能額の会計が更新されます。
+
+<Info>
+  このガイドの支払いフローは [Commerce Payments Protocol](https://github.com/base/commerce-payments) に基づいています。
+</Info>
+
+## デモ {#demo}
+
+<PaymentsDemo flow="reconcile" />
+
+<Tip>
+  上記のデモはモックです。Vibenet 上のオンチェーンデモを確認したい場合は、[Base チェーンのデモ](https://chain.base.org/demos)をご覧ください。
+</Tip>
+
+## 決済レポートを作成する {#build-a-settlement-report}
+
+v1.1.0 のエスクローをクエリし、そのライフサイクルイベントから総額、手数料、返金の各行を生成します。
+
+{/* sample: reconcile-payments-ts */}
+
+```typescript TypeScript backend lines wrap expandable highlight={5-10,14,22,30}
+export async function buildSettlementReport(
+  fromBlock: bigint,
+  toBlock: bigint,
+) {
+  const logs = await publicClient.getContractEvents({
+    address: AUTH_CAPTURE_ESCROW,
+    abi: authCaptureEscrowAbi,
+    fromBlock,
+    toBlock,
+    strict: true,
+  });
+  return logs.flatMap((log) => {
+    if (!log.transactionHash) return [];
+    if (log.eventName === "PaymentCharged") return [{
+      paymentInfoHash: log.args.paymentInfoHash,
+      transactionHash: log.transactionHash,
+      logIndex: log.logIndex,
+      operation: "charge",
+      grossAmount: log.args.amount,
+      feeAmount: log.args.feeAmount,
+    }];
+    if (log.eventName === "PaymentCaptured") return [{
+      paymentInfoHash: log.args.paymentInfoHash,
+      transactionHash: log.transactionHash,
+      logIndex: log.logIndex,
+      operation: "capture",
+      grossAmount: log.args.amount,
+      feeAmount: log.args.feeAmount,
+    }];
+    if (log.eventName === "PaymentRefunded") return [{
+      paymentInfoHash: log.args.paymentInfoHash,
+      transactionHash: log.transactionHash,
+      logIndex: log.logIndex,
+      operation: "refund",
+      grossAmount: -log.args.amount,
+      feeAmount: 0n,
+    }];
+    return [];
+  });
+}
+```
+
+チャージまたはキャプチャごとに、以下を行います：
+
+```text Accounting
+加盟店の純受取額 = 総額 - 手数料額
+返金可能残高 += 総額
+```
+
+返金のたびに、返金総額の分だけ返金可能残高を減らします。取り消し (void) または回収 (reclaim) で減るのはキャプチャ可能残高のみであり、それ以前のキャプチャが取り消されることはありません。
+
+<Check>
+  オーソリゼーションごとに、認可額がキャプチャ額、取り消しまたは回収された額、現在の `capturableAmount` の合計と一致することを照合します。また、請求額およびキャプチャ額の合計が、返金額と現在の `refundableAmount` の合計と一致することを照合します。
+</Check>
+
+<Warning>
+  財務レポートは、必ずファイナライズ済みのブロック範囲のみを対象に実行してください。それより新しい承認を表示する場合は暫定値であることを明示し、リオルグが発生したら置き換えてください。
+</Warning>
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="支払いを監視する" icon="eye" href="/ja/build-on-base/accept-payments/watch-for-payments">
+    基盤となるエスクローイベントのインデックスを常に最新の状態に保ちます。
+  </Card>
+
+  <Card title="支払いを返金する" icon="rotate-left" href="/ja/build-on-base/accept-payments/refund-a-payment">
+    総額ベースでの返金の会計処理と流動性について説明します。
+  </Card>
+</CardGroup>

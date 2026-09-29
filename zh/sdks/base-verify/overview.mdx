@@ -1,0 +1,43 @@
+---
+title: "Base Verify API"
+sidebarTitle: "概览"
+description: "使用 Base Verify API 和合约证明对已验证账户的所有权、防止重复参与，并执行资格策略。"
+---
+
+借助 Base Verify，用户可以证明自己控制着已验证账户，而无需向你的应用暴露其凭据。你可以用它来抵御女巫攻击、防止同一用户通过多个钱包重复参与，并根据已验证的特征对操作进行准入控制。
+
+## 选择集成方式 {#choose-an-integration}
+
+<CardGroup cols={2}>
+  <Card title="验证社交账户" icon="user-check" href="/zh/sdks/base-verify/verify-social-accounts">
+    在应用后端核验已验证账户的所有权及账户特征。
+  </Card>
+
+  <Card title="链上验证用户" icon="shield-check" href="/zh/sdks/base-verify/verify-users-onchain">
+    直接在智能合约中执行身份去重和资格策略。
+  </Card>
+</CardGroup>
+
+## 两种集成方式的区别 {#how-the-integrations-differ}
+
+|             | 验证社交账户                   | 在链上验证用户                     |
+| ----------- | ------------------------ | --------------------------- |
+| 校验执行方       | 你的应用后端                   | 你的智能合约                      |
+| 使用的 Base 服务 | Base Verify REST API     | Base Verify REST API 和链上合约  |
+| 返回结果        | 验证令牌和特征属性                | 已签名的 `identityHash`、过期时间和签名 |
+| 适用场景        | 有访问门槛的应用体验、奖励，以及由后端控制的领取 | 合约层面的领取、存款、铸造、投票及其他链上操作     |
+| 应用后端        | 必需                       | 领取时无需                       |
+
+两种集成方式都以钱包签名的 SIWE 消息作为凭证，证明请求方控制该钱包。Base Verify 会评估所请求的提供方或策略，并且只返回所选流程需要的验证数据。
+
+## 相关资源 {#related-resources}
+
+<CardGroup cols={2}>
+  <Card title="验证用户身份" icon="key" href="https://docs.cdp.coinbase.com/coinbase-wallet/guides/authenticate-users">
+    连接 Coinbase Wallet 并验证用户身份。
+  </Card>
+
+  <Card title="签名与验证类型化数据" icon="signature" href="https://docs.cdp.coinbase.com/coinbase-wallet/guides/sign-and-verify-typed-data">
+    在应用中收集并校验钱包签名。
+  </Card>
+</CardGroup>

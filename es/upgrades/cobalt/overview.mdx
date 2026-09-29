@@ -1,0 +1,37 @@
+---
+title: "Descripción general"
+description: "Cobalt mejora el estándar de tokens B20, añade transacciones de validez, introduce actualizaciones dinámicas de nodos y migra el registro de firmantes TEE a la verificación onchain de atestaciones."
+---
+
+|         | Estado              | Fecha                    |
+| ------- | ------------------- | ------------------------ |
+| Sepolia | Activo              | 23 de septiembre de 2026 |
+| Mainnet | Próximo lanzamiento | 30 de septiembre de 2026 |
+
+## Funcionalidades {#features}
+
+<AccordionGroup>
+  <Accordion title="Mejoras de B20">
+    **Base** · Precompilado
+
+    Cobalt incorpora mejoras al estándar de tokens B20: pago de comisiones de transacción en tokens B20, programación de actualizaciones de multiplicadores, simplificación del bloqueo de transferencias y nuevas políticas Union e Intersect.
+  </Accordion>
+
+  <Accordion title="Transacciones de validez">
+    **Base** · Transacciones
+
+    Cobalt introduce las transacciones de validez: transacciones firmadas que Base incluye únicamente cuando se cumplen determinadas condiciones onchain (predicados de saldo, almacenamiento, número de bloque e índice de Flashblock). Úsalas para intercambios condicionales, retiros y otras acciones que dependan del estado. Consulta [Transacciones de validez](/es/specifications/build-transaction/validity-transactions) para ver la especificación completa.
+  </Accordion>
+
+  <Accordion title="Actualizaciones dinámicas">
+    **Base** · RPC
+
+    Las actualizaciones dinámicas introducen un contrato inteligente de Ethereum que almacena las marcas de tiempo de las actualizaciones para los nodos de Base, de modo que los nodos pueden consultar el contrato y aplicar los cambios en caliente. Este cambio se desplegará en Mainnet en modo de solo métricas mientras se recopilan datos para validar que las actualizaciones funcionan sin problemas.
+  </Accordion>
+
+  <Accordion title="Migración del registro de TEE">
+    **Base** · Infraestructura
+
+    Cobalt cambia la forma en que se registran los nuevos firmantes de entornos de ejecución confiables (TEE): las atestaciones de AWS Nitro se verifican íntegramente onchain, sin necesidad de confianza, mediante sugerencias P-384 comprobadas, en sustitución del flujo de pruebas de RISC Zero y Boundless. El registro es más rápido y ya no depende de un servicio externo de generación de pruebas offchain. La generación de claves del enclave, la selección de imágenes PCR0 y la verificación de pruebas no cambian. Consulta [Registrar](/es/specifications/base-protocol/proofs/registrar) para ver la especificación completa.
+  </Accordion>
+</AccordionGroup>

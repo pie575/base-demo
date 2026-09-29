@@ -1,0 +1,95 @@
+---
+title: "オーソリゼーションをキャプチャする"
+keywords: ["Commerce Payments capture", "capture escrowed USDC", "PaymentCaptured", "deferred settlement Base", "Commerce Payments partial capture", "split shipment payment", "variable USDC capture", "capturableAmount"]
+description: "エスクローされたオーソリゼーションの全額または一部を、有効期限が切れる前にキャプチャします。1回でまとめてキャプチャすることも、フルフィルメントの進行に合わせて複数回に分けてキャプチャすることもできます。"
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+注文の決済準備が整ったら、オーソリゼーションをキャプチャします。オペレーターは支払者から再度徴収することなく、エスクロー済みの金額の全額または一部を受取人と手数料受取人に送金します。全額を一度にキャプチャするほか、チェックアウト後に最終的な合計額が変わった場合は少ない金額をキャプチャしたり、注文の発送に合わせて複数回に分けてキャプチャしたりすることもできます。
+
+<Info>
+  このガイドの支払いフローは [Commerce Payments Protocol](https://github.com/base/commerce-payments) に基づいています。
+</Info>
+
+## デモ {#demo}
+
+<PaymentsDemo flow="capture" />
+
+<Tip>
+  上記のデモはモックです。Vibenet 上のオンチェーンデモを試したい場合は、[Base チェーンのデモ](https://chain.base.org/demos)をご覧ください。
+</Tip>
+
+## 確認とキャプチャ {#check-and-capture}
+
+キャプチャの前に `paymentState(paymentInfoHash)` を読み取ってください。金額は 0 より大きく `capturableAmount` 以下である必要があり、`authorizationExpiry` より前 (同時刻は不可) に送信しなければなりません。
+
+オペレーターは、`feeAmount` を生のトークン単位の絶対値で指定します。プロトコルは、`PaymentInfo` に保存されているキャプチャごとの `minFeeBps` と `maxFeeBps` に基づいてこの値を検証します。
+
+{/* sample: usdc-capture-ts */}
+
+```typescript TypeScript lines wrap expandable highlight={8-11,16-17}
+export async function captureAuthorization(
+  payment: StoredProtocolPayment,
+  amount = payment.paymentInfo.maxAmount,
+) {
+  const [, capturableAmount] = await publicClient.readContract({
+    address: AUTH_CAPTURE_ESCROW,
+    abi: authCaptureEscrowAbi,
+    functionName: "paymentState",
+    args: [payment.paymentInfoHash],
+  });
+  if (amount > capturableAmount) throw new Error("Capture exceeds authorized amount");
+  const simulation = await publicClient.simulateContract({
+    account,
+    address: AUTH_CAPTURE_ESCROW,
+    abi: authCaptureEscrowAbi,
+    functionName: "capture",
+    args: [payment.paymentInfo, amount, 0n, zeroAddress],
+  });
+  const hash = await walletClient.writeContract(simulation.request);
+  const receipt = await publicClient.waitForTransactionReceipt({ hash, confirmations: 2 });
+  if (receipt.status !== "success") throw new Error("Payment capture reverted");
+  return receipt;
+}
+```
+
+キャプチャを行うと、`capturableAmount` が減少し、`refundableAmount` が同じ総額分だけ増加します。受取人には、総額から手数料を差し引いた金額が支払われます。
+
+<Check>
+  フルフィルメントの増分を決済済みとしてマークする前に、`PaymentCaptured(paymentInfoHash, amount, feeAmount, feeReceiver)` イベントと、想定どおりの受取人への送金を確認してください。
+</Check>
+
+## 部分金額をキャプチャする {#capture-a-partial-amount}
+
+<PaymentsDemo flow="partial" />
+
+分割してキャプチャするたびに、同じ `capture` 呼び出しにより小さな `amount` を渡します。成功したキャプチャの合計が `PaymentAuthorized.amount` を超えることはできず、手数料の上下限はキャプチャごとに個別に検証されます。残りの確保額は、独自のチェックアウトコントラクトを用意しなくてもオンチェーンで追跡されます。
+
+100 USDC のオーソリゼーションに対して 64 USDC をキャプチャすると、キャプチャ可能な残額は 36 USDC、返金可能額は 64 USDC になります。続けて追加のキャプチャを行うことも、[残額を無効化する](/ja/build-on-base/accept-payments/void-an-authorization)こともできます。
+
+<Check>
+  キャプチャのたびに、別のワーカーが注文処理を進める前に、`PaymentCaptured.amount` を新しい `capturableAmount` および `refundableAmount` と照合してください。
+</Check>
+
+<Warning>
+  手数料の上下限はキャプチャごとに評価され、計算には整数除算が使われます。小数桁数の少ないトークンでは、1 回の決済を多数の少額キャプチャに分割すると、最低手数料の合計額が減る可能性があります。これが問題になる場合は、オフチェーンで最小キャプチャ額を強制してください。
+</Warning>
+
+## キャプチャ期限 {#capture-deadline}
+
+<Warning>
+  `authorizationExpiry` に達するとキャプチャは実行できなくなり、支払者は残りの残高を回収できるようになります。期限を判定する際は、アプリケーションサーバーの時計ではなくチェーン上の時刻を使用してください。
+</Warning>
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="オーソリゼーションを取り消す" icon="ban" href="/ja/build-on-base/accept-payments/void-an-authorization">
+    不要になった残額を支払者に返却します。
+  </Card>
+
+  <Card title="支払いを返金する" icon="rotate-left" href="/ja/build-on-base/accept-payments/refund-a-payment">
+    キャプチャ済みの金額を支払者に返金します。
+  </Card>
+</CardGroup>

@@ -1,0 +1,80 @@
+---
+title: "Verificar un pago"
+keywords: ["verificar Commerce Payments", "verificar PaymentCharged", "paymentInfoHash", "evitar la reutilización de pagos"]
+description: "Verifica los eventos de escrow confirmados y registra cada liquidación una sola vez antes del cumplimiento del pedido."
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+Nunca realices el cumplimiento de un pedido basándote en una firma de billetera, un hash de transacción enviado o el estado del cliente. Decodifica los eventos `AuthCaptureEscrow` confirmados, vincula su `paymentInfoHash` con el pedido y registra cada liquidación exactamente una vez en un almacenamiento persistente.
+
+<Info>
+  El flujo de pago de esta guía se basa en el [Commerce Payments Protocol](https://github.com/base/commerce-payments).
+</Info>
+
+## Demostración {#demo}
+
+<PaymentsDemo flow="verify" />
+
+<Tip>
+  La demostración anterior es solo una simulación. Si quieres ver demostraciones onchain en Vibenet, visita [Demostraciones de la cadena Base](https://chain.base.org/demos).
+</Tip>
+
+## Verificar una liquidación del protocolo {#verify-a-protocol-settlement}
+
+Usa la dirección del contrato de escrow y la ABI de la v1.1.0 de forma conjunta. Los eventos `PaymentCharged` y `PaymentCaptured` contienen un `uint256 feeAmount` absoluto; los eventos de la v1.0 usaban un tipo de campo y un topic de evento diferentes.
+
+{/* sample: verify-token-payment-ts */}
+
+```typescript Backend lines wrap expandable highlight={12,18-19,22-23}
+export async function verifyPayment(args: {
+  hash: Hash;
+  paymentInfoHash: Hash;
+  orderId: string;
+  store: PaymentStore;
+}) {
+  const receipt = await publicClient.waitForTransactionReceipt({ hash: args.hash, confirmations: 2 });
+  if (receipt.status !== "success") throw new Error("Payment transaction reverted");
+  const events = parseEventLogs({
+    abi: authCaptureEscrowAbi,
+    logs: receipt.logs.filter(
+      (log) => log.address.toLowerCase() === AUTH_CAPTURE_ESCROW.toLowerCase(),
+    ),
+    strict: true,
+  });
+  const settlement = events.find(
+    (event) =>
+      (event.eventName === "PaymentCharged" || event.eventName === "PaymentCaptured") &&
+      event.args.paymentInfoHash === args.paymentInfoHash,
+  );
+  if (!settlement) throw new Error("Expected protocol settlement was not found");
+  if (!(await args.store.claimOnce(args.paymentInfoHash, args.orderId))) {
+    throw new Error("Payment was already used");
+  }
+  return settlement;
+}
+```
+
+`PaymentAuthorized` y `PaymentCharged` incluyen el `PaymentInfo` completo. Los eventos posteriores del ciclo de vida solo incluyen el hash, así que debes asociarlos con los términos inmutables que almacenaste al crear el pedido.
+
+<Check>
+  Solo el primer evento confirmado cuya cadena, dirección de escrow, hash de pago, operación, importe y comisión coincidan con los esperados pasa a la fase de cumplimiento del pedido.
+</Check>
+
+<Warning>
+  `claimOnce` debe usar una restricción de unicidad en la base de datos y formar parte del mismo flujo de trabajo persistente que el cumplimiento del pedido. Un `Set` local al proceso no puede evitar repeticiones entre reinicios ni entre workers.
+</Warning>
+
+Elige una profundidad de confirmación acorde con el valor y la reversibilidad del cumplimiento del pedido. Consulta [finalidad de las transacciones](/es/specifications/transactions/transaction-finality).
+
+## Ver también {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="Solicitar un pago" icon="credit-card" href="/es/build-on-base/accept-payments/request-a-payment">
+    Crea un cobro inmediato a través del protocolo.
+  </Card>
+
+  <Card title="Supervisar pagos" icon="eye" href="/es/build-on-base/accept-payments/watch-for-payments">
+    Recupera eventos históricos de escrow confirmados y procésalos.
+  </Card>
+</CardGroup>

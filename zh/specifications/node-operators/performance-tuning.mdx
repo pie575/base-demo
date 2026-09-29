@@ -1,0 +1,45 @@
+---
+title: 节点性能
+sidebarTitle: 性能调优
+description: 运行高性能 Base 节点所需的硬件规格、存储要求、客户端推荐和配置设置。
+---
+
+本指南针对硬件、客户端软件和配置设置提供建议，帮助你优化 Base 节点的性能。
+
+## 硬件 {#hardware}
+
+要运行高性能的 Base 节点，需要配备足够的硬件。我们建议的最低配置如下：
+
+1. 现代多核 (8 核及以上) CPU，且单核性能良好。
+2. 至少 32 GB 内存 (推荐 64 GB) 。
+3. 本地直连的 NVMe SSD 硬盘。采用 RAID 0 配置可进一步提升性能。
+4. 足够的存储容量，计算方式如下：
+
+```
+  (2 × [当前链数据大小] + [快照大小] + 20% 冗余空间)
+```
+
+该容量已预留链数据增长和快照恢复所需的空间。当前链大小请参阅 [Base Stats](https://base.org/stats)，快照大小请参阅 Base Snapshots(https://snapshots.base.org)。
+
+<Note>
+  如果使用 Amazon Elastic Block Store (EBS)，建议选用 io2 Block Express 卷，以确保磁盘读取速度充足，避免初始同步时出现延迟问题。不过，**为获得最佳性能，强烈建议使用本地挂载的 NVMe SSD，而非网络存储。**
+</Note>
+
+### 生产环境硬件示例 {#production-hardware-examples}
+
+以下是 Base 生产节点所采用的硬件规格：
+
+* **Reth 归档节点：**
+  * 实例：AWS `i7i.12xlarge` 或更高配置
+  * 存储：将所有本地 NVMe 硬盘 (`/dev/nvme*`) 组成 RAID 0
+  * 文件系统：ext4
+
+## 初始同步 {#initial-sync}
+
+使用较新的[快照](/zh/specifications/node-operators/snapshots)可以大幅缩短节点初始同步所需的时间。
+
+## 客户端软件 {#client-software}
+
+[Base Node](https://github.com/base/base) 仓库提供了当前稳定版本的配置，以及运行各客户端实现的说明。
+
+Reth 是目前运行 Base 节点性能最佳的客户端，后续优化工作也将主要围绕 Reth 展开。详情请参阅 [Scaling Base with Reth](https://blog.base.dev/scaling-base-with-reth)。

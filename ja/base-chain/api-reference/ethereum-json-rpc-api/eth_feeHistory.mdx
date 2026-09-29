@@ -1,0 +1,84 @@
+---
+title: 'eth_feeHistory'
+sidebarTitle: 'eth_feeHistory'
+description: '指定した範囲のブロックについて、過去の基本手数料と優先手数料のパーセンタイルを返します。'
+---
+
+指定した範囲のブロックについて、基本手数料や優先手数料の分布など、過去のガス情報を返します。手数料の見積もりロジックを構築する際に役立ちます。
+
+## パラメーター {#parameters}
+
+<ParamField body="blockCount" type="string | number" required>
+  返すブロックの数。10進数または16進数の整数で指定できます。最大値は通常1024です。
+</ParamField>
+
+<ParamField body="newestBlock" type="string" required>
+  対象範囲に含める最新のブロック。16進数のブロック番号、またはブロックタグ (`"latest"`、`"pending"` など) で指定します。
+</ParamField>
+
+<ParamField body="rewardPercentiles" type="array" required>
+  各ブロックの優先手数料からサンプリングするパーセンタイル値 (0～100) の配列。例：`[25, 50, 75]` を指定すると、優先手数料の25、50、75パーセンタイル値が返されます。
+</ParamField>
+
+## 戻り値 {#returns}
+
+<ResponseField name="result" type="object">
+  <Expandable title="Fee History のフィールド">
+    <ResponseField name="oldestBlock" type="string">結果セット内で最も古いブロックの番号 (16進数) 。</ResponseField>
+    <ResponseField name="baseFeePerGas" type="array">各ブロックのガスあたりの基本手数料の配列。末尾に、次の保留中 (pending) ブロック用のエントリが1つ追加されます。長さ = `blockCount + 1`。</ResponseField>
+    <ResponseField name="gasUsedRatio" type="array">各ブロックのガス使用量 / ガスリミットの比率の配列 (0.0〜1.0) 。長さ = `blockCount`。</ResponseField>
+    <ResponseField name="baseFeePerBlobGas" type="array">各ブロックの blob ガスあたりの基本手数料の配列。末尾に、次の保留中 (pending) ブロック用のエントリが1つ追加されます (EIP-4844) 。現在、Base では常に `"0x1"` です。長さ = `blockCount + 1`。</ResponseField>
+    <ResponseField name="blobGasUsedRatio" type="array">各ブロックの blob ガス使用率の配列 (0.0〜1.0) 。blob 基本手数料の調整に使用されます (EIP-4844) 。長さ = `blockCount`。</ResponseField>
+    <ResponseField name="reward" type="array">ブロックごとの優先手数料のパーセンタイルを格納した2次元配列。リクエストで指定したパーセンタイル値に対応します。</ResponseField>
+  </Expandable>
+</ResponseField>
+
+## 例 {#example}
+
+<CodeGroup>
+  ```json Request
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_feeHistory",
+    "params": ["0xa", "latest", [25, 50, 75]],
+    "id": 1
+  }
+  ```
+
+  ```json Response lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "baseFeePerBlobGas": [
+        "0x1",
+        "0x1",
+        "0x1",
+        "0x1",
+        "0x3"
+      ],
+      "baseFeePerGas": [
+        "0x4c4b40",
+        "0x4c4b40",
+        "0x4c4b40",
+        "0x4c4b40",
+        "0x4c4b40"
+      ],
+      "blobGasUsedRatio": [0, 0, 0, 0],
+      "gasUsedRatio": [
+        0.1180706525,
+        0.1370935325,
+        0.120803475,
+        0.0968808
+      ],
+      "oldestBlock": "0x2c31b05",
+      "reward": [
+        ["0xf4240", "0x2191c0"],
+        ["0xf4240", "0x186a00"],
+        ["0x7a138", "0x4c4b40"],
+        ["0xf4240", "0x4c4b40"]
+      ]
+    }
+  }
+  ```
+</CodeGroup>

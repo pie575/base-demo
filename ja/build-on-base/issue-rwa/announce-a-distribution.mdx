@@ -1,0 +1,190 @@
+---
+title: "保有者への変更の告知"
+description: "announce を使用して、B20 Asset の保有者に影響する変更にオンチェーンでの開示を付けて実行します。対象は、追加発行、乗数の更新、トレジャリーからのバーン、およびオンチェーン上の効果を伴わない通知です。"
+keywords: ["分配の告知", "コーポレートアクションの告知", "B20 告知", "アセットの分配", "batchMint による分配", "乗数の更新", "トレジャリーからのバーン", "オンチェーンでの開示"]
+---
+
+import { AssetDemo } from "/snippets/AssetDemo.jsx"
+import RwaDisclaimer from "/snippets/ja/RwaDisclaimer.mdx"
+
+B20 Asset の発行者には、保有者に影響する変更を開示するための確立された手段が必要です。一方、インデクサーには、どの変更が告知済みかを確実に判別する手段が求められます。`announce` は、状態変更と開示を 1 つのトランザクションにまとめて実行します。具体的には、内部呼び出しの前に `Announcement` を、後に `EndAnnouncement` を発行します。本ガイドでは株式配当を例に説明しますが、この囲み構造は、乗数の更新、トレジャリーのバーン、オンチェーンに影響を及ぼさない通知など、オペレーターが B20 Asset に対して行うあらゆる変更に同様に適用できます。
+
+<RwaDisclaimer />
+
+## デモ {#demo}
+
+<AssetDemo flow="dividend" />
+
+<Tip>
+  このデモでは、ブラウザ上でローカルに生成したアカウントを使い、**Base Vibenet** 上で実際のトランザクションを送信します。Vibenet またはその B20 機能が利用できない場合は、説明用のオフライン版に自動で切り替わります。
+</Tip>
+
+<Note>
+  B20 を初めて使う場合は、[B20 トークン標準](/ja/build-on-base/issue-rwa/create-an-asset-token)で基本概念とローンチまでの全手順を確認してください。これらのサンプルは `base-std@1505323`、`viem@2.55.11`、Base Foundry `v1.1.1` を対象としています。
+</Note>
+
+## 始める前に {#before-you-start}
+
+以下のすべてが必要です。
+
+* 自身が管理する B20 Asset。ロールを付与するため、`DEFAULT_ADMIN_ROLE` を保有している必要があります。
+* `announce` を呼び出すアカウント (オペレーター) 。このアカウントに `OPERATOR_ROLE` を付与してください。
+* ラップ対象の呼び出しに必要なロール。これらも同じオペレーターに付与します。`batchMint` と `mintWithMemo` には `MINT_ROLE` が、`burnWithMemo` には `BURN_ROLE` が必要です。乗数のセッターは元から `OPERATOR_ROLE` を使用します。
+* 一度も使用されていない `id`、保有者向けの `description`、および必要に応じてオフチェーンの完全な記録を指す `uri`。
+
+この機能は **B20 Asset** でのみ利用できます。Stablecoin にはアナウンス機能がありません。
+
+### アナウンスの仕組み {#how-an-announcement-works}
+
+`announce(internalCalls, id, description, uri)` は次の順序で実行されます。
+
+1. `Announcement(caller, id, description, uri)` を発行します。
+2. `internalCalls` 内のすべてのエントリをアトミックに実行します。各エントリはこのアセットに対する ABI エンコード済みの calldata (4 バイト以上) であり、`(target, calldata)` のペアではありません。内部呼び出しには個々のロールゲートがそのまま適用され、オペレーターを `msg.sender` として実行されます。
+3. `EndAnnouncement(id)` を発行します。
+
+いずれかの内部呼び出しが失敗すると、トランザクション全体がリバートされ、`id` は未使用のまま残ります。`announce` が成功すると、その `id` はアセットが存在する限り消費済みとなり、以降 `isAnnouncementIdUsed(id)` は `true` を返します。`description` と `uri` はオペレーターが指定する値であり、アセット側では検証されません。内部呼び出しの中で `announce` をネストすると、`AnnouncementInProgress` でリバートされます。
+
+インデクサー向け：`Announcement` と `EndAnnouncement` は、隣接関係だけに頼らず、`id` で対応付けてください。2 つのログの間で発生したすべての作用は、アナウンスされたアクションに属します。この範囲外で発生した状態変更は、`announce` を経由せずに直接呼び出されたものです。
+
+## 追加ユニットの告知と配布 {#announce-and-distribute-additional-units}
+
+ロールの付与は、トークンごとに1回だけ行います：
+
+```solidity Grant OPERATOR_ROLE and MINT_ROLE
+asset.grantRole(asset.OPERATOR_ROLE(), operator);
+asset.grantRole(asset.MINT_ROLE(), operator);
+```
+
+次に、内部呼び出しをエンコードしてアナウンスします。この例では `batchMint` をラップし、ユニットを追加発行する形で株式配当を行います。
+
+<CodeGroup>
+  {/* sample: stock-dividend-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={9,13}
+  import { encodeFunctionData, parseUnits, type Address } from "viem";
+  import { publicClient } from "../../shared/clients.js";
+  import { assetAbi } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function announceStockDividend(token: Address, holders: Address[]) {
+    const mint = encodeFunctionData({
+      abi: assetAbi,
+      functionName: "batchMint",
+      args: [holders, [parseUnits("30", 6), parseUnits("20", 6)]],
+    });
+    const id = `dividend-${Date.now()}`;
+    await sendContract({
+      address: token,
+      abi: assetAbi,
+      functionName: "announce",
+      args: [[mint], id, "Five-percent stock dividend", "https://example.com/actions/dividend"],
+    });
+    const used = await publicClient.readContract({ address: token, abi: assetAbi, functionName: "isAnnouncementIdUsed", args: [id] });
+    if (!used) throw new Error("Announcement was not recorded");
+  }
+  ```
+
+  {/* sample: stock-dividend-solidity */}
+
+  ```solidity Solidity lines wrap expandable highlight={3,4}
+  function announceDividend(address token, address[] memory recipients, uint256[] memory amounts) public {
+      bytes[] memory calls = new bytes[](1);
+      calls[0] = abi.encodeCall(IB20Asset.batchMint, (recipients, amounts));
+      IB20Asset(token).announce(
+          calls,
+          "2026-stock-dividend-01",
+          "Five-percent stock dividend",
+          "https://example.com/announcements/2026-01"
+      );
+      require(IB20Asset(token).isAnnouncementIdUsed("2026-stock-dividend-01"), "announcement missing");
+  }
+  ```
+</CodeGroup>
+
+受取人は `MINT_RECEIVER_POLICY` を満たしている必要があり、`MINT` は一時停止されていない必要があります。また、`batchMint` はオールオアナッシングで実行されます。成功すると、アセットはまず `Announcement` を発行し、次に受取人ごとに `Transfer(address(0), recipient, amount)` を 1 つずつ発行し、最後に `EndAnnouncement` を発行します。`batchMint` の代わりに `mintWithMemo` を使用した場合、発行順序は `Announcement`、`Transfer`、`Memo`、`EndAnnouncement` となります。
+
+<Check>
+  `Announcement` と `EndAnnouncement` が同じ `id` を持ち、内部の `Transfer` イベントがその間に発行されていること、そして `isAnnouncementIdUsed(id)` が `true` を返すことを確認してください。
+</Check>
+
+<Note>
+  この例はユニットを追加発行するもので、現金の分配は行いません。表示残高のスケールを変えるだけの再投資型配当は、乗数の更新として扱います。次のセクションおよび[乗数を適用する](/ja/build-on-base/issue-rwa/apply-a-multiplier)を参照してください。
+</Note>
+
+## その他の変更の告知 {#announce-other-changes}
+
+オペレーターが行う変更は、いずれも同じ枠組みで開示されます。各シナリオには、オペレーターに必要なロールと、アセットが発行するイベントを記載しています。
+
+### 乗数の更新 {#multiplier-update}
+
+`updateUIMultiplier(newMultiplier, effectiveAt)` をラップします。1株を2株に分割する場合は `2e18` を、株式併合の場合は `1e18` 未満の値を指定します。オペレーターに必要なロールは `OPERATOR_ROLE` のみです。
+
+```solidity Announce a multiplier update lines wrap expandable highlight={3}
+function announceMultiplierUpdate(address token, uint256 newMultiplier, uint256 effectiveAt) public {
+    bytes[] memory calls = new bytes[](1);
+    calls[0] = abi.encodeCall(IB20Asset.updateUIMultiplier, (newMultiplier, effectiveAt));
+    IB20Asset(token).announce(
+        calls,
+        "2026-multiplier-01",
+        "2-for-1 multiplier update",
+        "https://example.com/announcements/2026-multiplier-01"
+    );
+}
+```
+
+成功すると、アセットは `Announcement`、`UIMultiplierUpdated`、`EndAnnouncement` の順にイベントを発行します。`UIMultiplierUpdated` はスケジュールが記録されたことを示すものであり、乗数がすでに有効になっていることを示すものではありません。`announce` を介さずに `updateUIMultiplier` を直接呼び出すことも引き続き可能ですが、インデクサーはこれを未開示としてフラグを立てるべきです。
+
+保留中の更新を置き換えるには、1 回の `announce` 内でキャンセルと再スケジュールを行い、両方の呼び出しで同じオペレーターを共有させます。
+
+```solidity Cancel and reschedule in one announcement wrap
+bytes[] memory calls = new bytes[](2);
+calls[0] = abi.encodeCall(IB20Asset.cancelUIMultiplierUpdate, ());
+calls[1] = abi.encodeCall(IB20Asset.updateUIMultiplier, (newMultiplier, effectiveAt));
+IB20Asset(token).announce(calls, id, description, uri);
+```
+
+### トレジャリーのバーン {#treasury-burn}
+
+`burnWithMemo(amount, memo)` をラップします。この呼び出しはオペレーター自身の残高をバーンするもので、ポリシーによる制限は受けません。オペレーターには `OPERATOR_ROLE` と `BURN_ROLE` が必要です。また、`BURN` が一時停止されていないことが条件です。
+
+```solidity Announce a treasury burn wrap
+bytes[] memory calls = new bytes[](1);
+calls[0] = abi.encodeCall(IB20Asset.burnWithMemo, (amount, memo));
+IB20Asset(token).announce(calls, id, "Treasury burn", uri);
+```
+
+成功すると、アセットは `Announcement`、`Transfer(operator, address(0), amount)`、`Memo`、`EndAnnouncement` の順にイベントを発行し、`totalSupply` が減少します。非推奨の `burnBlocked` は使用しないでください。保有者からユニットを回収してバーンするには、まず[差し押さえ](/ja/build-on-base/issue-rwa/seize-and-cancel-units)を行ってから、トレジャリーからバーンをアナウンスしてください。
+
+### オンチェーンに影響しない通知 {#notice-with-no-onchain-effect}
+
+空の `internalCalls` 配列を渡します。オペレーターに必要なのは `OPERATOR_ROLE` のみです。アセットは `Announcement` を発行した直後に `EndAnnouncement` を発行し、その間には何も発行されません。この場合でも `id` は消費されます。
+
+```solidity Notice only
+IB20Asset(token).announce(new bytes[](0), id, description, uri);
+```
+
+## よくあるエラー {#common-errors}
+
+以下のエラーは、`announce` がチェックを行う順に記載しています。続いて、内部呼び出しの失敗について説明します。
+
+| エラー                                                       | 原因                                      | 対処法                                   |
+| --------------------------------------------------------- | --------------------------------------- | ------------------------------------- |
+| `AccessControlUnauthorizedAccount(caller, OPERATOR_ROLE)` | 呼び出し元が `OPERATOR_ROLE` を保持していません。       | オペレーターに `OPERATOR_ROLE` を付与します。       |
+| `AnnouncementIdAlreadyUsed(id)`                           | 過去に成功した `announce` で、`id` がすでに使用されています。 | 新しい一回限りの `id` を指定します。                 |
+| `InternalCallMalformed(call)`                             | 内部呼び出しの blob が 4 バイト未満です。               | セレクターを含む ABI エンコード済みの calldata を渡します。 |
+| `AnnouncementInProgress()`                                | 内部呼び出しが `announce` を呼び出そうとしています。        | `announce` をネストしないでください。              |
+| `InternalCallFailed(call)`                                | 内部呼び出しがリバートしました。リバート理由は伝播されません。         | `call` を直接再実行して根本的なエラーを確認し、原因を修正します。  |
+
+`InternalCallFailed` の主な内部原因は次のとおりです：`MINT_ROLE` または `BURN_ROLE` の未付与、`MINT` または `BURN` の一時停止、`UIMultiplierUpdateExists`、`PolicyForbids`、`SupplyCapExceeded`、`InsufficientBalance` (バーン時にオペレーター自身の残高が不足している場合) 。オーバーフローなどの Solidity の `Panic` はそのまま伝播し、`InternalCallFailed` としてラップされません。
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="乗数を適用する" icon="divide" href="/ja/build-on-base/issue-rwa/apply-a-multiplier">
+    乗数の更新をスケジュール、キャンセル、または上書きします。
+  </Card>
+
+  <Card title="保有者にユニットを発行する" icon="coins" href="/ja/build-on-base/issue-rwa/issue-units">
+    保有者に対して資産ユニットをミントします。
+  </Card>
+</CardGroup>

@@ -1,0 +1,79 @@
+---
+title: "暂停转账"
+description: "在发生安全事件时暂停 B20 Asset 代币的转账，同时保留铸造和销毁功能。"
+keywords: ["暂停代币化资产转账", "B20 暂停", "代币安全事件响应", "细粒度代币暂停"]
+---
+
+import { AssetDemo } from "/snippets/AssetDemo.jsx"
+import RwaDisclaimer from "/snippets/zh/RwaDisclaimer.mdx"
+
+在发生安全事件时暂停 `TRANSFER` 功能，同时不中断发行或注销。B20 将暂停和解除暂停权限分别授予不同的角色，让你可以将紧急响应权限与恢复权限分开管理。
+
+<RwaDisclaimer />
+
+## 演示 {#demo}
+
+<AssetDemo flow="pause" />
+
+<Tip>
+  该演示使用浏览器本地生成的账户在 **Base Vibenet** 上提交真实交易。如果 Vibenet 或其 B20 功能不可用，演示会自动切换为离线示意版本。
+</Tip>
+
+<Note>
+  初次接触 B20？请参阅 [B20 代币标准](/zh/build-on-base/issue-rwa/create-an-asset-token)，了解相关概念和完整的发行演练。这些示例适用于 `base-std@1505323`、`viem@2.55.11` 和 Base Foundry `v1.1.1`。
+</Note>
+
+## 暂停和恢复股票转账 {#pause-and-resume-stock-transfers}
+
+<CodeGroup>
+  {/* sample: stock-pause-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={7}
+  import { type Address } from "viem";
+  import { publicClient } from "../../shared/clients.js";
+  import { b20Abi } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function setStockTransfersPaused(token: Address, paused: boolean) {
+    await sendContract({ address: token, abi: b20Abi, functionName: paused ? "pause" : "unpause", args: [[0]] });
+    const current = await publicClient.readContract({ address: token, abi: b20Abi, functionName: "isPaused", args: [0] });
+    if (current !== paused) throw new Error("Unexpected transfer pause state");
+  }
+  ```
+
+  {/* sample: stock-pause-cli */}
+
+  ```bash CLI lines wrap expandable highlight={1,4}
+  base-cast send "$TOKEN_ADDRESS" "pause(uint8[])" "[0]" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  base-cast call "$TOKEN_ADDRESS" "isPaused(uint8)(bool)" 0 --rpc-url "$RPC_URL"
+  base-cast send "$TOKEN_ADDRESS" "unpause(uint8[])" "[0]" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  ```
+</CodeGroup>
+
+`pause` 和 `unpause` 均接受一个 `PausableFeature[]` 数组。传入 `[0]` 即可仅作用于 `TRANSFER`。四个可暂停功能分别为 `TRANSFER` (0) 、`MINT` (1) 、`BURN` (2) 和 `SEIZE` (3) 。暂停某一功能不会影响其他功能：`MINT` 暂停时，持有人仍可转账；`TRANSFER` 暂停时，铸造者仍可铸造。
+
+传入空数组会导致调用以 `EmptyFeatureSet` 回滚。若某功能已处于所请求的状态，则不执行任何操作，调用也不会回滚。调用完成后，请读取 `isPaused(feature)` 以确认当前状态。所触发的事件 (`Paused` 或 `Unpaused`) 携带的是你传入的原始数组，而非调用后的暂停功能集合。
+
+如果调用者在某功能暂停期间尝试执行对应操作，调用将以 `ContractPaused(feature)` 回滚。
+
+<Check>
+  转账暂停状态已更改，铸造和销毁未被暂停。
+</Check>
+
+<Note>
+  `pause` 需要 `PAUSE_ROLE`，`unpause` 需要 `UNPAUSE_ROLE`。这是两个独立的角色，因此授予恢复权限时应比授予紧急暂停权限更加审慎、范围更窄。
+</Note>
+
+## 另请参阅 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="限制合格持有人" icon="user-check" href="/zh/build-on-base/issue-rwa/restrict-eligible-holders">
+    通过策略限定哪些地址可以持有。
+  </Card>
+
+  <Card title="扣押和注销份额" icon="ban" href="/zh/build-on-base/issue-rwa/seize-and-cancel-units">
+    将不合格持有人的份额转入保管账户，然后予以注销。
+  </Card>
+</CardGroup>

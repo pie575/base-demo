@@ -1,0 +1,357 @@
+---
+title: "Base-Solana 跨链桥"
+description: "在 Base 与 Solana 主网之间跨链传输代币和消息"
+---
+
+import { GithubRepoCard } from "/snippets/zh/GithubRepoCard.mdx"
+
+Base-Solana 跨链桥支持在 Base 与
+Solana 网络之间双向转移代币和传递消息。借助该跨链桥，你可以：
+
+* 在 Base 与 Solana 之间**转移代币**
+* **发送任意跨链消息**
+* **将两者结合使用 (在转移代币的同时执行任意调用)&#x20;**
+* 在任一链上**部署包装代币**
+
+本指南介绍跨链桥的架构、生产环境地址以及实用的实现
+模式。
+
+## 工作原理 {#how-it-works}
+
+### 在 Base 上 {#on-base}
+
+向 Solana 发送代币时，Base 桥接合约会锁定或销毁代币；从 Solana 接收代币时，则会铸造或解锁代币。Bridge 合约本身会根据出站消息构建 Merkle 树。验证者大约每 300 个已最终确认的区块验证一次 Merkle 根，并将其中继到 Solana。随后，你需要证明你的消息包含在该树中，才能在 Solana 上完成转账。
+
+<Info>
+  桥接到 Solana 时，Base 原生代币会被锁定，Solana 原生代币会被销毁。
+  桥接到 Base 时，Solana 原生代币会被铸造，Base 原生代币会被解锁。
+</Info>
+
+**关键智能合约：**
+
+* [**Bridge Contract**](https://github.com/base/bridge/blob/main/base/src/Bridge.sol)：处理出站转账
+* [**CrossChainERC20**](https://github.com/base/bridge/blob/main/base/src/CrossChainERC20.sol)：用于跨链转账的可铸造/可销毁代币
+* [**BridgeValidator**](https://github.com/base/bridge/blob/main/base/src/BridgeValidator.sol)：通过预言机签名验证消息
+* [**Twin Contract**](https://github.com/base/bridge/blob/main/base/src/Twin.sol)：你在 Base 上的专属智能合约，用于执行来自 Solana 的调用
+
+<Tip>
+  **什么是 Twin 合约？**
+  每个 Solana 钱包都会确定性地映射到 Base 上的一个 Twin 合约。当你在桥接消息中附加合约调用时，该调用将由这个 Twin 合约发起，即 Twin 合约会成为 Base 上的 `msg.sender`。
+</Tip>
+
+### 在 Solana 上 {#on-solana}
+
+Solana 跨链桥程序通过锁定或销毁代币并发出事件来处理代币转账。
+在消息传递方面，验证者会将这些事件中继到 Base，再通过你的 Twin
+合约在 Base 上执行。
+
+**核心程序 (Solana Mainnet-Beta) ：**
+
+* [**Bridge Program**](https://github.com/base/bridge/blob/main/solana/programs/bridge)：处理出站转账和消息承诺。
+* [**Base Relayer Program**](https://github.com/base/bridge/blob/main/solana/programs/base_relayer)：可选的中继程序，可在 Base 上预付 gas。
+
+<Info>
+  中继程序并非核心跨链桥的组成部分，而是一个可选的便利层，在 Solana → Base 方向上可代 Solana 用户支付
+  Base gas 费用。
+
+  用户仍需在 Solana 交易中添加 `PayForRelay` 来支付 gas 费用。
+  如果用户未添加 `PayForRelay`，中继程序将不会代付 gas 费用。
+</Info>
+
+完整代码仓库请访问：
+
+<GithubRepoCard title="Base Bridge - 官方代码仓库" githubUrl="https://github.com/base/bridge" />
+
+## 跨链桥接流程 {#bridging-flows}
+
+<CardGroup cols={3}>
+  <Card title="Solana → Base" icon="arrow-right" href="#solana-to-base">
+    基于推送模式，可选配中继器以在 Base 上即时执行
+  </Card>
+
+  <Card title="Base → Solana" icon="arrow-left" href="#base-to-solana">
+    基于证明的销毁与解锁，全程自主托管
+  </Card>
+
+  <Card title="Terminally Onchain" icon="command-line" href="#terminally-onchain-example">
+    支持跨链桥接与合约调用的生产级终端界面
+  </Card>
+</CardGroup>
+
+## Solana 到 Base {#solana-to-base}
+
+**流程：** 锁定 SOL/SPL → (可选) 支付中继费用 → 验证者批准 → 在 Base 上铸造并执行
+
+从 Solana 到 Base 的跨链桥采用拉取式 (pull-based) 模型，分为 3 个步骤：
+
+1. **在 Solana 上发起跨链** - 将你的 SOL 或原生 SPL 代币锁定到 Solana 金库中
+2. **等待验证者预先批准消息** - 验证者会验证并批准你的桥接消息
+3. **在 Base 上执行消息** - 已批准的消息会在 Base 上执行，铸造 SOL 并执行附带的任意调用
+
+<Info>
+  从 Solana 跨链到 Base 时，原生 SOL/SPL 会被锁定，同时在 Base 上铸造 ERC20 SOL。
+</Info>
+
+<Warning>
+  如果你的 Solana → Base 消息包含需要执行的调用，你必须确保
+  该 ABI 编码的调用**能够在 Base 上执行**。无法在 Base 上执行的调用
+  **不可撤销**。如果你在同一笔交易中跨链了代币，
+  这些代币将被**锁定**。
+</Warning>
+
+参考脚本 (自动中继、代币包装、CLI 工具) 位于官方仓库的 `scripts/` 目录下：
+
+<GithubRepoCard title="Solana → Base CLI 脚本" githubUrl="https://github.com/base/bridge/tree/main/scripts/src/commands/sol/bridge" />
+
+### 自动中继示例 {#auto-relay-example}
+
+以下示例脚本演示了如何通过自动中继将 SOL 跨链桥接
+
+```typescript solToBaseWithAutoRelay/index.ts lines wrap expandable
+// 配置
+const TO = "0x8c1a617bdb47342f9c17ac8750e0b070c372c721"; // Base 地址
+const AMOUNT = 0.001; // SOL 数量
+
+// 使用自动中继桥接 SOL
+const ixs = [
+  getBridgeSolInstruction({
+    payer,
+    from: payer,
+    solVault: solVaultAddress,
+    bridge: bridgeAccountAddress,
+    outgoingMessage,
+    to: toBytes(TO),
+    remoteToken: toBytes("0xC5b9112382f3c87AFE8e1A28fa52452aF81085AD"), // Base 上的 SOL
+    amount: BigInt(AMOUNT * 10**9),
+  }),
+  await buildPayForRelayIx(RELAYER_PROGRAM_ID, outgoingMessage, payer)
+];
+
+await buildAndSendTransaction(SOLANA_RPC_URL, ixs, payer);
+```
+
+如需了解更多详情，请参阅 [Solana 到 Base 中继脚本](https://github.com/base/bridge/blob/main/scripts/src/commands/sol/bridge/solana-to-base/bridge-sol.handler.ts)。
+
+### 包装自定义 SPL 代币 {#wrap-custom-spl-tokens}
+
+上面的示例演示了如何将原生 SOL 桥接到 Base。
+如需桥接自定义 SPL 代币，
+你需要使用 CrossChainERC20Factory 在 Base 上创建对应的包装 ERC20 代币。
+
+<GithubRepoCard title="代币包装示例" githubUrl="https://github.com/base/bridge/blob/main/scripts/src/commands/sol/bridge/solana-to-base/wrap-token.handler.ts" />
+
+```typescript wrapSolTokenOnBase/index.ts lines wrap expandable
+// 在 Base 上部署包装代币
+const mintBytes32 = getBase58Codec().encode(SOLANA_SPL_MINT_ADDRESS).toHex();
+
+await client.writeContract({
+  address: "0x58207331CBF8Af87BB6453b610E6579D9878e4EA", // 工厂合约
+  abi: TokenFactory,
+  functionName: "deploy",
+  args: [`0x${mintBytes32}`, "Token Name", "SYMBOL", 9],
+});
+```
+
+## Base 到 Solana {#base-to-solana}
+
+**流程：** 在 Base 上销毁 ERC20 SOL → 等待最终确认 → 生成 Merkle 证明 → 在 Solana 上执行
+
+在 Base 上销毁包装代币，待消息进入可证明状态后，再在
+Solana 上执行证明，以解锁原生资产。此路径可实现完全自主托管，但需要证明者 (prover) 。
+
+<GithubRepoCard title="Base → Solana 示例" githubUrl="https://github.com/base/bridge/blob/main/scripts/src/internal/sol/base.ts" />
+
+```typescript bridgeSolFromBaseToSolana/index.ts lines wrap expandable
+// 第 1 步：在 Base 上销毁 SOL
+const transfer = {
+  localToken: "0xC5b9112382f3c87AFE8e1A28fa52452aF81085AD", // SOL（Base 链上）
+  remoteToken: pubkeyToBytes32(SOL_ADDRESS),
+  to: pubkeyToBytes32(solanaAddress),
+  remoteAmount: BigInt(AMOUNT * 10**9),
+};
+
+const txHash = await client.writeContract({
+  address: "0xB2068ECCDb908902C76E3f965c1712a9cF64171E", // 跨链桥合约
+  abi: Bridge,
+  functionName: "bridgeToken",
+  args: [transfer, []],
+});
+
+// 第 2 步：等待最终确认
+const isProvable = await isBridgeMessageProvable(txHash);
+
+// 第 3 步：生成证明
+const { event, rawProof } = await generateProof(txHash, baseBlockNumber);
+
+// 第 4 步：在 Solana 上执行
+const proveIx = getProveMessageInstruction({
+  nonce: event.message.nonce,
+  sender: toBytes(event.message.sender),
+  data: toBytes(event.message.data),
+  proof: rawProof.map(e => toBytes(e)),
+  messageHash: toBytes(event.messageHash),
+});
+
+const relayIx = getRelayMessageInstruction({ message: messagePda });
+await buildAndSendTransaction(SOLANA_RPC_URL, [proveIx, relayIx], payer);
+```
+
+<Warning>
+  如果您运营的中继器负责在 **Base → Solana**
+  方向上代用户签名并提交 Solana 交易，请**切勿**签署任何要求以您的中继器公钥作为签名者的交易。
+
+  恶意用户可以构造一笔将您的中继器公钥列为必需签名者的交易；一旦
+  您签署并提交该交易，就可能在不知情的情况下授权任意指令 (包括
+  可窃取中继器资金的指令) 。作为最基本的防范措施，请忽略所有将您的
+  公钥指定为签名者的交易。
+</Warning>
+
+## 实用工具 {#utilities}
+
+该代码仓库提供了多种实用工具，可用于在 Solana 与 Base 地址格式之间相互转换、
+获取用于签名交易的 Solana CLI 密钥对，
+以及构建并发送 Solana 交易。
+
+<GithubRepoCard title="Base Bridge 示例 - 实用工具" githubUrl="https://github.com/base/bridge/tree/main/scripts/src/commands" />
+
+### 地址转换 {#address-conversion}
+
+将 Solana 公钥转换为 bytes32 格式，以供 Base 合约使用：
+
+```typescript example.ts
+// 将 Solana 公钥转换为 bytes32，供 Base 合约使用
+import { pubkeyToBytes32 } from "./utils/pubkeyToBytes32";
+
+const bytes32Address = pubkeyToBytes32(solanaAddress);
+```
+
+### 密钥对管理 {#keypair-management}
+
+获取用于交易签名的 Solana CLI 密钥对：
+
+```typescript example.ts
+import { getSolanaCliConfigKeypairSigner } from "./utils/keypair";
+
+const payer = await getSolanaCliConfigKeypairSigner();
+```
+
+### 构建交易 {#transaction-building}
+
+构建并发送 Solana 交易：
+
+```typescript example.ts
+import { buildAndSendTransaction } from "./utils/buildAndSendTransaction";
+
+const signature = await buildAndSendTransaction(SOLANA_RPC_URL, ixs, payer);
+```
+
+## Terminally Onchain 示例 {#terminally-onchain-example}
+
+<GithubRepoCard title="Terminally Onchain" githubUrl="https://github.com/base/sol2base" />
+
+[Terminally Onchain](https://terminallyonchain.com/) 是一个已上线生产环境的 Next.js 应用，通过命令终端界面提供跨链桥功能。用户连接 Solana 钱包后，即可输入命令完成跨链并调用 Base 上的合约，例如：
+
+```bash Terminal
+bridge 0.0001 sol 0xYourTwin --call-contract 0x311935Cd80B76769bF2ecC9D8Ab7635b2139cf82 \
+  --call-selector "transfer(address,uint256)" \
+  --call-args 0x0000000000000000000000000000000000000000 100000000000000
+```
+
+工作流程：
+
+1. **解析命令：** 终端解析器解析出资产、目标地址，以及可选的 Base 调用 (选择器 + 参数 + 金额) 。
+2. **暂存跨链操作：** `queueBridge` 校验 SPL 覆盖参数，通过 `encodeFunctionData` 对 Base 调用进行 ABI 编码，并暂存中继覆盖参数。
+3. **执行：** `solanaBridge.bridge()` 解析目标地址 (ENS/Basename) ，确保余额充足，然后调用 `realBridgeImplementation` 签名并发送 Solana 交易。
+4. **中继 + 调用：** 如果已预付中继 gas，Base Relayer 会在 ERC20 SOL 铸造完成后，立即通过用户的 Twin 合约执行附带的调用。
+
+关键实现参考：
+
+* `src/lib/bridge.ts`：资产解析 (支持 mint 地址) 、按环境自动适配的 RPC 连接，以及附加调用支持。
+* `src/lib/realBridgeImplementation.ts`：使用各环境对应的 PDA 和 gas 费接收方，构建包含 `PayForRelay` + `bridge_sol`/`bridge_spl` 指令的 Solana 交易。
+* `src/components/MainContent.tsx`：终端 UI，支持命令暂存、日志查看，以及对任意 Base 调用进行 ABI 编码。
+* `src/components/WalletConnection.tsx`：为已连接的 Solana 钱包获取其在 Base Mainnet/Sepolia 上的确定性 Twin 地址。
+
+### 运行终端 {#running-the-terminal}
+
+```bash Terminal lines wrap expandable
+git clone https://github.com/base/sol2base.git
+cd sol2base
+npm install --legacy-peer-deps
+
+# 配置环境变量（RPC URL、中继器地址、CDP API 密钥等）
+cp env.template .env.local
+
+npm run dev   # 默认运行在 http://localhost:3000
+```
+
+<Tip>
+  该终端同时支持 Base Sepolia ↔ Solana Devnet 和 Base Mainnet ↔ Solana 主网。可通过界面中的
+  网络下拉菜单进行切换。
+
+  在 `.env` 文件中设置 `CDP_API_KEY` 后，即可使用水龙头。
+</Tip>
+
+## 合约地址 {#contract-addresses}
+
+### Base Mainnet {#base-mainnet}
+
+```json Base Mainnet Addresses
+{
+  "Bridge": "0x3eff766C76a1be2Ce1aCF2B69c78bCae257D5188",
+  "BridgeValidator": "0xAF24c1c24Ff3BF1e6D882518120fC25442d6794B",
+  "CrossChainERC20Factory": "0xDD56781d0509650f8C2981231B6C917f2d5d7dF2",
+  "SOL": "0x311935Cd80B76769bF2ecC9D8Ab7635b2139cf82"
+}
+```
+
+### Solana 主网 {#solana-mainnet}
+
+```json Solana Mainnet Addresses
+{
+  "BridgeProgram": "HNCne2FkVaNghhjKXapxJzPaBvAKDG1Ge3gqhZyfVWLM",
+  "BaseRelayerProgram": "g1et5VenhfJHJwsdJsDbxWZuotD5H4iELNG61kS4fb9"
+}
+```
+
+### Base Sepolia {#base-sepolia}
+
+```json Base Sepolia Addresses lines wrap expandable
+{
+  "Bridge": "0x01824a90d32A69022DdAEcC6C5C14Ed08dB4EB9B",
+  "BridgeValidator": "0xa80C07DF38fB1A5b3E6a4f4FAAB71E7a056a4EC7",
+  "CrossChainERC20Factory": "0x488EB7F7cb2568e31595D48cb26F63963Cc7565D",
+  "SOL": "0xCace0c896714DaF7098FFD8CC54aFCFe0338b4BC",
+  "FLYWHEEL_ADDRESS": "0x00000F14AD09382841DB481403D1775ADeE1179F",
+  "BRIDGE_CAMPAIGN_ADDRESS": "0xE2AD1C34382410C30d826B019A0B3700F5c4e6c9"
+}
+```
+
+### Solana Devnet {#solana-devnet}
+
+```json Solana Devnet Addresses
+{
+  "BridgeProgram": "7c6mteAcTXaQ1MFBCrnuzoZVTTAEfZwa6wgy4bqX3KXC",
+  "BaseRelayerProgram": "56MBBEYAtQAdjT4e1NzHD8XaoyRSTvfgbSVVcEcHj51H",
+  "GasFeeReceiver": "AFs1LCbodhvwpgX3u3URLsud6R1XMSaMiQ5LtXw4GKYT"
+}
+```
+
+## 资源 {#resources}
+
+<CardGroup cols={2}>
+  <Card title="Base Bridge 代码仓库" icon="github" href="https://github.com/base/bridge">
+    源代码、合约、程序和脚本
+  </Card>
+
+  <Card title="Solana 区块浏览器" icon="magnifying-glass" href="https://explorer.solana.com/">
+    查看 Solana mainnet-beta 上的交易
+  </Card>
+
+  <Card title="Base 区块浏览器" icon="magnifying-glass" href="https://basescan.org/">
+    查看 Base Mainnet 上的交易
+  </Card>
+
+  <Card title="Discord 支持" icon="discord" href="https://base.org/discord">
+    向 Base 社区寻求帮助
+  </Card>
+</CardGroup>

@@ -1,0 +1,50 @@
+---
+title: "base-anvil CLI"
+description: "Base 向けの Foundry ビルド：Base のネイティブプリコンパイルに対応した base-forge、base-cast、base-anvil をインストールします。"
+---
+
+[base-anvil](https://github.com/base/base-anvil) は Foundry のフォークで、`forge`、`cast`、`anvil`、`chisel` を Base のネイティブプリコンパイル ([B20 トークンファクトリー](/ja/build-on-base/issue-rwa/create-an-asset-token)、B20 トークン、PolicyRegistry、ActivationRegistry) に対応させたものです。標準の Foundry ではこれらのプリコンパイルのアドレスにアクセスできず、`call to non-contract address` というエラーで処理が中断されます。base-anvil はこれらのプリコンパイルを自身の EVM に登録しているため、Base アプリをローカルでビルド・テストできます。
+
+## インストール {#install}
+
+既存の Foundry と共存する形でインストールされるため、標準の `foundryup` や、既存の `forge`/`cast`/`anvil`/`chisel` が上書きされることはありません。
+
+```bash Terminal
+curl -L https://raw.githubusercontent.com/base/base-anvil/HEAD/foundryup/install | bash
+base-foundryup
+```
+
+これにより、`base-foundryup` と、名前空間付きの `base-forge`、`base-cast`、`base-anvil`、`base-chisel` コマンドが追加されます。これらのコマンドでは、Base のプリコンパイルがデフォルトで有効になります。
+
+## Base のバージョンを選択する {#pick-a-base-version}
+
+base-anvil の各バージョンのリリースには、対象とする Base チェーンのリリース名が付けられています。特定のリリースに固定するには、次のコマンドを実行します:
+
+```bash Terminal
+base-foundryup --install <version>
+```
+
+{/* TODO(verify): 現在の Base リリースと base-anvil のバージョンの対応関係を eng に確認する（base-anvil のドキュメントには Beryl が v1.1.0 と記載されている）。 */}
+
+## コマンド {#commands}
+
+| コマンド          | 代替対象     | 用途                                               |
+| ------------- | -------- | ------------------------------------------------ |
+| `base-forge`  | `forge`  | Base のプリコンパイルを対象に、コントラクトのビルド、テスト、デプロイを行います       |
+| `base-cast`   | `cast`   | トランザクションの送信やチェーンデータの読み取り (プリコンパイルの呼び出しを含む) を行います |
+| `base-anvil`  | `anvil`  | プリコンパイルを有効にしたローカル Base ノードを実行します                 |
+| `base-chisel` | `chisel` | Base のプリコンパイルに対応した Solidity REPL です              |
+
+その他の機能はすべてアップストリームの [Foundry](https://book.getfoundry.sh/) から継承しており、そのまま動作します。このフォーク独自の機能は、上記の Base 向けの追加分のみです。
+
+## 次のステップ {#next-steps}
+
+<CardGroup cols={2}>
+  <Card title="スマートコントラクト" icon="file-contract" href="/ja/specifications/reference/smart-contracts">
+    base-anvil を使って、Base Sepolia へのコントラクトのデプロイを最初から最後まで行います。
+  </Card>
+
+  <Card title="B20 トークン標準" icon="coins" href="/ja/build-on-base/issue-rwa/create-an-asset-token">
+    Base のネイティブトークン標準に準拠したトークンを、コマンドラインから発行します。
+  </Card>
+</CardGroup>

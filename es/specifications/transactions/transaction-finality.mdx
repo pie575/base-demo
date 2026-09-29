@@ -1,0 +1,90 @@
+---
+title: Finalidad de las transacciones
+description: Información detallada sobre la finalidad de las transacciones en Base.
+---
+
+La finalidad es el momento a partir del cual una transacción enviada a Base se vuelve irreversible. Esto garantiza que la transacción no se revertirá ni se perderá.
+
+La finalidad no funciona igual para las transacciones normales que modifican el estado de Base L2 que para las transacciones que retiran fondos de Base L2 a Ethereum L1.
+
+<Note>
+  **Solo las transacciones que retiran fondos de Base a Ethereum deben esperar 7 días.** Las transacciones habituales dentro de Base, como intercambios o envíos, *no* tienen que esperar 7 días.
+</Note>
+
+## Finalidad de las transacciones en Base L2 {#finality-for-base-l2-transactions}
+
+Aquí se describe la finalidad de las transacciones en Base, salvo las transacciones de retiro que mueven fondos de Base a Ethereum L1
+
+En Base, la finalidad de una transacción no consiste en esperar un tiempo único. Por el contrario, hay 4 etapas sucesivas, cada una de las cuales ofrece mayores garantías de seguridad.
+
+<Frame>
+  ![Diagrama de las etapas de finalidad de las transacciones en Base](/images/transaction-finality/base-tx-finality.jpg)
+</Frame>
+
+<Steps>
+  <Step title="Inclusión en un Flashblock: ~200 ms" titleSize="h3">
+    Tras unos 200 ms, el sequencer de Base incluye la transacción en un bloque de preconfirmación (Flashblock).
+
+    <Accordion title="Probabilidad de reorganización inferior al 0,001 %.">
+      * Los Flashblocks se reorganizan menos del 0,001 % de las veces
+      * Puedes consultar el historial de reorganizaciones en nuestra [página pública de estadísticas.](https://base.org/stats)
+    </Accordion>
+  </Step>
+
+  <Step title="Inclusión en un bloque L2: ~2 s" titleSize="h3">
+    Tras unos 2 segundos, el sequencer ya ha incorporado la transacción a un bloque L2 y lo ha distribuido a los nodos validadores.
+
+    <Accordion title="Probabilidad de reorganización cercana al 0 %.">
+      * Solo se ha reorganizado un único bloque L2 de Base en toda su historia, lo que representa el 0,0000003 % de las transacciones. Puedes [consultar los datos aquí](https://base.blockscout.com/blocks?tab=reorgs)
+    </Accordion>
+  </Step>
+
+  <Step title="Inclusión en un lote L1: ~2 min" titleSize="h3">
+    Tras unos 2 minutos, ya se ha publicado en Ethereum un lote de Base que contiene la transacción.
+
+    <Accordion title="Probabilidad de reorganización prácticamente nula.">
+      * Nunca se ha producido una reorganización de bloques L2 ya incluidos en lotes publicados en Ethereum L1.
+      * **Una reorganización de Ethereum L1 no implica una reorganización de la cadena L2 de Base.** El sequencer y los nodos validadores mantienen un retraso configurable respecto a la punta de la cadena de Ethereum, por lo que las reorganizaciones habituales de L1 no les afectan. Ante reorganizaciones de mayor alcance en Ethereum, Base puede volver a enviar los datos del lote a L1 sin modificar los bloques L2 ya secuenciados.
+    </Accordion>
+  </Step>
+
+  <Step title="Finalidad del lote L1: ~20 min" titleSize="h3">
+    El lote de Ethereum L1 que contiene la transacción tiene una antigüedad superior a 2 épocas, es decir, 64 bloques L1.
+
+    <Accordion title="Probabilidad de reorganización prácticamente nula.">
+      * Los bloques L2 que han alcanzado la finalidad del lote L1 están protegidos frente a reorganizaciones del mismo modo que los bloques finalizados de Ethereum. En la práctica, es imposible revertirlos.
+    </Accordion>
+  </Step>
+</Steps>
+
+## Finalidad de las transacciones de retiro {#finality-for-withdrawal-transactions}
+
+Aquí se describe la finalidad de las transacciones que transfieren fondos de Base a Ethereum
+
+**Solo los retiros a Ethereum deben esperar 7 días hasta su finalización para que los fondos puedan liberarse a la dirección en Ethereum L1.** Esto permite que el sistema de pruebas de fallo (Fault Proof) de Base ofrezca garantías de seguridad extremadamente altas para los fondos transferidos a Base mediante el puente.
+
+<Accordion title="¿Qué ocurre durante los 7 días?">
+  Cuando una transacción inicia un retiro de Base a Ethereum, los fondos se descuentan del saldo de la cuenta en Base. Posteriormente, un “proponente” sin permisos debe aportar a Ethereum una prueba de que Base contiene este retiro.
+
+  Sin embargo, Ethereum no puede confirmar de forma nativa lo que ocurrió en Base, ya que son blockchains independientes. Por ello, existe un período de 7 días durante el cual un “impugnador” sin permisos puede disputar una propuesta que considere maliciosa. Si no se presenta ninguna impugnación en esos 7 días, el retiro puede probarse contra la raíz de salida (output root) finalizada y liberarse al destinatario en L1. En cambio, si se presenta una impugnación, el proponente y el impugnador participan en lo que se denomina el Fault Dispute Game. Este juego exige depositar garantías cada vez mayores hasta que finalmente haya un ganador. Si gana el proponente, la raíz de salida se finaliza y puede usarse para probar retiros contra ella (y liberarlos en L1). Si gana el impugnador, la propuesta de salida queda invalidada.
+
+  Basta con una sola parte honesta para que este sistema siga siendo seguro. Base siempre ejecutará un proponente y un impugnador honestos.
+
+  Nota: si un impugnador gana el juego de disputa, el estado de la cadena L2 no sufre una reorganización (reorg). La propuesta de salida se marca como inválida y los retiros que se hayan probado contra ella no pueden finalizarse. Esos retiros tendrían que volver a probarse contra otra raíz de salida válida.
+</Accordion>
+
+## Preguntas frecuentes {#faq}
+
+<AccordionGroup>
+  <Accordion title="Si hay una reorganización en Ethereum, ¿provocará una reorganización en Base?">
+    En casi todos los casos, no. Base puede simplemente volver a enviar los datos de los lotes a Ethereum de forma transparente mientras la cadena L2 sigue avanzando.
+  </Accordion>
+
+  <Accordion title="¿Cuánto tardan en finalizarse las transacciones de depósito?">
+    Las transacciones que transfieren fondos de Ethereum L1 a Base deben iniciarse en Ethereum y, por lo general, el sequencer de Base las incluye en un plazo de 3 minutos.
+  </Accordion>
+
+  <Accordion title="Si un impugnador gana un juego de disputa, ¿se reorganizará la cadena L2?">
+    No. La propuesta de salida impugnada se marca como no válida, y todas las acciones que usaron su raíz de salida dejan de ser válidas. En concreto, los retiros de Base a L1 que se probaron con esta raíz de salida ahora deben probarse con otra distinta que sea válida.
+  </Accordion>
+</AccordionGroup>

@@ -1,0 +1,101 @@
+---
+title: "拆分付款"
+keywords: ["拆分 USDC 付款", "市场付款拆分", "Base 基点分账", "平台手续费智能合约"]
+description: "按基点精确核算，将一笔代币金额拆分给多个市场收款方，不留任何零头余额。"
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+通过一笔交易同时向卖家、平台和推荐人付款。各方份额均以基点表示，份额总和必须为 10,000，整数除法产生的余数统一分配给一个指定的收款方。
+
+## 演示 {#demo}
+
+<PaymentsDemo flow="split" />
+
+<Tip>
+  上方演示仅为模拟效果。如需查看 Vibenet 上的链上演示，请前往 [Base 链演示](https://chain.base.org/demos)。
+</Tip>
+
+## 计算并发送精确份额 {#calculate-and-send-exact-shares}
+
+{/* sample: split-payment-solidity */}
+
+```solidity Payout.sol lines wrap expandable highlight={13-18,23}
+function splitPayment(
+    bytes32 splitId,
+    uint256 amount,
+    address[] calldata recipients,
+    uint16[] calldata sharesBps,
+    uint256 remainderRecipient
+) external {
+    if (processed[splitId]) revert BatchAlreadyProcessed(splitId);
+    if (recipients.length == 0 || recipients.length != sharesBps.length) revert InvalidArrayLengths();
+    if (recipients.length > MAX_RECIPIENTS || remainderRecipient >= recipients.length) revert TooManyRecipients();
+
+    uint256 totalBps;
+    uint256 distributed;
+    uint256[] memory amounts = new uint256[](recipients.length);
+    for (uint256 i; i < recipients.length; ++i) {
+        totalBps += sharesBps[i];
+        amounts[i] = amount * sharesBps[i] / 10_000;
+        distributed += amounts[i];
+    }
+    if (totalBps != 10_000) revert InvalidBasisPoints();
+    amounts[remainderRecipient] += amount - distributed;
+    processed[splitId] = true;
+
+    for (uint256 i; i < recipients.length; ++i) {
+        require(token.transferFrom(msg.sender, recipients[i], amounts[i]), "transfer failed");
+        emit PayoutSent(splitId, msg.sender, recipients[i], amounts[i]);
+    }
+}
+```
+
+{/* sample: split-payment-ts */}
+
+```typescript TypeScript backend lines wrap expandable highlight={7-9,12-16}
+export async function splitPayment(
+  payout: Address,
+  splitReference: string,
+  amount: string,
+  recipients: Address[],
+  sharesBps: number[],
+  remainderRecipient = 0,
+) {
+  if (sharesBps.reduce((sum, share) => sum + share, 0) !== 10_000) {
+    throw new Error("Shares must total 10,000 basis points");
+  }
+  const splitId = keccak256(toHex(splitReference));
+  const simulation = await publicClient.simulateContract({
+    account,
+    address: payout,
+    abi: payoutAbi,
+    functionName: "splitPayment",
+    args: [splitId, parseUnits(amount, 6), recipients, sharesBps, BigInt(remainderRecipient)],
+  });
+  const hash = await walletClient.writeContract(simulation.request);
+  return publicClient.waitForTransactionReceipt({ hash, confirmations: 2 });
+}
+```
+
+合约会为每一笔分账款项发出 `PayoutSent` 事件，并附带共享的 `splitId`。对于 USDC 和 B20，该引用都可充当付款 Memo，而无需依赖特定代币的 memo 方法。
+
+<Check>
+  所有份额之和 (含舍入余数) 恰好等于输入金额，且分账会将每一笔款项直接从付款方转给对应的收款方。
+</Check>
+
+<Warning>
+  请在商业条款中明确舍入余数归谁所有。此外，请仅授权分账所需的金额，并在提交交易前核实收款方地址。
+</Warning>
+
+## 另请参阅 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="发放款项" icon="money-bill-transfer" href="/zh/build-on-base/accept-payments/send-a-payout">
+    向一批数量有限的收款方发放任意金额。
+  </Card>
+
+  <Card title="付款对账" icon="table" href="/zh/build-on-base/accept-payments/reconcile-payments">
+    按共享的参考标识导出拆分后的各笔付款明细。
+  </Card>
+</CardGroup>

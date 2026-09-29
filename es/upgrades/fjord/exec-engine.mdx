@@ -1,0 +1,65 @@
+---
+title: "Motor de ejecución de L2"
+description: "Cambios en el motor de ejecución introducidos con la actualización Fjord, que sustituye el estimador de la comisión de L1 por un modelo de compresión basado en FastLZ."
+---
+
+## Comisiones {#fees}
+
+### Comisiones por costo de L1 (L1 Fee Vault) {#l1-cost-fees-l1-fee-vault}
+
+#### Cambios en las comisiones por costo de L1 en Fjord (estimador FastLZ) {#fjord-l1-cost-fee-changes-fastlz-estimator}
+
+Fjord actualiza la función de cálculo del costo de L1 para que utilice un estimador de compresión basado en FastLZ.
+El costo de L1 se calcula de la siguiente manera:
+
+```pseudocode L1 Cost Formula
+l1FeeScaled = l1BaseFeeScalar*l1BaseFee*16 + l1BlobFeeScalar*l1BlobBaseFee
+estimatedSizeScaled = max(minTransactionSize * 1e6, intercept + fastlzCoef*fastlzSize)
+l1Fee = estimatedSizeScaled * l1FeeScaled / 1e12
+```
+
+El cálculo final de `l1Fee` es un cálculo con enteros sin signo de precisión ilimitada, cuyo resultado se expresa en Wei y
+tiene el rango de `uint256`. Los valores que intervienen en este cálculo son los siguientes:
+
+| Argumento de entrada | Tipo      | Descripción                                                                | Valor                         |
+| -------------------- | --------- | -------------------------------------------------------------------------- | ----------------------------- |
+| `l1BaseFee`          | `uint256` | Tarifa base de L1 del último origen de L1 registrado en la cadena L2       | variable, tarifa de L1        |
+| `l1BlobBaseFee`      | `uint256` | Precio del gas de blobs del último origen de L1 registrado en la cadena L2 | variable, tarifa de L1        |
+| `fastlzSize`         | `uint256` | Tamaño de la tx firmada, codificada en RLP y comprimida con FastLZ         | variable, por transacción     |
+| `l1BaseFeeScalar`    | `uint32`  | Escalar de la tarifa base de L1, escalado por `1e6`                        | variable, configuración de L2 |
+| `l1BlobFeeScalar`    | `uint32`  | Escalar de la tarifa de blobs de L1, escalado por `1e6`                    | variable, configuración de L2 |
+| `intercept`          | `int32`   | Constante de intersección, escalada por `1e6` (puede ser negativa)         | -42&#95;585&#95;600           |
+| `fastlzCoef`         | `uint32`  | Coeficiente de FastLZ, escalado por `1e6`                                  | 836&#95;500                   |
+| `minTransactionSize` | `uint32`  | Límite inferior del tamaño de la transacción, en bytes                     | 100                           |
+
+Anteriormente, `l1BaseFeeScalar` y `l1BlobFeeScalar` se utilizaban para codificar la tasa de compresión, debido a la imprecisión de
+la función de costo de L1. Sin embargo, la nueva función de costo ya tiene en cuenta la tasa de compresión, por lo que estos escalares deben
+ajustarse para eliminar cualquier tasa de compresión que codificaran previamente.
+
+##### Implementación de FastLZ {#fastlz-implementation}
+
+Todos los algoritmos de compresión deben implementarse de forma equivalente a la función `fastlz_compress` de `fastlz.c` en el
+siguiente [commit](https://github.com/ariya/FastLZ/blob/344eb4025f9ae866ebf7a2ec48850f7113a97a42/fastlz.c#L482-L506).
+
+##### Detalles de la regresión lineal del costo de L1 {#l1-cost-linear-regression-details}
+
+Las constantes `intercept` y `fastlzCoef` se calculan mediante regresión lineal a partir de un conjunto de datos
+de transacciones de L2 anteriores. Para generar el conjunto de datos, se recorren todas las transacciones de un intervalo de tiempo determinado y
+se realizan las siguientes acciones. Para cada transacción:
+
+1. Comprimir la carga útil con FastLZ. Registrar el tamaño de la carga útil comprimida como `fastlzSize`.
+2. Emular la variación del tamaño del lote al añadir la transacción a un lote comprimido con Brotli 10. Registrar la variación del
+   tamaño del lote como `bestEstimateSize`.
+
+Una vez generado este conjunto de datos, se puede calcular una regresión lineal usando `bestEstimateSize` como
+variable dependiente y `fastlzSize` como variable independiente.
+
+Generamos un conjunto de datos a partir de dos semanas de transacciones posteriores a Ecotone en Optimism Mainnet, ya que comprobamos que era
+el más representativo del rendimiento en distintas cadenas y períodos de tiempo. Encontrará más detalles sobre la regresión lineal
+y los conjuntos de datos utilizados en este [repositorio](https://github.com/roberto-bayardo/compression-analysis/tree/main).
+
+### Estimación del uso de gas en L1 {#l1-gas-usage-estimation}
+
+La propiedad `L1GasUsed` está obsoleta porque no tiene en cuenta el gas de blobs de L1 que consume una transacción, y se
+eliminará en una futura actualización de la red. Los usuarios pueden seguir usando el campo `L1Fee` para obtener la tarifa de L1 de una
+transacción determinada.

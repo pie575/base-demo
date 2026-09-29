@@ -1,0 +1,441 @@
+---
+title: "P2P"
+description: "Especificación de la red peer-to-peer (P2P) de los nodos de rollup, que abarca el descubrimiento de nodos, el protocolo gossip y la propagación de bloques unsafe (unsafe)."
+---
+
+## Descripción general {#overview}
+
+El [nodo de rollup](/es/specifications/base-protocol/consensus/specification) cuenta con un servicio de red peer-to-peer (P2P) opcional para reducir la latencia entre
+la vista de los sequencers y la del resto de la red, prescindiendo de la L1 en el caso ideal
+y sin depender de un único endpoint centralizado.
+
+Esto también permite arrancar una sincronización histórica más rápida, ya que proporciona encabezados de bloque hacia los que sincronizar
+y solo es necesario comparar las entradas de la cadena L2 con los datos de la L1, en lugar de procesarlo todo bloque a bloque.
+
+El nodo de rollup *siempre* dará prioridad a la L1 y se reorganizará para ajustarse a la cadena canónica.
+Los datos de L2 obtenidos a través de la interfaz P2P son estrictamente una extensión especulativa, también conocida como la cadena &quot;unsafe&quot;,
+cuyo fin es mejorar el rendimiento en el caso ideal.
+
+Esto también significa que el comportamiento P2P es una regla flexible: los nodos se vigilan entre sí mediante puntuaciones y, llegado el caso, el bloqueo
+de pares maliciosos por identidad o IP. Ningún comportamiento en la capa P2P afecta a la seguridad del rollup; en el peor de los casos, los nodos
+recurren a datos de mayor latencia procedentes de la L1 para prestar servicio.
+
+En resumen, la pila P2P se compone de:
+
+* Descubrimiento de pares: [Discv5][discv5]
+* Conexiones, emparejamiento, seguridad de transporte, multiplexación y gossip: [LibP2P][libp2p]
+* Publicación y validación en la capa de aplicación de los mensajes difundidos mediante gossip, como los bloques de L2.
+
+Este documento solo especifica la composición y la configuración de estas bibliotecas de red.
+Estos componentes tienen sus propios estándares e implementaciones en Go/Rust/Java/Nim/JS/y otros lenguajes,
+y los han adoptado otras blockchains, sobre todo la [capa de consenso de L1 (Eth2)][eth2-p2p].
+
+## Configuración P2P {#p2p-configuration}
+
+### Identificación {#identification}
+
+Los nodos tienen una identidad de red y una identidad de consenso **independientes**.
+La identidad de red es una clave `secp256k1` que se usa tanto para el descubrimiento como para las conexiones LibP2P activas.
+
+Representaciones habituales de la identidad de red:
+
+* `PeerID`: un ID específico de LibP2P derivado de la clave pública (mediante codificación protobuf, tipado y hashing)
+* `NodeID`: un ID específico de Discv5 derivado de la clave pública (mediante hashing; se usa en la DHT)
+* `Multi-address`: una dirección sin firmar que contiene: IP, puerto TCP y PeerID
+* `ENR`: un registro firmado que se usa para el descubrimiento y que contiene: IP, puerto TCP, puerto UDP, firma (de la que se puede derivar la clave pública)
+  e identificación de la red L2. Por lo general, se codifica en base64.
+
+### Discv5 {#discv5}
+
+#### Estructura de la capa de consenso {#consensus-layer-structure}
+
+El Ethereum Node Record (ENR) de un nodo de rollup de Base debe contener los siguientes valores, identificados por claves únicas:
+
+* Una dirección IPv4 (campo `ip`) y/o una dirección IPv6 (campo `ip6`).
+* Un puerto TCP (campo `tcp`) que representa el puerto de escucha local de libp2p.
+* Un puerto UDP (campo `udp`) que representa el puerto de escucha local de discv5.
+* Un identificador de red L2 de OpStack (campo `opstack`)
+
+El valor de `opstack` se codifica como un único valor RLP `bytes`, resultado de concatenar:
+
+* el ID de cadena (`unsigned varint`)
+* el ID de fork (`unsigned varint`)
+
+Tenga en cuenta que DiscV5 es una DHT (tabla hash distribuida) compartida: los nodos de consenso y de ejecución de L1,
+así como los nodos de testnet e incluso nodos IoT externos, intercambian registros en esta gran DHT común.
+Esto hace más difícil censurar el descubrimiento de registros de nodos.
+
+El proceso de descubrimiento en Base funciona como una canalización de registros de nodos:
+
+1. Llenar la tabla con `FINDNODES` si es necesario (lo realiza la biblioteca Discv5)
+2. Obtener registros adicionales mediante búsquedas de ID de nodo aleatorios si es necesario
+   (p. ej., iterar [`RandomNodes()`][discv5-random-nodes] en la implementación de Go)
+3. Obtener registros del módulo DiscV5 al buscar pares
+4. Comprobar si el registro contiene la entrada `opstack` y verificar que coincide con el ID de cadena y con el número de fork actual o futuro
+5. Si aún no hay conexión con el nodo, y este no se ha desconectado recientemente ni figura en la lista de denegación, intentar conectarse.
+
+### LibP2P {#libp2p}
+
+#### Transporte {#transport}
+
+Transporte TCP. LibP2P admite otros transportes, pero no son obligatorios.
+
+#### Establecimiento de conexiones (dialing) {#dialing}
+
+Los nodos deben ser accesibles públicamente para recibir conexiones, no depender de extensiones de retransmisión (relay) y poder establecer conexiones tanto por IPv4 como por IPv6.
+
+#### NAT {#nat}
+
+El endpoint de escucha debe ser accesible públicamente, aunque puede configurarse detrás de un NAT.
+LibP2P utilizará técnicas basadas en PMP / UPNP para hacer seguimiento de la IP externa del nodo.
+Se recomienda desactivar estas técnicas si la IP externa es estática y se configura manualmente.
+
+#### Gestión de pares {#peer-management}
+
+De forma predeterminada, el número de pares se mantiene mediante un sistema de mareas basado en la cantidad de pares activos:
+
+* En «marea baja», el nodo empieza a buscar activamente conexiones con pares adicionales.
+* En «marea alta», el nodo empieza a depurar las conexiones activas,
+  excepto las marcadas como de confianza o que tienen un período de gracia.
+
+Los pares disponen de un período de gracia, de duración configurable, tras unirse.
+En caso de emergencia, cuando escasea la memoria, el nodo debería depurar conexiones de forma más agresiva.
+
+Los registros de pares pueden persistirse en disco para reconectarse rápidamente con pares conocidos tras reiniciar el nodo de rollup.
+
+El proceso de descubrimiento alimenta el peerstore con registros de pares a los que conectarse, etiquetados con un tiempo de vida (TTL).
+Los procesos P2P actuales no requieren conexiones selectivas con pares específicos por tema,
+más allá del filtrado según el requisito básico de participación en la red.
+
+Los pares pueden ser vetados si su puntuación de rendimiento es demasiado baja o si se detecta una acción objetivamente maliciosa.
+
+Los pares vetados se persistirán en el mismo almacén de datos que los registros del peerstore.
+
+#### Seguridad del transporte {#transport-security}
+
+[Libp2p-noise][libp2p-noise], con el handshake `XX` y la identidad P2P `secp256k1`, tal como se popularizó en Eth2.
+También está disponible la opción TLS, pero en la negociación se debería dar prioridad a `noise`.
+
+#### Negociación de protocolos {#protocol-negotiation}
+
+[Multistream-select 1.0][multistream-select] (`/multistream/1.0.0`) es un protocolo interactivo
+que se utiliza para negociar los subprotocolos que admiten los pares de LibP2P. Es posible que en el futuro se utilice Multistream-select 2.0.
+
+#### Identify {#identify}
+
+LibP2P ofrece un módulo de identificación mínimo para compartir la versión del cliente y el lenguaje de programación.
+Es opcional y se puede desactivar para mayor privacidad.
+También incluye la misma información de negociación de protocolos, lo que puede agilizar las conexiones iniciales.
+
+#### Ping {#ping}
+
+LibP2P incluye un protocolo de ping sencillo para medir la latencia entre conexiones.
+Conviene habilitarlo, ya que ayuda a conocer el estado de la red.
+
+#### Multiplexación {#multiplexing}
+
+Para la comunicación asíncrona a través de distintos canales sobre una misma conexión, se utiliza multiplexación.
+[mplex][mplex] (`/mplex/6.7.0`) es obligatorio, y [yamux][yamux] (`/yamux/1.0.0`) es opcional, aunque se recomienda
+
+#### GossipSub {#gossipsub}
+
+[GossipSub 1.1][gossipsub] (`/meshsub/1.1.0`, es decir, con la extensión de puntuación de pares) es un protocolo pubsub para redes en malla,
+implementado en la capa de consenso de L1 (Eth2) y en otros protocolos como Filecoin, que ofrece numerosas opciones de personalización.
+
+##### Identificación de mensajes basada en el contenido {#content-based-message-identification}
+
+Los mensajes se deduplican y se filtran mediante la verificación de firmas en la capa de aplicación.
+Por ello, el sellado de origen está deshabilitado y los mensajes publicados solo deben contener datos de la aplicación,
+algo que se impone mediante una [política de firma `StrictNoSign`][signature-policy]
+
+Esto ofrece mayor privacidad y permite que los sequencers (identidad de consenso) mantengan
+varias identidades de red para lograr redundancia.
+
+##### Compresión y límites de los mensajes {#message-compression-and-limits}
+
+El contenido de la aplicación se comprime mediante la compresión de bloque único de [snappy][snappy]
+(en lugar de la compresión por tramas) y está limitado a 10 MiB.
+
+##### Cálculo del ID de mensaje {#message-id-computation}
+
+[Igual que en L1][l1-message-id], pero teniendo en cuenta la compresión:
+
+* Si `message.data` admite una descompresión snappy válida, se asigna a `message-id` los primeros 20 bytes del hash `SHA256` de
+  la concatenación de `MESSAGE_DOMAIN_VALID_SNAPPY` con los datos del mensaje descomprimidos con snappy,
+  es decir, `SHA256(MESSAGE_DOMAIN_VALID_SNAPPY + snappy_decompress(message.data))[:20]`.
+* En caso contrario, se asigna a `message-id` los primeros 20 bytes del hash `SHA256` de
+  la concatenación de `MESSAGE_DOMAIN_INVALID_SNAPPY` con los datos sin procesar del mensaje,
+  es decir, `SHA256(MESSAGE_DOMAIN_INVALID_SNAPPY + message.data)[:20]`.
+
+#### Heartbeat y parámetros {#heartbeat-and-parameters}
+
+[Parámetros][gossip-parameters] de GossipSub:
+
+* `D` (número objetivo de la malla estable del tema): 8
+* `D_low` (umbral inferior de la malla estable del tema): 6
+* `D_high` (umbral superior de la malla estable del tema): 12
+* `D_lazy` (objetivo de gossip): 6
+* `heartbeat_interval` (intervalo del heartbeat, en segundos): 0.5
+* `fanout_ttl` (ttl de los mapas de fanout para temas a los que no estamos suscritos pero en los que hemos publicado, en segundos): 24
+* `mcache_len` (número de ventanas durante las que se conservan los mensajes completos en caché para responder a `IWANT`): 12
+* `mcache_gossip` (número de ventanas sobre las que se hace gossip): 3
+* `seen_ttl` (número de intervalos de heartbeat durante los que se conservan los ID de mensaje): 130 (= 65 segundos)
+
+Diferencias notables respecto al consenso de L1 (Eth2):
+
+* `seen_ttl` no necesita cubrir una época completa de L1 (6,4 minutos), sino solo una ventana pequeña que abarque los bloques más recientes
+* `fanout_ttl`: se ajusta a un valor inferior a `seen_ttl`
+* `mcache_len`: se puede conservar un mayor número de heartbeats, ya que el gossip genera mucho menos ruido.
+* `heartbeat_interval`: intervalo más corto para reducir la latencia; el ancho de banda debería seguir siendo razonable, ya que
+  en cada intervalo hay muchos menos mensajes sobre los que hacer gossip que en L1, que usa un intervalo de 0,7 segundos.
+
+#### Configuración de temas {#topic-configuration}
+
+Los temas tienen identificadores de tipo cadena y se comunican mediante mensajes y suscripciones.
+`/optimism/chain_id/hardfork_version/Name`
+
+* `chain_id`: sustituir por la representación decimal del ID de cadena
+* `hardfork_version`: sustituir por la representación decimal del hardfork, empezando por `0`
+* `Name`: nombre de aplicación del tema
+
+Ten en cuenta que, a diferencia de L1, la codificación de los temas depende de cada tema,
+ya que hay menos temas y todos se comprimen con snappy.
+
+#### Validación de temas {#topic-validation}
+
+Para garantizar que solo se retransmitan mensajes válidos y que los pares maliciosos reciban una puntuación en función de su comportamiento a nivel de aplicación,
+un [validador extendido][extended-validator] comprueba el mensaje antes de retransmitirlo o procesarlo.
+El validador extendido emite una de las siguientes señales de validación:
+
+* `ACCEPT`: válido; se retransmite a otros pares y se entrega al suscriptor local del tema
+* `IGNORE`: se puntúa como inactividad; el mensaje se descarta y no se procesa
+* `REJECT`: se aplican penalizaciones de puntuación; el mensaje se descarta
+
+## Temas de gossip {#gossip-topics}
+
+A continuación se enumeran los temas que permiten distribuir bloques a otros nodos más rápido que si se transmitieran a través de L1. Son los siguientes:
+
+### `blocksv1` {#blocksv1}
+
+Los bloques anteriores a Canyon/Shanghai se difunden en `/optimism/<chainId>/0/blocks`.
+
+### `blocksv2` {#blocksv2}
+
+Los bloques de Canyon/Delta se difunden en `/optimism/<chainId>/1/blocks`.
+
+### `blocksv3` {#blocksv3}
+
+Los bloques de Ecotone se difunden en `/optimism/<chainId>/2/blocks`.
+
+### `blocksv4` {#blocksv4}
+
+Los bloques de Isthmus se difunden en `/optimism/<chainId>/3/blocks`.
+
+### Codificación de bloques {#block-encoding}
+
+Un bloque se estructura como la concatenación de:
+
+* Temas V1 y V2
+  * `signature`: una firma `secp256k1`, siempre de 65 bytes, `r (uint256), s (uint256), y_parity (uint8)`
+  * `payload`: un `ExecutionPayload` codificado en SSZ, que ocupa siempre los bytes restantes.
+* Tema V3
+  * `signature`: una firma `secp256k1`, siempre de 65 bytes, `r (uint256), s (uint256), y_parity (uint8)`
+  * `parentBeaconBlockRoot`: raíz del bloque beacon padre del L1 origin, siempre de 32 bytes
+  * `payload`: un `ExecutionPayload` codificado en SSZ, que ocupa siempre los bytes restantes.
+* Tema V4
+  * `signature`: una firma `secp256k1`, siempre de 65 bytes, `r (uint256), s (uint256), y_parity (uint8)`
+  * `parentBeaconBlockRoot`: raíz del bloque beacon padre del L1 origin, siempre de 32 bytes
+  * `payload`: un `ExecutionPayload` codificado en SSZ, que ocupa siempre los bytes restantes.
+    * *Nota*: el `ExecutionPayload` se modifica por primera vez en Isthmus. Consulta
+      [&quot;Actualización de `ExecutionPayload`&quot;](/es/upgrades/isthmus/exec-engine#update-to-executionpayload) en la especificación de Isthmus.
+
+Todos los temas usan compresión de bloques Snappy (es decir, sin tramas Snappy):
+lo anterior debe comprimirse tras la codificación y descomprimirse antes de la decodificación.
+
+### Firmas de bloques {#block-signatures}
+
+La `signature` es una firma `secp256k1` que se calcula sobre el mensaje
+`keccak256(domain ++ chain_id ++ payload_hash)`, donde:
+
+* `domain` ocupa 32 bytes, reservados para tipos de mensaje e información de versión. En esta firma, todos son cero.
+* `chain_id` es un `uint256` codificado en big-endian.
+* `payload_hash` es `keccak256(payload)`, donde `payload` es:
+  * el `payload` en V1 y V2,
+  * `parentBeaconBlockRoot ++ payload` en V3 y V4 (*NOTA*: en V4, `payload` se amplía para incluir el
+    `withdrawalsRoot`).
+
+La firma `secp256k1` debe tener `y_parity = 1 or 0`, ya que el `chain_id` ya forma parte del mensaje firmado.
+
+### Validación de bloques {#block-validation}
+
+Un [extended-validator] comprueba los mensajes entrantes de la siguiente manera, en orden de ejecución:
+
+* `[REJECT]` si la compresión no es válida
+* `[REJECT]` si la codificación del bloque no es válida
+* `[REJECT]` si el `payload.timestamp` tiene más de 60 segundos de antigüedad
+  (margen de tolerancia para la propagación en el peor caso y el desfase de reloj)
+* `[REJECT]` si el `payload.timestamp` está más de 5 segundos en el futuro
+* `[REJECT]` si el `block_hash` del `payload` no es válido
+* `[REJECT]` si el bloque está en el topic V1 y tiene retiros
+* `[REJECT]` si el bloque está en el topic V1 y tiene una lista de retiros
+* `[REJECT]` si el bloque está en un `topic >= V2` y no tiene una lista de retiros vacía
+* `[REJECT]` si el bloque está en un `topic <= V2` y tiene establecido un valor de gas de blob usado
+* `[REJECT]` si el bloque está en un `topic <= V2` y tiene establecido un valor de exceso de gas de blob
+* `[REJECT]` si el bloque está en un `topic <= V2` y la raíz del bloque beacon padre no es nil
+* `[REJECT]` si el bloque está en un `topic >= V3` y tiene un valor de gas de blob usado distinto de cero
+* `[REJECT]` si el bloque está en un `topic >= V3` y tiene un valor de exceso de gas de blob distinto de cero
+* `[REJECT]` si el bloque está en un `topic >= V3` y la raíz del bloque beacon padre es nil
+* `[REJECT]` si el bloque está en un `topic <= V3` y la raíz de retiros de L2 no es nil
+* `[REJECT]` si el bloque está en un `topic >= V4` y la raíz de retiros de L2 es nil
+* `[REJECT]` si se han visto más de 5 bloques distintos con la misma altura de bloque
+* `[IGNORE]` si el bloque ya se ha visto
+* `[REJECT]` si la firma del sequencer no es válida
+* Marcar el bloque como visto para esa altura de bloque
+
+El bloque lo firma el sequencer correspondiente para filtrar mensajes maliciosos.
+Actualmente hay un único sequencer, aunque en el futuro podría pasarse a un modelo con varios sequencers.
+Los nodos de rollup incluyen una clave pública de sequencer predeterminada, que debería poder configurarse.
+
+Tenga en cuenta que un bloque puede seguir propagándose aunque la L1 ya haya confirmado un bloque diferente.
+La vista local que el nodo tiene de la L1 puede ser incorrecta, y la validación del tiempo y de la firma evitará el spam.
+Por lo tanto, no compensa el retraso añadido llamar al motor de ejecución para buscar el bloque en cada paso de propagación.
+
+#### Procesamiento de bloques {#block-processing}
+
+Un nodo puede aplicar el bloque a su motor local antes de que esté disponible en L1, siempre que garantice lo siguiente:
+
+* La aplicación del bloque es reversible, en caso de conflicto con información de L1 que llegue con retraso
+* La actualización de forkchoice posterior garantiza que este bloque se reconozca como «unsafe»
+  (consulta [fork choice updated](/es/specifications/base-protocol/consensus/derivation#engine-api-usage))
+
+#### Selección de rama {#branch-selection}
+
+Los nodos esperan que el sequencer no emita bloques contradictorios, por lo que la regla de elección de fork para los bloques unsafe
+sigue un modelo de «el primer bloque gana»: la cadena unsafe no cambiará una vez que se haya extendido, a menos que
+la invaliden datos seguros publicados en L1.
+
+Los nodos que vean un bloque inicial unsafe distinto no alcanzarán el consenso hasta que se publiquen los datos en L1,
+lo que resuelve la discrepancia. Dado que los datos publicados en L1 dependen de la visión que tenga el batcher de los datos,
+el safe head se basará en el unsafe head que tenga la fuente del batcher, sea cual sea.
+
+#### Parámetros de puntuación del tema de bloques {#block-topic-scoring-parameters}
+
+## Req-Resp {#req-resp}
+
+El cliente de consenso (`base-consensus`) implementa para sus protocolos de sincronización una codificación de solicitud-respuesta similar a la de la Beacon-Chain de Ethereum en L1.
+Consulta la [especificación req-resp de la interfaz P2P de L1][eth2-p2p-reqresp] y la [actualización P2P de Altair][eth2-p2p-altair-reqresp].
+
+Sin embargo, el protocolo se ha simplificado para evitar varios problemas observados en L1:
+
+* Las cadenas de error en las respuestas, si existe alguna respuesta alternativa,
+  no deberían tener que comprimirse ni estar sujetas a un límite de longitud global artificial.
+* Las cargas útiles deberían tener una longitud fija: no es deseable leer uvarints byte a byte desde el flujo subyacente.
+* Los `<context-bytes>` se flexibilizan para codificar un `uint32`, en lugar de un `ForkDigest` de la beacon-chain.
+* La codificación de la carga útil puede cambiar con cada hardfork, por lo que no forma parte del ID de protocolo.
+* El uso de fragmentos de respuesta depende de cada método req-resp: la mayoría de los req-resp básicos no necesitan respuestas fragmentadas.
+* Se recomienda que, cuando sea necesario, la compresión forme parte de la codificación de la carga útil, específica de cada método req-resp:
+  los pings y similares no necesitan compresión de tramas en streaming, etc.
+
+Además, el formato del ID de protocolo sigue el mismo esquema que en L1,
+salvo la parte final correspondiente al esquema de codificación, que ahora es específica de cada mensaje:
+
+```text Protocol ID Format
+/ProtocolPrefix/MessageName/SchemaVersion/
+```
+
+Todos los protocolos req-resp que ofrece el cliente de consenso tienen `/ProtocolPrefix` establecido en `/opstack/req`.
+
+Los métodos individuales pueden incluir el ID de cadena como parte del segmento `/MessageName`,
+para que quede claro de inmediato a qué cadena se aplica el método, si la comunicación es específica de una cadena.
+Otros métodos pueden incluir información de la cadena en los datos de la solicitud, de la respuesta o de ambas,
+como el `ForkDigest` `<context-bytes>` en los protocolos req-resp de la beacon chain de L1.
+
+Cada segmento comienza con una `/` y puede contener varias `/`, y al ID de protocolo final se le añade una `/` como sufijo.
+
+### `payload_by_number` {#payload_by_number}
+
+Este es un método opcional de sincronización de la cadena para solicitar y servir cargas útiles de ejecución por número.
+Sirve para cubrir huecos cuando se pierden mensajes de gossip y para sincronizar rangos cortos o medianos de bloques L2 unsafe.
+
+ID de protocolo: `/opstack/req/payload_by_number/<chain-id>/0/`
+
+* `/MessageName` es `/payload_by_number/<chain-id>`, donde `<chain-id>` se establece en el ID de cadena L2 del cliente de consenso.
+* `/SchemaVersion` es `/0`
+
+Formato de la solicitud: `<num>`: un `uint64` en little-endian: el número de bloque que se solicita.
+
+Formato de la respuesta: `<response> = <res><version><payload>`
+
+* `<res>` es un código de byte que describe el resultado.
+  * `0` en caso de éxito; a continuación debe venir `<version><payload>`.
+  * `1` si la solicitud es válida, pero la carga útil no está disponible.
+  * `2` si la solicitud no es válida
+  * `3+` si se produce otro error
+  * El rango `>= 128` está reservado para uso futuro.
+* `<version>` es un `uint32` en little-endian que identifica el tipo de respuesta (específico de cada fork)
+* `<payload>` es un bloque codificado, que se lee hasta el EOF del flujo.
+
+La entrada de `<response>` debe limitarse, al igual que cualquier salida descomprimida que se genere,
+para evitar un consumo inesperado de recursos o ataques de tipo zip-bomb.
+Se recomienda un límite de 10 MB para garantizar que todos los bloques puedan sincronizarse.
+Las implementaciones pueden optar por un límite diferente, ya que este método de sincronización es opcional.
+
+Lista de `<version>`:
+
+* `0`: `ExecutionPayload` codificado en SSZ, con compresión Snappy framing,
+  que coincide con la definición SSZ de `ExecutionPayload` de las versiones L1 Merge, L2 Bedrock y L2 Canyon.
+* `1`: `ExecutionPayloadEnvelope` codificado en SSZ con compresión Snappy framing,
+  que coincide con la definición SSZ de `ExecutionPayloadEnvelope` de la versión L2 Ecotone.
+* `2`: `ExecutionPayload` codificado en SSZ con compresión Snappy framing,
+  que coincide con la definición SSZ de `ExecutionPayload` de la versión L2 Isthmus.
+
+La solicitud se realiza por número de bloque, lo que permite obtener una cadena en paralelo desde muchos pares.
+
+Para una respuesta `res = 0`, se debe verificar que:
+
+* Tenga un número de bloque que coincida con el número de bloque solicitado.
+* Tenga un `blockhash` coherente con el resto del contenido del bloque.
+* Conduzca hacia un bloque canónico conocido.
+  * Esto puede verificarse comprobando si el hash padre de un bloque canónico de confianza anterior coincide
+    con el hash verificado del bloque obtenido.
+  * En el caso de los bloques unsafe, esta comprobación puede flexibilizarse y verificarse contra el hash padre de cualquier bloque de confianza anterior:
+    * El proceso de validación de gossip limita la cantidad de bloques hacia los que se puede sincronizar con confianza.
+    * Los bloques unsafe deben ponerse en cola para su procesamiento; los últimos bloques L2 unsafe recibidos siempre deben
+      sobrescribir cualquier cadena anterior, hasta que la cadena L2 final pueda reproducirse a partir de los datos de L1.
+
+No se debe aceptar un código de respuesta `res > 0`. El código de resultado es útil para depurar,
+pero el cliente debe tratar cualquier error igual que una solicitud sin respuesta, ya que no se puede confiar en el par que responde.
+
+***
+
+[libp2p]: https://libp2p.io/
+
+[discv5]: https://github.com/ethereum/devp2p/blob/master/discv5/discv5.md
+
+[discv5-random-nodes]: https://pkg.go.dev/github.com/ethereum/go-ethereum@v1.10.12/p2p/discover#UDPv5.RandomNodes
+
+[eth2-p2p]: https://github.com/ethereum/consensus-specs/blob/master/specs/phase0/p2p-interface.md
+
+[eth2-p2p-reqresp]: https://github.com/ethereum/consensus-specs/blob/master/specs/phase0/p2p-interface.md#the-reqresp-domain
+
+[eth2-p2p-altair-reqresp]: https://github.com/ethereum/consensus-specs/blob/master/specs/altair/p2p-interface.md#the-reqresp-domain
+
+[libp2p-noise]: https://github.com/libp2p/specs/tree/master/noise
+
+[multistream-select]: https://github.com/multiformats/multistream-select/
+
+[mplex]: https://github.com/libp2p/specs/tree/master/mplex
+
+[yamux]: https://github.com/hashicorp/yamux/blob/master/spec.md
+
+[gossipsub]: https://github.com/libp2p/specs/blob/master/pubsub/gossipsub/gossipsub-v1.1.md
+
+[signature-policy]: https://github.com/libp2p/specs/blob/master/pubsub/README.md#signature-policy-options
+
+[snappy]: https://github.com/google/snappy
+
+[l1-message-id]: https://github.com/ethereum/consensus-specs/blob/master/specs/phase0/p2p-interface.md#topics-and-messages
+
+[gossip-parameters]: https://github.com/libp2p/specs/blob/master/pubsub/gossipsub/gossipsub-v1.0.md#parameters
+
+[extended-validator]: https://github.com/libp2p/specs/blob/master/pubsub/gossipsub/gossipsub-v1.1.md#extended-validators

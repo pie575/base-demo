@@ -1,0 +1,101 @@
+---
+title: "Crear un token de activo"
+description: "Crea un token B20 Asset con seis decimales, roles de emisor, un límite máximo de suministro y metadatos definidos por el emisor. En este ejemplo se configura un token de acciones."
+keywords: ["crear token de activo en Base", "token B20 Asset", "activo tokenizado en Base", "B20Factory Asset"]
+---
+
+import { AssetDemo } from "/snippets/AssetDemo.jsx"
+import RwaDisclaimer from "/snippets/es/RwaDisclaimer.mdx"
+
+Usa la [variante B20 Asset](/es/specifications/b20/concepts/token-types#4-asset) para representar una clase de acciones tokenizadas con precisión configurable, roles de emisor, controles de suministro y metadatos. En este ejemplo se crea Example Corp Class A (`EXM`) con seis decimales.
+
+<RwaDisclaimer />
+
+## Demostración {#demo}
+
+<AssetDemo flow="create" />
+
+<Tip>
+  La demostración usa una cuenta local generada en el navegador para enviar transacciones reales en **Base Vibenet**. Si Vibenet o sus funciones B20 no están disponibles, pasa automáticamente a una versión ilustrativa sin conexión.
+</Tip>
+
+<Note>
+  ¿Es la primera vez que usas B20? Consulta el [estándar de tokens B20](/es/build-on-base/issue-rwa/create-an-asset-token) para conocer los conceptos y seguir una guía completa del lanzamiento. Estos ejemplos están pensados para `base-std@1505323`, `viem@2.55.11` y Base Foundry `v1.1.1`.
+</Note>
+
+## Crear y verificar el token de acciones {#create-and-verify-the-stock-token}
+
+Elige la variante **Asset** cuando necesites decimales configurables, anuncios, un multiplicador de UI programado, metadatos adicionales o `batchMint`. Los decimales de Asset deben estar en el rango `[6, 18]`; los valores fuera de ese rango revierten con `InvalidDecimals`. El tipo queda sellado en la dirección del token al crearlo y no se puede cambiar.
+
+<CodeGroup>
+  {/* sample: stock-create-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={15}
+  import { encodeAbiParameters, encodeFunctionData, keccak256, parseAbiParameters, parseEventLogs, stringToBytes } from "viem";
+  import { account } from "../../shared/clients.js";
+  import { B20_FACTORY, b20Abi, factoryAbi, role } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function createStockToken() {
+    const salt = keccak256(stringToBytes("example-class-a-v1"));
+    const params = encodeAbiParameters(
+      parseAbiParameters("(uint8 version,string name,string symbol,address initialAdmin,uint8 decimals)"),
+      [{ version: 1, name: "Example Corp Class A", symbol: "EXM", initialAdmin: account.address, decimals: 6 }],
+    );
+    const initCalls = ["MINT_ROLE", "BURN_BLOCKED_ROLE", "PAUSE_ROLE", "UNPAUSE_ROLE", "OPERATOR_ROLE"].map(
+      (name) => encodeFunctionData({ abi: b20Abi, functionName: "grantRole", args: [role(name), account.address] }),
+    );
+    const receipt = await sendContract({ address: B20_FACTORY, abi: factoryAbi, functionName: "createB20", args: [0, salt, params, initCalls] });
+    const [created] = parseEventLogs({ abi: factoryAbi, logs: receipt.logs, eventName: "B20Created" });
+    return created.args.token;
+  }
+  ```
+
+  {/* sample: stock-create-solidity */}
+
+  ```solidity Solidity lines wrap expandable highlight={1}
+      function createStock(address admin) public returns (address token) {
+          B20FactoryLib.B20AssetRoleHolders memory holders = B20FactoryLib.B20AssetRoleHolders({
+              minter: admin,
+              burner: admin,
+              burnBlocker: admin,
+              pauser: admin,
+              unpauser: admin,
+              metadataAdmin: admin,
+              operator: admin
+          });
+          bytes[] memory settings = new bytes[](1);
+          settings[0] = B20FactoryLib.encodeUpdateSupplyCap(1_000_000e6);
+          token = StdPrecompiles.B20_FACTORY.createB20(
+              IB20Factory.B20Variant.ASSET,
+              keccak256("example-class-a-v1"),
+              B20FactoryLib.encodeAssetCreateParams("Example Corp Class A", "EXM", admin, 6),
+              B20FactoryLib.concat(B20FactoryLib.buildRoleGrants(holders), settings)
+          );
+      }
+  ```
+</CodeGroup>
+
+La factory asigna una dirección determinista a partir de `(variant, sender, salt)`. En los tokens Asset, el byte `[10]` de la dirección es `0x00`. Si se reutiliza la misma tripleta `(variant, sender, salt)`, la llamada revierte con `TokenAlreadyExists`. Las `initCalls` opcionales, como las concesiones de roles anteriores, se ejecutan sobre el nuevo token en la misma transacción. La factory pierde el acceso en cuanto `createB20` retorna.
+
+Consulta el [estándar de tokens B20](/es/build-on-base/issue-rwa/create-an-asset-token) para ver la interfaz completa, los roles y las políticas.
+
+<Check>
+  La factory emite `B20Created` para la variante Asset y devuelve la dirección determinista del token.
+</Check>
+
+<Warning>
+  El límite de suministro es un tope técnico; no representa las acciones autorizadas ni las acciones en circulación.
+</Warning>
+
+## Ver también {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="Emitir participaciones" icon="coins" href="/es/build-on-base/issue-rwa/issue-units">
+    Acuña unidades del activo para los titulares.
+  </Card>
+
+  <Card title="Restringir los titulares elegibles" icon="user-check" href="/es/build-on-base/issue-rwa/restrict-eligible-holders">
+    Controla mediante políticas quién puede ser titular.
+  </Card>
+</CardGroup>

@@ -1,0 +1,84 @@
+---
+title: "定期的に請求する"
+keywords: ["Commerce Payments recurring charge", "SpendPermissionPaymentCollector", "scheduled USDC payment", "smart wallet billing"]
+description: "ウォレットの支出許可を使用して、請求期間ごとにエスクローで保全された請求を 1 件ずつ作成します。"
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+ウォレットが定期的な回収を承認する場合は、デプロイ済みの `SpendPermissionPaymentCollector` を使用します。その場合でも、プロトコル上の各支払いは一度しか請求できないため、スケジューラーは請求期間ごとに新しい `PaymentInfo` と一意のソルトを作成します。
+
+<Info>
+  このガイドの支払いフローは [Commerce Payments Protocol](https://github.com/base/commerce-payments) に基づいています。
+</Info>
+
+## デモ {#demo}
+
+<PaymentsDemo flow="schedule" />
+
+<Tip>
+  上記のデモはモックです。Vibenet 上で動作するオンチェーンデモをご覧になりたい場合は、[Base chain demos](https://chain.base.org/demos) をご確認ください。
+</Tip>
+
+## 1 回の請求期間分を課金する {#charge-one-billing-period}
+
+コレクターは `PaymentInfo` から支出許可 (spend permission) を再構築します。このとき、支払者がアカウント、コレクターが支出者 (spender) となり、トークンと許容額には支払いの値が使われ、`preApprovalExpiry` が許可の終了時刻になります。許可の署名と、必要に応じて MagicSpend の引き出しリクエストを `collectorData` としてエンコードしてください。
+
+プロトコルの課金を送信する前に、`subscriptionId:periodStart` のような永続的な請求キーを使用してください。
+
+{/* sample: scheduled-charge-ts */}
+
+```typescript TypeScript lines wrap expandable highlight={8-10,15,19-20,28}
+export async function chargeSubscriptionPeriod(args: {
+  paymentInfo: PaymentInfo;
+  collectorData: Hex;
+  billingKey: string;
+  amount: bigint;
+  store: BillingStore;
+}) {
+  if (!(await args.store.reserveOnce(args.billingKey))) {
+    throw new Error("Billing period was already submitted");
+  }
+  const simulation = await publicClient.simulateContract({
+    account,
+    address: AUTH_CAPTURE_ESCROW,
+    abi: authCaptureEscrowAbi,
+    functionName: "charge",
+    args: [
+      args.paymentInfo,
+      args.amount,
+      SPEND_PERMISSION_PAYMENT_COLLECTOR,
+      args.collectorData,
+      0n,
+      zeroAddress,
+    ],
+  });
+  const hash = await walletClient.writeContract(simulation.request);
+  const receipt = await publicClient.waitForTransactionReceipt({ hash, confirmations: 2 });
+  if (receipt.status !== "success") throw new Error("Scheduled charge reverted");
+  await args.store.complete(args.billingKey, hash);
+  return receipt;
+}
+```
+
+チャージが成功すると `PaymentCharged` が発行され、その請求期間に対してプロトコル上の `refundableAmount` が作成されます。
+
+<Check>
+  請求キー、`paymentInfoHash`、チャージトランザクション、金額、スペンドパーミッションの使用状況は、1つの永続的なワークフロー内でまとめて保存してください。
+</Check>
+
+<Warning>
+  [Commerce Payments Protocol](https://github.com/base/commerce-payments) はスケジューラーを備えていません。オペレーターキーを保護し、リトライは直列化して実行してください。また、前の期間の `PaymentInfo` やソルトは再利用しないでください。
+</Warning>
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="支払いをリクエストする" icon="credit-card" href="/ja/build-on-base/accept-payments/request-a-payment">
+    同じ請求ライフサイクルを使って、1回限りのチェックアウトを実装します。
+  </Card>
+
+  <Card title="支払いを返金する" icon="rotate-left" href="/ja/build-on-base/accept-payments/refund-a-payment">
+    返金期限が切れる前に、請求済みの請求期間を取り消します。
+  </Card>
+</CardGroup>

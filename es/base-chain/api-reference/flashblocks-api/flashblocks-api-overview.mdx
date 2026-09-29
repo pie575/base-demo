@@ -1,0 +1,194 @@
+---
+title: 'Descripción general'
+sidebarTitle: 'Descripción general'
+description: 'Métodos RPC específicos de Flashblocks, suscripciones WebSocket y el esquema del flujo de infraestructura para las preconfirmaciones de Base.'
+---
+
+Todos los endpoints públicos de Base (`mainnet.base.org` / `sepolia.base.org`) tienen Flashblocks habilitado y exponen todos los métodos JSON-RPC estándar de Ethereum, además de un conjunto de métodos adicionales específicos para preconfirmaciones. Con ellos puedes leer el estado, simular transacciones y transmitir eventos a partir de datos ordenados por el sequencer hasta ~1,8 segundos antes de que se selle un bloque.
+
+<Warning>
+  Tenemos previsto retirar Flashblocks en el próximo hard fork Denim. Se trata de una actualización planificada que aún no está cerrada. Ya puedes probar de forma anticipada el comportamiento canónico de bloques de 200 ms en [Vibenet](/es/build-on-base/test-on-vibenet). Consulta [Migrar desde Flashblocks](/es/upgrades/denim/migrate-from-flashblocks) para conocer los cambios que, en su momento, deberás realizar en tu aplicación.
+</Warning>
+
+<Info>
+  Todos los [métodos JSON-RPC estándar de Ethereum](/es/base-chain/api-reference/rpc-overview) admiten la etiqueta de bloque `"pending"` para resolver la consulta con el estado preconfirmado en lugar del mempool. Consulta la [descripción general de RPC](/es/base-chain/api-reference/rpc-overview) para ver las URL de los endpoints.
+</Info>
+
+## Métodos HTTP {#http-methods}
+
+| Método                                                                                         | Descripción                                                    |
+| :--------------------------------------------------------------------------------------------- | :------------------------------------------------------------- |
+| [eth&#95;simulateV1](/es/base-chain/api-reference/flashblocks-api/eth_simulateV1)                 | Simula paquetes de transacciones sobre el estado preconfirmado |
+| [base&#95;transactionStatus](/es/base-chain/api-reference/flashblocks-api/base_transactionStatus) | Comprueba si una transacción ha llegado al mempool del nodo    |
+
+## Suscripciones WebSocket {#websocket-subscriptions}
+
+En un endpoint WSS de Flashblocks, `eth_subscribe` con `newHeads` emite un nuevo evento aproximadamente cada 200 ms (uno por Flashblock), en lugar de cada 2 segundos. Además, hay tres tipos de suscripción adicionales disponibles exclusivamente en los endpoints de Flashblocks:
+
+| Suscripción                                                                                      | Descripción                                                                          |
+| :----------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------- |
+| [newFlashblockTransactions](/es/base-chain/api-reference/flashblocks-api/newFlashblockTransactions) | Transmite transacciones individuales a medida que se preconfirman (~200 ms cada una) |
+| [pendingLogs](/es/base-chain/api-reference/flashblocks-api/pendingLogs)                             | Transmite logs de eventos filtrados de transacciones preconfirmadas                  |
+| [newFlashblocks](/es/base-chain/api-reference/flashblocks-api/newFlashblocks)                       | Transmite objetos de payload completos de Flashblock desde el sequencer           |
+
+## Flujo de infraestructura {#infrastructure-stream}
+
+El flujo de infraestructura sin procesar de Flashblocks es el feed WebSocket de origen que consumen los nodos RPC compatibles con Flashblocks. Emite un mensaje nuevo aproximadamente cada 200 ms, a medida que el sequencer preconfirma las transacciones.
+
+<Warning>
+  **Las aplicaciones no deben conectarse directamente al flujo de infraestructura.** Estos endpoints están destinados exclusivamente a los operadores de nodos. Los desarrolladores de aplicaciones deben usar los [métodos de suscripción WebSocket](#websocket-subscriptions) descritos anteriormente a través de un proveedor RPC compatible con Flashblocks.
+</Warning>
+
+| Red     | URL del flujo sin procesar              |
+| :------ | :-------------------------------------- |
+| Mainnet | `wss://mainnet.flashblocks.base.org/ws` |
+| Sepolia | `wss://sepolia.flashblocks.base.org/ws` |
+
+### Objeto Flashblock {#flashblock-object}
+
+La estructura raíz de cada mensaje del flujo de infraestructura.
+
+<Card>
+  <ParamField path="payload_id" type="string">
+    Identificador único del bloque que se está construyendo. Se mantiene constante en todos los Flashblocks de un mismo bloque completo.
+  </ParamField>
+
+  <ParamField path="index" type="number">
+    Índice del Flashblock dentro del bloque actual. Empieza en 0 (solo transacciones del sistema). Las transacciones de usuario comienzan en el índice 1. Normalmente llega a 9–10 por bloque, pero [puede superar 10](/es/specifications/flashblocks#can-the-flashblock-index-exceed-10-is-that-a-bug) cuando hay desfases de sincronización en el sequencer.
+  </ParamField>
+
+  <ParamField path="base" type="Base Object">
+    Propiedades del encabezado del bloque. **Solo está presente cuando `index` es `0`.** Consulta [Objeto Base](#base-object).
+  </ParamField>
+
+  <ParamField path="diff" type="Diff Object">
+    Cambios incrementales en el estado del bloque para este Flashblock. Está presente en todos los mensajes. Consulta [Objeto Diff](#diff-object).
+  </ParamField>
+
+  <ParamField path="metadata" type="Metadata Object">
+    Datos complementarios. **Inestable: los campos pueden cambiar sin previo aviso.** Consulta [Objeto Metadata](#metadata-object).
+  </ParamField>
+</Card>
+
+### Objeto Base {#base-object}
+
+Contiene todas las propiedades del encabezado del bloque. **Solo está presente en el mensaje `index: 0`** (el primer Flashblock de cada bloque completo).
+
+<Card>
+  <ParamField path="parent_hash" type="string">Hash del bloque padre.</ParamField>
+  <ParamField path="fee_recipient" type="string">Dirección que recibe las comisiones de las transacciones (coinbase).</ParamField>
+  <ParamField path="block_number" type="string">Número de bloque en hexadecimal.</ParamField>
+  <ParamField path="gas_limit" type="string">Cantidad máxima de gas permitida en este bloque (hex).</ParamField>
+  <ParamField path="timestamp" type="string">Marca de tiempo Unix de la creación del bloque (hex).</ParamField>
+  <ParamField path="base_fee_per_gas" type="string">Comisión base por gas de EIP-1559 (hex).</ParamField>
+  <ParamField path="prev_randao" type="string">Valor RANDAO anterior, utilizado para generar aleatoriedad on-chain.</ParamField>
+  <ParamField path="extra_data" type="string">Campo de datos arbitrarios definido por el sequencer.</ParamField>
+  <ParamField path="parent_beacon_block_root" type="string">Raíz del bloque beacon padre (EIP-4788).</ParamField>
+</Card>
+
+### Objeto Diff {#diff-object}
+
+Contiene los cambios incrementales del estado del bloque correspondientes a este Flashblock. Está presente en todos los mensajes.
+
+<Card>
+  <ParamField path="state_root" type="string">Raíz de Merkle del trie de estado tras aplicar las transacciones de este Flashblock.</ParamField>
+  <ParamField path="block_hash" type="string">Hash del bloque parcial en este índice de Flashblock. Cambia con cada Flashblock a medida que se preconfirman más transacciones.</ParamField>
+  <ParamField path="gas_used" type="string">Gas acumulado utilizado hasta este Flashblock inclusive (hex).</ParamField>
+  <ParamField path="blob_gas_used" type="string">Gas de blob acumulado utilizado (EIP-4844, hex).</ParamField>
+  <ParamField path="transactions" type="string[]">Array de transacciones codificadas en RLP incluidas en este Flashblock.</ParamField>
+  <ParamField path="withdrawals" type="array">Retiros de validadores (siempre vacío en Base L2).</ParamField>
+  <ParamField path="receipts_root" type="string">Raíz de Merkle de los recibos de transacciones.</ParamField>
+  <ParamField path="logs_bloom" type="string">Filtro de Bloom de los logs de este Flashblock.</ParamField>
+  <ParamField path="withdrawals_root" type="string">Raíz de Merkle de los retiros.</ParamField>
+</Card>
+
+### Objeto Metadata {#metadata-object}
+
+<Warning>
+  **El objeto `metadata` no es estable.** Sus campos pueden agregarse, modificarse o eliminarse sin previo aviso. No crees dependencias de producción basadas en él; en su lugar, usa el objeto [`diff`](#diff-object) o consulta los datos de bloques finalizados mediante RPC estándar.
+</Warning>
+
+A partir de la v0.8.0, `new_account_balances` y `receipts` ya no forman parte del objeto `metadata`. `block_number` se mantiene. El campo `access_list` sigue presente, pero siempre está vacío.
+
+<Card>
+  <ParamField path="block_number" type="number">Número de bloque como entero decimal.</ParamField>
+</Card>
+
+### Objeto Receipt {#receipt-object}
+
+<Note>
+  `metadata.receipts` se eliminó en la v0.8.0. Este esquema se conserva como referencia para versiones anteriores del nodo. A partir de la v0.8.0, usa [`eth_getTransactionReceipt`](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionReceipt) para obtener datos de recibos mediante sondeo, o suscríbete a [`newFlashblockTransactions`](/es/base-chain/api-reference/flashblocks-api/newFlashblockTransactions) con `full: true` para recibir en tiempo real un flujo de datos de transacciones preconfirmadas, logs incluidos.
+</Note>
+
+<Card>
+  <ParamField path="type" type="string">Tipo de transacción: `0x0` Legacy, `0x1` Access List, `0x2` EIP-1559, `0x7e` Deposit (L1→L2).</ParamField>
+  <ParamField path="status" type="string">Estado de la transacción: `0x1` si se ejecutó correctamente, `0x0` si falló.</ParamField>
+  <ParamField path="cumulativeGasUsed" type="string">Gas total utilizado en el bloque hasta esta transacción inclusive (hex).</ParamField>
+  <ParamField path="logs" type="Log[]">Array de logs de eventos emitidos por la transacción. Consulta [Objeto Log](#log-object).</ParamField>
+  <ParamField path="logsBloom" type="string">Filtro de Bloom de los logs de este recibo.</ParamField>
+  <ParamField path="transactionIndex" type="string">Índice de la transacción dentro del bloque (hex).</ParamField>
+</Card>
+
+### Objeto Log {#log-object}
+
+<Card>
+  <ParamField path="address" type="string">Dirección del contrato que emitió el evento.</ParamField>
+  <ParamField path="topics" type="string[]">Array de parámetros indexados del evento. El topic 0 suele ser el hash de la firma del evento.</ParamField>
+  <ParamField path="data" type="string">Parámetros no indexados del evento, codificados en ABI.</ParamField>
+  <ParamField path="blockHash" type="string">Hash del bloque que contiene este log.</ParamField>
+  <ParamField path="blockNumber" type="string">Número de bloque en hexadecimal.</ParamField>
+  <ParamField path="blockTimestamp" type="string">Marca de tiempo Unix del bloque, como cadena hexadecimal. Extensión de Base L2 al esquema estándar de logs de Ethereum.</ParamField>
+  <ParamField path="transactionHash" type="string">Hash de la transacción que emitió este log.</ParamField>
+  <ParamField path="transactionIndex" type="string">Índice de la transacción dentro del bloque (hexadecimal).</ParamField>
+  <ParamField path="logIndex" type="string">Posición del log dentro del bloque (hexadecimal).</ParamField>
+  <ParamField path="removed" type="boolean">`true` si el log se eliminó a causa de una reorganización de la cadena (reorg).</ParamField>
+</Card>
+
+### Ejemplos completos {#complete-examples}
+
+**Índice 0**: incluye el objeto `base` (encabezado del bloque):
+
+```json Index 0 (With Base Object) lines wrap expandable
+{
+  "payload_id": "0x03997352d799c31a",
+  "index": 0,
+  "base": {
+    "parent_hash": "0x9edc29b8b0a1e31d28616e40c16132ad0d58faa8bb952595b557526bdb9a960a",
+    "fee_recipient": "0x4200000000000000000000000000000000000011",
+    "block_number": "0x158a0e9",
+    "gas_limit": "0x3938700",
+    "timestamp": "0x67bf8332",
+    "base_fee_per_gas": "0xfa",
+    "parent_beacon_block_root": "0x15b9e7c8ac4cbe92dafc849ed30a23e91624bbe5cbe199c0ccea3f7de7fc6d49"
+  },
+  "diff": {
+    "state_root": "0x208fd63edc0681161105f27d03daf9f8c726d8c94e584a3c0696c98291c24333",
+    "block_hash": "0x5c330e55a190f82ea486b61e5b12e27dfb4fb3cecfc5746886ef38ca1281bce8",
+    "gas_used": "0xab3f",
+    "transactions": ["0x7ef8f8a0b4afc0b7ce10e150801bbaf08ac33fecb0f38311793abccb022120d321c6d276..."],
+    "withdrawals": []
+  },
+  "metadata": {
+    "block_number": 22585577
+  }
+}
+```
+
+**Índice 1–N (solo diff)**: sin objeto `base`:
+
+```json Index 1-N (Diff Only) lines wrap expandable
+{
+  "payload_id": "0x03997352d799c31a",
+  "index": 4,
+  "diff": {
+    "state_root": "0x7a8f45038665072f382730e689f4a1561835c9987fca8942fa95872fb9367eaa",
+    "block_hash": "0x9b32f7a14cbd1efc8c2c5cad5eb718ec9e0c5da92c3ba7080f8d4c49d660c332",
+    "gas_used": "0x1234f",
+    "transactions": ["0x02f90133...", "0x02f90196..."],
+    "withdrawals": []
+  },
+  "metadata": {
+    "block_number": 22585577
+  }
+}
+```

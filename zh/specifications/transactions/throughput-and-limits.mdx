@@ -1,0 +1,68 @@
+---
+title: 吞吐量与限制
+description: Base 上的 Gas 限制及与吞吐量相关的网络参数。
+---
+
+Base 的吞吐量受 Gas 限制、数据可用性吞吐量、费用市场参数以及端点限制的制约。由于不同交易消耗的 Gas 和数据量各不相同，并不存在一个适用于所有工作负载的统一每秒交易数 (TPS) 。
+
+Base 已多次承受超过 5,000 TPS 的突发流量，且随着链的扩容，吞吐量仍在持续提升。更多背景信息，请参阅 [Introducing Base Azul](https://blog.base.dev/introducing-base-azul)。
+
+## 当前限制 {#current-limits}
+
+| 限制项                  | 值                                    |
+| -------------------- | ------------------------------------ |
+| 完整区块 gas 预算          | 约 400M gas                           |
+| 首个 Flashblock gas 预算 | 约 40M gas                            |
+| 单笔交易 gas 上限          | 16,777,216 gas (2^24)                |
+| 存款交易限制               | 单个 L1 区块可容纳的最大 gas (20,000,000 gas)  |
+
+在区块构建过程中，完整区块的 gas 预算会分摊到各个 Flashblock 中。Flashblock 1 可使用区块 gas 上限的 1/10，Flashblock 2 可使用 2/10，以此类推，直到 Flashblock 10 可使用全部上限。有关此机制对交易排序的影响，请参阅[交易排序](/zh/specifications/transactions/transaction-ordering#flashblocks)。
+
+## Flashblock 性能 {#flashblock-performance}
+
+Flashblocks 大约每 200ms 推送一次增量区块更新，让应用在标准的 2 秒出块时间内即可获得亚秒级预确认。
+
+| 指标                     | 数值        |
+| ---------------------- | --------- |
+| Flashblock 构建时间 (P50)  | ~10ms     |
+| 预确认延迟                  | ~200ms    |
+| 完整出块时间                 | 2 秒       |
+| 每个区块的 Flashblock 数量    | 10        |
+| 重组率                    | &lt; 0.1% |
+
+有关重组处理及其他常见问题，请参阅 [Flashblocks 参考文档](/zh/specifications/flashblocks)。
+
+## 单笔交易 Gas 上限 {#per-transaction-gas-maximum}
+
+自 [Azul 硬分叉](/zh/upgrades/azul/exec-engine#transaction-gas-limit-cap)起，Base 通过 [EIP-7825](https://eips.ethereum.org/EIPS/eip-7825) 在协议层面强制实施单笔交易 gas 上限：**16,777,216 gas (2^24)&#x20;**。gas limit 超过该值的交易将**在区块验证时被拒绝**，`eth_sendTransaction` 或 `eth_sendRawTransaction` 会返回 JSON-RPC 错误 (例如：`exceeds maximum per-transaction gas limit`) 。
+
+<Note>
+  存款交易不受此上限限制，但受单个 L1 区块可容纳的最大 gas (20,000,000 gas) 约束。
+</Note>
+
+智能合约钱包的 Bundler 运营者必须相应配置系统，将 bundle 大小控制在此上限以内。
+
+## 费用参数 {#fee-parameters}
+
+费用会影响实际吞吐量，因为当需求接近可用容量时，交易能否被打包取决于费用。
+
+| 参数                  | 当前值                         |
+| ------------------- | --------------------------- |
+| 最低基础费用              | 5,000,000 wei (0.005 gwei)  |
+| EIP-1559 弹性系数       | 6                           |
+| EIP-1559 分母         | 125                         |
+| 每个区块 L2 基础费用的最大变化幅度 | 4%                          |
+
+如需了解 Base 交易费用的构成 (包括 L2 执行费用和 L1 安全费用) ，请参阅[网络费用](/zh/specifications/transactions/network-fees)。
+
+## 数据可用性吞吐量 {#data-availability-throughput}
+
+Base 的交易数据会发布到以太坊，以保证数据可用性。如果数据可用性吞吐量受限，sequencer 可以在 batcher 追赶进度期间限制 L2 交易吞吐量。
+
+在 DA 限流期间，即使支付了高额 priority fee 的交易也可能出现延迟。目前没有任何 RPC 端点在估算 priority fee 时会将限流因素考虑在内。有关这对交易提交的影响，请参阅[交易故障排除](/zh/specifications/transactions/troubleshooting-transactions#priority-fee-too-low)。
+
+## 端点限制 {#endpoint-limits}
+
+公共端点设有速率限制，不适合承载生产流量。托管 RPC 提供商也可能设置每秒请求数限制、计算单元限制、方法限制、归档数据限制或 WebSocket 订阅限制。
+
+端点限制不会改变 Base 协议本身的容量，但在实际使用中，它们可能成为应用、钱包、索引器和监控系统的瓶颈。在生产环境中，请从 [Builder Stack](/zh/get-started/builder-stack) 中选择 RPC 提供商，或[运行 Base 节点](/zh/specifications/node-operators/run-a-node)。

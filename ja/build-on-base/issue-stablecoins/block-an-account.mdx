@@ -1,0 +1,102 @@
+---
+title: "アカウントをブロックする"
+keywords: ["ステーブルコイン アドレス ブロック", "B20 ブロックリスト", "ステーブルコイン コンプライアンス保留", "Base アカウント 送金停止"]
+description: "コンプライアンス上の保留が必要な場合に、他の保有者に影響を与えずに、特定のアドレスによるステーブルコインの移動を停止します。"
+---
+
+import { StablecoinDemo } from "/snippets/StablecoinDemo.jsx"
+
+コンプライアンス上の保留やサポート依頼など、特定のアドレスによるステーブルコインの移動を止めたい場面があります。**ブロックリスト** は、リストに登録したアドレスだけを拒否し、それ以外の保有者には一切影響しません。ブロックリストを送信者スコープにバインドすれば、ブロックされたアカウントは送金できなくなります。
+
+## デモ {#demo}
+
+<StablecoinDemo flow="block" />
+
+<Tip>
+  このデモでは、ブラウザ上でローカルに生成したアカウントを使って、**Base Vibenet** 上で実際のトランザクションを送信します。Vibenet またはその B20 機能が利用できない場合は、説明用のオフライン版に自動的に切り替わります。
+</Tip>
+
+<Note>
+  B20 を初めて利用する場合は、[B20 トークン標準](/ja/specifications/b20)で基本概念とローンチ手順の詳細なウォークスルーを確認してください。これらのサンプルは `base-std@1505323`、`viem@2.55.11`、Base Foundry `v1.1.1` を対象としています。
+</Note>
+
+## アカウントのブロックと確認 {#block-and-verify-an-account}
+
+<CodeGroup>
+  {/* sample: stablecoin-block-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={7,10}
+  import { type Address } from "viem";
+  import { publicClient } from "../../shared/clients.js";
+  import { POLICY_REGISTRY, policyRegistryAbi } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function setBlocked(policyId: bigint, holder: Address, blocked: boolean) {
+    await sendContract({
+      address: POLICY_REGISTRY,
+      abi: policyRegistryAbi,
+      functionName: "updateBlocklist",
+      args: [policyId, blocked, [holder]],
+    });
+    const authorized = await publicClient.readContract({
+      address: POLICY_REGISTRY,
+      abi: policyRegistryAbi,
+      functionName: "isAuthorized",
+      args: [policyId, holder],
+    });
+    if (authorized === blocked) throw new Error("Unexpected blocklist state");
+  }
+  ```
+
+  {/* sample: stablecoin-block-solidity */}
+
+  ```solidity Solidity lines wrap expandable highlight={4}
+      function setBlocked(uint64 policyId, address holder, bool blocked) public {
+          address[] memory accounts = new address[](1);
+          accounts[0] = holder;
+          StdPrecompiles.POLICY_REGISTRY.updateBlocklist(policyId, blocked, accounts);
+          require(StdPrecompiles.POLICY_REGISTRY.isAuthorized(policyId, holder) != blocked, "wrong policy state");
+      }
+  ```
+
+  {/* sample: stablecoin-block-cli */}
+
+  ```bash CLI lines wrap expandable highlight={1}
+  base-cast send "$POLICY_REGISTRY" "updateBlocklist(uint64,bool,address[])" \
+    "$BLOCKLIST_ID" true "[$ACCOUNT]" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  base-cast call "$POLICY_REGISTRY" "isAuthorized(uint64,address)(bool)" \
+    "$BLOCKLIST_ID" "$ACCOUNT" --rpc-url "$RPC_URL"
+  ```
+</CodeGroup>
+
+インターフェース、ロール、ポリシーの詳細については、[B20 トークン標準](/ja/specifications/b20)を参照してください。
+
+<Check>
+  アカウントがブロックされている間、`isAuthorized(policyId, account)` は `false` を返します。
+</Check>
+
+<Warning>
+  これにより送金が停止されるのは、ブロックリストが `TRANSFER_SENDER_POLICY` にバインドされている場合のみです。ブロックを解除するには、同じ呼び出しに `false` を指定して実行します。
+</Warning>
+
+## ブロックしたアカウントを回収可能にする {#make-a-blocked-account-recoverable}
+
+`TRANSFER_SENDER_POLICY` でブロックすると、そのアカウントからの送金は凍結されます。ただし、それだけでは残高を移動させることはできません。Seize は別のスコープである `SEIZE_EXEMPT_POLICY` を参照し、そのチェックは逆になっています。つまり、アタッチされたポリシーで認可**されていない**アカウントが差し押さえの対象となります。同じブロックリストをこちらにもアタッチすれば、1 回の保留だけでアカウントの凍結と回収可能化を同時に実現できます。
+
+```solidity Attach the blocklist to the seize scope
+token.updatePolicy(token.SEIZE_EXEMPT_POLICY(), blocklistId);
+```
+
+`SEIZE_EXEMPT_POLICY` にはブロックリストを設定してください。許可リストは絶対に設定しないでください。空の許可リストでは誰も許可されないため、すべての保有者が差し押さえ対象になってしまいます。差し押さえの実行方法については、[資金の回収](/ja/build-on-base/issue-stablecoins/recover-funds)を参照してください。
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="資金の回収" icon="rotate-left" href="/ja/build-on-base/issue-stablecoins/recover-funds">
+    seizeWithMemo を使用して、ブロックされた残高を安全な保管先に移します。
+  </Card>
+
+  <Card title="アクティビティの一時停止" icon="circle-pause" href="/ja/build-on-base/issue-stablecoins/pause-activity">
+    トークンに関するすべてのアクティビティを凍結します。
+  </Card>
+</CardGroup>

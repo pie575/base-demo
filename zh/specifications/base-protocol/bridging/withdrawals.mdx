@@ -1,0 +1,220 @@
+---
+title: "提款"
+description: "Base 上提款的运作方式——标准三步流程、7 天挑战期、更快的提款选项以及完整的协议规范。"
+---
+
+[g-deposits]: /specifications/reference/glossary#deposits
+
+[g-withdrawal]: /specifications/reference/glossary#withdrawal
+
+[g-relayer]: /specifications/reference/glossary#withdrawals
+
+[g-execution-engine]: /specifications/reference/glossary#execution-engine
+
+标准提款是一种在 Base 上发起、在 Ethereum 上最终完成的跨域交易。通过标准提款，可以转移 ETH、桥接受支持的 ERC-20 代币，或从 Base 向 L1 合约发送消息。整个流程分为三个阶段：
+
+1. **在 Base 上发起：**在 Base 上发送提款交易，提款消息随即记录到 `L2ToL1MessagePasser` 合约中。
+2. **在 Ethereum 上证明：**相关的 Base 状态发布到 Ethereum 后，任何人都可以向 `OptimismPortal` 合约提交证明，证明该提款消息存在于 Base 上。
+3. **在 Ethereum 上最终确认：**7 天挑战期结束后，任何人都可以在 Ethereum 上最终确认该提款。最终确认后，资产将被释放，或消息将被中继到目标合约。
+
+<Note>
+  提款到 Ethereum 的标准提款必须等待 7 天才能最终确认。Base 采用故障证明来保障提款安全：在依赖某个 output root 的提款被最终确认之前，挑战期为网络参与者留出时间，对无效的 output root 提出争议。有关提款最终性与普通 Base 交易最终性有何不同，请参阅[交易最终性](/zh/specifications/transactions/transaction-finality#finality-for-withdrawal-transactions)。
+</Note>
+
+部分跨链桥服务商借助流动性、中继者或做市商，在标准提款完全最终确认之前就将资金提供给用户，从而实现更快的提款。可用的桥接路径请参阅[桥接到 Base](/zh/base-chain/network-information/ecosystem-bridges)。
+
+## 概述 {#overview}
+
+[提款][g-withdrawal]是一种跨域交易，在 L2 上发起，并由 L1 上执行的一笔交易完成最终确认。值得注意的是，L2 账户可以通过提款调用 L1 合约，或将 ETH 从
+L2 账户转移到 L1 账户。
+
+**术语说明**：&#95;提款&#95;可以指该流程中处于不同阶段的交易，但为了加以区分，我们引入了
+更具体的术语：
+
+* &#95;提款发起交易&#95;特指在 L2 上发送至 Withdrawals 预部署的交易。
+* &#95;提款证明交易&#95;特指用于证明提款正确性的 L1 交易
+  (即证明该提款已被包含在一棵 merkle
+  树中，且该树的根在 L1 上可用) 。
+* &#95;提款最终确认交易&#95;特指对提款进行最终确认并中继的 L1 交易。
+
+提款在 L2 上通过调用 Message Passer 预部署合约发起，该合约会将消息的重要
+属性记录在其存储中。
+提款在 L1 上通过调用 `OptimismPortal` 进行证明，以证明该提款消息已被包含。
+提款在 L1 上通过调用 `OptimismPortal` 合约完成最终确认，
+该合约会验证自提款消息被证明以来，故障挑战期是否已经结束。
+
+由此可见，提款与[存款][g-deposits]有所不同：存款使用的是
+[执行引擎][g-execution-engine]客户端中的一种特殊交易类型，而提款交易则必须借助 L1 上的智能合约来完成
+最终确认。
+
+## 提款流程 {#withdrawal-flow}
+
+我们首先介绍从发起提款到最终完成提款的端到端流程：
+
+### 在 L2 上 {#on-l2}
+
+L2 账户向 `L2ToL1MessagePasser` 预部署合约发送一条提款消息 (可能同时附带 ETH) 。
+该合约非常简单，仅负责存储提款数据的哈希值。
+
+### 在 L1 上 {#on-l1}
+
+1. [中继者][g-relayer]向 `OptimismPortal` 合约提交一笔提款证明交易，并附带所需的输入。
+   中继者不一定与在 L2 上发起该提款的是同一实体。
+   这些输入包括提款交易数据、包含性证明以及一个区块号。该区块号
+   必须有对应的 L2 output root，且该 output root 承诺了在 L2 上登记的这笔提款。
+2. `OptimismPortal` 合约通过 `L2OutputOracle` 的 `getL2Output()` 函数获取指定区块号对应的 output root，
+   并在内部完成其余的验证流程。
+3. 如果证明验证失败，调用将回滚；否则会记录该哈希，以防止重复证明。
+   注意，如果对应的 output root 发生变化，该提款可以被多次证明。
+4. 提款被证明后，将进入为期 7 天的挑战期，让其他网络参与者有时间
+   对相应 output root 的完整性提出质疑。
+5. 挑战期结束后，中继者向
+   `OptimismPortal` 合约提交一笔提款最终确认交易。
+   中继者无需与在 L2 上发起该提款的是同一实体。
+6. `OptimismPortal` 合约接收提款交易数据，并验证该提款
+   既已通过证明，又已度过挑战期。
+7. 如果不满足要求，调用将回滚；否则将转发调用，并记录该哈希，
+   以防止重放。
+
+## L2ToL1MessagePasser 合约 {#the-l2tol1messagepasser-contract}
+
+提款通过调用 L2ToL1MessagePasser 合约的 `initiateWithdrawal` 函数发起。
+L2ToL1MessagePasser 是部署在 `0x4200000000000000000000000000000000000016` 的一个简单的预部署 (predeploy) 合约，
+用于存储待提取的消息。
+
+```js L2ToL1MessagePasser.sol lines wrap expandable
+interface L2ToL1MessagePasser {
+    event MessagePassed(
+        uint256 indexed nonce, // 这是所有提款消息共用的全局 nonce 值
+        address indexed sender,
+        address indexed target,
+        uint256 value,
+        uint256 gasLimit,
+        bytes data,
+        bytes32 withdrawalHash
+    );
+
+    event WithdrawerBalanceBurnt(uint256 indexed amount);
+
+    function burn() external;
+
+    function initiateWithdrawal(address _target, uint256 _gasLimit, bytes memory _data) payable external;
+
+    function messageNonce() public view returns (uint256);
+
+    function sentMessages(bytes32) view external returns (bool);
+}
+
+```
+
+`MessagePassed` 事件包含经哈希处理后
+存入 `sentMessages` 映射的全部数据，以及该哈希值本身。
+
+### 提款时地址不会被别名化 {#addresses-are-not-aliased-on-withdrawals}
+
+当合约发起存款时，发送方的地址会被[别名化](/zh/specifications/base-protocol/bridging/deposits#address-aliasing)。提款则不同，
+它不会修改发送方的地址。两者的区别在于：
+
+* 在 L2 上，存款发送方的地址由 `CALLER` 操作码返回，这意味着合约难以判断该
+  调用是来自 L1 还是 L2；而
+* 在 L1 上，提款发送方的地址需通过调用 `OptimismPortal`
+  合约的 `l2Sender()` 函数来获取。
+
+调用 `l2Sender()` 可以彻底消除调用来源域的歧义。尽管如此，开发者仍需
+认识到，地址相同并不意味着 L2 上的合约与 L1 上的合约行为一致。
+
+## Optimism Portal 合约 {#the-optimism-portal-contract}
+
+Optimism Portal 既是进入 Base L2 的入口，也是离开 Base L2 的出口。该合约继承自
+[OptimismPortal](/zh/specifications/base-protocol/bridging/deposits#deposit-contract) 合约，并额外为
+提款提供以下接口：
+
+* [`WithdrawalTransaction` 类型]
+* [`OutputRootProof` 类型]
+
+```js OptimismPortal.sol lines wrap expandable
+interface OptimismPortal {
+
+    event WithdrawalFinalized(bytes32 indexed withdrawalHash, bool success);
+
+
+    function l2Sender() returns(address) external;
+
+    function proveWithdrawalTransaction(
+        Types.WithdrawalTransaction memory _tx,
+        uint256 _l2OutputIndex,
+        Types.OutputRootProof calldata _outputRootProof,
+        bytes[] calldata _withdrawalProof
+    ) external;
+
+    function finalizeWithdrawalTransaction(
+        Types.WithdrawalTransaction memory _tx
+    ) external;
+}
+```
+
+## 提款验证与最终确认 {#withdrawal-verification-and-finalization}
+
+证明并最终确认一笔提款需要以下输入：
+
+* 提款交易数据：
+  * `nonce`：所提供消息的 nonce。
+  * `sender`：L2 上的消息发送方地址。
+  * `target`：L1 上的目标地址。
+  * `value`：要发送给目标的 ETH。
+  * `data`：要发送给目标的数据。
+  * `gasLimit`：要转发给目标的 Gas。
+* 证明与验证数据：
+  * `l2OutputIndex`：相应 output root 在 L2 输出中所在位置的索引。
+  * `outputRootProof`：用于推导 output root 的四个 `bytes32` 值。
+  * `withdrawalProof`：该提款在 L2ToL1MessagePasser 合约中的包含性证明。
+
+这些输入必须满足以下条件：
+
+1. `l2OutputIndex` 必须是 L2 输出中包含相应 output root 的索引。
+2. `L2OutputOracle.getL2Output(l2OutputIndex)` 返回非零的 `OutputProposal`。
+3. `outputRootProof` 各值的 keccak256 哈希等于 `outputRoot`。
+4. `withdrawalProof` 是有效的包含性证明，能够证明提款交易数据的哈希
+   存在于 L2 上 L2ToL1MessagePasser 合约的存储中。
+
+## 安全注意事项 {#security-considerations}
+
+### 提款验证的关键特性 {#key-properties-of-withdrawal-verification}
+
+1. 提款不应能被&quot;双花&quot;，即不应能在 L1 上中继一笔与 L2 上发起的任何消息都不对应的提款。
+   可参考[这篇文章][polygon-dbl-spend]，其中介绍了在 Polygon 上发现的此类漏洞。
+
+   [polygon-dbl-spend]: https://gerhard-wagner.medium.com/double-spending-bug-in-polygons-plasma-bridge-2e0954ccadf1
+
+2. 对于在 L2 上发起的每一笔提款 (即具有唯一 `messageNonce()` 的提款) ，必须满足以下特性：
+   1. 该提款应只能被证明一次，除非该提款对应的 outputRoot
+      发生了变化。
+   2. 该提款应只能被最终确认一次。
+   3. 不应能在修改消息任一字段的情况下中继该消息，即：
+      1. 修改 `sender` 字段会导致&quot;伪造&quot;攻击。
+      2. 修改 `target`、`data` 或 `value` 字段会使攻击者得以恶意篡改
+         提款的预期结果。
+      3. 修改 `gasLimit` 可能导致中继成本过高，或让中继者得以使 `target` 中的执行
+         失败 (gas 耗尽) 。
+
+### 处理验证成功但中继时执行失败的消息 {#handling-successfully-verified-messages-that-fail-when-relayed}
+
+如果被中继的调用在 `target` 合约中执行失败，遗憾的是，我们无法判断该调用是否“本应”失败，
+也无法判断它是否应当“可重放”。因此，同时也为了尽量降低复杂性，我们没有提供任何重放功能；如有需要，
+可以在外部工具合约中自行实现。
+
+[`WithdrawalTransaction` type]: https://github.com/ethereum-optimism/optimism/blob/08daf8dbd38c9ffdbd18fc9a211c227606cdb0ad/packages/contracts-bedrock/src/libraries/Types.sol#L62-L69
+
+[`OutputRootProof` type]: https://github.com/ethereum-optimism/optimism/blob/08daf8dbd38c9ffdbd18fc9a211c227606cdb0ad/packages/contracts-bedrock/src/libraries/Types.sol#L25-L30
+
+### OptimismPortal 可以在 L1 上发送任意消息 {#optimismportal-can-send-arbitrary-messages-on-l1}
+
+`L2ToL1MessagePasser` 合约的 `initiateWithdrawal` 函数接受一个 `_target` 地址和一段 `_data` 字节数据，
+挑战期结束后调用 `finalizeWithdrawalTransaction` 时，这些参数会被传入 L1 上的 `CALL` 操作码。
+这意味着，按照设计，`OptimismPortal` 合约可用于在
+L1 上发送任意交易，且 `msg.sender` 为 `OptimismPortal`。
+
+因此，`OptimismPortal` 合约的用户应谨慎考虑授予该门户合约哪些权限。
+例如，任何误转入 `OptimismPortal` 合约的 ERC20 代币基本上都将无法找回，因为任何人都可以
+预先授权从门户合约中转出该代币，从而将其据为己有：只需在 L2 上发起授权，
+再在 L1 上证明并最终确认该授权 (在挑战期结束后) 即可。

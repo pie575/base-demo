@@ -1,0 +1,420 @@
+---
+title: "Verificar usuarios onchain"
+description: "Aplica resistencia a ataques Sybil y control de acceso por políticas dentro de cualquier contrato de Base. Base Verify firma una verificación de corta duración que tu contrato comprueba en la misma transacción que una reclamación, un depósito o un voto, de modo que cada identidad real cuente una sola vez y solo participen las billeteras que cumplan tus requisitos."
+---
+
+## Resumen {#summary}
+
+**Base Verify Onchain permite que tu contrato inteligente garantice «una persona real, una sola vez» y restrinja el acceso según atributos del mundo real, como una membresía activa de Coinbase One. La comprobación se ejecuta en tu contrato, así que no necesitas mantener un backend de verificación.** Base Verify firma una verificación de corta duración que tu contrato comprueba en la misma transacción que una reclamación, un depósito o un voto.
+
+<Note>
+  Base Verify Onchain solo funciona en Base Sepolia. No está desplegado en Base Mainnet, así que puedes desarrollar y hacer pruebas con él, pero
+  no lo uses para proteger valor real en producción. Prueba la [demo](https://verify.base.dev/onchain-demo) o [ponte en
+  contacto](https://forms.gle/WTcuWyKkvUV6gGik6) si tienes casos de uso en mente.
+</Note>
+
+La integración consta de tres pasos:
+
+1. **Despliega o actualiza un contrato** para que extienda `BaseVerifyConsumer` y declare un `provider` y unas `conditions` inmutables (tu política de elegibilidad).
+2. **Obtén una verificación** en tu aplicación: el usuario firma un mensaje SIWE que menciona tu contrato, y tú lo envías con `POST /v1/onchain_verifications`.
+3. **Envía** el `{ identityHash, expiration, signature }` devuelto a tu contrato, que llama a `registry.verifyVerification(...)` y descarta duplicados según `identityHash`.
+
+| Qué                          | Valor (Base Sepolia)                                                                                                            |
+| :--------------------------- | :------------------------------------------------------------------------------------------------------------------------------ |
+| `SignerRegistry`             | [`0x4f15593fbF7e3491d15080e1610E7AF8deBA1a02`](https://sepolia.basescan.org/address/0x4f15593fbF7e3491d15080e1610E7AF8deBA1a02) |
+| URL base de la API           | `https://verify.base.dev/v1`                                                                                                    |
+| Cadena                       | Base Sepolia (`84532`), solo testnet                                                                                            |
+| Contrato base del consumidor | `BaseVerifyConsumer.sol`                                                                                                        |
+
+Dos consumidores de ejemplo en los que puedes basarte:
+
+* [Ejemplo de cuenta de X verificada](https://sepolia.basescan.org/address/0x691fedA6dfCd10082b195b2453EBC7c87ff31678): restringe el acceso a cuentas de X verificadas.
+* [Ejemplo de Coinbase One](https://sepolia.basescan.org/address/0x3ccD255C67a129e780F945Fa1773441Ec100059f): restringe el acceso a membresías activas de Coinbase One.
+
+## ¿Qué es Base Verify Onchain? {#what-is-base-verify-onchain}
+
+[Base Verify](/es/sdks/base-verify/verify-social-accounts) permite a los usuarios demostrar que son titulares de cuentas verificadas (X, Coinbase, Instagram, TikTok) sin revelar los datos de esas cuentas. Resuelve dos problemas que las billeteras por sí solas no pueden resolver: la **resistencia a ataques Sybil** (una identidad real cuenta una sola vez, sin importar entre cuántas billeteras se reparta) y el **control de acceso por políticas** (admitir solo a usuarios que cumplan un requisito del mundo real, como una membresía activa de Coinbase One, incluso cuando una billetera tiene poco historial onchain).
+
+**Base Verify Onchain aplica ambos directamente en tu contrato.** El backend de Base Verify firma una verificación [EIP-712](https://eips.ethereum.org/EIPS/eip-712) de corta duración que tu contrato comprueba en la misma transacción que una reclamación, depósito, acuñación o voto. No hace falta ningún backend en el momento de la reclamación, y tu contrato nunca llega a saber quién es el usuario:
+
+* La **resistencia a ataques Sybil** se consigue mediante el `identityHash`. Una misma identidad del mundo real siempre genera el mismo hash para tu contrato, sin importar qué billetera utilice, así que tu contrato cuenta a cada persona real una sola vez.
+* El **control de acceso por políticas** se consigue mediante la política de tu contrato. Declaras un `provider` y unas `conditions` (por ejemplo, seguidores en X ≥ 10.000 o una membresía activa de Coinbase One); Base Verify contrasta la credencial real del usuario con ellas y solo firma si las cumple.
+
+Una sola comprobación puede hacer ambas cosas a la vez: restringir el acceso según tu política *y* deduplicar por identidad en la misma transacción. Si tu aplicación ya aplica esto offchain (con tu propio backend y base de datos), te conviene empezar por [Verificar cuentas sociales](/es/sdks/base-verify/verify-social-accounts). Esta guía explica cómo aplicarlo en un contrato.
+
+Ni la respuesta de la API ni tu contrato contienen la identidad del usuario, pero una reclamación no deja de ser una transacción pública. Consulta [Qué se publica onchain](#what-goes-onchain) para saber exactamente qué información se hace pública.
+
+## Conceptos fundamentales {#core-concepts}
+
+### Verificación {#verification}
+
+Un objeto de corta duración, firmado por el backend de Base Verify, que tu contrato comprueba a través del `SignerRegistry`. Se firma como datos tipados EIP-712 y contiene:
+
+* `identityHash`: un hash unidireccional de la identidad real del usuario (tu clave de deduplicación).
+* `policyHash`: vincula la verificación a la política de tu contrato en una cadena concreta. El registro lo recalcula onchain, así que nunca se incluye en la respuesta.
+* `expiration`: marca de tiempo Unix en segundos; las verificaciones caducan rápido (en unos pocos minutos).
+
+### identityHash {#identityhash}
+
+La clave de deduplicación. Es determinista por identidad y por contrato: una misma persona real siempre genera el mismo `identityHash` para tu contrato, sin importar desde qué billetera se verifique. Debes almacenar cada `identityHash` y rechazar los repetidos.
+
+* **Unidireccional**: no es posible recuperar la identidad del usuario a partir de él.
+* **Por contrato**: es distinto para cada contrato, por lo que no se pueden correlacionar identidades entre aplicaciones.
+* **Entre billeteras**: una segunda billetera de la misma persona genera el mismo hash, así que tu contrato bloquea el duplicado.
+
+### Política (proveedor + condiciones) {#policy-provider-conditions}
+
+Tu contrato declara quién es elegible: un `provider` más una o varias `conditions` (por ejemplo, una membresía activa de Coinbase One o tener 1000 seguidores o más en X). El backend de Base Verify lee esta política directamente de tu contrato y, antes de firmar, comprueba que la credencial almacenada del usuario la cumpla.
+
+### Cómo se hace cumplir la elegibilidad {#how-eligibility-is-enforced}
+
+Aquí, «Base Verify» se refiere al backend de Base Verify, el servicio off-chain que custodia la clave de firma, y no a Base Chain. Este servicio lee onchain el `provider` y las `conditions` de tu contrato (mediante `eth_call`), los evalúa frente a la credencial almacenada del usuario y firma una verificación solo si se cumplen. Las condiciones provienen de tu contrato, nunca del usuario, por lo que un usuario no puede eliminar ni falsificar ninguna para obtener una verificación a la que no tiene derecho.
+
+## Arquitectura y flujo {#architecture-and-flow}
+
+Una reclamación pasa por tu aplicación, la API de Base Verify y tu contrato:
+
+1. El usuario conecta su billetera en tu aplicación.
+2. Tu aplicación genera un mensaje SIWE que identifica tu contrato (en la línea `Resources`) y le pide al usuario que lo firme.
+3. Tu aplicación envía el mensaje y la firma a la API de Base Verify.
+4. Base recupera la billetera a partir de la firma, lee onchain los valores `provider` y `conditions` de tu contrato y verifica que la credencial almacenada de la billetera los cumpla.
+5. Si la comprobación es correcta, Base devuelve una verificación firmada (`identityHash`, `expiration`, `signature`). Si el usuario no está verificado o no cumple las condiciones, devuelve en su lugar un `404` o un `400`.
+6. Tu aplicación envía la verificación a la función `enroll` de tu contrato (o a tu flujo de depósito, préstamo o reclamación).
+7. Tu contrato llama a `registry.verifyVerification(...)`, que comprueba la firma y la caducidad, y vuelve a calcular `policyHash` a partir de tu política vigente. A continuación, tu contrato descarta duplicados según `identityHash` y permite que el usuario participe.
+
+## Qué queda registrado onchain {#what-goes-onchain}
+
+Una reclamación es una transacción pública común y corriente. Una vez minada, todo lo que se describe a continuación es permanente, puede leerlo cualquiera y queda fuera del control de Base Verify. Tenlo en cuenta al diseñar tu política y tu contrato.
+
+### Escrito onchain {#written-onchain}
+
+| Dato                                         | Dónde aparece                                                                                     | Notas                                                                                              |
+| :------------------------------------------- | :------------------------------------------------------------------------------------------------ | :------------------------------------------------------------------------------------------------- |
+| `identityHash`                               | Calldata de la transacción, el almacenamiento de tu contrato y cualquier evento que emitas con él | Vincula de forma permanente la billetera que hace la reclamación con esta identidad dentro de tu contrato   |
+| Dirección de la billetera que hace la reclamación     | El remitente de la transacción y cualquier evento que emitas con ella                             | La billetera que firmó el mensaje SIWE y envió la reclamación                                               |
+| `expiration` y la `signature` de Base Verify | Calldata de la transacción                                                                        | Son públicas, pero están vinculadas a tu contrato y a esa billetera, y caducan en cuestión de minutos |
+| Tu `provider` y tus `conditions`             | Funciones view públicas de tu contrato desplegado                                                 | Cualquiera puede leer tu política sin enviar una transacción                                       |
+
+Todo lo que tu propio contrato almacene o emita junto con una reclamación también es público. Los dos contratos consumidores de ejemplo enlazados arriba mantienen un `mapping(bytes32 identityHash => bool)` y emiten `Claimed(address indexed user, bytes32 indexed identityHash)`, lo que permite consultar directamente en los logs qué billetera corresponde a cada hash.
+
+### Nunca en la cadena {#never-onchain}
+
+* La cuenta del proveedor: ni nombre de usuario, ni identificador, ni ID de cuenta, ni enlace al perfil.
+* Valores de atributos: ni número de seguidores, ni estado de suscripción, ni ningún otro dato de credenciales.
+* Tokens de OAuth ni ningún otro dato que Base Verify guarde en nombre del usuario.
+* `policyHash`: el registro lo vuelve a calcular en memoria durante la verificación y nunca lo almacena ni lo emite.
+* La identidad real del usuario: `identityHash` es unidireccional y no se puede revertir.
+
+### Lo que un observador puede inferir {#what-an-observer-can-infer}
+
+Tu política es pública y tus reclamaciones también, así que cualquiera puede relacionar ambas. El consumidor de ejemplo de Coinbase One declara `provider = "coinbase"` y la condición `coinbase_one_active eq true`, por lo que cualquiera puede saber que cada billetera que aparece en su registro `Claimed` tenía una membresía activa de Coinbase One en el momento de la reclamación. Un observador no puede saber de qué cuenta de Coinbase se trata, pero sí que la billetera tenía una.
+
+Cuanto más restrictiva sea tu política, más revela cada reclamación. Si condicionas el acceso a `followers gte 10000`, cada billetera que reclama queda identificada como una cuenta grande de X, mientras que condicionarlo a `verified eq true` revela mucho menos. Lo mismo ocurre con el nombre de tu contrato y con los nombres que des a tus acciones.
+
+Como el ámbito de `identityHash` es cada contrato, si una misma persona reclama en dos contratos distintos, se generan dos hashes sin relación entre sí que los observadores no pueden vincular. Dentro de un mismo contrato, todas las reclamaciones de esa persona comparten un único hash, y eso es precisamente lo que hace posible la deduplicación.
+
+### Dónde se almacena el historial de reclamaciones {#where-claim-history-lives}
+
+`verify.base.dev` muestra únicamente las credenciales offchain de un usuario: qué proveedores ha verificado y qué atributos almacena Base Verify sobre él. No tiene acceso a las reclamaciones onchain, por lo que no puede mostrarlas, editarlas ni revertirlas.
+
+El historial de reclamaciones onchain reside en tu contrato: en tu almacenamiento, en tus eventos y en tu cadena. Los usuarios y observadores lo consultan mediante un explorador de bloques o los getters públicos de tu contrato. Si quieres que tus usuarios vean su propio historial de reclamaciones, te corresponde a ti crear esa vista.
+
+<Warning>
+  Eliminar una verificación en `verify.base.dev` borra la credencial offchain del usuario e impide que Base Verify
+  firme nuevas verificaciones para él. No afecta a nada que ya se haya escrito onchain. Las reclamaciones que tu contrato
+  ya haya registrado se conservan, y las transacciones siguen formando parte del historial de la cadena.
+</Warning>
+
+## Implementación {#implementation}
+
+<Steps>
+  <Step title="Escribe tu contrato">
+    Extiende `BaseVerifyConsumer` para que tu política pueda leerse onchain, comprueba las verificaciones a través del registro y elimina duplicados según `identityHash`. Este ejemplo inscribe una única identidad verificada y sujeta a la política por cada persona real, de modo que un mismo farmer no pueda multiplicar las recompensas usando varias billeteras.
+
+    ```solidity IncentiveProgram.sol lines expandable highlight={15-23,25-33} theme={null}
+    // SPDX-License-Identifier: MIT
+    pragma solidity 0.8.28;
+
+    import {BaseVerifyConsumer} from "@baseverify/BaseVerifyConsumer.sol";
+
+    contract IncentiveProgram is BaseVerifyConsumer {
+        mapping(bytes32 identityHash => bool enrolled) public enrolled;
+        mapping(address wallet => bool active) public isParticipant;
+
+        error AlreadyEnrolled();
+
+        // Pasa la dirección del SignerRegistry correspondiente a tu cadena.
+        constructor(address registry_) BaseVerifyConsumer(registry_) {}
+
+        // Tu política de elegibilidad. Ambas funciones DEBEN ser inmutables (constant / pure).
+        function provider() external pure override returns (string memory) {
+            return "coinbase";
+        }
+
+        function conditions() external pure override returns (Condition[] memory) {
+            Condition[] memory c = new Condition[](1);
+            c[0] = Condition({name: "coinbase_one_active", op: "eq", value: "true"});
+            return c;
+        }
+
+        function enroll(bytes32 identityHash, uint40 expiration, bytes calldata signature) external {
+            // Una sola inscripción por identidad real, sin importar cuántas billeteras controle.
+            if (enrolled[identityHash]) revert AlreadyEnrolled();
+
+            // Vincula msg.sender como billetera verificada; revierte si la verificación no es válida o ha caducado.
+            _verify(identityHash, expiration, signature);
+
+            enrolled[identityHash] = true;
+            isParticipant[msg.sender] = true;
+
+            // ... empieza a acumular recompensas mejoradas para msg.sender ...
+        }
+    }
+    ```
+
+    <Warning>
+      `provider()` y `conditions()` deben ser inmutables (devolver constantes). Ambos valores forman parte del cálculo de `policyHash`; si cambian, todas las verificaciones vigentes dejan de ser válidas y una misma identidad puede volver a inscribirse con un nuevo hash, lo que compromete tu resistencia a ataques Sybil.
+    </Warning>
+  </Step>
+
+  <Step title="Consulta una verificación desde tu aplicación">
+    Pide al usuario que firme un mensaje [SIWE](https://eips.ethereum.org/EIPS/eip-4361) que identifique tu contrato y, después, envíalo mediante POST a la API de Base Verify.
+
+    ```typescript lib/fetch-verification.ts lines expandable highlight={6-14,20-24} theme={null}
+    import { createSiweMessage, generateSiweNonce } from 'viem/siwe';
+
+    const MY_CONTRACT_ADDRESS = '0x...'; // tu contrato consumidor desplegado
+    const CHAIN_ID = 84532; // Base Sepolia
+
+    export async function fetchVerification(
+      userAddress: `0x${string}`,
+      signMessageAsync: (args: { message: string }) => Promise<string>,
+    ) {
+      // La API exige el statement y la línea Resources de abajo tal cual están escritos.
+      const message = createSiweMessage({
+        domain: window.location.host,
+        address: userAddress,
+        statement: 'Claim eligibility for a Base Verify onchain benefit.',
+        uri: window.location.origin,
+        version: '1',
+        chainId: CHAIN_ID,
+        nonce: generateSiweNonce(),
+        resources: [`eip155:${CHAIN_ID}:${MY_CONTRACT_ADDRESS}`],
+      });
+
+      const signature = await signMessageAsync({ message });
+
+      const res = await fetch('https://verify.base.dev/v1/onchain_verifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, signature }),
+      });
+
+      if (!res.ok) {
+        // Consulta el manejo de errores más abajo (p. ej., un 404 indica que primero debes enviar al usuario a Base Verify).
+        throw new Error(`verification failed: ${res.status}`);
+      }
+
+      // { identityHash, expiration, signature }
+      return res.json();
+    }
+    ```
+
+    <Note>
+      Sin clave de API: la solicitud no necesita un encabezado `Authorization`, ya que la propia firma SIWE actúa como credencial.
+    </Note>
+  </Step>
+
+  <Step title="Envía la verificación a tu contrato">
+    Pasa la respuesta de la API directamente a la función `enroll` de tu contrato (o a tu flujo de depósito, préstamo o reclamo).
+
+    ```typescript enroll.ts highlight={7-9} theme={null}
+    import { INCENTIVE_PROGRAM_ABI } from './abi';
+
+    const { identityHash, expiration, signature } = await fetchVerification(userAddress, signMessageAsync);
+
+    await writeContract({
+      address: MY_CONTRACT_ADDRESS,
+      abi: INCENTIVE_PROGRAM_ABI,
+      functionName: 'enroll',
+      args: [identityHash, expiration, signature],
+    });
+    ```
+
+    Tu contrato llama a `registry.verifyVerification(...)`; si la firma, la fecha de vencimiento y la política son válidas, `enroll()` registra el `identityHash`. Una segunda billetera de la misma persona genera el mismo `identityHash`, por lo que se rechaza.
+  </Step>
+</Steps>
+
+### Gestión de errores {#error-handling}
+
+Si la API no devuelve `200`, no envíes la transacción. Gestiona la respuesta según el código de estado:
+
+| Respuesta                          | Qué hacer                                                                                                                       |
+| :--------------------------------- | :------------------------------------------------------------------------------------------------------------------------------ |
+| **404** `contract_not_found`       | El contrato indicado no está desplegado en esta cadena o no expone ninguna política. Comprueba la dirección y la cadena.        |
+| **404** `verification_not_found`   | La billetera no tiene ninguna credencial del proveedor de tu contrato. Redirige al usuario a Base Verify para que se verifique. |
+| **404** `needs_reauth`             | La credencial es anterior al bloque de corte de tu contrato. Envía al usuario a Base Verify para que vuelva a autenticarse.     |
+| **400** `conditions_not_satisfied` | La billetera está verificada, pero no cumple tus condiciones. Muestra un mensaje; no redirijas ni vuelvas a intentarlo.         |
+| **400** `invalid_policy`           | La combinación de proveedor/condición/operador de tu contrato no es compatible. Corrige la política del contrato.               |
+| **400** `invalid_argument`         | Mensaje SIWE mal formado o caducado, declaración incorrecta o cadena incorrecta. Vuelve a generar el mensaje.                   |
+| **200**                            | Envía `identityHash`, `expiration` y `signature` a tu contrato.                                                                 |
+
+Para que un usuario complete el flujo de OAuth en Base Verify, redirígelo a `https://verify.base.dev` con la URL de tu aplicación y el proveedor:
+
+```text Base Verify redirect URL format theme={null}
+https://verify.base.dev?redirect_uri={your_app_url}&providers={provider}
+```
+
+## Referencia de la API {#api-reference}
+
+### POST /v1/onchain_verifications {#post-v1onchain_verifications}
+
+Canjea una firma SIWE por una verificación onchain firmada y de corta duración. No requiere clave de API: la firma SIWE actúa como credencial, y la verificación solo puede usarla la billetera firmante en el contrato que se indica en ella.
+
+#### Solicitud {#request}
+
+```json POST /v1/onchain_verifications request body theme={null}
+{
+  "message": "<SIWE message; its Resources line names your contract>",
+  "signature": "0x<wallet signature over the message>"
+}
+```
+
+<ParamField body="message" type="string" required>
+  El mensaje SIWE. Su `statement` debe ser exactamente `Claim eligibility for a Base Verify onchain benefit.`, su `chainId` debe corresponder a la cadena en la que realizas la reclamación (Base Sepolia `84532`, la única cadena compatible) y sus `Resources` deben incluir `eip155:<chainId>:<yourContractAddress>`.
+</ParamField>
+
+<ParamField body="signature" type="string" required>
+  La firma de la billetera sobre el mensaje SIWE. Se admiten firmas de billeteras inteligentes de Base Account
+  ([ERC-1271](https://eips.ethereum.org/EIPS/eip-1271) /
+  [ERC-6492](https://eips.ethereum.org/EIPS/eip-6492)).
+</ParamField>
+
+#### Solicitud de ejemplo {#example-request}
+
+```bash POST /v1/onchain_verifications cURL example wrap theme={null}
+curl -X POST https://verify.base.dev/v1/onchain_verifications \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "app.example.com wants you to sign in with your Ethereum account:...",
+    "signature": "0x1234..."
+  }'
+```
+
+#### Respuesta `200` {#response-200}
+
+```json 200 OK response theme={null}
+{
+  "identityHash": "0x88c9f0a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b",
+  "expiration": 1723497600,
+  "signature": "0x4d3c2b1a..."
+}
+```
+
+<ResponseField name="identityHash" type="string (bytes32)">
+  Hash unidireccional de la identidad real del usuario. Es determinista por identidad y
+  por contrato. Guárdalo y úsalo para eliminar duplicados.
+</ResponseField>
+
+<ResponseField name="expiration" type="integer">
+  Marca de tiempo Unix (en segundos) a partir de la cual la verificación deja de ser válida. Las verificaciones
+  caducan rápido (en pocos minutos), así que envía la transacción cuanto antes.
+</ResponseField>
+
+<ResponseField name="signature" type="string">
+  Firma EIP-712 de un firmante operado por Base. Pásala a tu contrato.
+</ResponseField>
+
+La respuesta no incluye `policyHash` ni la dirección del contrato: tu contrato recalcula `policyHash` a partir de su propia política, y la billetera verificada es el `msg.sender` que tu contrato consumidor pasa al registro.
+
+Para las respuestas de error, consulta [Gestión de errores](#error-handling).
+
+## Contratos {#contracts}
+
+### SignerRegistry {#signerregistry}
+
+Un verificador sin estado desplegado por Base. Solo almacena una lista de firmantes autorizados y responde a una única pregunta: ¿esta verificación la firmó un firmante de confianza, sigue vigente y está vinculada a la política del contrato que realiza la llamada? La deduplicación de `identityHash` queda en manos de cada consumidor.
+
+Tu contrato llama a `verifyVerification`, que revierte salvo que la verificación sea válida:
+
+```solidity SignerRegistry.verifyVerification lines expandable theme={null}
+function verifyVerification(
+    address user,
+    bytes32 identityHash,
+    uint40 expiration,
+    bytes calldata signature
+) external view;
+// Revierte con VerificationExpired(expiration) si block.timestamp > expiration.
+// Revierte con InvalidSignature() si no se puede recuperar el firmante a partir de la firma.
+// Revierte con NotSigner(signer) si el firmante recuperado no figura en la lista de firmantes autorizados.
+```
+
+`msg.sender` es el contrato consumidor, por lo que una verificación no puede reutilizarse (replay) en otro contrato: el registro recalcula `policyHash` a partir de la política vigente del llamador, y la política de otro contrato genera un hash distinto que hace fallar la recuperación de la firma.
+
+### BaseVerifyConsumer {#baseverifyconsumer}
+
+El contrato base que extiende tu contrato consumidor. Expone tu política onchain y te ofrece una función auxiliar que vincula a quien realiza la llamada como la billetera verificada.
+
+```solidity BaseVerifyConsumer interface lines expandable highlight={2-4,7,15-16} theme={null}
+abstract contract BaseVerifyConsumer {
+    struct Condition {
+        string name;  // p. ej., "followers"
+        string op;    // eq | gt | gte | lt | lte | in
+        string value; // p. ej., "1000"
+    }
+
+    // Tu política de elegibilidad: DEBE ser inmutable (constant / pure).
+    function provider() external view virtual returns (string memory);
+    function conditions() external view virtual returns (Condition[] memory);
+
+    // Opcional: rechaza las credenciales cuya última autenticación sea anterior a este bloque. Devuelve 0 para no aplicar ningún límite.
+    function cutoffBlock() external view virtual returns (uint256);
+
+    // Pasa msg.sender como la wallet verificada, de modo que una verificación solo puede consumirla su propietario.
+    function _verify(bytes32 identityHash, uint40 expiration, bytes calldata signature) internal view;
+}
+```
+
+<Note>
+  `cutoffBlock()` no forma parte de `policyHash`, por lo que puedes modificarlo sin
+  invalidar las verificaciones vigentes. Úsalo para exigir una nueva
+  autenticación (por ejemplo, tras un cambio de política o de seguridad).
+</Note>
+
+### Proveedores y condiciones admitidos {#supported-providers-and-conditions}
+
+Una política se compone de un `provider` y una o varias `conditions`. Los operadores admitidos son `eq`, `gt`, `gte`, `lt`, `lte` e `in`.
+
+| Proveedor   | Condición                                         | Tipo   | Operadores                 | Ejemplo                       |
+| :---------- | :------------------------------------------------ | :----- | :------------------------- | :---------------------------- |
+| `x`         | `followers`                                       | int    | `eq` `gt` `gte` `lt` `lte` | `followers gte 1000`          |
+| `x`         | `verified`                                        | bool   | `eq`                       | `verified eq true`            |
+| `x`         | `verified_type`                                   | string | `eq`                       | `verified_type eq blue`       |
+| `coinbase`  | `coinbase_one_active`                             | bool   | `eq`                       | `coinbase_one_active eq true` |
+| `coinbase`  | `coinbase_one_billed`                             | bool   | `eq`                       | `coinbase_one_billed eq true` |
+| `instagram` | `followers_count`                                 | int    | `eq` `gt` `gte` `lt` `lte` | `followers_count gte 5000`    |
+| `instagram` | `username`                                        | string | `eq`                       | `username eq base`            |
+| `tiktok`    | `follower_count`                                  | int    | `eq` `gt` `gte` `lt` `lte` | `follower_count gte 10000`    |
+| `tiktok`    | `following_count` / `likes_count` / `video_count` | int    | `eq` `gt` `gte` `lt` `lte` | `video_count gte 50`          |
+
+Si declaras varias condiciones para un proveedor, deben cumplirse **todas** (lógica AND).
+
+## Seguridad {#security}
+
+### Qué garantiza Base Verify {#what-base-verify-enforces}
+
+* **La elegibilidad** se comprueba con la credencial real del usuario, leída de la política de tu contrato, de modo que los usuarios no pueden falsear las condiciones.
+* **Una identidad, una acción**, gracias al `identityHash` determinista que usas para deduplicar.
+* **Las verificaciones están vinculadas** a tu contrato y a tu cadena, y caducan rápidamente (en pocos minutos).
+* **Solo la billetera firmante** puede enviar una verificación, por lo que nadie puede adelantarse a ella (front-running) desde la mempool (cuando extiendes `BaseVerifyConsumer` y pasas `msg.sender`).
+
+### Requisitos {#requirements}
+
+* Mantén inmutable tu política (`provider` y `conditions`).
+* Deduplica por `identityHash` en tu flujo de reclamación.
+* Trata una verificación correcta como prueba de una identidad verificada única, no de una cuenta concreta ni de datos personales.
+* Informa a tus usuarios de lo que publica una reclamación y recuerda que eres responsable de cualquier vista de esa información que se muestre al usuario. Consulta [Qué se publica onchain](#what-goes-onchain).
+
+## Soporte {#support}
+
+**¿Quieres integrar Base Verify Onchain?** Completa el [formulario de interés](https://forms.gle/WTcuWyKkvUV6gGik6) y el equipo se pondrá en contacto contigo.

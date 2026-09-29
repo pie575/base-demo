@@ -1,0 +1,210 @@
+---
+title: Flashblocks
+sidebarTitle: Flashblocks
+description: "Referencia de Flashblocks en Base: conceptos clave, arquitectura y preguntas frecuentes sobre la construcción de bloques, los datos de WebSocket, el uso de RPC y la configuración de nodos."
+---
+
+<Warning>
+  Tenemos previsto retirar Flashblocks en el próximo hardfork Denim. Se trata de una actualización planificada que aún no está cerrada. Ya puedes probar de forma anticipada el comportamiento canónico de bloques de 200ms en [Vibenet](/es/build-on-base/test-on-vibenet). Consulta [Migrar desde Flashblocks](/es/upgrades/denim/migrate-from-flashblocks) para conocer los cambios que tendrás que aplicar en tus aplicaciones más adelante.
+</Warning>
+
+<Info>
+  Para saber cómo afectan los Flashblocks a la construcción de bloques y al orden de las transacciones, consulta [Orden de las transacciones](/es/specifications/transactions/transaction-ordering#flashblocks).
+</Info>
+
+Los Flashblocks, desarrollados en colaboración con [Flashbots](https://www.flashbots.net/), incorporan a Base actualizaciones incrementales de bloques cada **200ms**. Transmiten subbloques dentro del intervalo estándar de bloque de 2 segundos, lo que ofrece a las aplicaciones preconfirmaciones del sequencer prácticamente instantáneas.
+
+## Conceptos clave {#key-concepts}
+
+| Término             | Definición                                                                                          |
+| ------------------- | --------------------------------------------------------------------------------------------------- |
+| **Flashblock**      | Un subbloque de 200 ms que contiene una parte de las transacciones del bloque completo              |
+| **Preconfirmación** | Una señal ultrarrápida de que una transacción se incluirá, antes de que se selle el bloque completo |
+| **Bloque completo** | Una serie de 10 Flashblocks que, combinados, forman el bloque completo de 2 segundos                |
+
+## Arquitectura {#architecture}
+
+Base opera un sistema de sequencer de alta disponibilidad:
+
+| Componente         | Función                                                                         |
+| ------------------ | ------------------------------------------------------------------------------- |
+| **base-consensus** | Capa de consenso (CL): reemplazó a op-node tras Azul                            |
+| **base-reth-node** | Capa de ejecución (EL): reemplazó a op-geth tras Azul                           |
+| **op-conductor**   | Controlador de alta disponibilidad con consenso Raft para la elección del líder |
+
+Una instancia del sequencer actúa como **líder**: construye bloques y los propaga mediante P2P; las demás actúan como **seguidoras** que sincronizan la cadena. Si el líder actual deja de producir bloques, el liderazgo pasa a otra instancia.
+
+Flashblocks añade varios componentes de infraestructura sobre este sistema:
+
+| Componente                               | Propósito                                                  | Qué habilita                                                                                                                                                                                 |
+| ---------------------------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **rollup-boost**                         | Proxy de la Engine API entre CL y EL                       | Comparte los Flashblocks con la EL sin modificar la CL, lo que ofrece un punto de integración estable para la futura evolución de la construcción de bloques (múltiples constructores, etc.) |
+| **base-builder**                         | Constructor fuera del protocolo con una cadencia de 200 ms | Produce Flashblocks en menos de un segundo, desacoplado de la EL, lo que permite mecanismos de construcción intercambiables                                                                  |
+| **websocket-proxy**                      | Distribución (fan-out) del flujo de Flashblocks            | Capa de difusión que permite a muchos consumidores leer el flujo sin sobrecargar al constructor                                                                                              |
+| **[base](https://github.com/base/base)** | Interfaz RPC que expone las preconfirmaciones              | Convierte los Flashblocks transmitidos en RPC conocidas para que las aplicaciones y billeteras puedan consumir el estado de preconfirmación                                                  |
+
+[rollup-boost](https://github.com/flashbots/rollup-boost) lo desarrolla y mantiene Flashbots, mientras que Base mantiene [base-builder](https://github.com/base/base/tree/main/crates/builder), el websocket-proxy y los componentes de [base](https://github.com/base/base).
+
+## Construcción de bloques {#block-building}
+
+<AccordionGroup>
+  <Accordion title="¿Son opcionales los Flashblocks?">
+    Todos los bloques de Base los construye el constructor de Flashblocks, lo que significa que **los Flashblocks están siempre activos**. Sin embargo, las aplicaciones pueden optar por no depender de las preconfirmaciones y seguir usando RPC estándar sin integrar Flashblocks.
+  </Accordion>
+
+  <Accordion title="¿Hay alguna diferencia en la inclusión de transacciones entre Flashblocks y los bloques de 2 segundos?">
+    No hay diferencias significativas: ambos ordenan las transacciones por comisión. La principal diferencia está en los tiempos: los Flashblocks se producen cada 200 ms en lugar de cada 2 segundos.
+
+    Consulta [Orden de las transacciones](/es/specifications/transactions/transaction-ordering#flashblocks) para más detalles.
+  </Accordion>
+
+  <Accordion title="¿Puede el sequencer dejar de publicar Flashblocks?">
+    El sequencer no dejará de publicar Flashblocks salvo que una circunstancia extrema haga que ejecutarlos resulte inseguro. Si esto ocurre, las preconfirmaciones se desactivan en toda la red y las confirmaciones vuelven a basarse en los bloques estándar de 2 segundos. El sequencer sigue funcionando con normalidad.
+  </Accordion>
+
+  <Accordion title="¿Por qué a mi transacción le cuesta ser incluida?">
+    El tiempo de inclusión depende principalmente de la comisión de prioridad, no del tamaño de la transacción. El constructor asigna el gas de forma acumulativa (cada Flashblock `j` puede usar hasta `j/10` del límite total de gas del bloque), por lo que, en teoría, a una transacción muy grande le cuesta más entrar en el primer Flashblock. En la práctica, esto rara vez importa: el [máximo de gas por transacción](/es/specifications/transactions/throughput-and-limits#per-transaction-gas-maximum) de Base (16.777.216 de gas, ~16,7M) es inferior a la capacidad de ~40M del Flashblock 1, así que cualquier transacción válida cabe en el primer Flashblock en cuanto a tamaño. Si una transacción tarda en incluirse, lo habitual es que su comisión de prioridad sea baja en comparación con otras que compiten en la misma ventana de 200 ms.
+
+    Consulta [Rendimiento y límites](/es/specifications/transactions/throughput-and-limits) para conocer los límites de gas y los parámetros de red relacionados con el rendimiento.
+  </Accordion>
+
+  <Accordion title="¿Cómo me aseguro de que mi transacción esté en el primer Flashblock?">
+    No hay forma de garantizar en qué Flashblock entrará una transacción, igual que no se puede garantizar un bloque concreto. El tamaño en gas no es el factor limitante: el [máximo de gas por transacción](/es/specifications/transactions/throughput-and-limits#per-transaction-gas-maximum) (~16,7M) es inferior a la capacidad de ~40M del Flashblock 1, por lo que cualquier transacción válida puede entrar en el primer Flashblock. Para aumentar las probabilidades de una inclusión rápida, establece una comisión de prioridad más alta.
+  </Accordion>
+
+  <Accordion title="¿Por qué a veces las transacciones no aparecen ordenadas por comisión?">
+    El constructor de Flashblocks usa un **mempool dinámico** que acepta nuevas transacciones continuamente mientras construye. Este diseño prioriza una **baja latencia de inclusión** frente a un ordenamiento estricto por comisión.
+
+    **Qué significa esto:**
+
+    * Las transacciones se ordenan por comisión *en el momento en que se seleccionan* para su inclusión
+    * Si una transacción con comisión alta llega después de que otra con comisión menor ya se haya confirmado en el Flashblock actual, la de comisión alta aparecerá detrás (o en el siguiente Flashblock)
+    * Es el comportamiento esperado, no un error: el constructor no «reordena» las transacciones ya confirmadas
+
+    **¿Por qué esta concesión?**
+
+    Un mempool de «instantánea» (que congela el conjunto de transacciones al inicio de cada bloque) garantizaría un ordenamiento estricto por comisión, pero aumentaría la latencia de inclusión. El enfoque dinámico logra que las transacciones se incluyan antes, a costa de «romper» ocasionalmente el orden esperado de la subasta de gas por prioridad (PGA).
+
+    **Para traders y bots:** si el ordenamiento estricto por comisión es crucial para tu caso de uso, ten en cuenta que, dentro de una ventana de Flashblock de 200 ms, el momento de llegada importa tanto como el importe de la comisión.
+  </Accordion>
+
+  <Accordion title="¿Con qué frecuencia se producen reorganizaciones de Flashblocks?">
+    Base tiene como objetivo una tasa de reorganización de Flashblocks inferior al 0,1 %. Aunque las reorganizaciones son poco frecuentes, las aplicaciones deberían implementar lógica de respaldo para las operaciones críticas.
+
+    Consulta las métricas actuales en [base.org/stats](https://base.org/stats).
+  </Accordion>
+
+  <Accordion title="¿Qué significa que un Flashblock sea reorganizado?">
+    Una reorganización significa que un Flashblock se transmitió como preconfirmación, pero no se incluyó en el bloque final. Es algo poco habitual gracias a mejoras de arquitectura en rollup-boost que evitan las reorganizaciones de los Flashblocks finales. Las aplicaciones deberían gestionar esta posibilidad correctamente, aunque los casos son mínimos.
+  </Accordion>
+</AccordionGroup>
+
+***
+
+## WebSocket {#websocket}
+
+<AccordionGroup>
+  <Accordion title="¿Puedo conectarme directamente al flujo WebSocket de Flashblocks?">
+    **No.** El WebSocket sin procesar de Flashblocks (`wss://mainnet.flashblocks.base.org/ws`) está reservado para la sincronización de datos entre la infraestructura y los nodos. Las aplicaciones no deben conectarse a él directamente.
+
+    En su lugar, consulta los datos de Flashblocks a través de tu nodo RPC o proveedor de nodos (por ejemplo, QuickNode, Alchemy, Infura, dRPC) mediante:
+
+    * **API RPC**: métodos JSON-RPC estándar con la etiqueta `pending`
+    * **Suscripciones WebSocket**: usa `eth_subscribe` a través del endpoint WebSocket de tu proveedor de nodos
+
+    Consulta la [descripción general de RPC](/es/base-chain/api-reference/rpc-overview#flashblocks) para ver los detalles de implementación.
+  </Accordion>
+
+  <Accordion title="¿Por qué hay 11 índices de Flashblock (0-10)?">
+    El índice 0 contiene solo transacciones del sistema y no consume límite de gas. Los índices 1-10 son los Flashblocks propiamente dichos, que toman transacciones pendientes del txpool.
+  </Accordion>
+
+  <Accordion title="¿Por qué a veces hay menos de 10 Flashblocks?">
+    Es lo esperado. Cuando el bloque anterior tarda más en construirse, el sistema lo compensa asignando menos tiempo al siguiente bloque, por lo que se generan menos Flashblocks.
+  </Accordion>
+
+  <Accordion title="¿Puede el índice de Flashblock superar 10? ¿Es un error?">
+    **No, no es un error.** Es normal ver índices de 10, 11 o superiores.
+
+    El cálculo estándar (tiempo de bloque de 2 segundos ÷ 200ms por Flashblock) da exactamente 10 Flashblocks (índices 0–9). Sin embargo, en la práctica, la transición de un bloque L2 completo al siguiente no siempre está perfectamente sincronizada con el temporizador de 200ms. Hay dos factores que pueden generar índices adicionales:
+
+    1. **Retraso del sequencer:** si el sequencer tarda algo más de 2000ms en finalizar y sellar el bloque completo, el flujo de Flashblocks sigue emitiendo actualizaciones incrementales del bloque actual para mantener el flujo activo.
+    2. **Desviación temporal:** si el reloj interno de 200ms se desvía o arranca antes de la hora de inicio canónica del bloque L2, puede caber una actualización adicional dentro de la ventana de 2 segundos.
+
+    **Qué implica esto para tu implementación:**
+
+    * No fijes en el código `9` o `10` como índice final: el último Flashblock de un bloque no se puede predecir solo por el índice.
+    * En su lugar, observa el `payloadId`. La señal más fiable de que un bloque ha terminado es que cambie el `payloadId` o que el bloque completo se confirme mediante RPC estándar. Todos los Flashblocks que comparten el mismo `payloadId` pertenecen al mismo bloque, independientemente de hasta dónde llegue el índice.
+    * Cuando el sequencer pasa al siguiente bloque, `payloadId` se restablece e `index` vuelve a `0`.
+  </Accordion>
+
+  <Accordion title="¿En qué formato de codificación están los datos de las transacciones?">
+    Los datos de las transacciones del array [`diff.transactions`](/es/base-chain/api-reference/flashblocks-api/flashblocks-api-overview#diff-object) están codificados en Recursive Length Prefix (RLP).
+  </Accordion>
+
+  <Accordion title="¿Por qué recibo limitaciones de tasa en el WebSocket?">
+    Base no ofrece un endpoint RPC WebSocket público y gratuito, por lo que el acceso WebSocket se obtiene a través de un nodo o proveedor, cada uno con sus propios límites de conexión y de tasa. Para uso en producción, recomendamos:
+
+    1. Ejecutar tu propio [nodo RPC compatible con Flashblocks](/es/specifications/node-operators/run-a-node#enable-flashblocks)
+    2. Usar un proveedor de nodos externo compatible con Flashblocks
+  </Accordion>
+</AccordionGroup>
+
+***
+
+## RPC {#rpc}
+
+<AccordionGroup>
+  <Accordion title="¿Por qué se me aplica limitación de tasa al usar mainnet.base.org?">
+    El endpoint público aplica una limitación de tasa explícita. Para uso en producción:
+
+    * Usa un proveedor de nodos externo compatible con Flashblocks (Alchemy, Infura, QuickNode, dRPC)
+    * Ejecuta tu propio [nodo RPC compatible con Flashblocks](/es/specifications/node-operators/run-a-node#enable-flashblocks)
+  </Accordion>
+
+  <Accordion title="¿Por qué eth_call 'pending' devuelve un número de bloque varios bloques por detrás de la punta de la cadena?">
+    Es el comportamiento esperado. Los nodos compatibles con Flashblocks almacenan el estado de Flashblocks correspondiente a un máximo de 5 bloques históricos para evitar condiciones de carrera. Cuando se llama a `eth_call "pending"`, la llamada se ejecuta sobre esa base histórica, por lo que el número de bloque visible en el contexto de la llamada (p. ej., `block.number`) puede aparecer como N-5.
+
+    Cuando se ejecuta `eth_call "pending"`, todo el contexto del bloque (`block.number`, `block.timestamp`, `block.basefee` y el resto de propiedades del bloque) corresponde a ese bloque base histórico (potencialmente N-5), no a la punta actual de la cadena. **El resultado de la llamada es correcto**, ya que refleja todo el estado de Flashblocks recibido aplicado sobre esa base, pero los contratos que dependen de las propiedades del contexto del bloque deben tener en cuenta que esos valores pueden ir varios bloques por detrás.
+
+    Si operas un nodo en una región geográfica donde tu latencia P2P no es significativamente mayor que la latencia del flujo WebSocket, puedes reducir esta diferencia disminuyendo el valor de configuración `MAX_PENDING_BLOCKS_DEPTH`. Este valor controla el número máximo de bloques históricos de Flashblocks que almacena tu nodo, de modo que un valor más bajo acercará el contexto del bloque a la punta de la cadena, a costa de una menor tolerancia a los picos de latencia P2P.
+  </Accordion>
+
+  <Accordion title="¿Qué métodos RPC admiten Flashblocks?">
+    Los siguientes métodos son compatibles con Flashblocks:
+
+    | Método                      | Uso                                                   |
+    | --------------------------- | ----------------------------------------------------- |
+    | `eth_getBlockByNumber`      | Usa la etiqueta `pending`                             |
+    | `eth_getBalance`            | Usa la etiqueta `pending`                             |
+    | `eth_getTransactionReceipt` | Devuelve recibos preconfirmados                       |
+    | `eth_getTransactionByHash`  | Usa la etiqueta `pending`                             |
+    | `eth_getTransactionCount`   | Usa la etiqueta `pending`                             |
+    | `eth_call`                  | Usa la etiqueta `pending`                             |
+    | `eth_simulateV1`            | Usa la etiqueta `pending`                             |
+    | `eth_estimateGas`           | Usa la etiqueta `pending`                             |
+    | `eth_getLogs`               | Usa `pending` para `toBlock`                          |
+    | `eth_subscribe`             | Transmite datos de Flashblocks en tiempo real         |
+    | `base_transactionStatus`    | Comprueba si la transacción está en la mempool (Beta) |
+
+    Consulta la [Referencia de la API de Flashblocks](/es/base-chain/api-reference/flashblocks-api/flashblocks-api-overview) para ver todos los detalles y ejemplos de cada método.
+  </Accordion>
+</AccordionGroup>
+
+***
+
+## Configuración del nodo {#node-setup}
+
+<AccordionGroup>
+  <Accordion title="¿Cómo configuro un nodo RPC compatible con Flashblocks?">
+    Usa el binario de Reth del [repositorio Base Reth](https://github.com/base/reth). Consulta la [guía para habilitar Flashblocks](/es/specifications/node-operators/run-a-node#enable-flashblocks) para ver las instrucciones de configuración completas.
+  </Accordion>
+</AccordionGroup>
+
+***
+
+## Lecturas adicionales {#further-reading}
+
+* [Habilitar Flashblocks](/es/specifications/node-operators/run-a-node#enable-flashblocks): ejecuta tu propio nodo RPC compatible con Flashblocks
+* [Referencia de la API de Flashblocks](/es/base-chain/api-reference/flashblocks-api/flashblocks-api-overview): métodos RPC, suscripciones WebSocket y esquema del flujo de infraestructura
+* [Flashblocks en profundidad](https://blog.base.dev/flashblocks-deep-dive): artículo del blog de ingeniería con detalles de implementación, desarrollado en colaboración con [Flashbots](https://www.flashbots.net/)

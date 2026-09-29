@@ -1,0 +1,40 @@
+---
+title: "レジャーへのデポジット"
+keywords: ["Base レジャー デポジット", "暗号化された受取人", "Portal コントラクト デポジット", "Base プライベートデポジット"]
+description: "Portal コントラクトを介して Base からプライベートレジャーに資金を移動します。受取人はオンチェーン上で暗号化されます。"
+---
+
+import { LedgersDemo } from "/snippets/LedgersDemo.jsx"
+
+デポジットとは、`Portal` コントラクトを介して Base からレジャーへ資金を移すことです。アセット、金額、送信者は Base 上で公開された形で決済されますが、受取人は暗号化されるため、同一アカウントへの複数のデポジットを互いに紐付けることはできません。詳しくは [Private Transactions](/ja/get-started/private-transactions) を参照してください。
+
+## デモ {#demo}
+
+<LedgersDemo flow="deposit" />
+
+<Tip>
+  上記のデモはモックです。Vibenet上で動作するオンチェーンデモを確認したい場合は、[Base chain demos](https://chain.base.org/demos)にアクセスしてください。
+</Tip>
+
+## オンチェーンで公開される情報 {#whats-exposed-onchain}
+
+| データ  | 公開状況 | 理由                                               |
+| ---- | ---- | ------------------------------------------------ |
+| アセット | 公開   | Portal が Base 上で送金を決済するため。                       |
+| 金額   | 公開   | Portal が Base 上で送金を決済するため。                       |
+| 送信者  | 公開   | デポジットを送信するアドレスであるため。                             |
+| 受取人  | 非公開  | 同じアカウントへのデポジット同士を関連付けたり、受取人を特定したりできないよう暗号化されるため。 |
+
+デポジットの条件として、アテステーションや権限を求めることもできます。たとえば、デポジットできるユーザーを制限する場合に利用できます。
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="レジャー内での送金" icon="arrow-right-arrow-left" href="/ja/build-on-base/ledgers/transfer">
+    アカウント間でプライベートに価値を移転します。
+  </Card>
+
+  <Card title="レジャーからの出金" icon="upload" href="/ja/build-on-base/ledgers/withdraw">
+    レジャーから Base に資金を戻します。
+  </Card>
+</CardGroup>

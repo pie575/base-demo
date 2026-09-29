@@ -1,0 +1,89 @@
+---
+title: "AI エージェント向けリソース"
+description: "ドキュメントインデックス、MCP アクセス、スキル、おすすめの出発点など、AI エージェント向けの Base 中心のリソース"
+keywords: ["AI エージェント", "LLM", "MCP", "Model Context Protocol", "llms.txt", "スキル", "Claude Code", "Cursor", "エージェントウォレット", "オンチェーン AI", "Base ドキュメント", "x402"]
+---
+
+<Note>
+  ドキュメントの完全なインデックスは [https://docs.base.org/llms.txt](https://docs.base.org/llms.txt) から取得できます。
+  詳しく調べる前に、まずこのファイルで利用可能なすべてのページを確認してください。
+</Note>
+
+AI アシスタントを使って Base 上で開発する場合は、まずこのページをご覧ください。アシスタントに Base のコンテキストを与える方法として、静的なドキュメントファイル、ライブの MCP 接続、インストール可能なスキルの 3 つを紹介します。あわせて、一般的なワークフローごとのおすすめの出発点も掲載しています。
+
+## クイックセットアップ {#quick-setup}
+
+コマンド1つで、エージェントをBaseドキュメントに接続できます。お使いのツールに合った方法を選んでください。
+
+### MCP Server {#mcp-server}
+
+ライブ接続を設定すると、アシスタントが必要なときに Base のドキュメントを検索・参照できるようになり、常に最新の情報を活用できます。
+
+<CodeGroup>
+  ```sh Claude Code
+  claude mcp add --transport http base-docs https://docs.base.org/mcp
+  ```
+
+  ```sh Codex CLI
+  codex mcp add base-docs --url https://docs.base.org/mcp
+  ```
+
+  ```json Cursor / manual config
+  {
+    "mcpServers": {
+      "base-docs": {
+        "url": "https://docs.base.org/mcp"
+      }
+    }
+  }
+  ```
+</CodeGroup>
+
+Cursor、Windsurf、その他のエディターでの設定方法については、[MCP セットアップガイド](/ja/get-started/docs-mcp)を参照してください。
+
+### 静的ドキュメントファイル {#static-docs-files}
+
+常時接続を維持せず、1回の取得でコンテキストを読み込みたい場合は、これらのファイルを使用します。
+
+| ファイル                                                   | 内容                  | 使用するタイミング                        |
+| ------------------------------------------------------ | ------------------- | -------------------------------- |
+| [`llms.txt`](https://docs.base.org/llms.txt)           | タイトルと説明を含むページ索引     | 詳細を調べる前に、どのようなドキュメントがあるかを把握したいとき |
+| [`llms-full.txt`](https://docs.base.org/llms-full.txt) | 全ドキュメントを1つにまとめたファイル | アシスタントに幅広いコンテキストを一度に渡したいとき       |
+
+すべてのドキュメントページは、プレーンな Markdown としても利用できます。任意の URL の末尾に `.md` を付けてください。
+
+```txt Markdown URL
+https://docs.base.org/get-started/resources-for-ai-agents.md
+```
+
+### Skills {#skills}
+
+Skills は、Base への接続、コントラクトのデプロイ、ノードの運用など、Base でよく行うタスク向けのインストール可能なエージェントワークフローです。アシスタントに段階的な手順ガイダンスを提供するため、アシスタントが自力でドキュメントを組み合わせて手順を把握する必要がなくなります。
+
+```sh Terminal
+npx skills install base/skills -g
+```
+
+利用可能なスキルは、[Base スキルリポジトリ](https://github.com/base/skills)で確認できます。
+
+## おすすめの始め方 {#recommended-starting-points}
+
+エージェントがドキュメントのコンテキストを取得できたら、構築する内容に合ったセクションを参照させましょう。
+
+| やりたいこと                  | 参照先                                                             |
+| ----------------------- | --------------------------------------------------------------- |
+| アシスタントをライブドキュメントに接続する   | [MCP サーバー](/ja/get-started/docs-mcp)                               |
+| ドキュメントを静的ファイルとして読み込む    | [静的ドキュメントファイル](/ja/get-started/docs-llms)                          |
+| 支払いやオンチェーントランザクションを追加する | [x402 で支払う](/ja/build-on-base/accept-payments/call-a-paid-service) |
+| コントラクトをデプロイする           | [Base にデプロイする](/ja/get-started/make-a-transaction)                 |
+| Base 上でアプリを構築する         | [Base アプリを構築する](/ja/build-on-base/overview)                        |
+
+## プロンプト例 {#example-prompts}
+
+以下のプロンプトをアシスタントに貼り付けて、すべてが正しく動作するか確認しましょう。
+
+* 「私の ERC-20 コントラクトを Base Sepolia にデプロイして、Basescan で検証してください。」
+* 「wagmi を使って、Next.js アプリに Sign in with Base を追加してください。」
+* 「USDC を保有でき、トランザクションに自律的に署名できる AI エージェント用のウォレットをセットアップしてください。」
+* 「USDC 決済フローを備えたアプリを作成してください。」
+* 「x402 プロトコルを使って API リクエストの料金を支払うエージェントを構築してください。」

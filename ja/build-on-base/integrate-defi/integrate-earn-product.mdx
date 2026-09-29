@@ -1,0 +1,79 @@
+---
+title: "Earn プロダクトを統合する"
+description: "Base 上の Morpho ボールトを使って、1 回の預け入れだけで USDC を運用できる体験をユーザーに提供します。"
+keywords: ["Base で Earn プロダクトを統合", "Base の Morpho ボールト", "ERC-4626 利回りボールト", "USDC 利回りアプリ"]
+---
+
+import { DeFiDemo } from "/snippets/DeFiDemo.jsx"
+
+Base上のサードパーティプロトコルを利用して、ボールト型の運用 (Earn) プロダクトを組み込みます。ユーザーは一度預け入れるだけでボールトのシェアを受け取ります。ボールトが基盤となるマーケットへの資金配分を抽象化する一方、アプリでは現在の償還可能額とリスクを表示します。
+
+## デモ {#demo}
+
+<DeFiDemo flow="earn" />
+
+<Tip>
+  上記のデモはモック版です。Vibenet 上で動作するオンチェーンデモをご覧になりたい場合は、[Base chain demos](https://chain.base.org/demos) にアクセスしてください。
+</Tip>
+
+## USDC ボールトへの預け入れ {#deposit-into-a-usdc-vault}
+
+この例では `viem@2.55.11` と `@morpho-org/morpho-sdk@5.4.1` を使用します。
+
+<Info>
+  このスニペットは説明用のサンプルです。Base 上でのボールト連携の大まかな構成を示すものであり、本番環境向けのコードではありません。最新のアドレス、SDK の詳細、リスクパラメータについては [Morpho のドキュメント](https://docs.morpho.org)を参照してください。
+</Info>
+
+Base 上の Morpho ボールト V2 である Steakhouse Prime USDC に預け入れます。このアドレスは固定の設定値として扱い、連携をアップグレードする際は必ず見直してください。
+
+{/* sample: defi-deposit-morpho-vault */}
+
+```typescript deposit-morpho-vault.ts lines wrap expandable highlight={3}
+import { publicClient, walletClient } from './clients.js';
+import {
+  isRequirementSignature,
+  morphoViemExtension,
+} from '@morpho-org/morpho-sdk';
+import { parseUnits } from 'viem';
+import { base } from 'viem/chains';
+
+const vaultAddress = '0xBEeF0e0834849Acc03F0089F01F4F1EeB06873c9';
+const user = walletClient.account.address;
+const client = publicClient.extend(morphoViemExtension());
+const vault = client.morpho.vaultV2(vaultAddress, base.id);
+const action = await vault.deposit({
+  amount: parseUnits('1000', 6),
+  userAddress: user,
+  vaultData: await vault.getData(),
+});
+
+const signatures = [];
+for (const requirement of await action.getRequirements()) {
+  if (isRequirementSignature(requirement)) {
+    signatures.push(await requirement.sign(walletClient, user));
+  } else {
+    const hash = await walletClient.sendTransaction(requirement);
+    await publicClient.waitForTransactionReceipt({ hash });
+  }
+}
+const request = action.buildTx(signatures);
+await publicClient.call({ account: user, ...request });
+const hash = await walletClient.sendTransaction(request);
+await publicClient.waitForTransactionReceipt({ hash });
+```
+
+<Warning>
+  ボールトの利回りは変動し、保証されるものではありません。ボールトを掲載する前に、キュレーター、配分戦略、手数料、引き出し時の流動性、スマートコントラクトのリスクを確認してください。また、ユーザーには固定のリターンではなく、現在のシェアあたりの資産価値を表示してください。
+</Warning>
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="レンディングを統合する" icon="landmark" href="/ja/build-on-base/integrate-defi/integrate-lending">
+    ユーザーがマネーマーケットに USDC を供給できるようにします。
+  </Card>
+
+  <Card title="借り入れを統合する" icon="hand-holding-dollar" href="/ja/build-on-base/integrate-defi/integrate-borrowing">
+    WETH を担保にローンを組みます。
+  </Card>
+</CardGroup>

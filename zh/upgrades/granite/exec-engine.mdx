@@ -1,0 +1,12 @@
+---
+title: "L2 执行引擎"
+description: "Granite 升级中的执行引擎变更：限制 bn256Pairing 预编译合约的输入大小，以防止 gas 消耗不受限制。"
+---
+
+## EVM 变更 {#evm-changes}
+
+### `bn256Pairing` 预编译合约输入限制 {#bn256pairing-precompile-input-restriction}
+
+`bn256Pairing` 预编译合约在执行时会对输入进行额外校验。
+若输入超过 `112687` 字节，该预编译合约将回滚 (revert) 。
+按照 L2 上最新的 `bn256Pairing` gas 计费表，该大小的输入约消耗 20 M gas。

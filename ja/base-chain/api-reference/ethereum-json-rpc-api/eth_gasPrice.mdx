@@ -1,0 +1,38 @@
+---
+title: 'eth_gasPrice'
+sidebarTitle: 'eth_gasPrice'
+description: '現在のガス価格を wei 単位で返します。'
+---
+
+現在のガス価格を wei 単位で返します。EIP-1559 トランザクションでは、代わりに [`eth_maxPriorityFeePerGas`](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_maxPriorityFeePerGas) と [`eth_feeHistory`](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_feeHistory) を使用してください。
+
+## パラメーター {#parameters}
+
+パラメーターはありません。
+
+## 戻り値 {#returns}
+
+<ResponseField name="result" type="string">
+  現在のガス価格 (wei 単位) を表す 16 進数文字列。
+</ResponseField>
+
+## 例 {#example}
+
+<CodeGroup>
+  ```json Request
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_gasPrice",
+    "params": [],
+    "id": 1
+  }
+  ```
+
+  ```json Response
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x5b8d80"
+  }
+  ```
+</CodeGroup>

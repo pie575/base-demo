@@ -1,0 +1,78 @@
+---
+title: "使用 Memo 进行对账"
+keywords: ["stablecoin memo", "B20 memo event", "reconcile onchain payments", "transferWithMemo B20"]
+description: "为稳定币操作添加链上参考标识，以便大规模地将其与链下记录进行匹配。"
+---
+
+import { StablecoinDemo } from "/snippets/StablecoinDemo.jsx"
+
+将链上活动与你的账目对应起来。**memo** 会为操作附加一个 `bytes32` 引用，并同时触发一个 `Memo` 事件。这样一来，对账只需查询日志，而无需为每位客户单独分配充值地址。每个核心调用都有对应的 memo 版本：`mintWithMemo`、`burnWithMemo`、`transferWithMemo` 和 `transferFromWithMemo`。
+
+如果你负责商户端，需要一份涵盖扣款 (capture) 、退款和出款的结算报告，请参阅[支付对账](/zh/build-on-base/accept-payments/reconcile-payments)。
+
+## 演示 {#demo}
+
+<StablecoinDemo flow="reconcile" />
+
+<Tip>
+  该演示使用浏览器本地生成的账户在 **Base Vibenet** 上提交真实交易。如果 Vibenet 或其 B20 功能不可用，演示会自动切换为离线示意版本。
+</Tip>
+
+<Note>
+  初次接触 B20？请参阅 [B20 代币标准](/zh/specifications/b20)，了解相关概念及完整的发行流程指南。这些示例基于 `base-std@1505323`、`viem@2.55.11` 和 Base Foundry `v1.1.1`。
+</Note>
+
+## 附加并读取发票 Memo {#attach-and-read-an-invoice-memo}
+
+<CodeGroup>
+  {/* sample: stablecoin-memo-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={7,10}
+  import { hexToString, parseEventLogs, parseUnits, stringToHex, type Address } from "viem";
+  import { b20Abi } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function payWithMemo(token: Address, merchant: Address) {
+    const memo = stringToHex("invoice-8842", { size: 32 });
+    const receipt = await sendContract({
+      address: token,
+      abi: b20Abi,
+      functionName: "transferWithMemo",
+      args: [merchant, parseUnits("25", 6), memo],
+    });
+    const [event] = parseEventLogs({ abi: b20Abi, logs: receipt.logs, eventName: "Memo" });
+    return hexToString(event.args.memo, { size: 32 }).replace(/\0+$/, "");
+  }
+  ```
+
+  {/* sample: stablecoin-memo-cli */}
+
+  ```bash CLI lines wrap expandable highlight={2}
+  MEMO=$(base-cast format-bytes32-string "invoice-8842")
+  TX=$(base-cast send "$TOKEN_ADDRESS" "transferWithMemo(address,uint256,bytes32)" \
+    "$MERCHANT" 25000000 "$MEMO" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" --json | jq -r .transactionHash)
+  base-cast receipt "$TX" --rpc-url "$RPC_URL"
+  ```
+</CodeGroup>
+
+完整的接口、角色和策略说明，请参阅 [B20 代币标准](/zh/specifications/b20)。
+
+<Check>
+  交易回执中包含 `Transfer` 事件，紧随其后的是 `Memo` 事件，其中 `invoice-8842` 以 `bytes32` 格式编码。
+</Check>
+
+<Note>
+  通过 `(transactionHash, logIndex - 1)` 将 memo 与其前一个操作关联。链下发票 ID 须保持唯一。
+</Note>
+
+## 另请参阅 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="发起 Commerce 支付请求" icon="credit-card" href="/zh/build-on-base/accept-payments/request-a-payment">
+    若代币策略允许协议支付转账，可使用兼容的收款器。
+  </Card>
+
+  <Card title="查询 B20 事件（CDP SQL API）" icon="database" href="https://docs.cdp.coinbase.com/data/sql-api/b20-events">
+    借助 CDP SQL API 进行大规模对账。
+  </Card>
+</CardGroup>

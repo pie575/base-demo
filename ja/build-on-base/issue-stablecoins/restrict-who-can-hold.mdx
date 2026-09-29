@@ -1,0 +1,113 @@
+---
+title: "保有者を制限する"
+keywords: ["stablecoin allowlist", "KYC gated stablecoin", "B20 transfer policy", "restrict transfers Base"]
+description: "B20 の送金ポリシーを使って、ステーブルコインの送金先を KYC プログラムで承認済みのアカウントに限定します。"
+---
+
+import { StablecoinDemo } from "/snippets/StablecoinDemo.jsx"
+
+**許可リスト**を使うと、ステーブルコインの保有者を把握済みの範囲内に限定できます。送金が決済されるのは、KYCプログラムで承認済みのアカウント間に限られます。リストは[Policy Registry](/ja/specifications/b20/concepts/policies#21-the-registry-and-the-token)で管理し、トークンの送金スコープに紐付けます。
+
+## デモ {#demo}
+
+<StablecoinDemo flow="restrict" />
+
+<Tip>
+  このデモでは、ブラウザ上でローカルに生成したアカウントを使用して、**Base Vibenet** で実際のトランザクションを送信します。Vibenet またはその B20 機能が利用できない場合は、説明用のオフライン版に自動的に切り替わります。
+</Tip>
+
+<Note>
+  B20 を初めて使う場合は、[B20 トークン標準](/ja/specifications/b20)で基本概念とローンチまでの一連の手順を確認してください。これらのサンプルは `base-std@1505323`、`viem@2.55.11`、Base Foundry `v1.1.1` を対象としています。
+</Note>
+
+## ポリシーの仕組み {#how-policies-work}
+
+Policy Registry は、各メンバーリストを 1 回だけ保存するシングルトンのプリコンパイルです。トークン側では、スコープごとに `uint64` のポリシー ID のみを保存します。ゲート対象の関数が実行されると、トークンはレジストリの `isAuthorized(policyId, account)` を呼び出します。複数のトークンで 1 つのポリシーを共有でき、ポリシーを更新すると、それを参照しているすべてのトークンに即座に反映されます。
+
+スコープによって、特定の関数にゲートがかかります。`TRANSFER_SENDER_POLICY` と `TRANSFER_RECEIVER_POLICY` は、`transfer` と `transferFrom` が呼ばれるたびに送信者と受信者をチェックします。`MINT_RECEIVER_POLICY` は、`mint` が呼ばれるたびに受信者をチェックします。これら 3 つはいずれも、ポリシーをバインドするまではデフォルトで `ALWAYS_ALLOW` (`0`) になっています。
+
+**許可リスト**は、セットに含まれるアカウントのみを認可します。空の許可リストではどのアカウントも認可されないため、ポリシーをバインドする前に、想定している保有者を登録しておいてください。
+
+## 保有者許可リストの作成とバインド {#create-and-bind-a-holder-allowlist}
+
+<CodeGroup>
+  {/* sample: stablecoin-restrict-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={7,10,16}
+  import { parseEventLogs, type Address } from "viem";
+  import { account, publicClient } from "../../shared/clients.js";
+  import { POLICY_REGISTRY, b20Abi, policyRegistryAbi, scope } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function createHolderAllowlist(token: Address, holders: Address[]) {
+    const receipt = await sendContract({
+      address: POLICY_REGISTRY,
+      abi: policyRegistryAbi,
+      functionName: "createPolicyWithAccounts",
+      args: [account.address, 1, holders],
+    });
+    const [created] = parseEventLogs({ abi: policyRegistryAbi, logs: receipt.logs, eventName: "PolicyCreated" });
+    const policyId = created.args.policyId;
+    for (const policyScope of [scope("TRANSFER_SENDER_POLICY"), scope("TRANSFER_RECEIVER_POLICY")]) {
+      await sendContract({ address: token, abi: b20Abi, functionName: "updatePolicy", args: [policyScope, policyId] });
+    }
+    const saved = await publicClient.readContract({ address: token, abi: b20Abi, functionName: "policyId", args: [scope("TRANSFER_RECEIVER_POLICY")] });
+    if (saved !== policyId) throw new Error("Policy was not bound");
+    return policyId;
+  }
+  ```
+
+  {/* sample: stablecoin-restrict-solidity */}
+
+  ```solidity Solidity lines wrap expandable highlight={2,5,6}
+      function restrictStablecoin(address token, address admin, address[] memory holders) public returns (uint64 id) {
+          id = StdPrecompiles.POLICY_REGISTRY.createPolicyWithAccounts(
+              admin, IPolicyRegistry.PolicyType.ALLOWLIST, holders
+          );
+          IB20(token).updatePolicy(B20Constants.TRANSFER_SENDER_POLICY, id);
+          IB20(token).updatePolicy(B20Constants.TRANSFER_RECEIVER_POLICY, id);
+          require(IB20(token).policyId(B20Constants.TRANSFER_RECEIVER_POLICY) == id, "policy not bound");
+      }
+  ```
+
+  {/* sample: stablecoin-restrict-cli */}
+
+  ```bash CLI lines wrap expandable highlight={2,8}
+  CREATE_TX=$(base-cast send "$POLICY_REGISTRY" \
+    "createPolicyWithAccounts(address,uint8,address[])" "$ADMIN" 1 "[$ALICE,$BOB]" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" --json | jq -r .transactionHash)
+  POLICY_TOPIC=$(base-cast receipt "$CREATE_TX" --rpc-url "$RPC_URL" --json | \
+    jq -r '.logs[] | select(.address | ascii_downcase == "0x8453000000000000000000000000000000000002") | .topics[1]' | head -1)
+  POLICY_ID=$(base-cast to-dec "$POLICY_TOPIC")
+  for SCOPE in TRANSFER_SENDER_POLICY TRANSFER_RECEIVER_POLICY; do
+    base-cast send "$TOKEN_ADDRESS" "updatePolicy(bytes32,uint64)" "$(base-cast keccak "$SCOPE")" "$POLICY_ID" \
+      --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  done
+  ```
+</CodeGroup>
+
+<Check>
+  両方の送金ポリシースコープについて、トークンが新しいポリシー ID を返せば成功です。
+</Check>
+
+<Warning>
+  許可リストでは、ポリシーに含まれていないアカウントはすべて拒否されます。バインドする前に対象の保有者をあらかじめ登録し、`PolicyCreated` の ID を控えておいてください。メンバーシップの一括登録は 1 回の呼び出しにつき最大 64 アカウントです。作成後にアカウントを追加する場合は、`updateAllowlist` を呼び出してください。
+</Warning>
+
+## メンバーシップの更新 {#update-membership}
+
+ポリシーの作成後にアカウントを追加または削除できるのは、ポリシー管理者のみです。追加するには `updateAllowlist(policyId, true, accounts)` を、削除するには `updateAllowlist(policyId, false, accounts)` を呼び出します。この変更は、そのポリシーを参照するすべてのトークンに対して、次回の呼び出しから反映されます。トークン側で改めて `updatePolicy` を呼び出す必要はありません。
+
+KYC 許可リストと制裁ブロックリストを組み合わせるには、両方のシンプルポリシーを参照する `INTERSECT` 複合ポリシーを作成し、その複合ポリシーの ID をトークンのスコープにバインドします。ポリシータイプの詳細なリファレンスについては、[B20 トークン標準](/ja/specifications/b20)を参照してください。
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="アカウントをブロックする" icon="user-lock" href="/ja/build-on-base/issue-stablecoins/block-an-account">
+    特定のアドレスを拒否します。
+  </Card>
+
+  <Card title="ポリシーの統合（B20 標準）" icon="book" href="/ja/specifications/b20/concepts/policies#32-policy-scopes">
+    B20 標準のポリシーフックについて説明します。
+  </Card>
+</CardGroup>

@@ -1,0 +1,72 @@
+---
+title: "系统配置"
+description: "Holocene 升级对 SystemConfig 的变更：新增通过 ConfigUpdate 事件动态配置 EIP-1559 参数的功能。"
+---
+
+## 概述 {#overview}
+
+`SystemConfig` 已更新，现支持动态配置 EIP-1559 参数。
+
+### `ConfigUpdate` {#configupdate}
+
+配置更新时，MUST 发出 [`ConfigUpdate`](/zh/specifications/base-protocol/consensus/derivation#system-config-updates) 事件，
+参数如下：
+
+| `version`    | `updateType` | `data`                                                     | 用途                              |
+| ------------ | ------------ | ---------------------------------------------------------- | ------------------------------- |
+| `uint256(0)` | `uint8(4)`   | `abi.encode((uint256(_denominator) << 32) \| _elasticity)` | 修改 EIP-1559 的分母和弹性系数 |
+
+请注意，上述编码是 SystemConfig 事件发出的格式，与区块头 extraData
+中的格式不同。
+
+### 初始化 {#initialization}
+
+在 `SystemConfig` 初始化期间，应执行以下操作：
+
+* `emit ConfigUpdate.BATCHER`
+* `emit ConfigUpdate.FEE_SCALARS`
+* `emit ConfigUpdate.GAS_LIMIT`
+* `emit ConfigUpdate.UNSAFE_BLOCK_SIGNER`
+
+此处有意未包含 `emit ConfigUpdate.EIP_1559_PARAMS`。
+只要这些值尚未设置，就会使用默认值。
+如果要求在初始化期间设置 1559 参数，就会引入一项严格限制：
+L2 必须先完成硬分叉，L1 合约才能升级。在多链并存的环境下，
+这一点很难协调管理。
+
+### 修改 EIP-1559 参数 {#modifying-eip-1559-parameters}
+
+新增了一种 `SystemConfig` `UpdateType`，用于修改
+[EIP-1559](https://eips.ethereum.org/EIPS/eip-1559) 参数，使链
+运营者能够修改 `BASE_FEE_MAX_CHANGE_DENOMINATOR` 和 `ELASTICITY_MULTIPLIER`。
+
+### 接口 {#interface}
+
+#### EIP-1559 参数 {#eip-1559-params}
+
+##### `setEIP1559Params` {#seteip1559params}
+
+此函数 MUST 仅限链治理者 (chain governor) 调用。
+
+```solidity SystemConfig.sol
+function setEIP1559Params(uint32 _denominator, uint32 _elasticity)
+```
+
+`_denominator` 和 `_elasticity` MUST 设置为大于 0 的值。
+链运营者设置的 EIP-1559 参数有可能导致用户体验不佳。
+
+##### `eip1559Elasticity` {#eip1559elasticity}
+
+此函数返回当前配置的 EIP-1559 弹性系数。
+
+```solidity SystemConfig.sol
+function eip1559Elasticity()(uint32)
+```
+
+##### `eip1559Denominator` {#eip1559denominator}
+
+此函数返回当前配置的 EIP-1559 分母 (denominator) 。
+
+```solidity SystemConfig.sol
+function eip1559Denominator()(uint32)
+```

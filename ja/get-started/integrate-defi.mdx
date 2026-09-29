@@ -1,0 +1,37 @@
+---
+title: "DeFi を統合する"
+description: "Base 上のサードパーティプロトコルを活用して、取引、直接貸付、担保付き借入、またはボールトベースの運用プロダクトをアプリに組み込みます。"
+keywords: ["Base での DeFi 統合", "0x Swap API Base", "Morpho Base", "Aave Base", "オンチェーン運用プロダクト"]
+---
+
+import { DeFiDemo } from "/snippets/DeFiDemo.jsx"
+
+アプリを Base 上のサードパーティ製 DeFi プロトコルに接続しましょう。ユーザーは、すべてのトランザクションに自分のウォレットで署名しながら、トークンの取引、直接レンディングのポジション管理、担保を使った借り入れ、ボールト型の運用プロダクトへの一度きりの預け入れを行えます。
+
+## デモ {#demo}
+
+<DeFiDemo />
+
+<Tip>
+  上記のデモはモック (模擬) のみです。Vibenet 上のオンチェーンデモをご覧になりたい場合は、[Base chain demos](https://chain.base.org/demos) をご確認ください。
+</Tip>
+
+## ガイド {#guides}
+
+<CardGroup cols={2}>
+  <Card title="取引機能を統合する" icon="arrows-rotate" href="/ja/build-on-base/integrate-defi/integrate-trading">
+    0x Swap API から取得した実行可能なルートを使って、トークンスワップ機能を追加します。
+  </Card>
+
+  <Card title="レンディング機能を統合する" icon="arrow-trend-up" href="/ja/build-on-base/integrate-defi/integrate-lending">
+    USDC をマネーマーケットに供給し、ポジションを直接管理します。
+  </Card>
+
+  <Card title="借入機能を統合する" icon="scale-balanced" href="/ja/build-on-base/integrate-defi/integrate-borrowing">
+    WETH を担保に USDC を借り入れ、清算リスクを監視します。
+  </Card>
+
+  <Card title="運用プロダクトを統合する" icon="vault" href="/ja/build-on-base/integrate-defi/integrate-earn-product">
+    一度預け入れるだけで変動型のオンチェーン利回りを得られるボールト体験を、ユーザーに提供します。
+  </Card>
+</CardGroup>

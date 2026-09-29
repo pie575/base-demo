@@ -1,0 +1,123 @@
+---
+title: "发行Stablecoin"
+keywords: ["create B20 stablecoin", "issue stablecoin Base", "stablecoin variant B20", "createB20 stablecoin"]
+description: "只需调用一次 B20 工厂合约，即可在 Base 上创建由法币支持的Stablecoin。"
+---
+
+import { StablecoinDemo } from "/snippets/StablecoinDemo.jsx"
+
+只需调用一次 [B20 Factory](/specifications/b20/reference/interfaces/ib20-factory/create-b20) 并指定 `STABLECOIN` 变体，即可创建一个由法币支持的代币。其小数位数固定为 `6`，并附带一个不可变的自声明货币代码，例如 `USD`。代币类型在创建时即写入代币地址，此后无法更改。
+
+## 演示 {#demo}
+
+<StablecoinDemo flow="issue" />
+
+<Tip>
+  本演示使用浏览器本地生成的账户，在 **Base Vibenet** 上提交真实交易。如果 Vibenet 或其 B20 功能不可用，演示会自动切换为离线示意版本。
+</Tip>
+
+<Note>
+  初次接触 B20？请参阅 [B20 代币标准](/zh/specifications/b20)，了解相关概念和完整的发行流程演练。这些示例基于 `base-std@1505323`、`viem@2.55.11` 和 Base Foundry `v1.1.1`。
+</Note>
+
+## Stablecoin 变体的工作原理 {#how-the-stablecoin-variant-works}
+
+将 `STABLECOIN` 传给 `createB20` 时，会将判别字节 `0x01` 写入代币地址的第 `[10]` 位。调用返回后：
+
+* `decimals()` 返回 `6` (硬编码，无需传入 decimals 值) 。
+* `currency()` 返回你提供的不可变代码 (例如 `"USD"`) 。B20 仅检查格式，不校验该代码是否对应真实存在的货币。
+* 该地址上的 `IB20Stablecoin` 接口随即生效。
+* 仅适用于资产变体的选择器 (`announce`、`updateUIMultiplier`、`batchMint`) 无法在此地址上执行。
+
+`currency` 字段为必填项，且只能由大写 ASCII 字母 `A` 到 `Z` 组成。代码为空时会以 `MissingRequiredField` 回滚；包含其他任何字节时会以 `InvalidCurrency` 回滚。
+
+## 创建并验证 Stablecoin {#create-and-verify-the-stablecoin}
+
+<CodeGroup>
+  {/* sample: stablecoin-create-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={26}
+  import { encodeAbiParameters, encodeFunctionData, keccak256, parseAbiParameters, parseEventLogs, stringToBytes } from "viem";
+  import { account } from "../../shared/clients.js";
+  import { B20_FACTORY, b20Abi, factoryAbi, role } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function createStablecoin() {
+    const salt = keccak256(stringToBytes("merchant-usd-v1"));
+    const params = encodeAbiParameters(
+      parseAbiParameters(
+        "(uint8 version,string name,string symbol,address initialAdmin,string currency)",
+      ),
+      [{ version: 1, name: "Merchant USD", symbol: "MUSD", initialAdmin: account.address, currency: "USD" }],
+    );
+    const initCalls = [
+      encodeFunctionData({
+        abi: b20Abi,
+        functionName: "grantRole",
+        args: [role("MINT_ROLE"), account.address],
+      }),
+      encodeFunctionData({
+        abi: b20Abi,
+        functionName: "updateSupplyCap",
+        args: [10_000_000n * 10n ** 6n],
+      }),
+    ];
+    const receipt = await sendContract({
+      address: B20_FACTORY,
+      abi: factoryAbi,
+      functionName: "createB20",
+      args: [1, salt, params, initCalls],
+    });
+    const [created] = parseEventLogs({ abi: factoryAbi, logs: receipt.logs, eventName: "B20Created" });
+    return created.args.token;
+  }
+  ```
+
+  {/* sample: stablecoin-create-solidity */}
+
+  ```solidity Solidity lines wrap expandable highlight={1}
+      function createStablecoin(address admin) public returns (address token) {
+          B20FactoryLib.B20RoleHolders memory holders = B20FactoryLib.B20RoleHolders({
+              minter: admin,
+              burner: admin,
+              burnBlocker: admin,
+              pauser: admin,
+              unpauser: admin,
+              metadataAdmin: admin
+          });
+          bytes[] memory roles = B20FactoryLib.buildRoleGrants(holders);
+          bytes[] memory settings = new bytes[](1);
+          settings[0] = B20FactoryLib.encodeUpdateSupplyCap(10_000_000e6);
+          token = StdPrecompiles.B20_FACTORY.createB20(
+              IB20Factory.B20Variant.STABLECOIN,
+              keccak256("merchant-usd-v1"),
+              B20FactoryLib.encodeStablecoinCreateParams("Merchant USD", "MUSD", admin, "USD"),
+              B20FactoryLib.concat(roles, settings)
+          );
+      }
+  ```
+</CodeGroup>
+
+`params` 数据块按 `B20StablecoinCreateParams` 进行 ABI 编码，以 `version` 字节开头 (当前为 `1`) ，字段依次为 `version`、`name`、`symbol`、`initialAdmin` 和 `currency`。可选的 `initCalls` 会在同一笔交易中针对新代币执行；执行完毕后，工厂即放弃访问权限。
+
+完整的接口、角色和策略说明，请参阅 [B20 代币标准](/zh/specifications/b20)。
+
+<Check>
+  工厂会发出 `B20Created` 事件，返回的代币地址即可直接用于铸造。
+</Check>
+
+<Warning>
+  B20 代币默认是开放的。请在创建时配置好角色、策略和供应上限，然后再发行有价值的代币。
+</Warning>
+
+## 另请参阅 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="铸造供应量" icon="plus" href="/zh/build-on-base/issue-stablecoins/mint-supply">
+    增加流通供应量。
+  </Card>
+
+  <Card title="限制持有者" icon="user-check" href="/zh/build-on-base/issue-stablecoins/restrict-who-can-hold">
+    将符合条件的持有者加入白名单。
+  </Card>
+</CardGroup>

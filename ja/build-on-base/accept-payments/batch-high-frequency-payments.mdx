@@ -1,0 +1,85 @@
+---
+title: "高頻度の支払いをバッチ処理する"
+keywords: ["x402 batch settlement", "payment channel API", "high frequency agent payments", "x402 vouchers"]
+description: "リクエストごとに累積型の x402 バウチャーを検証し、高頻度の API 利用料をまとめて一括精算します。"
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+エージェントが小規模なリクエストを多数送信するため、リクエストごとに決済するとコストがかさんでしまう場合は、`batch-settlement` を使用します。リクエストのたびに累積バウチャーが更新され、チャネルマネージャーが後から最新の状態に基づいて請求、決済、または返金を行います。
+
+## デモ {#demo}
+
+<PaymentsDemo flow="x402Batch" />
+
+<Tip>
+  上記のデモはモック (模擬) です。Vibenet 上で動作するオンチェーンデモをご覧になりたい場合は、[Base chain demos](https://chain.base.org/demos) にアクセスしてください。
+</Tip>
+
+## 高頻度ルートの価格を設定する {#price-a-high-frequency-route}
+
+<CodeGroup>
+  {/* sample: x402-batch-ts */}
+
+  ```typescript TypeScript · Express lines wrap expandable highlight={1,3,9}
+  app.use(paymentMiddleware({
+    "GET /stream": {
+      accepts: [{ scheme: "batch-settlement", price: "$0.01", network, payTo }],
+      description: "High-frequency price tick",
+      mimeType: "application/json",
+    },
+  }, resourceServer));
+  app.get("/stream", (_request, response) => {
+    setSettlementOverrides(response, { amount: "50%" });
+    response.json({ asset: "ETH", price: "3200.00" });
+  });
+  ```
+
+  {/* sample: x402-batch-go */}
+
+  ```go Go · net/http lines wrap expandable highlight={2,6}
+  routes["GET /stream"] = x402http.RouteConfig{
+  	Accepts: x402http.PaymentOptions{{Scheme: batchsettlement.SchemeBatched, Price: "$0.01", Network: network, PayTo: payTo}},
+  	Description: "High-frequency price tick", MimeType: "application/json",
+  }
+  mux.HandleFunc("GET /stream", func(w http.ResponseWriter, _ *http.Request) {
+  	nethttpmw.SetSettlementOverrides(w, &x402.SettlementOverrides{Amount: "50%"})
+  	_ = json.NewEncoder(w).Encode(map[string]string{"asset": "ETH", "price": "3200.00"})
+  })
+  ```
+
+  {/* sample: x402-batch-python */}
+
+  ```python Python · FastAPI lines wrap expandable highlight={2,10}
+  routes["GET /stream"] = RouteConfig(
+      accepts=[PaymentOption(scheme=SCHEME_BATCH_SETTLEMENT, price="$0.01", network=network, pay_to=pay_to)],
+      description="High-frequency price tick",
+      mime_type="application/json",
+  )
+
+
+  @app.get("/stream")
+  async def stream(response: Response) -> dict[str, str]:
+      set_settlement_overrides(response, {"amount": "50%"})
+      return {"asset": "ETH", "price": "3200.00"}
+  ```
+</CodeGroup>
+
+<Check>
+  リクエストが受け付けられるたびに保存済みの累積バウチャーが更新されます。オンチェーントランザクションが発生するのは、チャネルの請求、決済、返金が行われるときだけです。
+</Check>
+
+<Note>
+  完全なフィクスチャでは、チャネルの請求および返金の署名用に専用の `RECEIVER_AUTHORIZER_PRIVATE_KEY` を設定しています。この鍵は受取用ウォレットとは別に管理し、サーバー側の鍵管理システムに保管してください。
+</Note>
+
+<Warning>
+  これらの例では、単一プロセスを前提としたファイルベースのストレージを使用しています。サーバーレス環境やマルチインスタンス構成でデプロイする場合は、Redis、Valkey、またはアトミックな更新に対応したトランザクションデータベースを使用してください。
+</Warning>
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="APIの利用に課金する" icon="server" href="/ja/build-on-base/accept-payments/charge-for-an-api">リクエスト頻度が低いトラフィックには、リクエスト単位の exact 決済を使用します。</Card>
+  <Card title="有料サービスを呼び出す" icon="robot" href="/ja/build-on-base/accept-payments/call-a-paid-service">バッチ決済に対応するよう購入者側を設定します。</Card>
+</CardGroup>

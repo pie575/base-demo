@@ -1,0 +1,136 @@
+---
+title: "B20：从 Beryl 迁移到 Cobalt"
+description: "自 Cobalt 起，B20 Asset 的乘数将符合 ERC-8056 标准，并新增可预定生效时间的乘数设置器，用于处理公司行动。所有 Beryl 选择器仍可正常调用。"
+---
+
+> **目标读者：** 已在 Beryl (现已上线) 上对接 B20 Asset 乘数接口的团队。本说明仅涵盖
+> Cobalt 硬分叉中引入的乘数及 ERC-8056 相关变更。
+
+## 概述 {#summary}
+
+在 Cobalt 升级中，B20 Asset 的乘数接口将符合 [ERC-8056 (“Scaled UI Amount”) ](https://eips.ethereum.org/EIPS/eip-8056)
+标准，并新增一个可预约生效的乘数设置函数，用于处理公司行动。您当前调用的任何接口都不会
+失效：所有 Beryl 函数选择器、事件主题和错误都将保留原有的 4 字节选择器或 topic0，
+且在 Cobalt 中仍可正常调用。下文所列的弃用项仅为建议，不会强制执行。
+
+迁移时，请改用 ERC-8056 的规范名称 (`uiMultiplier`、`toUIAmount`/`fromUIAmount`、
+`balanceOfUI`、`totalSupplyUI`) ，并将日常的乘数变更从即时生效的
+`updateMultiplier(uint256)` 迁移到预约生效的 `updateUIMultiplier(uint256,uint256)`。
+
+Cobalt 尚未上线。在其激活之前，链上仅提供 Beryl 接口。
+
+## 映射表 {#mapping-table}
+
+下列选择器和 topic0 均取自冻结 ABI 中的实际值：Beryl 对应 `abi/v1.rs`，
+Cobalt 对应 `abi/v2.rs`。所有 Beryl 符号在 Cobalt 中均保留原有的选择器。
+
+### 函数 {#functions}
+
+| Beryl 符号 (选择器)                           | Cobalt 规范名称 (选择器)                                  | 状态                     | 原因                                                |
+| ---------------------------------------- | -------------------------------------------------- | ---------------------- | ------------------------------------------------- |
+| `multiplier()` `0x1b3ed722`              | `uiMultiplier()` `0xa60bf13d`                      | 已弃用但保留名称 / 新增别名        | 遵循 ERC-8056 核心命名。两者返回相同的有效乘数。`multiplier()` 继续保留。 |
+| `toScaledBalance(uint256)` `0x04f04c99`  | `toUIAmount(uint256)` `0x3248d4ff`                 | 已弃用但仍可调用 / 新增          | ERC-8056 Conversion 扩展。行为逐字节一致。                   |
+| `toRawBalance(uint256)` `0x0ca06c44`     | `fromUIAmount(uint256)` `0x65cd9b3c`               | 已弃用但仍可调用 / 新增          | ERC-8056 Conversion 扩展。行为逐字节一致。                   |
+| `scaledBalanceOf(address)` `0x1da24f3e`  | `balanceOfUI(address)` `0x437a9958`                | 已弃用但保留名称 / 新增别名        | ERC-8056 Balances 扩展。互为别名，返回值相同。                  |
+| `updateMultiplier(uint256)` `0x5ffe6146` | `updateUIMultiplier(uint256,uint256)` `0x628e600f` | 已弃用但仍可调用 / 新增 (非一一对应)  | 规范路径现改为定时设置函数。即时设置函数保留，作为紧急故障保护手段。                |
+| —                                        | `newUIMultiplier()` `0xdc767007`                   | 新增                     | 读取 ERC-8056 待生效计划。                                |
+| —                                        | `effectiveAt()` `0x97a4064f`                       | 新增                     | 读取 ERC-8056 待生效计划 (切换时间戳) 。                       |
+| —                                        | `totalSupplyUI()` `0x9bea6429`                     | 新增                     | ERC-8056 Balances 扩展。                             |
+| —                                        | `cancelUIMultiplierUpdate()` `0x2c97a0f0`          | 新增                     | 取消当前唯一一个待生效的更新。                                   |
+| —                                        | `MAX_UI_MULTIPLIER()` `0x785c0cf0`                 | 新增                     | 读取乘数上限 (`type(uint128).max`) ，且不会触发 revert 路径。    |
+| —                                        | `supportsInterface(bytes4)` `0x01ffc9a7`           | 新增                     | ERC-165 功能检测。                                     |
+
+`OPERATOR_ROLE()` `0xf5b541a6`、`WAD_PRECISION()` `0x664808a8`、`announce(...)` `0x595135dd`、
+`isAnnouncementIdUsed(string)` `0xc0da474e`、`batchMint(...)` `0x68573107`、
+`extraMetadata(string)` `0x4ddf9da0` 和 `updateExtraMetadata(string,string)` `0xb2851ef5` 均原样
+沿用，保持不变。
+
+### 事件 {#events}
+
+| Beryl 事件 (topic0)            | Cobalt 规范事件 (topic0)                           | 状态            | 原因                                                                             |
+| ---------------------------- | ---------------------------------------------- | ------------- | ------------------------------------------------------------------------------ |
+| `MultiplierUpdated(uint256)` | `UIMultiplierUpdated(uint256,uint256,uint256)` | 已弃用但仍会触发 / 新增 | ERC-8056 规范事件。即时生效的 setter 会同时触发这两个事件，而定时生效的 setter 仅触发 `UIMultiplierUpdated`。 |
+| —                            | `UIMultiplierUpdateCancelled(uint256,uint256)` | 新增            | 表示一项待生效的更新已被清除。                                                                |
+
+### 错误 {#errors}
+
+| Beryl 错误 (选择器)                     | Cobalt (选择器)                                     | 状态        | 原因                                            |
+| ---------------------------------- | ------------------------------------------------ | --------- | --------------------------------------------- |
+| `InvalidMultiplier()` `0x6f12f3dc` | `InvalidMultiplier()` `0x6f12f3dc`               | Beryl 中已有 | 用于防止值为零或超出上限。现在 `updateUIMultiplier` 也会抛出此错误。 |
+| —                                  | `EffectiveAtInPast(uint256)` `0x14119cf6`        | 新增        | 当 `effectiveAt <= block.timestamp` 时抛出。       |
+| —                                  | `EffectiveAtTooFar(uint256)` `0x1ce214fa`        | 新增        | 当 `effectiveAt > type(uint64).max` 时抛出。       |
+| —                                  | `UIMultiplierUpdateExists(uint256)` `0x4481a68e` | 新增        | 当已存在尚未失效的待生效的更新时抛出。                            |
+| —                                  | `UIMultiplierUpdateDoesNotExist()` `0xa7d6a5ca`  | 新增        | 当不存在尚未失效的待生效的更新却执行取消操作时抛出。                     |
+
+## Cobalt 新特性：建议采用 {#new-at-cobalt-adopt-these}
+
+### 计划更新的生命周期 {#scheduled-update-lifecycle}
+
+`updateUIMultiplier(newMultiplier, effectiveAt)` 是处理公司行动 (例如股票拆分和股息再投资) 的标准方式。同一时间只能存在一个待生效的更新。
+
+1. **计划**：调用 `updateUIMultiplier(newMultiplier, effectiveAt)`。此操作需要
+   `OPERATOR_ROLE`，且 `effectiveAt` 必须严格晚于当前时间。
+2. **读取待生效的更新**：在更新待生效期间，`newUIMultiplier()` 返回计划的目标值，
+   `effectiveAt()` 返回切换时间戳，而 `uiMultiplier()` / `multiplier()` 仍返回
+   当前值。
+3. **等待生效**：一旦 `block.timestamp >= effectiveAt`，`uiMultiplier()` / `multiplier()` 会在读取时
+   切换为新值。生效时不会触发任何事件。
+4. **或者取消**：`cancelUIMultiplierUpdate()` 会清除当前待生效的更新，并触发
+   `UIMultiplierUpdateCancelled(cancelledMultiplier, cancelledEffectiveAt)`。
+
+如需调整相互重叠的操作的顺序，请在同一公告中以原子方式取消并重新计划：
+`announce([cancelUIMultiplierUpdate(), updateUIMultiplier(...)], ...)`。
+
+### ERC-8056 视图别名 {#erc-8056-view-aliases}
+
+* `uiMultiplier()` 的返回值与 `multiplier()` 相同。
+* `toUIAmount(raw)` 的返回值与 `toScaledBalance(raw)` 相同。`fromUIAmount(ui)` 的返回值
+  与 `toRawBalance(ui)` 相同。
+* `balanceOfUI(account)` 的返回值与 `scaledBalanceOf(account)` 相同。
+* `totalSupplyUI()` 等于 `totalSupply() * uiMultiplier() / WAD_PRECISION`。
+
+### 上限 Getter {#bound-getter}
+
+`MAX_UI_MULTIPLIER()` 返回 `type(uint128).max`，即两个 setter 共同强制执行的上限。这一
+溢出防护机制可确保 `balance * multiplier` 的结果不会超出 `uint256` 的范围。
+
+## `updateMultiplier(uint256)` 仍保留作为即时生效的管理员故障保护机制 {#updatemultiplieruint256-remains-as-an-instant-admin-failsafe}
+
+`updateMultiplier(uint256)` 会立即设置乘数，并清除当前所有待生效的更新。它
+是一个已弃用的管理员故障保护机制，保留它是为了兼顾技术债务和紧急覆盖，而非供日常使用：它可用于
+即时撤销排期错误，且大多数情况下应与暂停操作配合使用。
+
+## 保证与边界情况 {#guarantees-and-edge-cases}
+
+**问：已排期的更新可以被取消。外部使用方如何检测到取消？**
+`cancelUIMultiplierUpdate()` 会发出 `UIMultiplierUpdateCancelled(cancelledMultiplier,
+cancelledEffectiveAt)` (topic0 为 `0x8838…1cad`) ；即时设置函数在覆盖仍有效的待生效更新时，也会发出该事件。监听该 topic，即可撤回你之前根据
+`UIMultiplierUpdated` 预先暂存的待生效切换。
+
+**问：如果管理员使用了即时应急机制，链下索引器如何保持线性、无间断的
+UI 乘数生命周期？**
+即时的 `updateMultiplier(uint256)` 会同时发出已弃用的 `MultiplierUpdated(uint256)` 和
+ERC-8056 的 `UIMultiplierUpdated(old, new, block.timestamp)` (如果它清除了仍有效的待生效更新，还会先发出 `UIMultiplierUpdateCancelled`) 。每一次乘数变更，无论是排期的还是紧急的，都会出现在同一条 `UIMultiplierUpdated` 事件流中，因此只需跟踪这一个事件，就不会遗漏任何变更。旧版 `MultiplierUpdated` topic 仍会保留，供尚未迁移的索引器使用。
+
+**问：如何区分仍有效的待生效更新、已经生效的更新，以及根本没有更新的情况？**
+如果 `effectiveAt() > block.timestamp`，则待生效更新仍有效。在此期间，`newUIMultiplier()`
+返回排期的目标值，该值与 `uiMultiplier()` 不同。生效之后，
+`uiMultiplier()` 已反映新值，`newUIMultiplier() == uiMultiplier()`，而
+`effectiveAt()` 会保持为已过去的切换时间戳，直到被下一次排期、即时更新或取消操作覆盖。因此，若 `effectiveAt()` 非零且 `<= block.timestamp`，表示“已应用”，而非“待生效”。如果从未排期过任何更新，则 `effectiveAt() == 0`。
+
+**问：如果在已有待生效更新时再次排期更新，会发生什么？**
+调用会以 `UIMultiplierUpdateExists(effectiveAt)` 回滚，但只有仍有效的待生效更新才会阻止该调用。
+已生效 (过期) 的待生效更新会被静默并入当前乘数，随后被覆盖。如需替换仍有效的排期，请通过 `announce` 以原子方式先调用 `cancelUIMultiplierUpdate()`，再调用 `updateUIMultiplier(...)`。
+
+**问：`effectiveAt` 的取值范围是什么？**
+它必须严格晚于当前时间：`effectiveAt <= block.timestamp` 会以
+`EffectiveAtInPast(effectiveAt)` 回滚。它还必须在链上字段的容纳范围内：
+`effectiveAt > type(uint64).max` 会以 `EffectiveAtTooFar(effectiveAt)` 回滚。
+
+**问：乘数的取值范围是什么？**
+`0 < newMultiplier <= MAX_UI_MULTIPLIER()` (即 `type(uint128).max`) 。为零或超过上限都会以
+`InvalidMultiplier()` 回滚。此限制同时适用于 `updateUIMultiplier` 和 `updateMultiplier`。你可以先通过 `MAX_UI_MULTIPLIER()` 读取上限值，以免触发回滚。
+
+**问：原始余额或 `Transfer` 的语义会改变吗？**
+不会。乘数纯粹用于展示：它只会重新缩放 UI/缩放视图。`balanceOf`、
+`transfer`、`totalSupply` 和 `Transfer` 始终保持原始值，任何乘数变更 (无论是排期的还是即时的) 都不会影响它们。只有 `*UI` / 缩放类读取结果会随之变化。

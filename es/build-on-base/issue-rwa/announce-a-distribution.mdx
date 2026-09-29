@@ -1,0 +1,190 @@
+---
+title: "Anunciar un cambio a los titulares"
+description: "Acompaña con una divulgación onchain mediante announce cualquier cambio que afecte a los titulares de un B20 Asset: emisión adicional, actualizaciones del multiplicador, quemas de tesorería o un aviso sin efecto onchain."
+keywords: ["anunciar distribución", "anunciar operación corporativa", "anuncio B20", "distribución de activos", "distribución con batchMint", "actualización del multiplicador", "quema de tesorería", "divulgación onchain"]
+---
+
+import { AssetDemo } from "/snippets/AssetDemo.jsx"
+import RwaDisclaimer from "/snippets/es/RwaDisclaimer.mdx"
+
+Los emisores de un B20 Asset necesitan un procedimiento establecido para divulgar cualquier cambio que afecte a los titulares, y los indexadores necesitan una forma fiable de identificar qué cambios se anunciaron. `announce` combina el cambio de estado y la divulgación en una sola transacción: emite `Announcement` antes de las llamadas internas y `EndAnnouncement` después de ellas. Esta guía toma como ejemplo práctico un dividendo en acciones; el mismo delimitador se aplica a cualquier cambio iniciado por el operador en un B20 Asset, como las actualizaciones del multiplicador, las quemas de tesorería y los avisos sin efecto onchain.
+
+<RwaDisclaimer />
+
+## Demostración {#demo}
+
+<AssetDemo flow="dividend" />
+
+<Tip>
+  La demostración usa una cuenta local generada en el navegador para enviar transacciones reales en **Base Vibenet**. Si Vibenet o sus funciones B20 no están disponibles, pasa automáticamente a una versión ilustrativa sin conexión.
+</Tip>
+
+<Note>
+  ¿Es la primera vez que usas B20? Consulta el [estándar de tokens B20](/es/build-on-base/issue-rwa/create-an-asset-token) para conocer los conceptos y seguir una guía completa de lanzamiento. Estos ejemplos están pensados para `base-std@1505323`, `viem@2.55.11` y Base Foundry `v1.1.1`.
+</Note>
+
+## Antes de empezar {#before-you-start}
+
+Necesitas todo lo siguiente:
+
+* Un B20 Asset que administres, con `DEFAULT_ADMIN_ROLE` para poder otorgar roles.
+* Una cuenta que llamará a `announce` (el operador). Otórgale `OPERATOR_ROLE`.
+* Todos los roles que requieran las llamadas envueltas, otorgados al mismo operador. `batchMint` y `mintWithMemo` requieren `MINT_ROLE`; `burnWithMemo` requiere `BURN_ROLE`; los setters del multiplicador ya usan `OPERATOR_ROLE`.
+* Un `id` que no se haya usado nunca, una `description` dirigida a los titulares y, opcionalmente, un `uri` que apunte al registro offchain completo.
+
+Esta interfaz solo existe en **B20 Asset**. Stablecoin no admite anuncios.
+
+### Cómo funciona un anuncio {#how-an-announcement-works}
+
+`announce(internalCalls, id, description, uri)` se ejecuta en este orden:
+
+1. Emite `Announcement(caller, id, description, uri)`.
+2. Ejecuta de forma atómica cada entrada de `internalCalls`. Cada entrada es calldata codificado en ABI dirigido a este activo (de al menos 4 bytes), no un par `(target, calldata)`. Las llamadas internas conservan sus propias restricciones por rol y se ejecutan con el operador como `msg.sender`.
+3. Emite `EndAnnouncement(id)`.
+
+Si alguna llamada interna falla, se revierte toda la transacción y `id` sigue disponible. Un `announce` exitoso consume `id` durante toda la vida del activo; a partir de entonces, `isAnnouncementIdUsed(id)` devuelve `true`. El operador proporciona `description` y `uri`, y el activo no los verifica. Anidar `announce` dentro de una llamada interna provoca una reversión con `AnnouncementInProgress`.
+
+Para indexadores: emparejen `Announcement` y `EndAnnouncement` por `id`, no solo por su posición contigua. Todo efecto que se produzca entre ambos logs pertenece a la acción anunciada. Un cambio de estado que no esté delimitado por este par de logs se invocó directamente, no a través de `announce`.
+
+## Anunciar y distribuir unidades adicionales {#announce-and-distribute-additional-units}
+
+Concede los roles una sola vez por token:
+
+```solidity Grant OPERATOR_ROLE and MINT_ROLE
+asset.grantRole(asset.OPERATOR_ROLE(), operator);
+asset.grantRole(asset.MINT_ROLE(), operator);
+```
+
+A continuación, codifica la llamada interna y anúnciala. Este ejemplo envuelve `batchMint` para emitir un dividendo en acciones en forma de unidades adicionales:
+
+<CodeGroup>
+  {/* sample: stock-dividend-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={9,13}
+  import { encodeFunctionData, parseUnits, type Address } from "viem";
+  import { publicClient } from "../../shared/clients.js";
+  import { assetAbi } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function announceStockDividend(token: Address, holders: Address[]) {
+    const mint = encodeFunctionData({
+      abi: assetAbi,
+      functionName: "batchMint",
+      args: [holders, [parseUnits("30", 6), parseUnits("20", 6)]],
+    });
+    const id = `dividend-${Date.now()}`;
+    await sendContract({
+      address: token,
+      abi: assetAbi,
+      functionName: "announce",
+      args: [[mint], id, "Five-percent stock dividend", "https://example.com/actions/dividend"],
+    });
+    const used = await publicClient.readContract({ address: token, abi: assetAbi, functionName: "isAnnouncementIdUsed", args: [id] });
+    if (!used) throw new Error("Announcement was not recorded");
+  }
+  ```
+
+  {/* sample: stock-dividend-solidity */}
+
+  ```solidity Solidity lines wrap expandable highlight={3,4}
+  function announceDividend(address token, address[] memory recipients, uint256[] memory amounts) public {
+      bytes[] memory calls = new bytes[](1);
+      calls[0] = abi.encodeCall(IB20Asset.batchMint, (recipients, amounts));
+      IB20Asset(token).announce(
+          calls,
+          "2026-stock-dividend-01",
+          "Five-percent stock dividend",
+          "https://example.com/announcements/2026-01"
+      );
+      require(IB20Asset(token).isAnnouncementIdUsed("2026-stock-dividend-01"), "announcement missing");
+  }
+  ```
+</CodeGroup>
+
+Los destinatarios deben cumplir `MINT_RECEIVER_POLICY`, `MINT` no debe estar en pausa y `batchMint` funciona como todo o nada. Si la operación se completa correctamente, el activo emite `Announcement`, después un `Transfer(address(0), recipient, amount)` por cada destinatario y, por último, `EndAnnouncement`. Si se usa `mintWithMemo` en lugar de `batchMint`, el orden es `Announcement`, `Transfer`, `Memo`, `EndAnnouncement`.
+
+<Check>
+  `Announcement` y `EndAnnouncement` llevan el mismo `id`, los eventos `Transfer` internos aparecen entre ambos e `isAnnouncementIdUsed(id)` devuelve `true`.
+</Check>
+
+<Note>
+  Este ejemplo emite unidades adicionales; no distribuye efectivo. Un dividendo reinvertido que solo reajusta la escala de los saldos mostrados es una actualización del multiplicador; consulta la siguiente sección y [Aplicar un multiplicador](/es/build-on-base/issue-rwa/apply-a-multiplier).
+</Note>
+
+## Anunciar otros cambios {#announce-other-changes}
+
+El mismo bloque sirve para comunicar cualquier cambio iniciado por el operador. Cada escenario indica los roles que necesita el operador y los eventos que emite el activo.
+
+### Actualización del multiplicador {#multiplier-update}
+
+Encapsula `updateUIMultiplier(newMultiplier, effectiveAt)`. Un split de 2 por 1 usa `2e18`; un contrasplit (split inverso) usa un valor inferior a `1e18`. El operador solo necesita `OPERATOR_ROLE`.
+
+```solidity Announce a multiplier update lines wrap expandable highlight={3}
+function announceMultiplierUpdate(address token, uint256 newMultiplier, uint256 effectiveAt) public {
+    bytes[] memory calls = new bytes[](1);
+    calls[0] = abi.encodeCall(IB20Asset.updateUIMultiplier, (newMultiplier, effectiveAt));
+    IB20Asset(token).announce(
+        calls,
+        "2026-multiplier-01",
+        "2-for-1 multiplier update",
+        "https://example.com/announcements/2026-multiplier-01"
+    );
+}
+```
+
+Si la operación se completa correctamente, el activo emite `Announcement`, `UIMultiplierUpdated` y, a continuación, `EndAnnouncement`. `UIMultiplierUpdated` indica que la programación quedó registrada, no que el multiplicador ya esté activo. Una llamada directa a `updateUIMultiplier` sin `announce` sigue funcionando; los indexadores deben marcarla como no divulgada.
+
+Para reemplazar una actualización pendiente que siga vigente, cancélala y vuelve a programarla en un único `announce` para que ambas llamadas compartan el mismo operador:
+
+```solidity Cancel and reschedule in one announcement wrap
+bytes[] memory calls = new bytes[](2);
+calls[0] = abi.encodeCall(IB20Asset.cancelUIMultiplierUpdate, ());
+calls[1] = abi.encodeCall(IB20Asset.updateUIMultiplier, (newMultiplier, effectiveAt));
+IB20Asset(token).announce(calls, id, description, uri);
+```
+
+### Quema de tesorería {#treasury-burn}
+
+Encapsula `burnWithMemo(amount, memo)`. La llamada quema el saldo propio del operador y no está sujeta a controles de políticas. El operador necesita `OPERATOR_ROLE` y `BURN_ROLE`. `BURN` no debe estar en pausa.
+
+```solidity Announce a treasury burn wrap
+bytes[] memory calls = new bytes[](1);
+calls[0] = abi.encodeCall(IB20Asset.burnWithMemo, (amount, memo));
+IB20Asset(token).announce(calls, id, "Treasury burn", uri);
+```
+
+Si la operación se completa correctamente, el activo emite `Announcement`, `Transfer(operator, address(0), amount)`, `Memo` y, a continuación, `EndAnnouncement`. `totalSupply` disminuye. No utilices la función obsoleta `burnBlocked`. Para retirar unidades de un titular y luego destruirlas, primero [incáutalas](/es/build-on-base/issue-rwa/seize-and-cancel-units) y después anuncia la quema desde la tesorería.
+
+### Aviso sin efecto onchain {#notice-with-no-onchain-effect}
+
+Pasa un array `internalCalls` vacío. El operador solo necesita `OPERATOR_ROLE`. El activo emite `Announcement` y, a continuación, `EndAnnouncement`, sin nada entre ambos. Aun así, el `id` se consume.
+
+```solidity Notice only
+IB20Asset(token).announce(new bytes[](0), id, description, uri);
+```
+
+## Errores comunes {#common-errors}
+
+Estos errores siguen el orden en que `announce` los comprueba. Después se indican los fallos de las llamadas internas.
+
+| Error                                                     | Causa                                                       | Solución                                                                                 |
+| --------------------------------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `AccessControlUnauthorizedAccount(caller, OPERATOR_ROLE)` | El llamador no tiene `OPERATOR_ROLE`.                       | Otorga `OPERATOR_ROLE` al operador.                                                      |
+| `AnnouncementIdAlreadyUsed(id)`                           | Una llamada anterior exitosa a `announce` ya consumió `id`. | Elige un nuevo `id` de un solo uso.                                                      |
+| `InternalCallMalformed(call)`                             | Un blob de llamada interna tiene menos de 4 bytes.          | Pasa calldata codificada en ABI que incluya un selector.                                 |
+| `AnnouncementInProgress()`                                | Una llamada interna apuntaba a `announce`.                  | No anides llamadas a `announce`.                                                         |
+| `InternalCallFailed(call)`                                | Una llamada interna se revirtió. El motivo no se propaga.   | Reproduce `call` directamente para ver el error subyacente y, después, corrige la causa. |
+
+Causas internas habituales de `InternalCallFailed`: falta de `MINT_ROLE` o `BURN_ROLE`, `MINT` o `BURN` en pausa, `UIMultiplierUpdateExists`, `PolicyForbids`, `SupplyCapExceeded` o `InsufficientBalance` (al quemar, en relación con el saldo propio del operador). Un `Panic` de Solidity, como un desbordamiento, se propaga tal cual y no se encapsula como `InternalCallFailed`.
+
+## Consulta también {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="Aplicar un multiplicador" icon="divide" href="/es/build-on-base/issue-rwa/apply-a-multiplier">
+    Programa, cancela o sobrescribe una actualización del multiplicador.
+  </Card>
+
+  <Card title="Emitir unidades para los titulares" icon="coins" href="/es/build-on-base/issue-rwa/issue-units">
+    Acuña unidades del activo para los titulares.
+  </Card>
+</CardGroup>

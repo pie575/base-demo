@@ -1,0 +1,63 @@
+---
+title: 'eth_getTransactionCount'
+sidebarTitle: 'eth_getTransactionCount'
+description: '返回某个地址已发送的交易数量（即 nonce）。使用 pending 可获取包含预确认交易的 nonce。'
+---
+
+返回某个地址已发送的交易数量。该值即账户当前的 nonce，也就是构造下一笔交易时应填入 `nonce` 字段的值。
+
+<Tip>
+  **Flashblocks：** 使用 `"pending"` 查询 `https://mainnet.base.org`，即可获取已计入所有预确认交易的 nonce，该值约每 200ms 更新一次。对于高频提交交易的智能体而言，这一点至关重要，可避免出现 nonce 间隙。
+</Tip>
+
+## 参数 {#parameters}
+
+<ParamField body="address" type="string" required>
+  要查询的 20 字节地址。
+</ParamField>
+
+<ParamField body="block" type="string" required>
+  十六进制格式的区块号，或 `"latest"`、`"pending"`、`"safe"`、`"finalized"`、`"earliest"` 之一。使用 `"pending"` 可将所有预确认 (pre-confirmed) 交易计入 nonce。
+</ParamField>
+
+## 返回值 {#returns}
+
+<ResponseField name="result" type="string">
+  交易计数 (nonce) ，以十六进制字符串表示。
+</ResponseField>
+
+## 示例 {#example}
+
+<CodeGroup>
+  ```bash 标准（最新已确认） lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_getTransactionCount",
+      "params": ["0x742d35Cc6634C0532925a3b8D4C9dD0b4f3BaEa", "latest"],
+      "id": 1
+    }'
+  ```
+
+  ```bash Flashblocks（pending nonce，约 200ms） lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_getTransactionCount",
+      "params": ["0x742d35Cc6634C0532925a3b8D4C9dD0b4f3BaEa", "pending"],
+      "id": 1
+    }'
+  ```
+
+  ```json 响应
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x4d2"
+  }
+  ```
+</CodeGroup>

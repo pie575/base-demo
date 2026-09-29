@@ -1,0 +1,72 @@
+---
+title: "私密交易"
+keywords: ["Base Ledgers", "private payments Base", "confidential transactions Base", "enterprise stablecoin settlement", "Portal contract Base"]
+description: "借助 Base Ledgers 在 Base 上开展机密企业支付：余额、转账和交易对手信息全程保密，资金则在链上完成结算。"
+---
+
+import { LedgersDemo } from "/snippets/LedgersDemo.jsx"
+
+<Warning>
+  Base Ledgers 目前处于抢先体验阶段。如需运行您自己的账本，请[申请访问权限](https://www.coinbase.com/developer-platform/developer-interest)；也可以使用 [Coinbase Managed](https://docs.cdp.coinbase.com/payments/overview)，这是基于 Base Ledgers 构建的托管服务。
+</Warning>
+
+借助 **Base Ledgers**，您可以在 Base 上运行自己的私密支付产品。余额、转账和交易对手信息不会出现在公共区块浏览器上，而资金则通过单一的 `Portal` 合约在 Base 上结算。合规性由您自己的 KYC 控制措施在账本层面强制执行；资金以自托管方式存放在您控制的合约中；每笔存款和提款都是一次链上调用，可以与其他 Base 操作原子化地打包执行。
+
+## 演示 {#demo}
+
+<LedgersDemo />
+
+<Tip>
+  以上演示仅为模拟效果。如需查看 Vibenet 上的链上演示，请前往 [Base 链演示](https://chain.base.org/demos)。
+</Tip>
+
+## 指南 {#guides}
+
+<CardGroup cols={2}>
+  <Card title="存款到账本" icon="arrow-down-to-line" href="/zh/build-on-base/ledgers/deposit">
+    将资金从 Base 存入账本，接收方信息经过加密。
+  </Card>
+
+  <Card title="在账本内转账" icon="shuffle" href="/zh/build-on-base/ledgers/transfer">
+    在账本内转移余额，公链上不留任何痕迹。
+  </Card>
+
+  <Card title="从账本提款" icon="arrow-up-from-line" href="/zh/build-on-base/ledgers/withdraw">
+    将资金提回 Base，同时保护账户隐私。
+  </Card>
+</CardGroup>
+
+## 为什么选择 Base Ledgers {#why-base-ledgers}
+
+* **默认私密。** 余额、交易和转账都不会显示在公共区块浏览器上。存款会隐藏接收方，提款会隐藏发送方，因此二者无法关联。
+* **合规。** 运营方通过自身的 KYC 和合规管控机制控制账本的准入。
+* **可与 Base 组合。** 存款和提款均为链上调用，你可以将其与其他操作打包 (如&quot;存款后执行操作&quot;或&quot;提款后兑换&quot;) ，这些操作要么一并结算，要么全部不执行。
+* **可配置。** 按你自己的规则运行账本：资金自行托管，交易处理逻辑也可自定义。
+
+## 适用场景 {#built-for}
+
+<CardGroup cols={2}>
+  <Card title="B2B 支付" icon="building">
+    向供应商付款，无需将您的供应商名单公开到链上。
+  </Card>
+
+  <Card title="薪资与款项发放" icon="money-check-dollar">
+    在链上发放薪资，无需公开每位员工或合同工的收入。
+  </Card>
+
+  <Card title="资金管理" icon="vault">
+    在企业账户、托管机构和交易对手之间私密转移资金。
+  </Card>
+
+  <Card title="跨境汇款" icon="globe">
+    搭建需通过 KYC 验证的汇款通道，发送方、接收方和金额均不会公开。
+  </Card>
+</CardGroup>
+
+## 工作原理 {#how-it-works}
+
+一笔支付会经历三个阶段：资金通过 Portal 合约进入账本，在账本内私密流转，最后退出并返回 Base。运营方负责运行处理各个环节的服务，并决定如何授权提款。
+
+1. **[存款](/zh/build-on-base/ledgers/deposit)。** 用户将资金从 Base 转入账本。接收方信息经过加密，因此存入同一账户的多笔存款之间无法相互关联。
+2. **[账本内转账](/zh/build-on-base/ledgers/transfer)。** 在账本内，用户可以转账、兑换和赚取收益，余额和活动记录始终保持私密。
+3. **[提款](/zh/build-on-base/ledgers/withdraw)。** 用户将资金转回 Base。提款在链上会公开资产和金额，但不会暴露其背后的账户。

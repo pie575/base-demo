@@ -1,0 +1,42 @@
+---
+title: "L1ブロック属性"
+description: "IsthmusアップグレードでのL1属性トランザクションの変更点。calldataを拡張し、オペレーター手数料のスカラーおよび定数パラメータを追加します。"
+---
+
+## 概要 {#overview}
+
+L1ブロック属性トランザクションが更新され、オペレーター手数料パラメータが含まれるようになりました。
+
+| 入力引数                | 型       | Calldataバイト | セグメント |
+| ------------------- | ------- | ----------- | ----- |
+| {0x098999be}        |         | 0-3         | n/a   |
+| baseFeeScalar       | uint32  | 4-7         | 1     |
+| blobBaseFeeScalar   | uint32  | 8-11        |       |
+| sequenceNumber      | uint64  | 12-19       |       |
+| l1BlockTimestamp    | uint64  | 20-27       |       |
+| l1BlockNumber       | uint64  | 28-35       |       |
+| basefee             | uint256 | 36-67       | 2     |
+| blobBaseFee         | uint256 | 68-99       | 3     |
+| l1BlockHash         | bytes32 | 100-131     | 4     |
+| batcherHash         | bytes32 | 132-163     | 5     |
+| operatorFeeScalar   | uint32  | 164-167     | 6     |
+| operatorFeeConstant | uint64  | 168-175     |       |
+
+なお、以前のバージョンのL1属性トランザクションと同様に、最初の入力引数は関数セレクタ、
+すなわち `keccak256("setL1BlockValuesIsthmus()")` の先頭4バイトです。
+
+アクティベーションブロックについては、次の2つのケースがあります。
+
+* Isthmusがジェネシス時点で有効な場合、アクティベーションブロックにはトランザクションが存在しないため、
+  考慮すべきL1ブロック属性トランザクションもありません。
+* Isthmusがジェネシス後に有効化される場合は、[`setL1BlockValuesEcotone()`](../ecotone/l1-attributes)
+  メソッドを使用しなければなりません。L1 Blockコントラクトがまだアップグレードされていないためです。
+
+以降の各L2ブロックでは、`setL1BlockValuesIsthmus()` メソッドを使用しなければなりません。
+
+このメソッドを使用する場合、Isthmus以前の値はそのまま1対1で引き継がれ、
+さらにトランザクションは以下の新しい属性に [`SystemConfig`](/ja/specifications/base-protocol/consensus/derivation#system-configuration) の値を
+設定します。
+
+* `operatorFeeScalar`
+* `operatorFeeConstant`

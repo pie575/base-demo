@@ -1,0 +1,81 @@
+---
+title: "Puente hacia Base"
+description: "Transfiere ETH, stablecoins y tokens hacia y desde Base: desde una cuenta de Coinbase, Ethereum, Solana o Bitcoin."
+---
+
+Transfiere activos hacia y desde Base con las rutas que se indican a continuación. Elige la que corresponda a la ubicación actual de tus activos.
+
+## Elige una ruta {#choose-a-route}
+
+| Origen                 | Ruta recomendada                                                                                                                      | Activos habituales |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| Una cuenta de Coinbase | Retira directamente a Base (sin puente)                                                                                               | ETH, USDC, cbBTC   |
+| Ethereum (L1)          | [Superbridge](https://superbridge.app/?fromChainId=1\&toChainId=8453) o [Brid.gg](https://www.brid.gg/?fromChainId=1\&toChainId=8453) | ETH, tokens ERC-20 |
+| Solana                 | [Puente Base–Solana](/es/specifications/base-protocol/bridging/base-solana-bridge)                                                       | SOL, tokens SPL    |
+| Bitcoin                | [Garden](https://app.garden.finance/?output-chain=base\&output-asset=cbBTC)                                                           | BTC → cbBTC        |
+
+<Note>
+  Si tienes fondos en una cuenta de Coinbase, puedes retirar muchos activos directamente a la red Base sin necesidad de usar un puente: basta con seleccionar **Base** como red al hacer el retiro. Suele ser la opción más rápida para USDC y ETH.
+</Note>
+
+## Desde Ethereum {#from-ethereum}
+
+Transfiere ETH y los tokens ERC-20 compatibles entre la mainnet de Ethereum (L1) y Base mediante un puente. Ambos proveedores admiten tanto la mainnet como la testnet Sepolia.
+
+<CardGroup cols={2}>
+  <Card title="Superbridge" icon="bridge" href="https://superbridge.app/?fromChainId=1&toChainId=8453">
+    Transfiere ETH y los activos compatibles de L1 a Base. [Testnet](https://superbridge.app/?fromChainId=11155111\&toChainId=84532)
+  </Card>
+
+  <Card title="Brid.gg" icon="bridge" href="https://www.brid.gg/?fromChainId=1&toChainId=8453">
+    Un puente alternativo L1 ↔ Base. [Testnet](https://testnet.brid.gg/?fromChainId=11155111\&toChainId=84532)
+  </Card>
+</CardGroup>
+
+### Bridging programático {#programmatic-bridging}
+
+Para transferir ETH y tokens ERC-20 de Ethereum a Base mediante código, parte del [repositorio de ejemplo](https://github.com/base-org/guides/tree/main/bridge/native).
+
+<Warning>
+  **Comprueba bien la dirección del token en el caso de los ERC-20.** Confirma que el token tenga una entrada `base` en la [lista de tokens de la Superchain](https://github.com/ethereum-optimism/ethereum-optimism.github.io/tree/master/data) ([ejemplo](https://github.com/ethereum-optimism/ethereum-optimism.github.io/blob/master/data/WETH/data.json#L16-L18)) y haz siempre las primeras pruebas con cantidades pequeñas. Este ejemplo solo transfiere activos **hacia** Base: no lo modifiques para hacer retiros.
+</Warning>
+
+### Para emisores de tokens {#for-token-issuers}
+
+Si tienes un token ERC-20 en Ethereum y quieres permitir que se transfiera a Base mediante el puente, usa el repositorio de ejemplo anterior como punto de partida para los contratos del puente estándar y, después, añade tu token a la lista de tokens de la Superchain.
+
+## Desde Solana {#from-solana}
+
+El puente Base–Solana permite transferir tokens e intercambiar mensajes en ambas direcciones entre Base y Solana: mueve SOL y tokens SPL, envía mensajes entre cadenas, despliega tokens envueltos en cualquiera de las dos cadenas y, si lo deseas, activa la retransmisión automática para una ejecución instantánea.
+
+<CardGroup cols={2}>
+  <Card title="Documentación completa" icon="book" href="/es/specifications/base-protocol/bridging/base-solana-bridge">
+    Guía completa con ejemplos de código y direcciones de contratos
+  </Card>
+
+  <Card title="Terminally Onchain" icon="terminal" href="https://terminallyonchain.com/">
+    Interfaz de terminal en producción para operaciones de puente y llamadas a contratos
+  </Card>
+</CardGroup>
+
+| Red            | Contrato            | Dirección                                      |
+| -------------- | ------------------- | ---------------------------------------------- |
+| Base Mainnet   | Puente              | `0x3eff766C76a1be2Ce1aCF2B69c78bCae257D5188`   |
+| Base Mainnet   | Token SOL           | `0x311935Cd80B76769bF2ecC9D8Ab7635b2139cf82`   |
+| Solana Mainnet | Programa del puente | `HNCne2FkVaNghhjKXapxJzPaBvAKDG1Ge3gqhZyfVWLM` |
+
+<Info>
+  Para consultar las direcciones de testnet y todos los detalles de implementación, visita la [documentación del puente Base–Solana](/es/specifications/base-protocol/bridging/base-solana-bridge#contract-addresses).
+</Info>
+
+## Desde Bitcoin {#from-bitcoin}
+
+[Garden](https://app.garden.finance/?output-chain=base\&output-asset=cbBTC) es un puente rápido y sin custodia para transferir BTC y otros activos compatibles a Base. Está disponible en [mainnet](https://app.garden.finance/?output-chain=base\&output-asset=cbBTC) y en la [testnet Sepolia](https://testnet.garden.finance/?output-chain=base_sepolia\&output-asset=USDT).
+
+<Note>
+  El puente que antes estaba en bridge.base.org quedó obsoleto. Usa en su lugar las rutas indicadas arriba.
+</Note>
+
+## Aviso legal {#disclaimer}
+
+Coinbase Technologies, Inc. ofrece enlaces a estos proveedores de servicios independientes para su comodidad, pero no asume ninguna responsabilidad por sus operaciones. Cualquier interacción con estos proveedores concierne exclusivamente a usted y al proveedor.

@@ -1,0 +1,153 @@
+---
+title: "B20: superficie de incautación y obsolescencia de burnBlocked"
+description: "La superficie de incautación de B20 en Cobalt y la obsolescencia de burnBlocked. Notas de migración para los equipos integrados con la ruta de incautación de Beryl."
+---
+
+> **Público:** equipos integrados con la superficie base de B20 en Beryl (ya disponible) que realizan
+> retiradas administrativas de saldos, hoy mediante `burnBlocked`, ya obsoleto. Esta nota abarca únicamente la
+> superficie de incautación que se incorpora con el hardfork Cobalt y sus implicaciones para `burnBlocked`. Como la superficie es
+> compartida, se aplica tanto a B20 Asset como a B20 Stablecoin.
+
+## Resumen {#summary}
+
+En Cobalt, la superficie base de B20 incorpora una operación de incautación nativa. `seizeWithMemo(from, to,
+amount, memo)` reasigna el saldo de un titular a un destino en una sola llamada administrativa, controlada por un nuevo
+`SEIZE_ROLE`, un nuevo vector de pausa `SEIZE` y dos nuevas ranuras de política (`SEIZE_EXEMPT_POLICY`,
+`SEIZE_RECEIVER_POLICY`).
+
+Nada de lo que invocas hoy deja de funcionar: todos los selectores, temas de eventos y errores de Beryl conservan exactamente su selector de 4 bytes
+o su topic0 y siguen siendo invocables en Cobalt. En particular, `burnBlocked` queda obsoleto, pero
+no cambia (mismo selector, mismos eventos, mismo comportamiento) y se puede seguir llamando.
+
+Para migrar, traslada la retirada administrativa de saldos de `burnBlocked` a `seizeWithMemo`: incauta hacia una
+dirección de tesorería o propia y, después, llama a `burn` si quieres destruir el suministro.
+
+La incautación es opcional y se habilita por token. La superficie existe en Cobalt, pero la incautación no tiene ningún efecto hasta que el emisor
+configura `SEIZE_EXEMPT_POLICY`. Mientras la ranura no esté configurada (permitir siempre), ninguna cuenta es incautable y
+todas las llamadas a `seizeWithMemo` revierten con `AccountNotSeizable`. Un emisor que nunca configura la política carece, en
+la práctica, de capacidad de incautación en ese token.
+
+Cobalt aún no se ha activado. Hasta que lo haga, solo existe onchain la superficie de Beryl, y ninguno de los
+selectores `seize*`/`SEIZE_*` que se indican a continuación es invocable.
+
+## Tabla de correspondencias {#mapping-table}
+
+Los selectores y topic0 que se muestran a continuación son los valores reales de las ABI congeladas:
+`crates/common/precompiles/src/common/abi/v1.rs` para Beryl y
+`crates/common/precompiles/src/common/abi/v2.rs` para Cobalt. Todos los símbolos de Beryl mantienen su selector
+en Cobalt. La incautación forma parte de la interfaz compartida `IB20`, por lo que es idéntica en Asset y Stablecoin.
+
+### Funciones {#functions}
+
+| Símbolo en Beryl (selector)                 | Cobalt (selector)                                             | Estado                  | Motivo                                                                                                                                                                        |
+| ------------------------------------------- | ------------------------------------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `burnBlocked(address,uint256)` `0xec0cf3dc` | `burnBlocked(address,uint256)` `0xec0cf3dc`                   | deprecated-dialable     | Se mantiene sin cambios por compatibilidad con versiones anteriores. Es preferible usar `seizeWithMemo` y después `burn`. Destruye suministro y lee `TRANSFER_SENDER_POLICY`. |
+| `BURN_BLOCKED_ROLE()` `0x32ad9be8`          | `BURN_BLOCKED_ROLE()` `0x32ad9be8`                            | se mantiene sin cambios | Sigue restringiendo únicamente el acceso a `burnBlocked`.                                                                                                                     |
+| —                                           | `seizeWithMemo(address,address,uint256,bytes32)` `0xf916d81b` | nuevo                   | Reasignación administrativa de saldo. Es una transferencia, no una quema.                                                                                                     |
+| —                                           | `SEIZE_ROLE()` `0x3c7e9ba5`                                   | nuevo                   | Necesario para llamar a `seizeWithMemo`. Valor: `keccak256("SEIZE_ROLE")` = `0x3469b8b0d89e9604f8510ed143f74a8336d22955d4f83e23bf53d9414e27f432`.                             |
+| —                                           | `SEIZE_EXEMPT_POLICY()` `0xfeb346ec`                          | nuevo                   | Ranura de política que se comprueba sobre `from`. Valor: `keccak256("SEIZE_EXEMPT_POLICY")` = `0xedb5da348cfb67af08746d3afd1be81034b50d5c8576f31aff688f39dfd540ed`.           |
+| —                                           | `SEIZE_RECEIVER_POLICY()` `0xb31da27f`                        | nuevo                   | Ranura de política que se comprueba sobre `to`. Valor: `keccak256("SEIZE_RECEIVER_POLICY")` = `0xbf15b19caf5c77422c038bc25f26b8b815c3a14f6d04c6616076b81bcfe07b3d`.           |
+
+### Eventos {#events}
+
+| Evento de Beryl (topic0)                                                                                      | Cobalt (topic0)                                                                                                | Estado                   | Motivo                                                                                   |
+| ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------- |
+| `BurnedBlocked(address,address,uint256)` `0x0b552e96653fd6842da37c477005d3b5c08a8c7d3631b1f43787b2dc9a1006a3` | sin cambios                                                                                                    | deprecated-still-emitted | `burnBlocked` lo sigue emitiendo junto con `Transfer(from, address(0), amount)`.         |
+| —                                                                                                             | `Seized(address,address,address,uint256)` `0xa9aec5d8b86e2fa2fd6ac3af62f2622e3dfdab1967d4cbbb56a5df7d74cb887c` | new                      | Lo emite `seizeWithMemo` después de `Transfer(from, to, amount)` y `Memo(caller, memo)`. |
+
+### Errores {#errors}
+
+| Error de Beryl (selector)                 | Cobalt (selector)                          | Estado               | Motivo                                                                                                               |
+| ----------------------------------------- | ------------------------------------------ | -------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `AccountNotBlocked(address)` `0x64a5cb46` | sin cambios                                | ya presente en Beryl | Lo lanza `burnBlocked` cuando `from` está autorizado según `TRANSFER_SENDER_POLICY` (es decir, no está bloqueado).   |
+| —                                         | `AccountNotSeizable(address)` `0x91dbbc8d` | nuevo                | Lo lanza `seizeWithMemo` cuando `from` está autorizado según `SEIZE_EXEMPT_POLICY` (es decir, no se puede incautar). |
+
+### Funciones de pausa {#pause-features}
+
+`PausableFeature` solo admite añadir valores al final. Cobalt añade un ordinal.
+
+| Ordinales de Beryl               | Adición de Cobalt | Bit de almacenamiento | Motivo                                                                                                |
+| -------------------------------- | ----------------- | --------------------- | ----------------------------------------------------------------------------------------------------- |
+| `TRANSFER=0`, `MINT=1`, `BURN=2` | `SEIZE=3`         | `1 << 3 = 8`          | Vector de pausa independiente para `seizeWithMemo`. `ALL_FEATURES_PAUSED` pasa a ser `15` (`0b1111`). |
+
+`seizeWithMemo` está controlado por el nuevo vector `SEIZE`, no por `BURN`. `burnBlocked` sigue controlado por `BURN`.
+
+## Novedades en Cobalt: adopta estas prácticas {#new-at-cobalt-adopt-these}
+
+### `seizeWithMemo(from, to, amount, memo)` {#seizewithmemofrom-to-amount-memo}
+
+Esta es la vía administrativa canónica para retirar saldo. Se trata de una transferencia: el saldo pasa de
+`from` a `to`, y `totalSupply` no cambia. Se ejecuta como una operación de administración que omite la asignación
+y las políticas de transferencia (`TRANSFER_SENDER/RECEIVER/EXECUTOR_POLICY`). Emite, en este orden:
+
+1. `Transfer(from, to, amount)`
+2. `Memo(caller, memo)` (se admite un memo de `bytes32(0)`)
+3. `Seized(caller, from, to, amount)`
+
+Requisitos y protecciones:
+
+* **Rol**: quien llama debe tener `SEIZE_ROLE`; de lo contrario, la llamada revierte con `AccessControlUnauthorizedAccount`.
+* **Pausa**: `SEIZE` no debe estar en pausa; de lo contrario, la llamada revierte con `ContractPaused(SEIZE)`.
+* **Direcciones**: `to != address(0)` y `from != to`; de lo contrario, la llamada revierte con `InvalidReceiver`.
+  `from != address(0)`; de lo contrario, la llamada revierte con `InvalidSender`.
+* **Control del titular**: `from` debe estar bloqueada por `SEIZE_EXEMPT_POLICY`, es decir, no autorizada por
+  ella; de lo contrario, la llamada revierte con `AccountNotSeizable`. Una ranura sin configurar se interpreta como «permitir siempre», por lo que ninguna cuenta
+  es incautable hasta que un emisor configure `SEIZE_EXEMPT_POLICY`.
+* **Control del destino**: `to` debe estar autorizada por `SEIZE_RECEIVER_POLICY`, que replica
+  `MINT_RECEIVER_POLICY` y se aplica siempre. Sin embargo, una ranura sin configurar equivale a «permitir siempre», por lo que un token puede
+  incautar hacia cualquier destino (no hace falta incluir una tesorería en la lista de permitidos) hasta que se configure la ranura.
+* **Saldo**: el saldo de `from` debe ser `>= amount`; de lo contrario, la llamada revierte con `InsufficientBalance`.
+
+Si fallan varias protecciones a la vez, se aplica este orden de precedencia: control del titular, después control del destino
+y, por último, saldo. Es decir, `AccountNotSeizable` se produce antes que `PolicyForbids(SEIZE_RECEIVER_POLICY,
+...)`, que a su vez se produce antes que `InsufficientBalance`.
+
+## `burnBlocked` está obsoleto, pero no ha cambiado y aún se puede invocar {#burnblocked-is-deprecated-but-unchanged-and-still-dialable}
+
+`burnBlocked(from, amount)` sigue funcionando exactamente igual que en Beryl:
+
+* Destruye `amount` de un `from` bloqueado según `TRANSFER_SENDER_POLICY`, sin consumir ninguna
+  asignación (allowance). Emite `Transfer(from, address(0), amount)` y `BurnedBlocked(caller, from, amount)`
+  (sin `Memo`).
+* Está restringido por `BURN_BLOCKED_ROLE` y por el vector de pausa `BURN`.
+* Revierte con `AccountNotBlocked` cuando `from` está autorizado según `TRANSFER_SENDER_POLICY`.
+
+Para migrar, sustituye `burnBlocked(from, amount)` por `seizeWithMemo(from, treasury, amount, memo)`
+y, después, llama a `burn(amount)` desde la tesorería si sigues queriendo destruir esos tokens del suministro. Esto implica dos
+dominios distintos de política, rol y pausa (consulta los casos límite más abajo), por lo que no basta con cambiar un selector por otro.
+
+## Garantías y casos límite {#guarantees-and-edge-cases}
+
+**P: ¿La incautación modifica `totalSupply`? ¿Es una quema?**
+No. La incautación es una transferencia: reasigna `amount` de `from` a `to` y deja `totalSupply`
+intacto. La quema es `burnBlocked`: envía a `address(0)` y reduce el suministro. Para reproducir el
+resultado que antes producía la quema de cuentas bloqueadas, incaute hacia una dirección de tesorería o propia y luego llame a `burn`.
+
+**P: Tanto `seizeWithMemo` como `burnBlocked` se dirigen a cuentas «problemáticas». ¿Leen el mismo conjunto?**
+No, y es intencionado. `seizeWithMemo` lee `SEIZE_EXEMPT_POLICY`. `burnBlocked` lee
+`TRANSFER_SENDER_POLICY`. Un token puede definir un conjunto incautable distinto de su
+conjunto de cuentas con transferencias bloqueadas. En ambos casos, «elegible» significa no autorizado por la política correspondiente, y una
+política sin configurar (permitir siempre) implica que ninguna cuenta es elegible.
+
+**P: ¿Puedo pausar la incautación sin pausar las quemas, o viceversa?**
+Sí. `SEIZE` (ordinal 3) y `BURN` (ordinal 2) son bits de pausa independientes. Pausar `BURN` no
+detiene `seizeWithMemo`, y pausar `SEIZE` no detiene `burn`, `burnWithMemo` ni `burnBlocked`.
+
+**P: ¿Se solapan `SEIZE_ROLE` y `BURN_BLOCKED_ROLE`?**
+No. `seizeWithMemo` requiere `SEIZE_ROLE`. `burnBlocked` requiere `BURN_BLOCKED_ROLE`. Otorgar uno
+no otorga el otro.
+
+**P: Nunca configuré las políticas de incautación. ¿Qué ocurre si llamo a `seizeWithMemo`?**
+Revierte con `AccountNotSeizable(from)` para cualquier `from`, porque una `SEIZE_EXEMPT_POLICY` sin configurar
+permite siempre, de modo que ninguna cuenta es incautable. Debe configurar `SEIZE_EXEMPT_POLICY` para designar
+los titulares incautables antes de que la incautación tenga algún efecto. (Si deja `SEIZE_RECEIVER_POLICY` sin configurar, simplemente se permite
+cualquier destino).
+
+**P: ¿La incautación consulta las políticas de transferencia o consume una asignación (allowance)?**
+No. Es una operación administrativa: omite `TRANSFER_SENDER/RECEIVER/EXECUTOR_POLICY` y las asignaciones,
+y solo aplica `SEIZE_EXEMPT_POLICY` (sobre `from`) y `SEIZE_RECEIVER_POLICY` (sobre `to`).
+
+**P: ¿La incautación está disponible tanto en B20 Stablecoin como en B20 Asset?**
+Sí. Está definido en la interfaz compartida `IB20`, por lo que ambas variantes exponen el mismo
+selector `seizeWithMemo`, el mismo topic0 de `Seized`, el mismo selector `AccountNotSeizable`, los mismos getters `SEIZE_*` y el mismo
+bit de pausa `SEIZE` a partir de Cobalt.

@@ -1,0 +1,38 @@
+---
+title: 'eth_maxPriorityFeePerGas'
+sidebarTitle: 'eth_maxPriorityFeePerGas'
+description: 'EIP-1559 における、ガスあたりの推奨優先手数料（チップ）を返します。'
+---
+
+EIP-1559 トランザクションで使用する `maxPriorityFeePerGas` の推奨値を返します。これは、基本手数料に上乗せしてシーケンサーに支払うチップです。
+
+## パラメーター {#parameters}
+
+パラメーターはありません。
+
+## 戻り値 {#returns}
+
+<ResponseField name="result" type="string">
+  ガスあたりの推奨優先手数料 (wei単位) 。16進数文字列で返されます。
+</ResponseField>
+
+## 例 {#example}
+
+<CodeGroup>
+  ```json Request
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_maxPriorityFeePerGas",
+    "params": [],
+    "id": 1
+  }
+  ```
+
+  ```json Response
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0xf4240"
+  }
+  ```
+</CodeGroup>

@@ -1,0 +1,37 @@
+---
+title: "概述"
+description: "Cobalt 改进了 B20 代币标准，新增有效性交易，引入动态节点升级，并将 TEE 签名者注册迁移为链上证明验证。"
+---
+
+|         | 状态   | 日期              |
+| ------- | ---- | --------------- |
+| Sepolia | 已上线  | 2026 年 9 月 23 日 |
+| 主网      | 即将上线 | 2026 年 9 月 30 日 |
+
+## 功能特性 {#features}
+
+<AccordionGroup>
+  <Accordion title="B20 改进">
+    **Base** · 预编译合约
+
+    Cobalt 为 B20 代币标准带来多项改进：支持使用 B20 代币支付交易费用、支持定时更新乘数、简化转账封禁机制，并新增 Union 和 Intersect 策略。
+  </Accordion>
+
+  <Accordion title="有效性交易">
+    **Base** · 交易
+
+    Cobalt 引入了有效性交易：这类交易经过签名，只有在链上条件 (余额、存储、区块号及 Flashblock 索引谓词) 满足时，Base 才会将其打包上链。它适用于条件兑换、提款以及其他依赖状态的操作。完整规范请参阅[有效性交易](/zh/specifications/build-transaction/validity-transactions)。
+  </Accordion>
+
+  <Accordion title="动态升级">
+    **Base** · RPC
+
+    动态升级引入了一个以太坊智能合约，用于存储 Base 节点的升级时间戳，节点可查询该合约并实时应用变更。该功能将先以仅采集指标的模式在主网上线，通过收集数据来验证升级能否平稳进行。
+  </Accordion>
+
+  <Accordion title="TEE 注册迁移">
+    **Base** · 基础设施
+
+    Cobalt 改变了新的可信执行环境 (TEE) 签名者的注册方式：借助经过校验的 P-384 提示，AWS Nitro 证明将完全在链上以免信任的方式完成验证，取代原有的 RISC Zero 和 Boundless 证明流程。注册速度更快，且不再依赖外部的链下证明服务。Enclave 密钥生成、PCR0 镜像选择和证明验证保持不变。完整规范请参阅 [Registrar](/zh/specifications/base-protocol/proofs/registrar)。
+  </Accordion>
+</AccordionGroup>

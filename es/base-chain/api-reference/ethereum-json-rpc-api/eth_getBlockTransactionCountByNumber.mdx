@@ -1,0 +1,44 @@
+---
+title: 'eth_getBlockTransactionCountByNumber'
+sidebarTitle: 'eth_getBlockTransactionCountByNumber'
+description: 'Devuelve el número de transacciones de un bloque a partir de su número de bloque.'
+---
+
+Devuelve el número de transacciones del bloque que corresponde al número de bloque indicado.
+
+<Tip>
+  **Flashblocks:** consulta `https://mainnet.base.org` con `"pending"` para obtener el número de transacciones preconfirmadas en el Flashblock actual.
+</Tip>
+
+## Parámetros {#parameters}
+
+<ParamField body="block" type="string" required>
+  Número de bloque en hexadecimal, o bien `"latest"`, `"pending"`, `"safe"`, `"finalized"` o `"earliest"`.
+</ParamField>
+
+## Valor devuelto {#returns}
+
+<ResponseField name="result" type="string">
+  El número de transacciones del bloque, expresado como entero hexadecimal.
+</ResponseField>
+
+## Ejemplo {#example}
+
+<CodeGroup>
+  ```json Request
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_getBlockTransactionCountByNumber",
+    "params": ["latest"],
+    "id": 1
+  }
+  ```
+
+  ```json Response
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x1f"
+  }
+  ```
+</CodeGroup>

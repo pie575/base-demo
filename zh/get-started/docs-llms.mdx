@@ -1,0 +1,55 @@
+---
+title: 静态文档文件
+sidebarTitle: 静态文档文件
+description: 使用 llms.txt 和 llms-full.txt，让 AI 助手能够访问 Base 文档。
+---
+
+## 文档索引 {#documentation-index}
+
+完整的文档索引请访问：[https://docs.base.org/llms.txt](https://docs.base.org/llms.txt)
+
+建议先通过此文件了解所有可用页面，再进一步浏览。
+
+## 完整文档文件 {#full-documentation-file}
+
+如果你的 AI 工具暂不支持 MCP，可以改用静态文档文件。它将完整的 Base 文档整合为一个文本文件，供你的 AI 助手使用。
+
+<Warning>
+  静态 `llms-full.txt` 文件只是某一时刻的快照，可能未包含最新更新。请尽量使用 [MCP](/zh/get-started/docs-mcp)，以便始终获取最新文档。
+</Warning>
+
+### 在 Cursor 中设置 {#setup-with-cursor}
+
+[Cursor](https://cursor.com/) 是一款基于 VS Code 分叉版本打造的 AI 代码编辑器，提供 AI 代码补全、自然语言编辑等功能。
+
+<Steps>
+  <Step title="打开 Docs 设置">
+    前往 **Settings** &gt; **Features** &gt; **Docs**。
+  </Step>
+
+  <Step title="添加 Base 文档">
+    点击 **Add new doc**，然后粘贴：`https://docs.base.org/llms-full.txt`
+  </Step>
+
+  <Step title="在聊天中引用">
+    在 AI 聊天中输入 `@docs -> Base` 即可引用该文档。
+  </Step>
+</Steps>
+
+### 在 Claude Code 中设置 {#setup-with-claude-code}
+
+[Claude Code](https://docs.claude.com/en/docs/claude-code/overview) 是一款运行在终端中的智能体编程工具，能够理解你的代码库。
+
+<Steps>
+  <Step title="下载文档文件">
+    从以下地址下载静态文档文件：[https://docs.base.org/llms-full.txt](https://docs.base.org/llms-full.txt)
+  </Step>
+
+  <Step title="添加到项目中">
+    将该文件保存到项目目录或系统中某个固定的位置。
+  </Step>
+
+  <Step title="在聊天中引用">
+    使用 `/read` 命令或拖放文件路径，将文档加入对话。这样，Claude Code 在该会话中即可访问完整的 Base 文档。
+  </Step>
+</Steps>

@@ -1,0 +1,294 @@
+---
+title: "ZK 证明器"
+description: "ZK 证明器规范。ZK 证明器是一种链下服务，使用 SP1 程序为检查点提议和争议生成无需许可的证明。"
+---
+
+ZK 证明器是一种链下服务，使用 SP1 程序为检查点提议和争议生成无需许可的证明。
+证明服务接收区块范围请求，持久化保存证明状态，将证明任务提交至 SP1 证明基础设施，
+并返回收据，调用方可将该收据提交至
+`AggregateVerifier`。
+
+ZK 路径无需许可：任何运营者只要能够访问规范的 L1 和 L2 RPC、配置了 SP1
+后端并拥有 L1 交易签名器，即可请求证明并在链上提交有效的证明材料。
+
+## 职责 {#responsibilities}
+
+符合规范的 ZK 证明器栈负责以下工作：
+
+1. 接收针对 L2 区块范围的证明请求。
+2. 基于规范的 L1、L2 和信标链 RPC 生成见证输入。
+3. 使用 SP1 证明区间程序。
+4. 对于 Groth16 请求，将已完成的区间证明聚合为可在链上验证的 SNARK。
+5. 持久化存储证明请求和后端会话状态，确保进程重启后能够恢复工作。
+6. 通过 gRPC 提供证明状态查询和回执获取功能。
+7. 按照挑战者、提议者和 `ZKVerifier` 所要求的格式对回执进行编码。
+
+ZK 证明器不负责判定博弈是否有效。提议者和挑战者会自行选择要证明的范围、自行重新计算规范根，并在将证明材料提交到链上之前重新检查博弈状态。
+
+## 证明服务 API {#proving-service-api}
+
+证明服务对外提供以下接口：
+
+```text Proving Service API
+ProveBlock(ProveBlockRequest) -> ProveBlockResponse
+GetProof(GetProofRequest) -> GetProofResponse
+```
+
+`ProveBlock` 将证明请求加入队列，并返回一个 `session_id`。`GetProof` 返回当前
+状态，并在证明完成后返回所请求的收据字节。
+
+### ProveBlock 请求 {#proveblock-request}
+
+`ProveBlockRequest` 包含以下字段：
+
+| 字段                          | 含义                                                       |
+| --------------------------- | -------------------------------------------------------- |
+| `start_block_number`        | 一个 L2 区块，其 output root 作为该区间的可信起始状态。                     |
+| `number_of_blocks_to_prove` | 在 `start_block_number` 之后需要证明的 L2 区块数量。                  |
+| `sequence_window`           | 可选。为生成见证而推导 L1 head 时所用的 L1 区块前瞻窗口。                      |
+| `proof_type`                | `PROOF_TYPE_COMPRESSED` 或 `PROOF_TYPE_SNARK_GROTH16`。    |
+| `session_id`                | 可选。由调用方提供的 UUID，用于实现幂等请求。                                |
+| `prover_address`            | 写入 Groth16 journal 的 L1 地址，可防止证明被其他发送方重放。使用 Groth16 时必填。 |
+| `l1_head`                   | 可选。用于生成见证的 32 字节十六进制 L1 区块哈希。                            |
+
+如果提供了 `session_id`，使用相同 UUID 的重复请求将返回已有会话。因此，挑战者可以根据 `(game address, invalid checkpoint index)`
+推导出确定性的会话 ID，即使进程重启也能安全重试。
+
+当证明 journal 必须与已在链上提交的特定游戏上下文相匹配时 (例如针对现有游戏的争议证明) ，调用方需提供 `l1_head`。若省略该字段，服务会以 L2 区块的 L1 origin 为基础，加上请求或服务配置中的 sequence window 来推导 L1 head，
+这种方式适用于调用方尚未绑定 L1 head 的新提案。
+
+`PROOF_TYPE_SNARK_GROTH16` 要求提供 `prover_address`：聚合程序会将该地址写入 journal 摘要，`AggregateVerifier` 在接受证明前会重新校验同一摘要，
+从而将 Groth16 收据与发起请求的 L1 发送方绑定。
+
+### 证明类型 {#proof-types}
+
+该服务支持两种证明类型：
+
+| 证明类型                       | 后端会话             | 结果                                |
+| -------------------------- | ---------------- | --------------------------------- |
+| `PROOF_TYPE_COMPRESSED`    | `STARK`          | 压缩的 SP1 区间证明。                     |
+| `PROOF_TYPE_SNARK_GROTH16` | `STARK`, `SNARK` | 一个区间证明，以及一个可用于链上验证的 Groth16 聚合证明。 |
+
+对于 `PROOF_TYPE_SNARK_GROTH16`，服务会先将区间程序作为压缩 STARK
+会话提交。该会话完成后，服务再将聚合程序作为 Groth16
+SNARK 会话提交。
+
+## 请求生命周期 {#request-lifecycle}
+
+证明请求及其发件箱条目持久化后，请求的初始状态为 `CREATED`。随后，某个
+工作进程认领该发件箱任务，并在准备和提交后端任务期间将请求状态置为 `PENDING`。一旦至少创建了一个后端会话，请求即进入 `RUNNING` 状态。当该证明类型所需的全部会话均已完成、且收据
+字节已存储时，请求变为 `SUCCEEDED`；若验证、见证生成、后端提交、后端
+执行、收据下载或重试恢复中任一环节永久失败，请求则变为 `FAILED`。
+
+后端会话的状态 (`RUNNING`、`COMPLETED` 或 `FAILED`) 独立于证明请求单独跟踪。
+compressed 请求在所有 STARK 会话完成后即告成功。Groth16 请求则必须等
+STARK 和 SNARK 会话全部完成后才会成功。任一会话失败，其父请求都会随之失败。
+
+## 收据获取 {#receipt-retrieval}
+
+`GetProofRequest` 包含以下字段：
+
+| 字段             | 含义                                 |
+| -------------- | ---------------------------------- |
+| `session_id`   | 由 `ProveBlock` 返回的 UUID。           |
+| `receipt_type` | 可选的收据选择器，默认为 `RECEIPT_TYPE_STARK`。 |
+
+收据选择器可取以下值：
+
+| 收据类型                          | 响应字节                                                   |
+| ----------------------------- | ------------------------------------------------------ |
+| `RECEIPT_TYPE_STARK`          | 区间证明 (range proof) 经序列化的 SP1 proof-with-public-values。 |
+| `RECEIPT_TYPE_SNARK`          | 聚合证明经序列化的 SP1 proof-with-public-values。                |
+| `RECEIPT_TYPE_ON_CHAIN_SNARK` | 从已存储的 SNARK 收据中提取、供 SP1 Groth16 验证器使用的链上证明字节。          |
+
+当请求处于 `CREATED`、`PENDING` 或 `RUNNING` 状态时，`GetProof` 返回空的收据字节。
+失败的请求会返回 `STATUS_FAILED` 及已存储的错误信息。成功的响应始终
+携带非空的收据字节；如果已存储的请求状态为 `Succeeded`，但所请求的收据
+类型不存在，`GetProof` 会返回 gRPC `NOT_FOUND`，而不会返回空的成功响应。
+
+调用方负责将返回的收据字节封装为 `AggregateVerifier` 证明格式。
+在提交挑战、作废 (nullification) 或额外证明时，调用方需在收据前加上 ZK 证明类型
+字节作为前缀。在初始化博弈时，调用方还需附带 `initializeWithInitData()` 所需的 L1 origin 字段。
+有关验证器端的封装格式，请参阅 [Contracts](/zh/specifications/base-protocol/proofs/proof-contracts)。
+
+## 后端模式 {#backend-modes}
+
+证明服务支持以下后端模式：
+
+| 模式        | 用途                                  |
+| --------- | ----------------------------------- |
+| `mock`    | 为本地测试生成模拟收据，无需生成见证。                 |
+| `cluster` | 将任务提交到自托管的 SP1 集群，产物存储于 Redis 或 S3。 |
+| `network` | 按照所配置的履约策略将任务提交到 SP1 Network。       |
+
+`cluster` 和 `network` 后端使用相同的见证生成路径，区别仅在于提交、
+轮询和产物获取方式。`mock` 后端则完全跳过见证生成。
+
+## SP1 区间程序 {#sp1-range-program}
+
+区间程序用于证明 Base L2 在某一连续区块范围内的状态转换。其 stdin
+包含以下内容：
+
+```text Range Program Stdin
+rkyv(DefaultWitnessData)
+intermediateRootInterval
+```
+
+该程序根据 witness 重建原像预言机 (preimage oracle) 和信标链 blob 提供程序，运行
+Ethereum DA witness 执行器，并提交一个 `BootInfoStruct`。
+
+提交的启动信息包含以下字段：
+
+| 字段                  | 含义                              |
+| ------------------- | ------------------------------- |
+| `l2PreRoot`         | 受信任的起始 L2 区块的 output root。      |
+| `l2PreBlockNumber`  | 起始 L2 区块号。                      |
+| `l2PostRoot`        | 执行完所请求范围后的 output root。         |
+| `l2BlockNumber`     | 结束 L2 区块号。                      |
+| `l1Head`            | 用于获取推导数据的 L1 区块哈希。              |
+| `rollupConfigHash`  | 执行期间所用 rollup 配置的哈希。            |
+| `intermediateRoots` | 按中间根间隔依次采样得到的有序 output root 列表。 |
+
+最后一个中间根必须对应待证明范围的结束 L2 区块。
+
+## SP1 聚合程序 {#sp1-aggregation-program}
+
+聚合程序将已完成的区间证明转换为链上验证所用的 journal 摘要。其输入如下：
+
+```text Aggregation Program Inputs
+AggregationInputs              (sp1_zkvm::io::read)
+L1 headers (CBOR-encoded)      (sp1_zkvm::io::read_vec)
+compressed range proofs        (SP1 proof-input channel)
+```
+
+压缩后的区间证明通过 SP1 的证明输入机制传入，而不是以普通 stdin 字节的形式传入，
+并在程序内部通过 `sp1_lib::verify::verify_sp1_proof` 进行验证。
+
+`AggregationInputs` 包含各区间的 boot info、最新的 L1 检查点头部、区间程序的
+验证密钥以及证明者地址。
+
+聚合程序会验证以下内容：
+
+1. 至少存在一个区间 boot info。
+
+2. 相邻的区间 boot info 前后衔接：
+
+   ```text
+   previous.l2PostRoot == next.l2PreRoot
+   previous.l2BlockNumber == next.l2PreBlockNumber
+   ```
+
+3. 所有区间使用相同的 `rollupConfigHash`。
+
+4. 每个压缩后的区间证明都能通过所提供的区间验证密钥的验证。
+
+5. 所提供的 L1 区块头依次链接成链，且以 `latest_l1_checkpoint_head` 结尾。
+
+6. 每个区间的 `l1Head` 都出现在该区块头链中。
+
+随后，程序会将所有中间根展平，并构建一个聚合输出：
+
+```text Aggregate Output Fields lines wrap expandable
+proverAddress
+l1Head
+l2PreRoot
+startingL2SequenceNumber
+l2PostRoot
+endingL2SequenceNumber
+intermediateRoots
+rollupConfigHash
+imageHash
+```
+
+`imageHash` 是区间程序 (range program) 验证密钥的承诺值。聚合程序会承诺以下内容：
+
+```text Committed Journal Digest
+keccak256(abi.encodePacked(AggregationOutputs))
+```
+
+该摘要与 `AggregateVerifier` 为验证 ZK 证明而组装的 journal 哈希一致。按照
+[Contracts](/zh/specifications/base-protocol/proofs/proof-contracts) 中的术语，`imageHash` 即 `ZK_RANGE_HASH`，而 `ZKVerifier` 上配置的聚合
+验证密钥即 `ZK_AGGREGATE_HASH`。
+
+## ELF 可复现性 {#elf-reproducibility}
+
+SP1 ELF 二进制文件按需构建，不会提交到代码仓库。仓库在 `crates/proof/succinct/elf/manifest.toml` 中固定了预期的 ELF
+SHA-256 哈希值。凡是改动了任一 SP1
+程序的代码变更，都必须在同一次变更中重新构建 ELF 并更新 `manifest.toml`。
+
+范围验证密钥承诺 (`ZK_RANGE_HASH`) 和聚合验证密钥哈希
+(`ZK_AGGREGATE_HASH`) 属于链上安全参数。运营者在部署或配置验证器合约时，所用的值必须派生自与证明服务相同的
+ELF。
+
+## 重试行为 {#retry-behavior}
+
+服务会在不改变逻辑证明请求的前提下，对瞬时性异常情况进行重试：
+
+| 情况                         | 要求的行为                              |
+| -------------------------- | ---------------------------------- |
+| 发件箱任务已被认领                  | 跳过重复的工作进程。                         |
+| `PENDING` 请求卡住且没有活动会话      | 重置为 `CREATED` 并创建新的发件箱条目，直至达到重试上限。 |
+| 后端状态轮询出错                   | 将请求保持为 `RUNNING`，并在后续轮询时重试。        |
+| 后端已成功但证明产物不可用              | 将会话保持为 `RUNNING`，或在后续轮询时重试下载。      |
+| 后端报告任务失败或无法完成              | 将会话和证明请求标记为 `FAILED`。              |
+| STARK 完成后 Groth16 第二阶段提交失败 | 将证明请求标记为 `FAILED`。                 |
+
+对于该已存储的请求，调用方应将 `FAILED` 视为终止状态。如果仍需要该证明，
+调用方应使用其确定性的 `session_id` 提交或重试同一逻辑请求。
+
+## 服务生命周期 {#service-lifecycle}
+
+启动时，证明服务会依次执行以下操作：
+
+1. 连接 Postgres。
+2. (可选) 为 L1、L2 和信标 RPC 启动带速率限制的本地代理。
+3. 从 rollup RPC 加载 rollup 配置。
+4. 计算范围证明与聚合证明所需的证明密钥和验证密钥。
+5. 初始化已配置的后端。
+6. 启动发件箱处理器。
+7. 启动状态轮询器。
+8. 启动 gRPC 服务器和反射服务。
+
+发件箱处理器负责将已持久化的请求转换为后端会话。状态轮询器负责同步运行中的
+会话、下载收据、在需要时触发 Groth16 第二阶段，并对卡住的请求进行重试或将其
+标记为失败。
+
+## 运维方输入 {#operator-inputs}
+
+ZK 证明服务需要以下输入：
+
+* L1 执行层 RPC 端点。
+* L1 信标链 RPC 端点。
+* L2 执行层 RPC 端点。
+* Rollup RPC 端点。
+* Postgres 连接设置。
+* SP1 后端配置。
+* 集群模式下的制品存储配置。
+* 轮询间隔、卡滞请求超时时间和重试次数上限。
+* 指标与日志配置。
+
+网络模式还需要配置 SP1 Network 签名者或 KMS 请求者。集群模式
+还需要一个 SP1 集群端点，并且必须配置且仅配置一个制品存储后端。
+
+## 链上预期 {#onchain-expectations}
+
+ZK 证明字节以证明类型 `ZK` 提交给 `AggregateVerifier`。游戏会根据提案或争议上下文组装
+预期的 journal，并使用已配置的聚合验证密钥调用 `ZKVerifier.verify()`。
+
+有效的 Groth16 收据能够证明聚合程序已承诺 (commit) 预期的 journal 摘要，
+但它无法取代调用方的状态检查。提议者和挑战者在提交证明材料之前，仍必须重新计算
+规范根，并重新检查游戏状态。
+
+## 安全要求 {#safety-requirements}
+
+ZK 证明器实现必须保持以下安全属性：
+
+* 如果调用方提供了 `l1_head`，则使用该值，以确保争议证明与链上存储的博弈上下文
+  相匹配。
+* Groth16 证明必须提供 `prover_address`，因为该值会被提交到聚合 journal 中。
+* 对于确定性的 `session_id` 值，请求创建操作必须保持幂等。
+* 除非存储的 SNARK 收据能够成功反序列化，否则不得返回链上 SNARK 字节。
+* 在依赖后端异步完成之前，先持久化后端会话元数据。
+* 固定 ELF 哈希，防止验证密钥和链上配置在不知不觉中发生漂移。
+* 将 RPC 数据不可用、后端轮询失败以及产物下载失败视为可重试的
+  服务状态，而非证明有效性的判定结果。

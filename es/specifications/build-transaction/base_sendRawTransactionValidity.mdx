@@ -1,0 +1,69 @@
+---
+title: "RPC de transacciones de validez"
+sidebarTitle: "RPC de transacciones de validez"
+description: "Envía una transacción sin procesar firmada con predicados de validez."
+---
+
+Envía una transacción firmada de tipo legacy, EIP-2930 o EIP-1559 con predicados que controlan cuándo Base puede incluirla. Se recomienda EIP-1559.
+
+<Warning>
+  Este método experimental está disponible actualmente en Vibenet. El contrato de la API de producción aún no está confirmado.
+</Warning>
+
+## Parámetros {#parameters}
+
+Pasa dos parámetros: el primero es una transacción firmada y serializada, y el segundo contiene un arreglo `validity` no vacío.
+
+<RequestExample>
+  ```json Request lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "base_sendRawTransactionValidity",
+    "params": [
+      "0x<signed-raw-transaction>",
+      {
+        "validity": [
+          {
+            "type": "storage",
+            "params": {
+              "address": "0x8ba1f109551bD432803012645Ac136ddd64DBA72",
+              "slot": "0x8",
+              "mask": "0xff",
+              "op": "=",
+              "value": "0x2a"
+            }
+          }
+        ]
+      }
+    ]
+  }
+  ```
+</RequestExample>
+
+## Predicados {#predicates}
+
+| Tipo               | Parámetros                                        |
+| ------------------ | ------------------------------------------------- |
+| `balance`          | `address`, `op`, `value`                          |
+| `storage`          | `address`, `slot`, `op`, `value`, `mask` opcional |
+| `block_number`     | `op`, `value`                                     |
+| `flashblock_index` | `op`, `value`                                     |
+
+Los operadores admitidos son `<`, `<=`, `=`, `!=`, `>` y `>=`. Los valores de los predicados se expresan como cadenas hexadecimales con el prefijo `0x`. De forma predeterminada, `mask` tiene todos los bits a uno.
+
+## Valor devuelto {#returns}
+
+<ResponseField name="result" type="string">
+  El hash de 32 bytes de la transacción enviada.
+</ResponseField>
+
+Que se devuelva un hash confirma que la transacción fue aceptada, pero no que se haya incluido en un bloque.
+
+## Errores {#errors}
+
+El método devuelve errores JSON-RPC. Gestiona los casos de método no disponible, parámetros no válidos y hash de transacción ausente.
+
+Los códigos y mensajes de error todavía no son estables.
+
+Consulta [Predicados y seguridad](/es/specifications/build-transaction/predicates-and-safety) para conocer las reglas de evaluación. Si una transacción no se incluye, consulta [Solución de problemas](/es/specifications/build-transaction/troubleshooting).

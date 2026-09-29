@@ -1,0 +1,64 @@
+---
+title: "Llamar a un servicio de pago"
+keywords: ["x402 buyer", "pay for API agent", "x402 client spend policy", "agent USDC payment"]
+description: "Llama a un servicio x402 desde un agente aplicando límites de gasto por red, por token, por solicitud y por sesión."
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+Envuelve el cliente HTTP de tu agente para que pueda interpretar una respuesta 402, elegir un esquema compatible, firmar y volver a intentar la solicitud. Aplica la política local antes de generar cualquier firma.
+
+## Demostración {#demo}
+
+<PaymentsDemo flow="x402Buyer" />
+
+<Tip>
+  La demostración anterior es solo una simulación. Si quieres ver demostraciones onchain en Vibenet, consulta [Demostraciones de la cadena Base](https://chain.base.org/demos).
+</Tip>
+
+## Aplicar la política de gasto antes de firmar {#enforce-spend-policy-before-signing}
+
+{/* sample: x402-buyer-ts */}
+
+```typescript TypeScript buyer lines wrap expandable highlight={9,13-17,20}
+const account = privateKeyToAccount(required("EVM_PRIVATE_KEY") as `0x${string}`);
+const publicClient = createPublicClient({ chain: baseSepolia, transport: http() });
+const client = new x402Client()
+  .register("eip155:*", new ExactEvmScheme(account))
+  .register("eip155:*", new UptoEvmScheme(account))
+  .register("eip155:*", new BatchSettlementEvmScheme(toClientEvmSigner(account, publicClient)));
+
+const baseSepoliaUsdc = "0x036CbD53842c5426634e7929541eC2318f3dCF7c";
+let authorizedThisSession = 0n;
+client.onBeforePaymentCreation(async ({ selectedRequirements }) => {
+  if (selectedRequirements.network !== "eip155:84532") return { abort: true, reason: "Wrong network" };
+  if (selectedRequirements.asset.toLowerCase() !== baseSepoliaUsdc.toLowerCase()) return { abort: true, reason: "Wrong asset" };
+  const amount = BigInt(selectedRequirements.amount);
+  if (amount > 100_000n || authorizedThisSession + amount > 1_000_000n) {
+    return { abort: true, reason: "Spend limit exceeded" };
+  }
+  authorizedThisSession += amount;
+});
+
+const fetchWithPayment = wrapFetchWithPayment(fetch, client);
+const response = await fetchWithPayment("http://localhost:4021/fixed");
+if (!response.ok) throw new Error(`Paid request failed: ${response.status}`);
+console.log(await response.json());
+```
+
+El wrapper automatiza la negociación de pagos, no la confianza. Trata los esquemas y el contenido de las respuestas como entradas no confiables al validarlos, y mantén la política de la billetera independiente de cualquier instrucción que devuelva el servicio.
+
+<Check>
+  El cliente solo paga cuando la solicitud usa USDC de Base Sepolia y no supera ni el límite por solicitud ni el límite de la sesión.
+</Check>
+
+<Warning>
+  El facilitador público de x402.org está pensado para redes de prueba. Para Base Mainnet, elige un facilitador de producción, protege las claves de firma, limita el gasto total de forma persistente entre procesos y rechaza los esquemas o activos no compatibles.
+</Warning>
+
+## Consulta también {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="Cobrar por una API" icon="server" href="/es/build-on-base/accept-payments/charge-for-an-api">Implementa la parte del vendedor de un pago exacto.</Card>
+  <Card title="Agrupar pagos de alta frecuencia" icon="layer-group" href="/es/build-on-base/accept-payments/batch-high-frequency-payments">Reduce la frecuencia de liquidación en llamadas repetidas.</Card>
+</CardGroup>

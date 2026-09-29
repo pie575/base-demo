@@ -1,0 +1,880 @@
+---
+title: "Verificar cuentas de redes sociales"
+description: "Usa Base Verify para que los usuarios demuestren que son titulares de cuentas verificadas (X, Coinbase, Instagram, TikTok) sin compartir sus credenciales, lo que permite realizar airdrops resistentes a ataques Sybil, ofrecer contenido restringido y otorgar recompensas basadas en la identidad."
+---
+
+## ¿Qué es Base Verify? {#what-is-base-verify}
+
+Base Verify permite a los usuarios demostrar que son titulares de cuentas verificadas en [X](https://x.com/), [Coinbase](https://www.coinbase.com/), [Instagram](https://www.instagram.com/) y [TikTok](https://www.tiktok.com/) sin compartir sus credenciales. Tu aplicación recibe un token determinista que ofrece resistencia frente a ataques Sybil.
+
+Aunque una billetera tenga pocas transacciones, Base Verify revela si se trata de un usuario de alto valor a partir de sus cuentas sociales verificadas en X, Instagram y TikTok o de una suscripción a [Coinbase One](https://www.coinbase.com/one). Así puedes identificar usuarios de calidad, independientemente de su actividad onchain.
+
+**Ejemplos de casos de uso:**
+
+* Airdrops o recompensas diarias condicionados a la posesión de tokens
+* Acceso a contenido exclusivo (p. ej., monedas de creadores)
+* Recompensas basadas en la identidad y programas de fidelización
+
+Si todavía necesitas conectar billeteras o firmar mensajes en tu aplicación, empieza por [Autenticar usuarios](https://docs.cdp.coinbase.com/coinbase-wallet/guides/authenticate-users), [Firmar y verificar datos tipados](https://docs.cdp.coinbase.com/coinbase-wallet/guides/sign-and-verify-typed-data) o la [guía de inicio rápido web con React](https://docs.cdp.coinbase.com/coinbase-wallet/quickstart/web-react).
+
+***
+
+## Conceptos fundamentales {#core-concepts}
+
+### Proveedor {#provider}
+
+Plataforma de identidad con la que se integra Base Verify. Actualmente se admiten **[X](https://x.com/)**, **[Coinbase](https://www.coinbase.com/)**, **[Instagram](https://www.instagram.com/)** y **[TikTok](https://www.tiktok.com/)**.
+
+### Verificación {#verification}
+
+Prueba criptográfica de que una billetera es titular de una cuenta en un proveedor determinado.
+
+### Rasgo {#trait}
+
+Un atributo específico de la cuenta del proveedor que se puede verificar.
+
+**Ejemplos:**
+
+* `verified: true`: la cuenta de X tiene la marca de verificación azul
+* `coinbase_one_active: true`: suscripción activa a Coinbase One
+* `followers: gt:1000`: la cuenta de X tiene más de 1000 seguidores
+* `followers_count: gte:5000`: cuenta de Instagram con 5000 seguidores o más
+* `video_count: gte:50`: cuenta de TikTok con 50 videos o más
+
+### Acción {#action}
+
+Una cadena definida por el desarrollador que identifica qué está haciendo el usuario con su verificación. Las acciones te permiten emitir tokens distintos para diferentes casos de uso dentro de una misma aplicación.
+
+**Ejemplos:**
+
+* `claim_daily_reward`: reclamar una recompensa diaria
+* `join_allowlist`: unirse a una lista de acceso exclusiva
+* `unlock_premium_content`: acceder a contenido restringido
+* `participate_in_raffle`: participar en un sorteo
+
+#### Cómo funcionan las acciones {#how-actions-work}
+
+Las acciones se especifican en los recursos del mensaje de [Sign-In with Ethereum (SIWE)](https://eips.ethereum.org/EIPS/eip-4361):
+
+```typescript SIWE resources with action
+resources: [
+  'urn:verify:provider:x',
+  'urn:verify:action:claim_daily_reward'
+]
+```
+
+La acción se devuelve en la respuesta de la API:
+
+```json Verification response with action
+{
+  "token": "abc123...",
+  "action": "claim_daily_reward",
+  "wallet": "0x1234..."
+}
+```
+
+#### Por qué importan las acciones {#why-actions-matter}
+
+**Cada acción genera un token distinto.** Esto permite realizar varias reclamaciones independientes desde la misma cuenta verificada:
+
+* El usuario verifica su cuenta de X con la acción `claim_airdrop` → Token: `abc123`
+* La misma cuenta de X con la acción `join_allowlist` → Token: `def456` (distinto)
+* La misma cuenta de X con la acción `claim_airdrop` otra vez → Token: `abc123` (igual que el primero)
+
+**Casos de uso:**
+
+* **Varias campañas**: realiza airdrops independientes sin que interfieran entre sí
+* **Restricción de funciones**: tokens distintos para distintas funciones premium
+* **Eventos periódicos**: una acción nueva para cada evento (p. ej., `raffle_jan_2025`, `raffle_feb_2025`)
+
+#### Elegir nombres de acciones {#choosing-action-names}
+
+Usa nombres descriptivos, en minúsculas y con guiones bajos:
+
+| Correcto                | Incorrecto                              |
+| :---------------------- | :-------------------------------------- |
+| `claim_genesis_airdrop` | `airdrop` (demasiado genérico)          |
+| `unlock_pro_features`   | `action1` (no significa nada)           |
+| `enter_weekly_raffle`   | `base_verify_token` (reservado/confuso) |
+
+<Warning>
+  Una vez que hagas el lanzamiento con un nombre de acción, no lo cambies. Si cambias la acción, se generarán tokens distintos para los mismos usuarios, lo que anula tu resistencia a ataques Sybil.
+</Warning>
+
+### Token — Resistencia a ataques Sybil {#token-sybil-resistance}
+
+Un identificador determinista vinculado a la cuenta del proveedor, no a la billetera. **Este es el principal mecanismo contra ataques Sybil.**
+
+#### Cómo funciona {#how-it-works}
+
+1. La billetera A verifica una cuenta de X → Base Verify devuelve `Token: abc123` → nunca lo has visto, así que otorgas el airdrop.
+2. La misma cuenta de X lo vuelve a intentar con la billetera B → Base Verify devuelve `Token: abc123` → ya lo has visto, así que bloqueas la solicitud duplicada.
+
+Sin Base Verify, los usuarios podrían reclamar varias veces con distintas billeteras. Con Base Verify, una cuenta verificada = un token = una solicitud.
+
+#### Propiedades del token {#token-properties}
+
+* **Determinista**: la misma cuenta del proveedor siempre genera el mismo token
+* **Único por proveedor**: el token de X de un usuario es distinto de su token de Instagram
+* **Único por aplicación**: tu aplicación recibe tokens distintos de los que reciben otras aplicaciones (privacidad)
+* **Específico de la acción**: los tokens varían según la acción indicada en tu mensaje SIWE
+* **Persistente**: los tokens no caducan ni se rotan (a menos que el usuario elimine su verificación)
+* **Independiente de los rasgos**: los tokens no cambian aunque cambien los rasgos (p. ej., si aumenta el número de seguidores)
+
+#### Cómo almacenar tokens {#how-to-store-tokens}
+
+```json Verification token storage record
+{
+  token: "abc123...",
+  walletAddress: "0x1234...",
+  provider: "x",
+  claimedAt: "2024-01-15",
+}
+```
+
+#### Evitar reclamaciones dobles {#prevent-double-claims}
+
+```typescript Prevent duplicate claims by token expandable lines
+async function claimAirdrop(verificationToken: string, walletAddress: string) {
+  const existingClaim = await db.findClaimByToken(verificationToken);
+
+  if (existingClaim) {
+    return { error: "This X account already claimed" };
+  }
+
+  await db.createClaim({
+    token: verificationToken,
+    wallet: walletAddress,
+    claimedAt: new Date()
+  });
+
+  return { success: true };
+}
+```
+
+***
+
+## Arquitectura y flujo {#architecture-and-flow}
+
+```text Base Verify architecture and verification flow lines wrap expandable
+                    ┌─────────────┐
+                    │             │  1. El usuario conecta su billetera
+                    │   Your      │
+                    │   App  │
+                    │  (Frontend) │
+                    └──────┬──────┘
+                           │
+                           │ 2. La app genera el mensaje SIWE (frontend)
+                           │    • Incluye la dirección de la billetera
+                           │    • Incluye el proveedor (x, coinbase, instagram, tiktok)
+                           │    • Incluye los atributos (verified:true, followers:gt:1000)
+                           │    • Incluye la acción (p. ej., claim_airdrop)
+                           │
+                           │ 3. El usuario firma el mensaje SIWE con su billetera
+                           │
+                           │ 4. Envía la firma + el mensaje a TU backend
+                           │
+                           ▼
+                    ┌──────────────┐
+                    │  App    │  • Valida los requisitos de atributos
+                    │  Backend     │  • Verifica la firma con la API de Base Verify
+                    │  (Your API)  │
+                    └──────┬───────┘
+                           │
+                           ▼
+
+   200 OK ←───────┌──────────────────┐───────→ 400
+   Verified!      │                  │         User has account
+   (DONE)         │  Base Verify API │         but traits not met
+                  │  verify.base.dev │         (DONE)
+                  └────────┬─────────┘
+                           │
+                           │ 404 Not Found
+                           ▼
+
+    5. Redirige a la app de Base Verify
+                           │
+                           ▼
+                    ┌──────────────────────┐
+                    │  Base Verify         │  6. El usuario completa el flujo OAuth
+                    │  App            │     (X, Coinbase, Instagram, TikTok)
+                    │  verify.base.dev     │  7. Base Verify guarda la verificación
+                    └──────────┬───────────┘
+                               │
+                               │ 8. Redirige de vuelta a tu app
+                               ▼
+                        ┌─────────────┐
+                        │  Your       │  9. Vuelve a verificar (paso 4)
+                        │  App   │     → Ahora devuelve 200 o 400
+                        └─────────────┘
+```
+
+### Responsabilidades de tu aplicación {#your-apps-responsibilities}
+
+* Generar mensajes SIWE con requisitos de rasgos
+* Gestionar la conexión de la billetera del usuario
+* Redirigir a la aplicación Base Verify cuando no se encuentre ninguna verificación
+* Almacenar el token de verificación devuelto para impedir que se reutilice
+* Mantener tu clave secreta a salvo en el backend
+
+### Responsabilidades de Base Verify {#base-verifys-responsibilities}
+
+* Validar firmas SIWE
+* Almacenar las verificaciones de los proveedores (X, Coinbase, Instagram, TikTok)
+* Comprobar si la verificación cumple los requisitos de los rasgos
+* Facilitar el flujo de OAuth con los proveedores
+* Devolver tokens deterministas para ofrecer resistencia a ataques Sybil
+
+### Códigos de respuesta {#response-codes}
+
+| Código                                                    | Significado                                                                                                          | Acción                                                             |
+| :-------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------- |
+| **200 OK**                                                | La billetera ha verificado la cuenta del proveedor Y cumple todos los requisitos de rasgos. Devuelve un token único. | Conceder acceso y almacenar el token.                              |
+| **404 Not Found**                                         | La billetera nunca ha verificado este proveedor.                                                                     | Redirigir al usuario a la aplicación Base Verify.                  |
+| **400 Bad Request** (`verification_traits_not_satisfied`) | La billetera ha verificado el proveedor, pero no cumple los requisitos de rasgos.                                    | Indicar al usuario que no cumple los requisitos. **No** redirigir. |
+
+***
+
+## Primeros pasos {#getting-started}
+
+### Requisitos previos {#prerequisites}
+
+1. **Clave de API**: completa el [formulario de interés](https://forms.gle/6L4hWAHkojYcefz27) para obtener acceso
+2. **Integración de billetera**: los usuarios deben poder conectarse y firmar mensajes. Consulta [Autenticar usuarios](https://docs.cdp.coinbase.com/coinbase-wallet/guides/authenticate-users) o la [guía de inicio rápido para web con React](https://docs.cdp.coinbase.com/coinbase-wallet/quickstart/web-react)
+3. **Servidor backend**: para llamar de forma segura a la API de Base Verify y mantener tu clave secreta a salvo. Si quieres ver un patrón similar de firma entre frontend y backend, consulta [Firmar y verificar datos tipados](https://docs.cdp.coinbase.com/coinbase-wallet/guides/sign-and-verify-typed-data)
+
+### Registra tu aplicación {#register-your-app}
+
+Proporciona al equipo de Base Verify la siguiente información:
+
+1. El **dominio de tu aplicación**
+2. Tu **URI de redirección**: la dirección a la que vuelven los usuarios tras la verificación (p. ej., `https://yourapp.com`)
+
+<Warning>
+  Tu clave secreta **nunca** debe quedar expuesta en el código del frontend. Todas las llamadas a la API de Base Verify deben pasar por tu backend.
+</Warning>
+
+***
+
+## Implementación {#implementation}
+
+<Steps>
+  <Step title="Configura tu aplicación">
+    Crea un archivo de configuración para tu integración de Base Verify:
+
+    ```typescript lib/config.ts highlight={3}
+    export const config = {
+      appUrl: 'https://your-app.com',
+      baseVerifySecretKey: process.env.BASE_VERIFY_SECRET_KEY,
+      baseVerifyApiUrl: 'https://verify.base.dev/v1',
+      baseVerifyMiniAppUrl: 'https://verify.base.dev',
+    }
+    ```
+
+    Agrega tu clave secreta a `.env.local`:
+
+    ```shell .env.local
+    BASE_VERIFY_SECRET_KEY=your_secret_key_here
+    ```
+  </Step>
+
+  <Step title="Generar la firma SIWE (frontend)">
+    Crea un mensaje [SIWE](https://eips.ethereum.org/EIPS/eip-4361) que incluya el proveedor, los requisitos de atributos y la acción:
+
+    ```typescript lib/signature-generator.ts expandable lines highlight={7-12,15-24}
+    import { SiweMessage, generateNonce } from 'siwe'
+    import { config } from './config'
+
+    export async function generateSignature(
+      signMessageFunction: (message: string) => Promise<string>,
+      address: string
+    ) {
+      const resources = [
+        'urn:verify:provider:x',
+        'urn:verify:provider:x:verified:eq:true',
+        'urn:verify:provider:x:followers:gte:100',
+        'urn:verify:action:claim_airdrop'
+      ]
+
+      const siweMessage = new SiweMessage({
+        domain: new URL(config.appUrl).hostname,
+        address,
+        statement: 'Verify your X account',
+        uri: config.appUrl,
+        version: '1',
+        chainId: 8453,
+        nonce: generateNonce(),
+        issuedAt: new Date().toISOString(),
+        expirationTime: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(),
+        resources,
+      })
+
+      const message = siweMessage.prepareMessage()
+      const signature = await signMessageFunction(message)
+
+      return { message, signature, address }
+    }
+    ```
+  </Step>
+
+  <Step title="Comprobar la verificación (frontend → backend)">
+    El frontend genera la firma y la envía a **tu** backend, que se encarga de llamar a la API de Base Verify.
+
+    **Frontend:**
+
+    ```typescript Frontend verification check expandable lines highlight={2-8,11-19}
+    async function checkVerification(address: string) {
+      const signature = await generateSignature(
+        async (msg) => {
+          return new Promise((resolve, reject) => {
+            signMessage(
+              { message: msg },
+              { onSuccess: resolve, onError: reject }
+            )
+          })
+        },
+        address
+      )
+
+      const response = await fetch('/api/check-verification', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          signature: signature.signature,
+          message: signature.message,
+          address: address
+        })
+      })
+
+      const data = await response.json();
+      return data;
+    }
+    ```
+
+    **Backend (tu endpoint de API):**
+
+    ```typescript pages/api/check-verification.ts expandable lines highlight={5-8,15,19-24}
+    import { validateTraits } from '../../lib/trait-validator';
+
+    export default async function handler(req, res) {
+      const { signature, message, address } = req.body;
+
+      const expectedTraits = {
+        'verified': 'true',
+        'followers': 'gte:100'
+      };
+
+      const validation = validateTraits(message, 'x', expectedTraits);
+
+      if (!validation.valid) {
+        return res.status(400).json({
+          error: 'Invalid trait requirements in message',
+          details: validation.error
+        });
+      }
+
+      const response = await fetch('https://verify.base.dev/v1/base_verify_token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.BASE_VERIFY_SECRET_KEY}`,
+        },
+        body: JSON.stringify({
+          signature: signature,
+          message: message,
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return res.status(200).json({ verified: true, token: data.token });
+      } else if (response.status === 404) {
+        return res.status(404).json({ verified: false, needsVerification: true });
+      } else if (response.status === 400) {
+        const data = await response.json();
+        if (data.message === 'verification_traits_not_satisfied') {
+          return res.status(400).json({ verified: false, traitsNotMet: true });
+        }
+      }
+
+      return res.status(500).json({ error: 'Verification check failed' });
+    }
+    ```
+
+    <Warning>
+      Tu backend **debe** validar que los requisitos de rasgos del mensaje SIWE coincidan con los que espera. Así se evita que los usuarios modifiquen los requisitos de rasgos en el frontend para eludir tus controles de acceso. Consulta las [prácticas recomendadas de seguridad](#validate-trait-requirements) para obtener más información.
+    </Warning>
+  </Step>
+
+  <Step title="Redirigir a Base Verify (frontend)">
+    Si recibes una respuesta 404, redirige al usuario a la Base Verify App para que complete el flujo de OAuth:
+
+    ```typescript Open the Base Verify App lines wrap expandable highlight={3-6,9}
+    function redirectToVerifyMiniApp(provider: string) {
+      const params = new URLSearchParams({
+        redirect_uri: config.appUrl,
+        providers: provider,
+      })
+
+      const miniAppUrl = `${config.baseVerifyMiniAppUrl}?${params.toString()}`
+
+      const deepLink = `cbwallet://miniapp?url=${encodeURIComponent(miniAppUrl)}`
+      window.open(deepLink, '_blank')
+    }
+    ```
+
+    Tras la verificación, el usuario vuelve a tu `redirect_uri` con `?success=true`. Ejecuta de nuevo la comprobación (paso 3) y esta vez devolverá 200 con un token. Si estás desarrollando para la app de Base, consulta la [descripción general de Build on Base](/es/build-on-base/overview) para obtener una guía más completa sobre la estructura y el ciclo de vida de la app.
+  </Step>
+</Steps>
+
+### Manejo de errores {#error-handling}
+
+| Respuesta                                     | Qué hacer                                                                                                                   |
+| :-------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------- |
+| **404**                                       | El usuario no se ha verificado. Redirígelo a la aplicación Base Verify.                                                            |
+| **400** (`verification_traits_not_satisfied`) | El usuario tiene una cuenta, pero no cumple los requisitos. Muestra un mensaje; no lo redirijas ni reintentes la solicitud. |
+| **200**                                       | Guarda el token y concede el acceso.                                                                                        |
+
+<Note>
+  **No** reintentes las respuestas 404: el usuario simplemente aún no se ha verificado. **No** reintentes las respuestas 400 con `verification_traits_not_satisfied`: reintentar no servirá de nada a menos que cambien las métricas de la cuenta del usuario (por ejemplo, si consigue más seguidores).
+</Note>
+
+***
+
+## Referencia de la API {#api-reference}
+
+### Autenticación {#authentication}
+
+Todas las solicitudes a la API deben incluir tu clave secreta en el encabezado `Authorization`:
+
+```http Authorization header
+Authorization: Bearer YOUR_SECRET_KEY
+```
+
+### POST /v1/base_verify_token {#post-v1base_verify_token}
+
+Comprueba si una billetera tiene una verificación específica y obtiene el token de verificación.
+
+#### Solicitud {#request}
+
+```json POST /v1/base_verify_token request body
+{
+  signature: string,   // Firma SIWE generada por la billetera
+  message: string      // Mensaje SIWE (incluye provider/traits en resources)
+}
+```
+
+#### Ejemplo de solicitud {#example-request}
+
+```bash POST /v1/base_verify_token cURL example wrap
+curl -X POST https://verify.base.dev/v1/base_verify_token \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_SECRET_KEY" \
+  -d '{
+    "signature": "0x1234...",
+    "message": "verify.base.dev wants you to sign in..."
+  }'
+```
+
+#### Respuestas {#responses}
+
+**200 OK — verificado:**
+
+```json 200 OK response
+{
+  "token": "abc123...",
+  "action": "claim_airdrop",
+  "wallet": "0x1234..."
+}
+```
+
+| Campo    | Tipo   | Descripción                                                                                                                           |
+| :------- | :----- | :------------------------------------------------------------------------------------------------------------------------------------ |
+| `token`  | string | Token de verificación determinista para ofrecer resistencia a ataques Sybil. Misma cuenta del proveedor + misma acción = mismo token. |
+| `action` | string | Acción personalizada especificada en el mensaje SIWE. Cada acción produce un token distinto.                                          |
+| `wallet` | string | Dirección de la billetera del usuario.                                                                                                |
+
+**404 Not Found — verificación no encontrada:**
+
+```json 404 not found response
+{
+  "error": "verification_not_found"
+}
+```
+
+Redirige al usuario a la aplicación Base Verify para que complete la verificación.
+
+**400 Bad Request — no se cumplen los rasgos:**
+
+```json 400 traits not satisfied response
+{
+  "code": 9,
+  "message": "verification_traits_not_satisfied",
+  "details": []
+}
+```
+
+El usuario tiene una cuenta en el proveedor, pero no cumple los requisitos de rasgos (traits). No lo redirijas.
+
+**401 Unauthorized — clave no válida:**
+
+```json 401 unauthorized response
+{
+  "error": "unauthorized"
+}
+```
+
+Comprueba que tu clave secreta sea correcta y esté incluida en el encabezado Authorization.
+
+### Redirección desde la aplicación {#app-redirect}
+
+Para redirigir a los usuarios a Base Verify para que completen la verificación:
+
+```text Base Verify redirect URL format
+https://verify.base.dev?redirect_uri={your_app_url}&providers={provider}
+```
+
+| Parámetro      | Obligatorio | Descripción                                      | Ejemplo                                |
+| :------------- | :---------- | :----------------------------------------------- | :------------------------------------- |
+| `redirect_uri` | Sí          | Adónde redirigir al usuario tras la verificación | `https://yourapp.com`                  |
+| `providers`    | Sí          | Proveedor que se va a verificar                  | `x`, `coinbase`, `instagram`, `tiktok` |
+
+***
+
+## Catálogo de rasgos {#trait-catalog}
+
+Los rasgos son atributos específicos de una cuenta de proveedor que puedes verificar. Se indican en los recursos del mensaje [SIWE](https://eips.ethereum.org/EIPS/eip-4361) con el siguiente formato:
+
+```text Trait resource format
+urn:verify:provider:{provider}:{trait_name}:{operation}:{value}
+```
+
+### Operaciones {#operations}
+
+| Operación         | Símbolo | Se aplica a     | Descripción                                    | Ejemplo                            |
+| :---------------- | :------ | :-------------- | :--------------------------------------------- | :--------------------------------- |
+| Igual a           | `eq`    | Todos los tipos | Coincidencia exacta                            | `verified:eq:true`                 |
+| Mayor que         | `gt`    | Enteros         | Estrictamente mayor                            | `followers:gt:1000`                |
+| Mayor o igual que | `gte`   | Enteros         | Mayor o igual                                  | `followers:gte:1000`               |
+| Menor que         | `lt`    | Enteros         | Estrictamente menor                            | `followers:lt:5000`                |
+| Menor o igual que | `lte`   | Enteros         | Menor o igual                                  | `followers:lte:5000`               |
+| En (lista)        | `in`    | Cadenas         | Valor incluido en una lista separada por comas | `verified_type:in:blue,government` |
+
+### Sistema de tipos {#type-system}
+
+**Rasgos booleanos:**
+
+* Valores: `"true"` o `"false"` (como cadenas)
+* Solo admite la operación `eq`
+* Ejemplo: `verified:eq:true`
+
+**Rasgos enteros:**
+
+* Valores: números en formato de cadena
+* Operaciones admitidas: `eq`, `gt`, `gte`, `lt`, `lte`
+* Ejemplo: `followers:gte:1000`
+
+**Rasgos de cadena:**
+
+* Valores: cadenas de texto
+* Operaciones admitidas: `eq`, `in`
+* Ejemplo: `verified_type:eq:blue` o `verified_type:in:blue,government`
+
+### Combinación de rasgos {#combining-traits}
+
+Si especificas varios rasgos para el mismo proveedor, deben cumplirse **todos** (lógica AND):
+
+```typescript Multiple traits for one provider
+resources: [
+  'urn:verify:provider:x',
+  'urn:verify:provider:x:verified:eq:true',
+  'urn:verify:provider:x:followers:gte:10000'
+]
+```
+
+<Note>
+  Solo puedes consultar un proveedor por solicitud. Para consultar varios proveedores, haz llamadas independientes a la API.
+</Note>
+
+### Patrones comunes {#common-patterns}
+
+**Acceso por niveles:**
+
+```typescript Tiered access trait rules lines wrap expandable
+// Nivel bronce: cualquier cuenta verificada
+traits: { 'verified': 'true' }
+
+// Nivel plata: 1000 seguidores o más
+traits: { 'followers': 'gte:1000' }
+
+// Nivel oro: 10 000 seguidores o más
+traits: { 'followers': 'gte:10000' }
+```
+
+***
+
+### Coinbase {#coinbase}
+
+**Proveedor:** `coinbase` ([Coinbase](https://www.coinbase.com/))
+
+| Rasgo                 | Tipo     | Operaciones | Descripción                                                              | Valores de ejemplo  |
+| :-------------------- | :------- | :---------- | :----------------------------------------------------------------------- | :------------------ |
+| `coinbase_one_active` | Booleano | `eq`        | Suscripción activa a [Coinbase One](https://www.coinbase.com/one)        | `"true"`, `"false"` |
+| `coinbase_one_billed` | Booleano | `eq`        | Al usuario se le ha cobrado [Coinbase One](https://www.coinbase.com/one) | `"true"`, `"false"` |
+
+```typescript Coinbase trait examples lines wrap expandable
+// Verificar suscriptores de Coinbase One
+{
+  provider: 'coinbase',
+  traits: { 'coinbase_one_active': 'true' }
+}
+
+// Verificar suscriptores de Coinbase One ya facturados
+{
+  provider: 'coinbase',
+  traits: { 'coinbase_one_billed': 'true' }
+}
+```
+
+### X {#x}
+
+**Proveedor:** `x` ([X](https://x.com/))
+
+| Rasgo           | Tipo    | Operaciones                    | Descripción                      | Valores de ejemplo                               |
+| :-------------- | :------ | :----------------------------- | :------------------------------- | :----------------------------------------------- |
+| `verified`      | Boolean | `eq`                           | Tiene algún tipo de verificación | `"true"`, `"false"`                              |
+| `verified_type` | String  | `eq`                           | Tipo de verificación             | `"blue"`, `"government"`, `"business"`, `"none"` |
+| `followers`     | Integer | `eq`, `gt`, `gte`, `lt`, `lte` | Número de seguidores             | `"1000"`, `"50000"`                              |
+
+```typescript X trait examples expandable lines
+// Comprobar si la cuenta tiene cualquier tipo de verificación
+{
+  provider: 'x',
+  traits: { 'verified': 'true' }
+}
+
+// Comprobar un tipo de verificación concreto
+{
+  provider: 'x',
+  traits: { 'verified_type': 'blue' }
+}
+
+// Comprobar el número de seguidores (mayor o igual que)
+{
+  provider: 'x',
+  traits: { 'followers': 'gte:1000' }
+}
+
+// Combinar varios traits
+{
+  provider: 'x',
+  traits: {
+    'verified': 'true',
+    'followers': 'gte:10000'
+  }
+}
+```
+
+### Instagram {#instagram}
+
+**Proveedor:** `instagram` ([Instagram](https://www.instagram.com/))
+
+| Rasgo             | Tipo    | Operaciones                    | Descripción                      | Valores de ejemplo  |
+| :---------------- | :------ | :----------------------------- | :------------------------------- | :------------------ |
+| `username`        | String  | `eq`                           | Nombre de usuario de Instagram   | `"john_doe"`        |
+| `followers_count` | Integer | `eq`, `gt`, `gte`, `lt`, `lte` | Número de seguidores             | `"1000"`, `"50000"` |
+| `instagram_id`    | String  | `eq`                           | ID único de usuario de Instagram | `"1234567890"`      |
+
+```typescript Instagram trait examples expandable lines
+// Comprobar el número de seguidores (mayor que)
+{
+  provider: 'instagram',
+  traits: { 'followers_count': 'gt:1000' }
+}
+
+// Comprobar el número de seguidores (mayor o igual que)
+{
+  provider: 'instagram',
+  traits: { 'followers_count': 'gte:5000' }
+}
+
+// Combinar varios atributos
+{
+  provider: 'instagram',
+  traits: {
+    'username': 'john_doe',
+    'followers_count': 'gte:10000'
+  }
+}
+```
+
+### TikTok {#tiktok}
+
+**Proveedor:** `tiktok` ([TikTok](https://www.tiktok.com/))
+
+| Rasgo             | Tipo    | Operaciones                    | Descripción                                   | Valores de ejemplo    |
+| :---------------- | :------ | :----------------------------- | :-------------------------------------------- | :-------------------- |
+| `open_id`         | String  | `eq`                           | Open ID de TikTok (único por aplicación)      | `"abc123..."`         |
+| `union_id`        | String  | `eq`                           | Union ID de TikTok (único entre aplicaciones) | `"def456..."`         |
+| `display_name`    | String  | `eq`                           | Nombre visible en TikTok                      | `"John Doe"`          |
+| `follower_count`  | Integer | `eq`, `gt`, `gte`, `lt`, `lte` | Número de seguidores                          | `"1000"`, `"50000"`   |
+| `following_count` | Integer | `eq`, `gt`, `gte`, `lt`, `lte` | Número de cuentas seguidas                    | `"500"`, `"2000"`     |
+| `likes_count`     | Integer | `eq`, `gt`, `gte`, `lt`, `lte` | Total de «me gusta» recibidos                 | `"10000"`, `"100000"` |
+| `video_count`     | Integer | `eq`, `gt`, `gte`, `lt`, `lte` | Número de videos publicados                   | `"50"`, `"200"`       |
+
+```typescript TikTok trait examples expandable lines
+// Comprobar el número de seguidores
+{
+  provider: 'tiktok',
+  traits: { 'follower_count': 'gt:1000' }
+}
+
+// Comprobar el número de «me gusta»
+{
+  provider: 'tiktok',
+  traits: { 'likes_count': 'gte:10000' }
+}
+
+// Combinar varios rasgos (p. ej., creador activo)
+{
+  provider: 'tiktok',
+  traits: {
+    'follower_count': 'gte:5000',
+    'likes_count': 'gte:100000',
+    'video_count': 'gte:100'
+  }
+}
+```
+
+***
+
+## Seguridad y privacidad {#security-and-privacy}
+
+### Requisito de firma SIWE {#siwe-signature-requirement}
+
+Cada llamada a la API requiere una firma [SIWE](https://eips.ethereum.org/EIPS/eip-4361) válida del propietario de la billetera. Esto impide:
+
+* La consulta arbitraria del estado de verificación
+* Que terceros comprueben si una billetera está verificada
+* Los ataques de enumeración
+
+El usuario firma un mensaje estructurado que demuestra que controla la billetera y que acepta que se verifiquen determinados rasgos:
+
+```json SIWE payload example lines wrap expandable
+{
+  domain: "your-app.com",
+  address: "0x1234...",
+  chainId: 8453,
+  resources: [
+    "urn:verify:provider:x",
+    "urn:verify:provider:x:verified:eq:true",
+    "urn:verify:action:claim_airdrop"
+  ]
+}
+```
+
+### Validar los requisitos de rasgos {#validate-trait-requirements}
+
+<Warning>
+  Cuando tu backend reciba un mensaje SIWE del frontend, **debes** validar que los requisitos de rasgos del mensaje coincidan con los que espera tu backend. Esto impide que los usuarios modifiquen los requisitos de rasgos en el frontend para eludir tus controles de acceso.
+</Warning>
+
+**Ejemplo de ataque sin validación:**
+
+1. Tu aplicación exige que los usuarios tengan 100 seguidores
+2. El usuario modifica el frontend para solicitar solo 10 seguidores
+3. El usuario firma el mensaje modificado
+4. Sin validación, tu backend reenvía la solicitud a Base Verify
+5. El usuario obtiene acceso con menos de 100 seguidores
+
+**Implementación:**
+
+```typescript Validate traits on the backend lines wrap expandable highlight={2-4,7}
+import { validateTraits } from './lib/trait-validator';
+
+const expectedTraits = {
+  'followers': 'gte:100'
+};
+
+const validation = validateTraits(message, 'x', expectedTraits);
+
+if (!validation.valid) {
+  return res.status(400).json({
+    error: 'Invalid trait requirements in message',
+    details: validation.error
+  });
+}
+```
+
+### Protege tu clave secreta {#protect-your-secret-key}
+
+**Nunca:**
+
+* Incluyas la clave secreta en el código del frontend
+* Uses `NEXT_PUBLIC_*` ni variables de entorno similares que la expongan al navegador
+* Subas claves secretas al control de versiones
+* Compartas claves secretas por chat, correo electrónico o en la documentación
+
+**Siempre:**
+
+* Almacena la clave secreta únicamente en variables de entorno del backend
+* Usa archivos `.env` incluidos en el `.gitignore`
+* Rota las claves de inmediato si se exponen por accidente
+* Llama a la API de Base Verify solo desde tu backend
+
+### Modelo de seguridad de OAuth {#oauth-security-model}
+
+Base Verify valida las cuentas de los proveedores mediante [OAuth](https://oauth.net/2/):
+
+1. El usuario inicia el flujo de OAuth en la aplicación Base Verify
+2. El proveedor (X, Instagram, etc.) autentica al usuario
+3. El proveedor devuelve un token de OAuth a Base Verify
+4. Base Verify obtiene los datos de la cuenta con el token de OAuth
+5. Base Verify almacena la verificación vinculada a la billetera del usuario
+6. El token de OAuth se cifra y se almacena de forma segura
+
+Tu aplicación nunca maneja tokens de OAuth ni redirecciones: todo eso se gestiona dentro de la aplicación Base Verify.
+
+### Almacenamiento de datos {#data-storage}
+
+**Qué almacena Base Verify:**
+
+* Direcciones de billetera asociadas a cuentas de proveedor verificadas
+* Metadatos de la cuenta del proveedor (nombre de usuario, número de seguidores, estado de verificación)
+* Tokens de OAuth (cifrados y nunca compartidos con las aplicaciones)
+* Marcas de tiempo de las verificaciones
+
+**Qué no almacena Base Verify:**
+
+* Las claves privadas de los usuarios
+* Las contraseñas de las cuentas de proveedor
+* La actividad ni el historial de navegación de los usuarios
+* Ningún dato que no sea necesario para la verificación
+
+**Qué recibe tu aplicación:**
+
+Cuando llamas a `/v1/base_verify_token`, solo recibes `token`, `action` y `wallet`. No se devuelve ninguna información de identificación personal (PII).
+
+### Control del usuario {#user-control}
+
+Los usuarios pueden eliminar sus verificaciones en cualquier momento. Al hacerlo:
+
+* Se eliminan todos los datos almacenados del proveedor
+* Se impide la generación de tokens en el futuro
+* Los tokens que tu aplicación tenga almacenados dejan de tener sentido (el usuario no puede volver a verificarse con la misma cuenta)
+
+### Almacenamiento en caché {#caching}
+
+Guarda en caché los resultados de verificación para reducir las llamadas a la API:
+
+* Mantén la caché durante la sesión del usuario (no de forma permanente)
+* Borra la caché cuando el usuario desconecte su billetera
+* No compruebes la verificación cada vez que se cargue una página
+
+***
+
+## Soporte {#support}
+
+**¿Quieres integrar Base Verify?** Completa el [formulario de interés](https://forms.gle/6L4hWAHkojYcefz27) y el equipo se pondrá en contacto contigo para darte acceso a la API.

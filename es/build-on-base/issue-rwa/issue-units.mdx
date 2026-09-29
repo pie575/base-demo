@@ -1,0 +1,88 @@
+---
+title: "Emitir unidades para los titulares"
+description: "Distribuye unidades de B20 Asset entre varios titulares aprobados en un solo lote."
+keywords: ["emitir unidades tokenizadas", "B20 batchMint", "distribución de tokens de activos", "tabla de capitalización Base"]
+---
+
+import { AssetDemo } from "/snippets/AssetDemo.jsx"
+import RwaDisclaimer from "/snippets/es/RwaDisclaimer.mdx"
+
+Distribuye participaciones entre varios titulares en una única transacción atómica (todo o nada) con `batchMint` de B20 Asset. Cada destinatario debe cumplir la política de receptores de acuñación del token, y la emisión total debe mantenerse por debajo de su límite de suministro.
+
+<RwaDisclaimer />
+
+## Demostración {#demo}
+
+<AssetDemo flow="issue" />
+
+<Tip>
+  La demostración usa una cuenta local generada en el navegador para enviar transacciones reales en **Base Vibenet**. Si Vibenet o sus funciones B20 no están disponibles, pasa automáticamente a una versión ilustrativa sin conexión.
+</Tip>
+
+<Note>
+  ¿Es la primera vez que usas B20? Consulta el [estándar de tokens B20](/es/build-on-base/issue-rwa/create-an-asset-token) para conocer los conceptos y seguir una guía completa de lanzamiento. Estos ejemplos están pensados para `base-std@1505323`, `viem@2.55.11` y Base Foundry `v1.1.1`.
+</Note>
+
+## Emitir y verificar las participaciones {#issue-and-verify-the-shares}
+
+<CodeGroup>
+  {/* sample: stock-issue-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={8}
+  import { parseUnits, type Address } from "viem";
+  import { publicClient } from "../../shared/clients.js";
+  import { assetAbi, b20Abi } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function issueShares(token: Address, holders: [Address, Address]) {
+    const amounts = [parseUnits("600", 6), parseUnits("400", 6)] as const;
+    await sendContract({ address: token, abi: assetAbi, functionName: "batchMint", args: [holders, amounts] });
+    const balances = await Promise.all(holders.map((holder) => publicClient.readContract({ address: token, abi: b20Abi, functionName: "balanceOf", args: [holder] })));
+    if (balances[0] !== amounts[0] || balances[1] !== amounts[1]) throw new Error("Unexpected issuance balances");
+  }
+  ```
+
+  {/* sample: stock-issue-solidity */}
+
+  ```solidity Solidity lines wrap expandable highlight={8}
+      function issueShares(address token, address alice, address bob) public {
+          address[] memory recipients = new address[](2);
+          recipients[0] = alice;
+          recipients[1] = bob;
+          uint256[] memory amounts = new uint256[](2);
+          amounts[0] = 600e6;
+          amounts[1] = 400e6;
+          IB20Asset(token).batchMint(recipients, amounts);
+      }
+  ```
+
+  {/* sample: stock-issue-cli */}
+
+  ```bash CLI lines wrap expandable highlight={1}
+  base-cast send "$TOKEN_ADDRESS" "batchMint(address[],uint256[])" \
+    "[$ALICE,$BOB]" "[600000000,400000000]" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  base-cast call "$TOKEN_ADDRESS" "balanceOf(address)(uint256)" "$ALICE" --rpc-url "$RPC_URL"
+  ```
+</CodeGroup>
+
+Consulta el [estándar de tokens B20](/es/build-on-base/issue-rwa/create-an-asset-token) para ver la interfaz completa, los roles y las políticas.
+
+<Check>
+  Tras ejecutarse el lote atómico (todo o nada), Alice tiene 600 EXM y Bob tiene 400 EXM.
+</Check>
+
+<Warning>
+  Todo el lote se revierte si las longitudes no coinciden, si algún destinatario no cumple la política o si el suministro total superase el límite.
+</Warning>
+
+## Consulta también {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="Restringir los titulares elegibles" icon="user-check" href="/es/build-on-base/issue-rwa/restrict-eligible-holders">
+    Usa políticas para controlar quién puede ser titular.
+  </Card>
+
+  <Card title="Anunciar un cambio a los titulares" icon="bullhorn" href="/es/build-on-base/issue-rwa/announce-a-distribution">
+    Divulga onchain una emisión adicional u otro cambio que afecte a los titulares.
+  </Card>
+</CardGroup>

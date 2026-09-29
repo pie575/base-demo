@@ -1,0 +1,127 @@
+---
+title: Solución de problemas del nodo
+sidebarTitle: Solución de problemas
+description: Soluciones a problemas habituales al configurar y ejecutar un nodo de Base, como problemas de sincronización, de red, de instantáneas y de rendimiento.
+---
+
+Esta guía describe los problemas habituales que pueden surgir al configurar y ejecutar un nodo de Base con la [configuración oficial de Docker de Base Node](https://github.com/base/base) y explica cómo diagnosticarlos y resolverlos.
+
+## Pasos generales para solucionar problemas {#general-troubleshooting-steps}
+
+Antes de entrar en problemas específicos, estos son algunos pasos generales que suelen ayudar:
+
+1. **Revisa los registros de los contenedores**: Suele ser el paso que más información aporta. Usa `docker compose logs -f <service_name>` para ver en tiempo real los registros de un contenedor específico.
+   * Cliente L2 (Reth): `docker compose logs -f execution`
+   * Nodo de rollup: `docker compose logs -f node`. Busca errores, advertencias o mensajes repetidos.
+
+2. **Comprueba el estado de los contenedores**: Asegúrate de que los contenedores de Docker correspondientes estén en ejecución: `docker compose ps`. Si un contenedor se reinicia con frecuencia o se ha detenido, revisa sus registros.
+
+3. **Comprueba el uso de recursos**: Supervisa el uso de CPU, RAM, E/S de disco y red de tu servidor. Los problemas de rendimiento suelen deberse a recursos insuficientes. Herramientas como `htop`, `iostat` e `iftop` pueden resultar útiles.
+
+4. **Verifica los endpoints RPC**: Usa `curl` para comprobar si el endpoint RPC del cliente L2 responde (consulta [Ejecutar un nodo](/es/specifications/node-operators/run-a-node#running-a-node)). Verifica también que tus endpoints de L1 sean correctos y estén accesibles desde el servidor del nodo.
+
+5. **Comprueba el nodo de L1**: Asegúrate de que el nodo de L1 configurado (de ejecución y de consenso) esté completamente sincronizado, en buen estado y accesible. Cualquier problema con el nodo de L1 impedirá que el nodo de L2 se sincronice correctamente.
+
+***
+
+## Problemas comunes y soluciones {#common-issues-and-solutions}
+
+### Problemas de instalación y configuración {#setup-configuration-issues}
+
+* **Problema**: El comando de Docker falla (`docker compose up ...`)
+  * **Comprueba**: ¿Están instalados Docker y Docker Compose, y se está ejecutando el daemon de Docker?
+  * **Comprueba**: ¿Estás en el directorio correcto (el directorio clonado `base/base` que contiene `docker-compose.yml`)?
+  * **Comprueba**: Si hay errores de sintaxis en el comando (p. ej., `NETWORK_ENV` mal escrito).
+
+* **Problema**: El contenedor no se inicia y los registros muestran errores relacionados con archivos `.env` o variables de entorno.
+  * **Comprueba**: ¿Configuraste correctamente los endpoints de L1 (`BASE_NODE_L1_ETH_RPC`, `BASE_NODE_L1_BEACON`) en el archivo `.env` que corresponde (`.env.mainnet` o `.env.sepolia`)?
+  * **Comprueba**: ¿Están `RETH_CHAIN` y `RETH_SEQUENCER_HTTP` configurados correctamente en el archivo `.env`?
+
+* **Problema**: Errores relacionados con el secreto JWT o con la autenticación entre `base-consensus` y el cliente de ejecución.
+  * **Comprueba**: Asegúrate de no haber modificado manualmente la variable `BASE_NODE_L2_ENGINE_AUTH` ni la ruta del archivo JWT (`$BASE_NODE_L2_ENGINE_AUTH`), salvo que sepas lo que estás haciendo. La configuración de `docker-compose` normalmente se encarga de esto de forma automática.
+
+* **Problema**: Errores de permisos relacionados con los volúmenes de datos (`./reth-data`).
+  * **Comprueba**: Asegúrate de que el usuario que ejecuta `docker compose` tenga permisos de escritura en el directorio donde se clonó el repositorio `base/base` (o en el `HOST_DATA_DIR` que configuraste). Docker necesita poder escribir en `./reth-data`. A veces, ejecutar comandos de Docker con `sudo` puede causar problemas de permisos más adelante; prueba a ejecutarlos con un usuario sin privilegios de root que pertenezca al grupo `docker`.
+
+### Problemas de sincronización {#syncing-problems}
+
+* **Problema**: El nodo no empieza a sincronizarse o parece atascado (la altura de bloque no aumenta).
+  * **Comprobar**: los registros de `base-consensus`. Busca errores de conexión con los endpoints de L1 o con el cliente de ejecución.
+  * **Comprobar**: los registros del cliente de ejecución. Busca errores de conexión con `base-consensus` a través de la Engine API (puerto `8551`) o problemas de P2P.
+  * **Comprobar**: el estado y la sincronización del nodo L1. ¿El nodo L1 es accesible y está completamente sincronizado?
+  * **Comprobar**: la hora del sistema. Asegúrate de que el reloj del servidor esté sincronizado con precisión (usa `ntp` o `chrony`). Un desfase horario considerable puede causar problemas de P2P.
+
+* **Problema**: La sincronización es extremadamente lenta.
+  * **Comprobar**: las especificaciones de hardware. ¿Cumples las especificaciones recomendadas (especialmente la RAM y el **SSD NVMe**) indicadas en la guía de [Rendimiento del nodo](/es/specifications/node-operators/performance-tuning)? La E/S de disco suele ser el cuello de botella.
+  * **Comprobar**: el rendimiento del nodo L1. ¿Tu endpoint RPC de L1 responde con rapidez? Un nodo L1 lento ralentizará la sincronización de L2.
+  * **Comprobar**: la calidad de la conexión de red y el ancho de banda.
+  * **Comprobar**: los registros de `base-consensus` y del cliente de ejecución en busca de advertencias o errores de rendimiento.
+
+* **Problema**: `optimism_syncStatus` (puerto `7545` en `base-consensus`) muestra una gran diferencia de tiempo o errores.
+  * **Acción**: Revisa los registros tanto del nodo de rollup como del cliente de ejecución de L2 en torno al momento en que se comprobó el estado para identificar la causa raíz (p. ej., problemas de conexión con L1 o del cliente de L2).
+
+* **Problema**: `Error: nonce has already been used` al intentar enviar transacciones.
+  * **Causa**: El nodo aún no se ha sincronizado por completo con la cabeza de la cadena.
+  * **Acción**: Espera a que el nodo se sincronice por completo. Supervisa el progreso con `optimism_syncStatus` o mediante los registros.
+
+### Problemas de rendimiento {#performance-issues}
+
+* **Problema**: Uso elevado de CPU, RAM o E/S de disco.
+  * **Comprobación**: Compara las especificaciones de hardware con las recomendaciones de [Rendimiento del nodo](/es/specifications/node-operators/performance-tuning). Mejora el hardware si es necesario. Es fundamental usar SSD NVMe locales.
+  * **Comprobación**: Revisa los registros del cliente en busca de errores o cuellos de botella concretos.
+
+### Problemas al restaurar instantáneas {#snapshot-restoration-problems}
+
+Consulta la guía de [Instantáneas](/es/specifications/node-operators/snapshots) para conocer el procedimiento correcto.
+
+* **Problema**: el comando `wget` falla o la descarga de la instantánea está dañada.
+  * **Comprueba**: la conectividad de red.
+  * **Comprueba**: el espacio disponible en disco.
+  * **Acción**: vuelve a intentar la descarga. Verifica que la URL de descarga sea correcta.
+
+* **Problema**: falla la extracción con `tar`.
+  * **Comprueba**: la integridad del archivo descargado (¿está dañado?).
+  * **Comprueba**: el espacio disponible en disco (la extracción requiere mucho más espacio que la descarga).
+  * **Comprueba**: la sintaxis del comando `tar`.
+
+* **Problema**: el nodo no arranca después de restaurar la instantánea; los registros muestran errores de base de datos o archivos faltantes.
+  * **Comprueba**: ¿detuviste el nodo (`docker compose down`) *antes* de modificar el directorio de datos?
+  * **Comprueba**: ¿eliminaste el *contenido* del directorio de datos anterior (`./reth-data/*`) antes de extraer o mover los datos de la instantánea?
+  * **Comprueba**: ¿se movieron correctamente los datos de la instantánea? Los datos de la cadena deben estar directamente dentro de `./reth-data`, no en una subcarpeta anidada (p. ej., `./reth-data/reth/...`). Verifica la estructura de carpetas.
+
+* **Problema**: te quedaste sin espacio en disco durante la descarga o la extracción.
+  * **Acción**: libera espacio en disco o aprovisiona un volumen más grande. Recuerda la fórmula de almacenamiento:
+    ```
+    (2 * chain_size + snapshot_size + 20% buffer)  
+    ```
+
+### Problemas de red / conectividad {#networking-connectivity-issues}
+
+* **Problema**: Se rechaza la conexión RPC/WS (p. ej., falla un `curl` a `localhost:8545`).
+  * **Comprobación**: ¿Se está ejecutando el contenedor del cliente L2 (`docker compose ps`)?
+  * **Comprobación**: ¿Está usando el puerto correcto (`8545` para HTTP y `8546` para WS, de forma predeterminada)?
+  * **Comprobación**: Revise los registros del cliente L2. ¿Falló el inicio del servidor RPC?
+  * **Comprobación**: ¿Están los flags `--http.addr` y `--ws.addr` configurados en `0.0.0.0` en la configuración o el punto de entrada del cliente para permitir conexiones externas (dentro de la red de Docker)?
+
+* **Problema**: El nodo tiene pocos pares o no logra conectarse a ninguno.
+  * **Comprobación**: Los puertos de entrada `30303` (TCP/UDP) y `9222` (TCP/UDP para discv5 de Reth) deben estar abiertos en su firewall.
+  * **Comprobación**: Los puertos de salida `30301` (TCP/UDP) y `9200` (UDP) deben estar abiertos para el tráfico saliente. Son necesarios para alcanzar los bootnodes de Base: si se bloquean las conexiones salientes a estos puertos, su nodo no podrá iniciar el descubrimiento de pares y no encontrará ninguno, independientemente de las reglas de entrada.
+  * **Comprobación**: Revise los registros del nodo en busca de errores P2P.
+  * **Acción**: Si está detrás de NAT, configure el flag `--nat=extip:<your-ip>` mediante `ADDITIONAL_ARGS` en el archivo `.env` (consulte [Redes](/es/specifications/node-operators/run-a-node#networking)).
+
+* **Problema**: Aparecen conflictos de puertos en los registros o falla `docker compose up`.
+  * **Comprobación**: ¿Hay otros servicios en el host que estén usando los puertos predeterminados (`8545`, `8546`, `8551`, `6060`, `7545`, `30303`)? Use
+    ```bash
+    sudo lsof -i -P -n | grep LISTEN
+    sudo netstat -tulpn | grep LISTEN
+    ```
+  * **Acción**: Detenga el servicio en conflicto o cambie los puertos que usan los contenedores del nodo de Base; para ello, modifique la sección `ports` en `docker-compose.yml` y, si es necesario, actualice las variables de entorno correspondientes (`$RPC_PORT`, `$WS_PORT`, etc.) en el archivo `.env`.
+
+***
+
+## Cómo obtener más ayuda {#getting-further-help}
+
+Si has seguido esta guía y sigues teniendo problemas, pide ayuda a la comunidad:
+
+* **Discord**: Únete al [Discord de Base](https://discord.gg/buildonbase) y publica en el canal `🛠｜node-operators` con detalles sobre tu configuración, el problema y los registros pertinentes.
+* **GitHub**: Revisa los [issues del repositorio base/base](https://github.com/base/base/issues) o abre uno nuevo si sospechas que se trata de un bug.

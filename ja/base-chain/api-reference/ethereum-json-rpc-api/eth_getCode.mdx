@@ -1,0 +1,63 @@
+---
+title: 'eth_getCode'
+sidebarTitle: 'eth_getCode'
+description: '指定したアドレスのコントラクトバイトコードを返します。pending を使用すると、ブロックの確定前に新しくデプロイされたコントラクトを検出できます。'
+---
+
+指定したアドレスにあるコンパイル済みバイトコードを返します。外部所有アカウント (EOA) の場合は `"0x"` を返します。
+
+<Tip>
+  **Flashblocks:** `https://mainnet.base.org` に `"pending"` を指定してクエリすると、ブロックがシールされる前にコントラクトのデプロイを検出できます。
+</Tip>
+
+## パラメーター {#parameters}
+
+<ParamField body="address" type="string" required>
+  照会する20バイトのアドレス。
+</ParamField>
+
+<ParamField body="block" type="string" required>
+  16進数のブロック番号、または `"latest"`、`"pending"`、`"safe"`、`"finalized"`、`"earliest"` のいずれか。
+</ParamField>
+
+## 戻り値 {#returns}
+
+<ResponseField name="result" type="string">
+  指定アドレスのバイトコード (16進文字列) 。コードが存在しない場合は `"0x"`。
+</ResponseField>
+
+## 例 {#example}
+
+<CodeGroup>
+  ```bash 標準（latest） lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_getCode",
+      "params": ["0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", "latest"],
+      "id": 1
+    }'
+  ```
+
+  ```bash Flashblocks（pending、約200ms） lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_getCode",
+      "params": ["0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", "pending"],
+      "id": 1
+    }'
+  ```
+
+  ```json レスポンス
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x608060405234801561001057600080fd5b50..."
+  }
+  ```
+</CodeGroup>

@@ -1,0 +1,44 @@
+---
+title: 'eth_getBlockTransactionCountByNumber'
+sidebarTitle: 'eth_getBlockTransactionCountByNumber'
+description: 'ブロック番号で指定したブロック内のトランザクション数を返します。'
+---
+
+指定したブロック番号に一致するブロック内のトランザクション数を返します。
+
+<Tip>
+  **Flashblocks:** `https://mainnet.base.org` に `"pending"` を指定してクエリすると、現在の Flashblock 内にあるプレコンファーム済みトランザクションの数を取得できます。
+</Tip>
+
+## パラメーター {#parameters}
+
+<ParamField body="block" type="string" required>
+  16進数のブロック番号、または `"latest"`、`"pending"`、`"safe"`、`"finalized"`、`"earliest"` のいずれか。
+</ParamField>
+
+## 戻り値 {#returns}
+
+<ResponseField name="result" type="string">
+  ブロック内のトランザクション数を表す16進数の整数。
+</ResponseField>
+
+## 例 {#example}
+
+<CodeGroup>
+  ```json Request
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_getBlockTransactionCountByNumber",
+    "params": ["latest"],
+    "id": 1
+  }
+  ```
+
+  ```json Response
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x1f"
+  }
+  ```
+</CodeGroup>

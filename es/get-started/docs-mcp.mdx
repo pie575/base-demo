@@ -1,0 +1,65 @@
+---
+title: Servidor MCP
+sidebarTitle: Servidor MCP
+description: Conecta tu asistente de programación con IA a la documentación de Base mediante Model Context Protocol para consultarla en tiempo real.
+---
+
+[Model Context Protocol (MCP)](https://modelcontextprotocol.io/) es un estándar abierto que permite a los asistentes de IA acceder de forma segura a fuentes de datos externas. El servidor MCP de Base conecta tu asistente de programación con IA directamente a nuestra documentación, de modo que puede buscar y obtener en tiempo real justo la información que necesitas.
+
+## Configuración con Cursor {#setup-with-cursor}
+
+[Cursor](https://cursor.com/) es un editor de código basado en IA, creado como un fork de VS Code, con funciones como el autocompletado de código con IA y la edición en lenguaje natural.
+
+<Steps>
+  <Step title="Abrir la configuración de MCP">
+    En Cursor, abre **Settings**, ve a **Tools &amp; MCP** y haz clic en **Add MCP Server**.
+  </Step>
+
+  <Step title="Añadir el servidor de Base Docs">
+    En el archivo de configuración `mcp.json`, añade:
+
+    ```json mcp.json
+    {
+      "mcpServers": {
+        "base-docs": {
+          "url": "https://docs.base.org/mcp"
+        }
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Guardar y reiniciar">
+    Guarda el archivo y reinicia Cursor para aplicar los cambios.
+  </Step>
+
+  <Step title="Empezar a desarrollar">
+    Tu asistente de IA ya puede acceder a la documentación de Base en tiempo real. Prueba a preguntarle: «¿Cómo despliego un contrato inteligente en Base?».
+  </Step>
+</Steps>
+
+## Configuración con Claude Code {#setup-with-claude-code}
+
+[Claude Code](https://docs.claude.com/en/docs/claude-code/overview) es una herramienta de programación agéntica que se ejecuta en tu terminal y entiende tu base de código.
+
+<Steps>
+  <Step title="Agrega el servidor MCP de Base Docs">
+    Ejecuta el siguiente comando en tu terminal:
+
+    ```bash Terminal
+    claude mcp add --transport http base-docs https://docs.base.org/mcp
+    ```
+  </Step>
+
+  <Step title="Verifica la instalación">
+    Comprueba que el servidor se haya agregado correctamente:
+
+    ```bash Terminal
+    claude mcp list
+    ```
+  </Step>
+
+  <Step title="Empieza a desarrollar">
+    Inicia Claude Code y empieza a hacer preguntas. Prueba con: «¿Cómo despliego un contrato inteligente en Base?»
+  </Step>
+</Steps>

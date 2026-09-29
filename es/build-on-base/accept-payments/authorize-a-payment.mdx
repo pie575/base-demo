@@ -1,0 +1,85 @@
+---
+title: "Autorizar un pago"
+keywords: ["Commerce Payments authorize", "USDC escrow Base", "PaymentAuthorized", "authorize and capture"]
+description: "Transfiere los fondos del pagador a custodia para capturarlos más adelante en Base."
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+Autoriza un pago cuando el pedido se complete después del checkout. Una autorización exitosa del protocolo transfiere de inmediato los tokens a la custodia del operador, de modo que la captura posterior no depende de que el pagador conserve los fondos en su billetera.
+
+<Info>
+  El flujo de pago de esta guía se basa en el [Commerce Payments Protocol](https://github.com/base/commerce-payments).
+</Info>
+
+## Demostración {#demo}
+
+<PaymentsDemo flow="authorize" />
+
+<Tip>
+  La demostración anterior es solo una simulación. Si quieres ver demostraciones onchain en Vibenet, visita [Demostraciones de la cadena Base](https://chain.base.org/demos).
+</Tip>
+
+<Warning>
+  La firma del recaudador solo otorga permiso para cobrar. Considera que los fondos están reservados únicamente después de que `authorize` se ejecute correctamente y emita `PaymentAuthorized`.
+</Warning>
+
+## Autorizar y almacenar el pago {#authorize-and-store-the-payment}
+
+Construye un único `PaymentInfo` inmutable con el operador, el pagador, el receptor, el token, el importe máximo, tres marcas de tiempo de vencimiento ordenadas, los límites de comisión, el receptor de comisiones y un salt único. Guarda la estructura exacta, ya que todas las operaciones posteriores vuelven a calcular su hash.
+
+El fixture prepara una firma del recaudador ERC-3009 y envía la autorización desde `paymentInfo.operator`.
+
+{/* sample: usdc-authorize-ts */}
+
+```typescript TypeScript lines wrap expandable highlight={6,11,15-16}
+export async function authorizePayment(
+  merchant: Address,
+  orderId: string,
+  amount: string,
+) {
+  const payment = await prepareErc3009Payment(merchant, orderId, amount);
+  const simulation = await publicClient.simulateContract({
+    account,
+    address: AUTH_CAPTURE_ESCROW,
+    abi: authCaptureEscrowAbi,
+    functionName: "authorize",
+    args: [
+      payment.paymentInfo,
+      payment.paymentInfo.maxAmount,
+      ERC3009_PAYMENT_COLLECTOR,
+      payment.collectorData,
+    ],
+  });
+  const hash = await walletClient.writeContract(simulation.request);
+  const receipt = await publicClient.waitForTransactionReceipt({ hash, confirmations: 2 });
+  if (receipt.status !== "success") throw new Error("Payment authorization reverted");
+  return { ...payment, authorizationHash: hash };
+}
+```
+
+| Campo de estado       | Valor después de la autorización        |
+| --------------------- | --------------------------------------- |
+| `hasCollectedPayment` | `true` de forma permanente              |
+| `capturableAmount`    | Importe autorizado retenido en custodia |
+| `refundableAmount`    | `0` hasta la captura                    |
+
+<Check>
+  Guarda `paymentInfoHash`, los términos completos, el recaudador, la transacción de autorización y `PaymentAuthorized.amount` vinculados al pedido.
+</Check>
+
+<Warning>
+  El pago solo puede cobrarse una vez. Usa un salt nuevo y criptográficamente aleatorio en cada intento de pago, incluidos los reintentos tras una anulación o una recuperación.
+</Warning>
+
+## Consulta también {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="Capturar una autorización" icon="check" href="/es/build-on-base/accept-payments/capture-an-authorization">
+    Liquida el importe en custodia antes de que venza la autorización.
+  </Card>
+
+  <Card title="Anular una autorización" icon="ban" href="/es/build-on-base/accept-payments/void-an-authorization">
+    Devuelve los fondos de inmediato o deja que el pagador los recupere tras el vencimiento.
+  </Card>
+</CardGroup>

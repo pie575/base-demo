@@ -1,0 +1,70 @@
+---
+title: "预部署合约"
+description: "Fjord 升级中的预部署合约变更：为 GasPriceOracle 合约新增 FastLZ 费用计算常量。"
+---
+
+## GasPriceOracle {#gaspriceoracle}
+
+Fjord 升级后，新增了三个用于计算 L1 费用的值：
+
+* costIntercept
+* costFastlzCoef
+* minTransactionSize
+
+这些值是 `GasPriceOracle` 合约中的硬编码常量。其计算公式与
+[Fjord L1 成本费用变更 (FastLZ 估算器) ](./exec-engine#fjord-l1-cost-fee-changes-fastlz-estimator)
+一节中所述的公式相同。
+
+新增方法：`getL1FeeUpperBound(uint256)`。该方法返回给定交易大小下 L1 费用的上限。
+它适用于需要在写入路径中估算 L1 交易成本的调用方，且比 `getL1Fee` 节省得多的 gas。
+
+上限开销假定为 `original/255+16`，这一取值借鉴自 LZ4。历史数据表明，
+该方法可覆盖超过 99.99% 的交易。
+
+具体实现如下：
+
+```solidity GasPriceOracle.sol lines wrap expandable
+function getL1FeeUpperBound(uint256 unsignedTxSize) external view returns (uint256) {
+    // 加上 68，以弥补未签名交易的大小差额
+    uint256 txSize = unsignedTxSize + 68;
+    // txSize / 255 + 16 是 fastlz 的实际上界，可覆盖 99.99% 的交易。
+    uint256 flzUpperBound = txSize + txSize / 255 + 16;
+
+    int256 estimatedSize = costIntercept + costFastlzCoef * flzUpperBound;
+    if (estimatedSize < minTransactionSize) {
+        estimatedSize = minTransactionSize;
+    }
+  
+    uint256 l1FeeScaled = baseFeeScalar() * l1BaseFee() * 16 + blobBaseFeeScalar() * blobBaseFee();
+    return uint256(estimatedSize) * l1FeeScaled / (10 ** (DECIMALS * 2));
+}
+```
+
+### L1 Gas 用量估算 {#l1-gas-usage-estimation}
+
+作为 Fjord 升级的一部分，`getL1GasUsed` 方法已更新，以适配精度更高的[压缩估算](./exec-engine#fees)。
+
+```solidity GasPriceOracle.sol lines wrap expandable
+function getL1GasUsed(bytes memory _data) public view returns (uint256) {
+    if (isFjord) {
+      // 大小加 68，以计入未签名交易部分
+      int256 flzSize = LibZip.flzCompress(_data).length + 68;
+
+      int256 estimatedSize = costIntercept + costFastlzCoef * flzSize;
+      if (estimatedSize < minTransactionSize) {
+        estimatedSize = minTransactionSize;
+      }
+
+      // 假设压缩后的数据大多为非零字节，每个 calldata 字节需支付 16 gas
+      return estimatedSize * 16;
+    }
+    // ...
+}
+```
+
+自 Fjord 起，`getL1GasUsed` 方法已被弃用，因为引入 blob 后会同时消耗
+两种 gas，而该方法无法体现这一点。在未来的某次升级中，调用此函数将会
+revert。
+
+用户可以继续使用 `getL1Fee` 方法估算指定交易的 L1 费用，也可以改用 Fjord 引入的
+新方法 `getL1FeeUpperBound`，它消耗的 gas 更少。

@@ -1,0 +1,99 @@
+---
+title: "支付对账"
+keywords: ["Commerce Payments 对账", "paymentInfoHash 报告", "支付结算账本", "AuthCaptureEscrow 会计核算"]
+description: "基于托管中的扣款、收款确认、手续费、作废、收回和退款记录生成结算报告。"
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+将已确认的协议日志转换为以 `paymentInfoHash` 为键的账本记录行。首次授权或扣款会确立不可更改的支付条款；后续事件则用于更新可扣款金额和可退款金额的账目。
+
+<Info>
+  本指南中的支付流程基于 [Commerce Payments Protocol](https://github.com/base/commerce-payments)。
+</Info>
+
+## 演示 {#demo}
+
+<PaymentsDemo flow="reconcile" />
+
+<Tip>
+  上方演示仅为模拟效果。如需在 Vibenet 上体验链上演示，请前往 [Base 链演示](https://chain.base.org/demos)。
+</Tip>
+
+## 构建结算报告 {#build-a-settlement-report}
+
+查询 v1.1.0 托管合约，然后根据其生命周期事件生成总额行、费用行和退款行。
+
+{/* sample: reconcile-payments-ts */}
+
+```typescript TypeScript backend lines wrap expandable highlight={5-10,14,22,30}
+export async function buildSettlementReport(
+  fromBlock: bigint,
+  toBlock: bigint,
+) {
+  const logs = await publicClient.getContractEvents({
+    address: AUTH_CAPTURE_ESCROW,
+    abi: authCaptureEscrowAbi,
+    fromBlock,
+    toBlock,
+    strict: true,
+  });
+  return logs.flatMap((log) => {
+    if (!log.transactionHash) return [];
+    if (log.eventName === "PaymentCharged") return [{
+      paymentInfoHash: log.args.paymentInfoHash,
+      transactionHash: log.transactionHash,
+      logIndex: log.logIndex,
+      operation: "charge",
+      grossAmount: log.args.amount,
+      feeAmount: log.args.feeAmount,
+    }];
+    if (log.eventName === "PaymentCaptured") return [{
+      paymentInfoHash: log.args.paymentInfoHash,
+      transactionHash: log.transactionHash,
+      logIndex: log.logIndex,
+      operation: "capture",
+      grossAmount: log.args.amount,
+      feeAmount: log.args.feeAmount,
+    }];
+    if (log.eventName === "PaymentRefunded") return [{
+      paymentInfoHash: log.args.paymentInfoHash,
+      transactionHash: log.transactionHash,
+      logIndex: log.logIndex,
+      operation: "refund",
+      grossAmount: -log.args.amount,
+      feeAmount: 0n,
+    }];
+    return [];
+  });
+}
+```
+
+对于每一笔扣款 (charge) 或收款确认 (capture) ：
+
+```text Accounting
+商户净额 = 总额 - 手续费
+可退款余额 += 总额
+```
+
+每次退款时，按退款总额扣减可退款余额。作废 (void) 或收回 (reclaim) 操作仅扣减可扣款余额，不会撤销此前已完成的收款确认。
+
+<Check>
+  对于每笔授权，核对授权金额是否等于已收款确认金额、已作废或已收回金额与当前 `capturableAmount` 三者之和。同时核对已收费和已收款确认的总额是否等于退款金额与当前 `refundableAmount` 之和。
+</Check>
+
+<Warning>
+  财务报表只能基于已最终确认 (finalized) 的区块范围生成。如果要展示更近期的确认记录，请将其标记为临时数据，并在发生重组 (reorg) 后予以替换。
+</Warning>
+
+## 另请参阅 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="监听付款" icon="eye" href="/zh/build-on-base/accept-payments/watch-for-payments">
+    确保底层托管事件索引保持最新。
+  </Card>
+
+  <Card title="退款" icon="rotate-left" href="/zh/build-on-base/accept-payments/refund-a-payment">
+    了解按总额计的退款核算方式及流动性。
+  </Card>
+</CardGroup>

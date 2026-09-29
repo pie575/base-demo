@@ -1,0 +1,65 @@
+---
+title: "常量"
+description: "B20 预编译合约地址、角色标识符、策略作用域及校验边界。"
+---
+
+*角色标识符、策略类型标识符、预编译合约地址及其他固定常量。详见 [`B20Constants`](https://github.com/base/base-std/blob/main/src/lib/B20Constants.sol) 和 [`StdPrecompiles`](https://github.com/base/base-std/blob/main/src/StdPrecompiles.sol)。*
+
+## 预编译合约地址 {#precompile-addresses}
+
+*Base 单例预编译合约的固定地址。参见 [`StdPrecompiles`](https://github.com/base/base-std/blob/main/src/StdPrecompiles.sol)。*
+
+| 名称                            | 值                                            | 用途                                                                                                             |
+| ----------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `B20_FACTORY_ADDRESS`         | `0xB20f000000000000000000000000000000000000` | 用于部署和查找 B-20 代币；所有资产代币和稳定币实例均通过该地址上的 [`IB20Factory`](/zh/specifications/b20/reference/interfaces#ib20factory) 创建。 |
+| `POLICY_REGISTRY_ADDRESS`     | `0x8453000000000000000000000000000000000002` | 存储允许列表、阻止列表及组合策略，并响应所有策略作用域发起的 `isAuthorized` 检查 (参见[策略](/zh/specifications/b20/concepts/policies)) 。             |
+| `ACTIVATION_REGISTRY_ADDRESS` | `0x8453000000000000000000000000000000000001` | 控制某个 B-20 变体或功能是否已在特定链上启用；工厂在创建该变体前会先查询此处。                                                                     |
+
+## 角色 {#roles}
+
+*角色标识符通过 `hasRole` 进行检查。参见 [`B20Constants`](https://github.com/base/base-std/blob/main/src/lib/B20Constants.sol) 和 [`IB20`](/zh/specifications/b20/reference/interfaces#ib20)。十六进制值为角色名称的 `keccak256` 哈希，已通过 `cast keccak "<NAME>"` 验证，并在 `chisel` 中交叉核对。*
+
+| 名称                   | 值                                                                                                          | 用途                                                                                                         |
+| -------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `DEFAULT_ADMIN_ROLE` | `bytes32(0)`                                                                                               | 调用 `grantRole`、`revokeRole`、`setRoleAdmin`、`updatePolicy` 和 `updateSupplyCap` 时必需。                         |
+| `MINT_ROLE`          | `keccak256("MINT_ROLE")`<br />`0x154c00819833dac601ee5ddded6fda79d9d8b506b911b3dbd54cdb95fe6c3686`         | 调用 `mint` 和 `mintWithMemo` 时必需。                                                                            |
+| `BURN_ROLE`          | `keccak256("BURN_ROLE")`<br />`0xe97b137254058bd94f28d2f3eb79e2d34074ffb488d042e3bc958e0a57d2fa22`         | 调用 `burn` 和 `burnWithMemo` 时必需。                                                                            |
+| `BURN_BLOCKED_ROLE`  | `keccak256("BURN_BLOCKED_ROLE")`<br />`0x7408fdc0d31c7bcb349eab611f5d1168acd4303574993f8cdc98b1cd18c41cae` | 调用已弃用的 `burnBlocked` 时必需。                                                                                  |
+| `SEIZE_ROLE`         | `keccak256("SEIZE_ROLE")`<br />`0x3469b8b0d89e9604f8510ed143f74a8336d22955d4f83e23bf53d9414e27f432`        | 调用 `seizeWithMemo` 时必需。                                                                                    |
+| `PAUSE_ROLE`         | `keccak256("PAUSE_ROLE")`<br />`0x139c2898040ef16910dc9f44dc697df79363da767d8bc92f2e310312b816e46d`        | 调用 `pause` 时必需。                                                                                            |
+| `UNPAUSE_ROLE`       | `keccak256("UNPAUSE_ROLE")`<br />`0x265b220c5a8891efdd9e1b1b7fa72f257bd5169f8d87e319cf3dad6ff52b94ae`      | 调用 `unpause` 时必需。                                                                                          |
+| `METADATA_ROLE`      | `keccak256("METADATA_ROLE")`<br />`0x6bd6b5318a46e5fff572d5e4258a20774aab40cc35ac7680654b9081fcc82f80`     | 调用 `updateName`、`updateSymbol`、`updateContractURI` 和 `updateExtraMetadata` 时必需。                            |
+| `OPERATOR_ROLE`      | `keccak256("OPERATOR_ROLE")`<br />`0x97667070c54ef182b0f5858b034beac1b6f3089aa2d3188bb1e8929f4fa9b929`     | 仅适用于 B20Asset。调用 `announce`、`updateUIMultiplier`、`cancelUIMultiplierUpdate` 以及已弃用的 `updateMultiplier` 时必需。 |
+
+## 策略类型 {#policy-types}
+
+*PolicyRegistry 所查询的策略作用域。请参阅 [`B20Constants`](https://github.com/base/base-std/blob/main/src/lib/B20Constants.sol) 和[策略](/zh/specifications/b20/concepts/policies)。十六进制值为策略名称的 `keccak256` 哈希，已通过 `cast keccak "<NAME>"` 验证，并在 `chisel` 中交叉核对。*
+
+| 名称                         | 值                                                                                                                 | 用途                                                                                                                   |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `TRANSFER_SENDER_POLICY`   | `keccak256("TRANSFER_SENDER_POLICY")`<br />`0xb81736c875ab819dd97f59f2a6542cfb731ad52b4ae15a6f24df2fb02b0327f5`   | 在调用 `transfer` 和 `transferFrom` 时用于检查 `from`。                                                                        |
+| `TRANSFER_RECEIVER_POLICY` | `keccak256("TRANSFER_RECEIVER_POLICY")`<br />`0x8a4b3fa2d8b921852bc0089c6ef0958aa6961897be36fd731330fe2cd23f8363` | 在调用 `transfer` 和 `transferFrom` 时用于检查 `to`。                                                                          |
+| `TRANSFER_EXECUTOR_POLICY` | `keccak256("TRANSFER_EXECUTOR_POLICY")`<br />`0x10be5173aff2a44e748bd9acd8b19fe34689581398a9db7ba2fb671e786ff7d8` | 在调用任一转账入口 (`transfer`、`transferFrom` 及其带 memo 的变体) 时用于检查 `msg.sender`。                                               |
+| `MINT_RECEIVER_POLICY`     | `keccak256("MINT_RECEIVER_POLICY")`<br />`0xa0d5ae037e66a09119acf080a1d807abb9b6d03b6b9130eb19f7c1e6bdb8ffc8`     | 在调用 `mint` 时用于检查 `to`。                                                                                               |
+| `SEIZE_EXEMPT_POLICY`      | `keccak256("SEIZE_EXEMPT_POLICY")`<br />`0xedb5da348cfb67af08746d3afd1be81034b50d5c8576f31aff688f39dfd540ed`      | 在调用 `seizeWithMemo` 时用于检查 `from`；已授权的 `from` 免于扣押，因此只有当 `from` 在该策略下未获授权时，才可被扣押。在 Cobalt 之前名为 `SEIZE_HOLDER_POLICY`。 |
+| `SEIZE_RECEIVER_POLICY`    | `keccak256("SEIZE_RECEIVER_POLICY")`<br />`0xbf15b19caf5c77422c038bc25f26b8b815c3a14f6d04c6616076b81bcfe07b3d`    | 在调用 `seizeWithMemo` 时用于检查 `to`。                                                                                      |
+
+## 功能与校验边界 {#feature-and-validation-bounds}
+
+*用于暂停功能和 B20Asset 创建校验的位掩码及闭区间边界。参见 [`B20Constants`](https://github.com/base/base-std/blob/main/src/lib/B20Constants.sol)。*
+
+| 名称                    | 值                   | 用途                                                                          |
+| --------------------- | ------------------- | --------------------------------------------------------------------------- |
+| `ALL_FEATURES_PAUSED` | `15` (`0b1111`)     | 所有 `PausableFeature` 位均已置位的位掩码 (`TRANSFER \| MINT \| BURN \| SEIZE`) 。      |
+| `MIN_ASSET_DECIMALS`  | `6`                 | `B20AssetCreateParams.decimals` 的下界 (含) ；即大多数稳定币级集成所要求的最低精度。                |
+| `MAX_ASSET_DECIMALS`  | `18`                | `B20AssetCreateParams.decimals` 的上界 (含) ；即 ERC-20 社区公认的上限，所有常见钱包/索引器均能正确显示。 |
+| `MAX_SUPPLY_CAP`      | `type(uint128).max` | 供应上限 (进而也是 `totalSupply`) 的上界 (含) ；同时用作表示“无上限”的哨兵值。                         |
+
+## 资产变体精度常量 {#asset-variant-precision-constants}
+
+*乘数/变基相关接口所使用的定点常量。参见 [`IB20Asset`](/zh/specifications/b20/reference/interfaces#ib20asset)。*
+
+| 名称                  | 值                   | 用途                                                                                                                   |
+| ------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `WAD_PRECISION`     | `1e18`              | 用于缩放 `multiplier` 的定点精度；`multiplier`、`toUIAmount` 和 `fromUIAmount` 均以此值作为除数/乘数。                                      |
+| `MAX_UI_MULTIPLIER` | `type(uint128).max` | 设置函数所能接受的最大乘数，即 `updateMultiplier` 和 `updateUIMultiplier` 强制执行的溢出保护上限。公开此常量，是为了让调用方无需触发 `InvalidMultiplier` 即可读取该上限。 |

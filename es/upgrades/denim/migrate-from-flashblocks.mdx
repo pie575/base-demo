@@ -1,0 +1,43 @@
+---
+title: "Migrar desde Flashblocks"
+description: "Migra tu integración de Flashblocks a bloques de 200ms."
+---
+
+<Warning>
+  Los bloques nativos de 200ms ya están disponibles en [Vibenet](/es/build-on-base/test-on-vibenet) para que los desarrolladores realicen pruebas experimentales. Este despliegue puede cambiar, por lo que no debes basarte en él para tomar decisiones de producción.
+
+  Denim no está activo en Base Sepolia ni en Base Mainnet; aún no se han definido las fechas de activación ni las versiones de cliente requeridas.
+</Warning>
+
+## Resumen {#summary}
+
+Consulta esta guía si tu aplicación consume Flashblocks. Denim sustituye Flashblocks por bloques canónicos de 200 ms, por lo que las suscripciones a Flashblocks y el estado `pending` dejan de estar disponibles tras la activación.
+
+## Acción recomendada {#recommended-action}
+
+Antes de Denim, haz un inventario de todas las suscripciones de Flashblocks y solicitudes RPC que usen la etiqueta de bloque `"pending"`. Reemplaza cada integración según la tabla siguiente.
+
+## Actualizar integraciones para Denim {#update-integrations-for-denim}
+
+| Integración a revisar                                                                | Acción para Denim                                                                                                                                                          |
+| ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `eth_subscribe("newFlashblocks")`                                                    | Usa `eth_subscribe("newHeads")`.                                                                                                                                           |
+| `eth_subscribe("pendingLogs")`                                                       | Usa `eth_subscribe("logs")`.                                                                                                                                               |
+| `eth_subscribe("newFlashblockTransactions")`                                         | Usa `eth_subscribe("newHeads")` y, a continuación, obtén las transacciones de cada bloque canónico.                                                                        |
+| `eth_getBlockByNumber("pending", ...)`                                               | Usa llamadas RPC estándar para leer los bloques canónicos más recientes.                                                                                                   |
+| `eth_getBalance(..., "pending")`                                                     | Usa llamadas RPC estándar para leer el estado canónico más reciente.                                                                                                       |
+| `eth_getTransactionCount(..., "pending", ...)`                                       | Usa llamadas RPC estándar para leer el estado canónico más reciente.                                                                                                       |
+| `eth_call(..., "pending")`                                                           | Usa llamadas RPC estándar para leer el estado canónico más reciente.                                                                                                       |
+| `eth_estimateGas(..., "pending")`                                                    | Usa llamadas RPC estándar para leer el estado canónico más reciente.                                                                                                       |
+| `eth_simulateV1(..., "pending")`                                                     | Usa llamadas RPC estándar para leer el estado canónico más reciente.                                                                                                       |
+| `eth_getLogs` con un rango que termina en `"pending"`                                | Usa llamadas RPC estándar para consultar los logs de bloques canónicos.                                                                                                    |
+| `eth_getBlockTransactionCountByNumber("pending")`                                    | Usa llamadas RPC estándar para leer el bloque canónico más reciente.                                                                                                       |
+| Flujo de puente o de pruebas que lee hashes de bloques históricos o raíces de beacon | Revisa sus supuestos sobre el historial. La cantidad de valores que se conservan no cambia, pero con bloques de 200ms ese historial abarca un período de tiempo más corto. |
+
+<Warning>
+  La etiqueta de bloque `"pending"` y el estado de preconfirmación de Flashblocks no tienen un equivalente directo después de Denim. Las alternativas anteriores devuelven datos canónicos de bloques de 200ms, no datos preconfirmados ni pendientes.
+</Warning>
+
+## Prueba en Vibenet {#test-on-vibenet}
+
+Prueba tu integración migrada en [Vibenet](/es/build-on-base/test-on-vibenet). Para conocer el diseño del protocolo y el comportamiento de RPC, consulta [Bloques nativos de 200 ms](/es/upgrades/denim/200ms-blocks).

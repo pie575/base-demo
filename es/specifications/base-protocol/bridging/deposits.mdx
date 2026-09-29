@@ -1,0 +1,501 @@
+---
+title: "Depósitos"
+description: "Cómo funcionan los depósitos en Base: desde la experiencia del usuario hasta el tipo de transacción de depósito a nivel de protocolo y el mercado de gas garantizado."
+---
+
+[g-transaction-type]: /specifications/reference/glossary#transaction-type
+
+[g-derivation]: /specifications/reference/glossary#L2-chain-derivation
+
+[g-deposited]: /specifications/reference/glossary#deposited
+
+[g-deposits]: /specifications/reference/glossary#deposits
+
+[g-l1-attr-deposit]: /specifications/reference/glossary#l1-attributes-deposited-transaction
+
+[g-user-deposited]: /specifications/reference/glossary#user-deposited-transaction
+
+[g-eoa]: /specifications/reference/glossary#eoa
+
+[g-exec-engine]: /specifications/reference/glossary#execution-engine
+
+Un depósito es una transacción iniciada fuera de Base que se convierte en una transacción en Base. En el caso de los depósitos desde Ethereum, la transacción de L1 emite datos que los nodos de Base utilizan para derivar la transacción de depósito correspondiente en L2.
+
+Las transacciones de depósito forman parte del propio protocolo. No utilizan los mismos campos de firma, nonce ni comisiones que las transacciones habituales de L2, ya que están autorizadas por el evento de depósito de L1 y el gas de L2 se paga en L1. Para la mayoría de los usuarios, en la práctica es sencillo: una vez que la transacción en la cadena de origen se confirma y se procesa, el activo o mensaje aparece en Base.
+
+Para ver las rutas de puente disponibles, consulta [Puentes hacia Base](/es/base-chain/network-information/ecosystem-bridges).
+
+## Descripción general {#overview}
+
+Las [transacciones depositadas][g-deposited], también conocidas como [depósitos][g-deposits], son transacciones que
+se inician en L1 y se ejecutan en L2. Este documento presenta un nuevo [tipo de
+transacción][g-transaction-type] para los depósitos. También explica cómo se inician los depósitos en L1, así
+como las condiciones de autorización y validación en L2.
+
+**Nota terminológica**: *transacción depositada* se refiere específicamente a una transacción de L2, mientras que
+*depósito* puede referirse a la transacción en distintas etapas (por ejemplo, cuando se deposita en L1).
+
+## El tipo de transacción depositada {#the-deposited-transaction-type}
+
+[deposited-tx-type]: #the-deposited-transaction-type
+
+Las [transacciones depositadas][g-deposited] presentan las siguientes diferencias notables con respecto a los tipos de
+transacción existentes:
+
+1. Se derivan de bloques de Layer 1 y deben incluirse como parte del protocolo.
+2. No incluyen validación de firma (consulta [Transacciones depositadas por usuarios][user-deposited]
+   para conocer el motivo).
+3. Compran su gas de L2 en L1 y, por lo tanto, el gas de L2 no es reembolsable.
+
+Definimos un nuevo tipo de transacción compatible con [EIP-2718], con el prefijo `0x7E`, para representar una transacción de depósito.
+
+Un depósito tiene los siguientes campos
+(codificados en RLP en el orden en que aparecen aquí):
+
+[EIP-2718]: https://eips.ethereum.org/EIPS/eip-2718
+
+* `bytes32 sourceHash`: el hash de origen, que identifica de forma única el origen del depósito.
+* `address from`: la dirección de la cuenta del remitente.
+* `address to`: la dirección de la cuenta del destinatario, o la dirección nula (de longitud cero) si la
+  transacción depositada es una creación de contrato.
+* `uint256 mint`: el valor en ETH que se acuñará en L2.
+* `uint256 value`: el valor en ETH que se enviará a la cuenta del destinatario.
+* `uint64 gas`: el límite de gas de la transacción de L2.
+* `bool isSystemTx`: si es verdadero, la transacción no interactúa con el pool de gas del bloque de L2.
+  * Este valor está deshabilitado y DEBE ser `false`.
+* `bytes data`: el calldata.
+
+A diferencia de las transacciones [EIP-155], este tipo de transacción:
+
+* No incluye un `nonce`, ya que se identifica mediante el `sourceHash`.
+  Las respuestas de la API siguen incluyendo un atributo `nonce`, cuyo valor es el `depositNonce`
+  del recibo de la transacción correspondiente.
+* No incluye información de firma y hace explícita la dirección `from`.
+  Las respuestas de la API contienen valores de firma `v`, `r` y `s` a cero por compatibilidad con versiones anteriores.
+* Incluye los nuevos atributos `sourceHash`, `from`, `mint` e `isSystemTx`.
+  Las respuestas de la API los incluyen como campos adicionales.
+
+[EIP-155]: https://eips.ethereum.org/EIPS/eip-155
+
+Elegimos `0x7E` porque actualmente los identificadores de tipo de transacción pueden llegar hasta `0x7F`.
+Elegir un identificador alto minimiza el riesgo de que, en el futuro, otro tipo de transacción de la cadena L1
+utilice ese mismo identificador. No elegimos el propio `0x7F` por si llegara a utilizarse
+para un esquema de codificación de longitud variable.
+
+### Cálculo del hash de origen {#source-hash-computation}
+
+El `sourceHash` de una transacción de depósito se calcula en función de su origen:
+
+* Depositada por el usuario:
+  `keccak256(bytes32(uint256(0)), keccak256(l1BlockHash, bytes32(uint256(l1LogIndex))))`.
+  Donde `l1BlockHash` y `l1LogIndex` hacen referencia a la inclusión del evento de log del depósito en L1.
+  `l1LogIndex` es el índice del log del evento de depósito en la lista combinada de eventos de registro del bloque.
+* Depositada como atributos de L1:
+  `keccak256(bytes32(uint256(1)), keccak256(l1BlockHash, bytes32(uint256(seqNumber))))`.
+  Donde `l1BlockHash` hace referencia al hash del bloque de L1 cuyos atributos de información se depositan.
+  Y `seqNumber = l2BlockNum - l2EpochStartBlockNum`,
+  donde `l2BlockNum` es el número del bloque de L2 en el que se incluye la transacción de depósito,
+  y `l2EpochStartBlockNum` es el número de bloque de L2 del primer bloque de L2 de la época.
+* Depositada por una actualización: `keccak256(bytes32(uint256(2)), keccak256(intent))`.
+  Donde `intent` es una cadena de bytes UTF-8 que identifica la intención de la actualización.
+
+Sin un `sourceHash` en el depósito, dos transacciones depositadas distintas podrían tener exactamente el mismo hash.
+
+El `keccak256` externo calcula el hash de la información que realmente identifica de forma única el depósito junto con un dominio,
+para evitar colisiones entre distintos tipos de orígenes.
+
+La [especificación de derivación de Interop](/es/specifications/base-protocol/consensus/derivation) introduce dos tipos adicionales de depósitos del sistema,
+con los dominios `3` y `4`.
+
+No usamos el nonce del remitente para garantizar la unicidad porque eso requeriría una lectura adicional del estado de la EVM de L2 desde el
+[motor de ejecución][g-exec-engine] durante la derivación de bloques.
+
+### Tipos de transacciones depositadas {#kinds-of-deposited-transactions}
+
+Aunque solo definimos un nuevo tipo de transacción, podemos distinguir dos clases de transacciones
+depositadas según su posición en el bloque de L2:
+
+1. La primera transacción MUST ser una [transacción depositada de atributos de L1][l1-attr-deposit], seguida de
+2. un arreglo de cero o más [transacciones depositadas por usuarios][user-deposited]
+   enviadas al contrato de alimentación de depósitos en L1 (denominado `OptimismPortal`).
+   Las transacciones depositadas por usuarios solo aparecen en el primer bloque de una época de L2.
+
+Definimos un único tipo de transacción nuevo para minimizar tanto las modificaciones en el software
+cliente de L1 como la complejidad en general.
+
+### Validación y autorización de las transacciones depositadas {#validation-and-authorization-of-deposited-transactions}
+
+Como se indicó anteriormente, el tipo de transacción depositada no incluye una firma para su validación. En su lugar,
+la autorización se gestiona mediante el proceso de [derivación de la cadena L2][g-derivation], que, si se
+aplica correctamente, solo derivará transacciones cuya dirección `from` esté certificada por los registros (logs) del [contrato de
+depósito de L1][deposit-contract].
+
+### Ejecución {#execution}
+
+Para ejecutar una transacción depositada:
+
+Primero, el saldo de la cuenta `from` MUST incrementarse en la cantidad de `mint`.
+Esto es incondicional y no se revierte si el depósito falla.
+
+A continuación, el entorno de ejecución de una transacción depositada se inicializa a partir de los
+atributos de la transacción, exactamente de la misma manera que para una transacción EIP-155.
+
+La transacción de depósito se procesa exactamente igual que una transacción de tipo 2 (EIP-1559), con las siguientes excepciones:
+
+* No se verifica ningún campo de tarifa: el depósito no tiene ninguno, ya que paga el gas en L1.
+* No se verifica ningún campo `nonce`: el depósito no tiene ninguno; se identifica de forma única mediante su `sourceHash`.
+* No se procesa ninguna lista de acceso: el depósito no tiene lista de acceso y, por lo tanto, se procesa como si la lista de acceso estuviera vacía.
+* No se comprueba si `from` es una cuenta de propiedad externa (EOA): el enmascaramiento de direcciones de L1 garantiza que el depósito no provenga de una EOA;
+  esto puede cambiar en futuros despliegues de contratos en L1 para, por ejemplo, habilitar un mecanismo similar a la abstracción de cuentas.
+* No se reembolsa gas en forma de ETH (ya sea porque no se reembolsa o aprovechando que el precio del gas del depósito es `0`).
+* No se cobra ninguna tarifa de prioridad de la transacción. No se realiza ningún pago al destinatario de las tarifas del bloque.
+* No se cobra ninguna tarifa por coste de L1, ya que los depósitos se derivan de L1 y no es necesario volver a enviarlos a esta como datos.
+* No se cobra ninguna tarifa base. La contabilidad total de la tarifa base no cambia.
+
+Tenga en cuenta que esto incluye el comportamiento de despliegue de contratos, igual que en las transacciones normales, y que la medición
+del gas es la misma (salvo los cambios relacionados con las tarifas indicados arriba), incluida la medición del
+gas intrínseco.
+
+Cualquier error de transición de estado ajeno a la EVM que se produzca durante la ejecución de la EVM se procesa de forma especial:
+
+* Se transforma en un error de la EVM:
+  es decir, el depósito siempre se incluirá, pero su recibo indicará un fallo
+  si se produce un error de transición de estado ajeno a la EVM, por ejemplo, si no se puede transferir la cantidad
+  `value` de ETH especificada por falta de saldo en la cuenta.
+* El estado global se revierte al inicio del procesamiento de la EVM, después de la parte de acuñación del depósito.
+* El `nonce` de `from` en el estado global se incrementa en 1, lo que hace que el error sea equivalente a un fallo nativo de la EVM.
+  Tenga en cuenta que es posible que el `nonce` ya se haya incrementado durante el procesamiento de la EVM, pero ese incremento se revertiría primero.
+
+Por último, tras el procesamiento anterior, el posprocesamiento de la ejecución se realiza de la misma forma:
+es decir, el pool de gas y el recibo se procesan exactamente igual que en una transacción normal.
+El recibo de las transacciones de depósito se amplía con un valor adicional,
+`depositNonce`, que almacena el valor del `nonce` del remitente `from` registrado *antes* del procesamiento de la EVM.
+
+Tenga en cuenta que el gas utilizado, según indica la salida de la ejecución, se resta del pool de gas.
+
+Nota para desarrolladores de aplicaciones: dado que `CALLER` y `ORIGIN` se establecen en `from`, la
+comprobación `tx.origin == msg.sender` no sirve para determinar si
+un llamante es o no una EOA durante una transacción de depósito. En su lugar, la comprobación solo resulta útil para
+identificar la primera llamada en la transacción de depósito de L2. No obstante, esta comprobación sigue cubriendo
+el caso habitual en el que los desarrolladores la utilizan para garantizar que el `CALLER` no pueda
+ejecutar código antes y después de la llamada.
+
+#### Gestión del nonce {#nonce-handling}
+
+Aunque no se valida la firma, igualmente incrementamos el nonce de la cuenta `from` cuando se
+ejecuta una transacción de depósito. En el contexto de un rollup deposit-only, esto no es necesario
+para ordenar las transacciones ni para prevenir ataques de repetición (replay); sin embargo, mantiene la coherencia con el uso de
+los nonces durante la [creación de contratos][create-nonce]. Además, puede simplificar la integración con las herramientas
+que dependen de estos datos (como billeteras y exploradores de bloques).
+
+[create-nonce]: https://github.com/ethereum/execution-specs/blob/617903a8f8d7b50cf71bf1aa733c37897c8d75c1/src/ethereum/frontier/utils/address.py#L40
+
+## Recibo de depósito {#deposit-receipt}
+
+Los recibos de transacción usan tipado estándar según [EIP-2718].
+El tipo de recibo de la transacción de depósito es igual a un recibo normal,
+pero ampliado con un campo opcional `depositNonce`.
+
+Los campos codificados en RLP y aplicados por consenso son:
+
+* `postStateOrStatus` (estándar): contiene el estado de la transacción; consulta [EIP-658].
+* `cumulativeGasUsed` (estándar): gas usado en el bloque hasta el momento, incluida esta transacción.
+  * El gas realmente usado se obtiene de la diferencia de `CumulativeGasUsed` con respecto a la transacción anterior.
+  * Así se contabiliza el uso real de gas del depósito, igual que en las transacciones normales.
+* `bloom` (estándar): filtro de Bloom de los registros de la transacción.
+* `logs` (estándar): eventos de registro emitidos durante el procesamiento de la EVM.
+* `depositNonce` (extensión exclusiva): campo opcional. La transacción de depósito conserva el nonce usado durante la ejecución.
+* `depositNonceVersion` (extensión exclusiva): campo opcional. El valor debe ser 1 si el campo está presente
+  * Antes de Canyon, estos campos `depositNonce` y `depositNonceVersion` deben omitirse siempre.
+  * A partir de Canyon, estos campos `depositNonce` y `depositNonceVersion` deben incluirse siempre.
+
+Las respuestas de la API de recibos aprovechan estos cambios para ofrecer datos más precisos:
+
+* El `depositNonce` se incluye en los datos JSON del recibo en las respuestas de la API
+* En los despliegues de contratos (cuando `to == null`), el `depositNonce` permite derivar correctamente los metadatos de `contractAddress`,
+  en lugar de suponer que el nonce era cero.
+* El `cumulativeGasUsed` refleja el uso real de gas, tal como se mide en el procesamiento de la EVM.
+
+[EIP-658]: https://eips.ethereum.org/EIPS/eip-658
+
+## Transacción depositada de atributos de L1 {#l1-attributes-deposited-transaction}
+
+[l1-attr-deposit]: #l1-attributes-deposited-transaction
+
+Una [transacción depositada de atributos de L1][g-l1-attr-deposit] es una transacción de depósito enviada al [contrato
+predesplegado de atributos de L1][predeploy].
+
+Esta transacción MUST tener los siguientes valores:
+
+1. `from` es `0xdeaddeaddeaddeaddeaddeaddeaddeaddead0001` (la dirección de la
+   [cuenta depositante de atributos de L1][depositor-account])
+2. `to` es `0x4200000000000000000000000000000000000015` (la dirección del [contrato predesplegado
+   de atributos de L1][predeploy]).
+3. `mint` es `0`
+4. `value` es `0`
+5. `gasLimit` se establece en `1,000,000`.
+6. `isSystemTx` se establece en `false`.
+7. `data` es una llamada codificada al [contrato predesplegado de atributos de L1][predeploy] que
+   depende de las actualizaciones activas (consulta más abajo).
+
+A esta transacción de atributos de L1, iniciada por el sistema, no se le cobra ETH por el
+`gasLimit` que tiene asignado, ya que se considera parte del procesamiento de la transición de estado.
+
+### Calldata de la transacción depositada de L1 Attributes {#l1-attributes-deposited-transaction-calldata}
+
+#### Atributos de L1 - Bedrock, Canyon, Delta {#l1-attributes-bedrock-canyon-delta}
+
+El campo `data` de la transacción depositada de atributos de L1 es una llamada codificada con [ABI][ABI] a la
+función `setL1BlockValues()` con los valores correctos del bloque de L1 correspondiente
+(cf. [implementación de referencia][l1-attr-ref-implem]).
+
+## Cuentas especiales en L2 {#special-accounts-on-l2}
+
+La transacción de depósito de atributos de L1 involucra dos cuentas con un propósito específico:
+
+1. La cuenta depositante de atributos de L1
+2. El contrato predesplegado de atributos de L1
+
+### Cuenta depositante de atributos de L1 {#l1-attributes-depositor-account}
+
+[depositor-account]: #l1-attributes-depositor-account
+
+La cuenta depositante es una [EOA][g-eoa] sin clave privada conocida. Su dirección es
+`0xdeaddeaddeaddeaddeaddeaddeaddeaddeaddead0001`. Los opcodes `CALLER` y `ORIGIN` devuelven su valor
+durante la ejecución de la transacción depositada de atributos de L1.
+
+### Contrato predesplegado de atributos de L1 {#l1-attributes-predeployed-contract}
+
+[predeploy]: #l1-attributes-predeployed-contract
+
+Un contrato predesplegado en L2 en la dirección `0x4200000000000000000000000000000000000015`, que guarda
+en su almacenamiento ciertas variables del bloque de L1 correspondiente, para que puedan consultarse
+durante la ejecución de las transacciones depositadas posteriores.
+
+El predeploy almacena los siguientes valores:
+
+* Atributos del bloque de L1:
+  * `number` (`uint64`)
+  * `timestamp` (`uint64`)
+  * `basefee` (`uint256`)
+  * `hash` (`bytes32`)
+* `sequenceNumber` (`uint64`): equivale al número de bloque de L2 relativo al inicio de la época,
+  es decir, la distancia en bloques de L2 respecto a la altura de bloque de L2 en la que cambiaron por última vez los atributos de L1,
+  y se restablece a 0 al inicio de cada nueva época.
+* Parámetros configurables del sistema vinculados al bloque de L1 (consulta la [especificación de configuración del sistema](/es/specifications/base-protocol/consensus/derivation#system-configuration)):
+  * `batcherHash` (`bytes32`): un compromiso versionado de los remitentes de lotes que operan actualmente.
+  * `overhead` (`uint256`): la sobrecarga de la tarifa de L1 que se aplica al calcular el costo de L1 de las transacciones de este bloque de L2.
+  * `scalar` (`uint256`): el escalar de la tarifa de L1 que se aplica al calcular el costo de L1 de las transacciones de este bloque de L2.
+
+El contrato implementa un esquema de autorización por el que solo acepta llamadas que modifican el estado si provienen de
+la [cuenta depositante][depositor-account].
+
+El contrato tiene la siguiente interfaz de Solidity, y es posible interactuar con él conforme a la
+[especificación de ABI de contratos][ABI].
+
+[ABI]: https://docs.soliditylang.org/en/v0.8.10/abi-spec.html
+
+#### Contrato predesplegado de L1 Attributes: implementación de referencia {#l1-attributes-predeployed-contract-reference-implementation}
+
+[l1-attr-ref-implem]: #l1-attributes-predeployed-contract-reference-implementation
+
+En [L1Block.sol] se puede encontrar una implementación de referencia del contrato predesplegado de L1 Attributes.
+
+[L1Block.sol]: https://github.com/ethereum-optimism/optimism/blob/d48b45954c381f75a13e61312da68d84e9b41418/packages/contracts-bedrock/src/L2/L1Block.sol
+
+## Transacciones depositadas por usuarios {#user-deposited-transactions}
+
+[user-deposited]: #user-deposited-transactions
+
+Las [transacciones depositadas por usuarios][g-user-deposited] son [transacciones depositadas][deposited-tx-type]
+generadas por el proceso de [derivación de la cadena L2][g-derivation]. El contenido de cada transacción
+depositada por un usuario viene determinado por el evento `TransactionDeposited` correspondiente, emitido por el
+[contrato de depósito][deposit-contract] en L1.
+
+1. `from` se mantiene igual que el valor emitido (aunque puede
+   haberse transformado en un alias en `OptimismPortal`, el contrato de alimentación de depósitos).
+2. `to` es cualquier dirección de 20 bytes (incluida la dirección cero)
+   * En el caso de la creación de un contrato (cf. `isCreation`), esta dirección se establece en `null`.
+3. `mint` se establece en el valor emitido.
+4. `value` se establece en el valor emitido.
+5. `gaslimit` se mantiene igual que el valor emitido. Debe ser como mínimo 21000.
+6. `isCreation` se establece en `true` si la transacción es una creación de contrato y en `false` en caso contrario.
+7. `data` se mantiene igual que el valor emitido. Según el valor de `isCreation`, se trata
+   como calldata o como código de inicialización del contrato.
+8. `isSystemTx` lo establece el nodo del rollup para ciertas transacciones cuya ejecución no se contabiliza.
+   Es `false` para las transacciones depositadas por usuarios
+
+### Contrato de depósito {#deposit-contract}
+
+[deposit-contract]: #deposit-contract
+
+El contrato de depósito se despliega en L1. Las transacciones depositadas se derivan de los valores de
+los eventos `TransactionDeposited` que emite el contrato de depósito.
+
+El contrato de depósito se encarga de mantener el [mercado de gas garantizado](#guaranteed-gas-fee-market),
+cobrar a los depósitos el gas que se usará en L2 y asegurar que la cantidad total de gas
+garantizado en un único bloque de L1 no supere el límite de gas por bloque de L2.
+
+El contrato de depósito gestiona dos casos especiales:
+
+1. Un depósito de creación de contrato, que se indica estableciendo el indicador `isCreation` en `true`.
+   Si la dirección `to` no es cero, el contrato revierte la operación.
+2. Una llamada desde una cuenta de contrato, en cuyo caso el valor `from` se transforma en su
+   [alias][address-aliasing] de L2.
+
+#### Alias de direcciones {#address-aliasing}
+
+[address-aliasing]: #address-aliasing
+
+Si quien realiza la llamada es un contrato, la dirección se transformará sumándole
+`0x1111000000000000000000000000000000001111`. La operación es `unchecked` y se realiza sobre un
+`uint160` de Solidity, por lo que el valor se desbordará. Esto evita ataques en los que un
+contrato en L1 tiene la misma dirección que un contrato en L2, pero no el mismo código. Podemos ignorar esto sin riesgo
+en el caso de las EOA, ya que se garantiza que tienen el mismo «código» (es decir, ningún código). Esto también permite
+que los usuarios interactúen con contratos en L2 incluso cuando el sequencer no está disponible.
+
+#### Implementación del contrato de depósito: Optimism Portal {#deposit-contract-implementation-optimism-portal}
+
+Puede encontrar una implementación de referencia del contrato de depósito en [OptimismPortal.sol].
+
+[OptimismPortal.sol]: https://github.com/ethereum-optimism/optimism/blob/d48b45954c381f75a13e61312da68d84e9b41418/packages/contracts-bedrock/src/L1/OptimismPortal.sol
+
+## Mercado de comisiones de gas garantizado {#guaranteed-gas-fee-market}
+
+Las [transacciones depositadas][g-deposited] son transacciones en L2 que se
+inician en L1. El gas que utilizan en L2 se compra en L1 mediante una quema de gas (o, en el futuro, mediante un pago
+directo). Mantenemos un mercado de comisiones y un límite máximo estricto sobre la cantidad de gas asignada al conjunto de depósitos
+de un mismo bloque de L1.
+
+El gas asignado a las transacciones depositadas a veces se denomina «gas garantizado». Este gas tiene la
+particularidad de que no es reembolsable. No se puede reembolsar porque
+a veces se paga mediante una quema de gas y es posible que no quede ETH que devolver.
+
+El **gas garantizado** se compone de un estipendio de gas y de cualquier gas garantizado adicional que el usuario quiera
+comprar (en L1).
+
+El gas garantizado en L2 se compra de la siguiente manera. Primero se calcula un precio del gas de L2 mediante un
+algoritmo al estilo de EIP-1559. A continuación, se calcula la cantidad total de ETH necesaria para comprar ese gas como
+(`guaranteed gas * L2 deposit base fee`). Después, el contrato acepta esa cantidad de ETH (en una futura
+actualización) o bien (el único método disponible por ahora) quema una cantidad de gas de L1 equivalente al costo en L2 (`L2
+cost / L1 base fee`). El precio del gas de L2 para el gas garantizado no está sincronizado con la tarifa base de
+L2 y lo más probable es que difiera de ella.
+
+### Estipendio de gas {#gas-stipend}
+
+Para compensar el gas consumido por el evento de depósito, acreditamos `gas spent * L1 base fee` ETH al costo
+del gas de L2, donde `gas spent` es la cantidad de gas de L1 consumida al procesar el depósito. Si el valor en ETH
+de este crédito es mayor que el valor en ETH del gas garantizado solicitado (`requested
+guaranteed gas * L2 gas price`), no se quema gas de L1.
+
+### Valores predeterminados {#default-values}
+
+| Variable                          | Valor                                          |
+| --------------------------------- | ---------------------------------------------- |
+| `MAX_RESOURCE_LIMIT`              | 20,000,000                                     |
+| `ELASTICITY_MULTIPLIER`           | 10                                             |
+| `BASE_FEE_MAX_CHANGE_DENOMINATOR` | 8                                              |
+| `MINIMUM_BASE_FEE`                | 1 gwei                                         |
+| `MAXIMUM_BASE_FEE`                | type(uint128).max                              |
+| `SYSTEM_TX_MAX_GAS`               | 1,000,000                                      |
+| `TARGET_RESOURCE_LIMIT`           | `MAX_RESOURCE_LIMIT` / `ELASTICITY_MULTIPLIER` |
+
+### Limitación del gas garantizado {#limiting-guaranteed-gas}
+
+La cantidad total de gas garantizado que se puede comprar en un solo bloque de L1 debe limitarse para
+evitar un ataque de denegación de servicio contra L2 y para garantizar que la cantidad total de gas garantizado
+se mantenga por debajo del límite de gas por bloque de L2.
+
+Establecemos un límite de gas garantizado de `MAX_RESOURCE_LIMIT` de gas por bloque de L1 y un objetivo de
+`MAX_RESOURCE_LIMIT` / `ELASTICITY_MULTIPLIER` de gas por bloque de L1. Estas cifras permitían
+transacciones grandes ocasionales sin superar nuestro uso de gas objetivo y máximo en L2.
+
+Dado que la cantidad de gas garantizado de L2 que se puede comprar en un solo bloque ahora está limitada,
+implementamos un mercado de comisiones al estilo de EIP-1559 para reducir la congestión de los depósitos. Al fijar el límite
+en un múltiplo del objetivo, permitimos que los depósitos usen temporalmente más gas de L2 a un costo mayor.
+
+```python Guaranteed Gas Market Pseudocode lines wrap expandable
+# Pseudocódigo para actualizar la tarifa base de depósito en L2 y limitar la cantidad de gas garantizado
+# comprado en un bloque. El código que lo invoca debe encargarse de la quema de gas y de comprobar
+# que la cuenta puede costear este gas.
+
+# prev_base fee es un u128; prev_bought_gas y prev_num son u64
+prev_base_fee, prev_bought_gas, prev_num = <values from previous update>
+now_num = block.number
+
+# Acota la tarifa base completa a un rango específico. El valor mínimo del rango debería rondar 100-1000
+# para que la tarifa base responda más rápido. Esto reemplaza el mecanismo `max` de la implementación
+# de EIP-1559 de ethereum (también permite que la tarifa base aumente cuando es muy pequeña).
+def clamp(v: i256, min: u128, max: u128) -> u128:
+    if v < i256(min):
+        return min
+    elif v > i256(max):
+        return max
+    else:
+        return u128(v)
+
+# Si es un bloque nuevo, actualiza la tarifa base y reinicia el gas total
+# Si no, solo actualiza el gas total
+if prev_num == now_num:
+    now_base_fee = prev_base_fee
+    now_bought_gas = prev_bought_gas + requested_gas
+elif prev_num != now_num:
+    # Ampliación de ancho y conversión a aritmética de enteros con signo
+    gas_used_delta = int128(prev_bought_gas) - int128(TARGET_RESOURCE_LIMIT)
+    # Usa división con truncamiento (redondeo hacia 0), el comportamiento predeterminado de solidity.
+    # Extiende con signo gas_used_delta y prev_base_fee a 256 bits para evitar desbordamientos aquí.
+    base_fee_per_gas_delta = prev_base_fee * gas_used_delta / TARGET_RESOURCE_LIMIT / BASE_FEE_MAX_CHANGE_DENOMINATOR
+    now_base_fee_wide = prev_base_fee + base_fee_per_gas_delta
+
+    now_base_fee = clamp(now_base_fee_wide, min=MINIMUM_BASE_FEE, max=UINT_128_MAX_VALUE)
+    now_bought_gas =  requested_gas
+
+    # Si se omitieron varios bloques entre el bloque anterior y el actual, actualiza de nuevo la tarifa base.
+    # Esto no equivale exactamente a iterar la función anterior, pero se aproxima bastante para valores
+    # razonables del objetivo de gas. Además, se ejecuta en tiempo constante respecto al número de bloques
+    # omitidos, lo cual es importante para mantener estable el uso de gas.
+    if prev_num + 1 < now_num:
+        n = now_num - prev_num - 1
+        # Aplica una reducción de 7/8 a prev_base_fee por los n bloques vacíos consecutivos.
+        now_base_fee_wide = now_base_fee * pow(1-(1/BASE_FEE_MAX_CHANGE_DENOMINATOR), n)
+        now_base_fee = clamp(now_base_fee_wide, min=MINIMUM_BASE_FEE, max=type(uint128).max)
+
+require(now_bought_gas < MAX_RESOURCE_LIMIT)
+
+store_values(now_base_fee, now_bought_gas, now_num)
+```
+
+### Justificación para quemar gas en L1 {#rationale-for-burning-l1-gas}
+
+Debe existir un mecanismo de resistencia a ataques Sybil para el uso de la red. Si obtener gas
+garantizado en L2 fuera muy barato, sería posible saturar la red con spam. Quemar una cantidad dinámica
+de gas en L1 sirve como mecanismo de resistencia a ataques Sybil, ya que se encarece a medida que aumenta la demanda.
+
+Si cobráramos ETH directamente para pagar el gas de L2, todos los llamadores (indirectos) de la función de depósito tendrían
+que marcarse con el selector payable. Esto no será posible para muchos proyectos existentes. Lamentablemente,
+esto resulta bastante ineficiente. Por ello, ofreceremos dos opciones para comprar gas de L2:
+
+1. Quemar gas en L1
+2. Enviar ETH al Optimism Portal (aún no disponible)
+
+Es probable que a la versión payable (opción 2) se le aplique un descuento (o, a la inversa, que a la opción 1 se le aplique un
+recargo).
+
+En la versión inicial de bedrock, solo se admite la opción 1.
+
+### Sobre la prevención de ataques de obstrucción {#on-preventing-griefing-attacks}
+
+El costo de comprar todo el gas de depósito en cada bloque debe ser lo suficientemente
+alto como para impedir que los atacantes obstruyan todos los depósitos a la red.
+Un atacante observaría un depósito en la mempool y se le adelantaría (frontrunning) con un depósito
+que compre suficiente gas como para que el otro depósito se revierta.
+Cuanto menor sea el límite máximo de recursos, más fácil resultará llevar a cabo este ataque.
+Este ataque se mitiga con un límite de recursos amplio y un multiplicador
+de elasticidad elevado. De este modo, el uso objetivo de recursos se mantiene bajo,
+lo que deja mucho margen para que la tarifa base de depósito aumente cuando se está
+comprando el límite máximo de recursos.
+
+En la práctica, este ataque debería resultar demasiado costoso, pero si un
+adversario con enormes recursos económicos decide obstruir los depósitos de la red durante un
+período prolongado, se tomarán medidas para garantizar que los depósitos puedan procesarse
+en la red.

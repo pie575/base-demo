@@ -1,0 +1,42 @@
+---
+title: "Precompilados"
+description: "Especificación de los contratos precompilados en Base, incluidas las implementaciones nativas de la EVM disponibles en direcciones predefinidas."
+---
+
+## Descripción general {#overview}
+
+Los [contratos precompilados](/es/specifications/reference/glossary#precompiled-contract-precompile) existen en Base en
+direcciones predefinidas. Son similares a los predeploys, pero se implementan como código nativo en la EVM en lugar de
+como bytecode. Los precompilados se utilizan para operaciones computacionalmente costosas, cuya implementación
+en Solidity tendría un costo prohibitivo. Siempre que sea posible, se prefieren los predeploys, ya que los precompilados deben implementarse en todos los clientes de ejecución.
+
+Base incluye los [precompilados estándar de Ethereum](https://www.evm.codes/precompiled), además de un reducido
+número de precompilados adicionales. En la siguiente tabla se enumeran los precompilados adicionales. La versión del sistema
+indica cuándo se introdujo cada precompilado.
+
+| Nombre     | Dirección                                  | Introducido en | Costo de gas               |
+| ---------- | ------------------------------------------ | -------------- | -------------------------- |
+| P256VERIFY | 0x0000000000000000000000000000000000000100 | Fjord          | 6900 (actualizado en Azul) |
+
+## P256VERIFY {#p256verify}
+
+El precompilado `P256VERIFY` verifica firmas de la curva elíptica secp256r1. Esta curva está ampliamente
+adoptada: la utilizan Passkeys, Apple Secure Enclave y muchos otros sistemas.
+
+Está especificado en [RIP-7212](https://github.com/ethereum/RIPs/blob/master/RIPS/rip-7212.md) y se incorporó
+al protocolo de Base en la versión Fjord con un costo de gas de 3450.
+
+Con el [hardfork Azul](/es/upgrades/azul/exec-engine#secp256r1-precompile-gas-cost), el costo de gas se elevó a **6900** para alinearse con [EIP-7951](https://eips.ethereum.org/EIPS/eip-7951) y mantener una equivalencia estricta con los precios de los precompilados de L1.
+
+Dirección: `0x0000000000000000000000000000000000000100`
+
+## Modificaciones de los precompilados estándar de Ethereum (Azul) {#standard-ethereum-precompile-modifications-azul}
+
+El [hardfork Azul](/es/upgrades/azul/exec-engine) introdujo cambios en dos precompilados estándar de Ethereum:
+
+### MODEXP (dirección `0x05`) {#modexp-address-0x05}
+
+* **[EIP-7823](https://eips.ethereum.org/EIPS/eip-7823)**: cada campo de entrada tiene un límite de 1024 bytes. Se rechazan las llamadas con entradas más grandes.
+* **[EIP-7883](https://eips.ethereum.org/EIPS/eip-7883)**: el costo mínimo de gas sube de 200 a 500 y la fórmula general de costo se triplica.
+
+Estos cambios se aplican a partir de la marca de tiempo de activación de Azul y replican el comportamiento de la L1 de Ethereum.

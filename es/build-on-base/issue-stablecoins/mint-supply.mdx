@@ -1,0 +1,81 @@
+---
+title: "Acuñar suministro"
+keywords: ["acuñar stablecoin", "rol de minter B20", "emitir nuevo suministro en Base", "límite de suministro de stablecoin"]
+description: "Emite nuevo suministro de stablecoin en Base a medida que crecen las reservas, con acceso restringido mediante un rol de minter y un límite de suministro opcional."
+---
+
+import { StablecoinDemo } from "/snippets/StablecoinDemo.jsx"
+
+Cuando el dinero fiduciario llegue a las reservas, acuña la cantidad equivalente de tokens. La acuñación está restringida por `MINT_ROLE`, y un límite de suministro opcional impide que la circulación supere tus reservas.
+
+## Demostración {#demo}
+
+<StablecoinDemo flow="mint" />
+
+<Tip>
+  La demostración usa una cuenta local generada en el navegador para enviar transacciones reales en **Base Vibenet**. Si Vibenet o sus funciones de B20 no están disponibles, pasa automáticamente a una versión ilustrativa sin conexión.
+</Tip>
+
+<Note>
+  ¿Es la primera vez que usas B20? Consulta el [estándar de tokens B20](/es/specifications/b20) para conocer los conceptos y seguir una guía completa de lanzamiento. Estos ejemplos están pensados para `base-std@1505323`, `viem@2.55.11` y Base Foundry `v1.1.1`.
+</Note>
+
+## Acuñar y verificar el suministro {#mint-and-verify-supply}
+
+<CodeGroup>
+  {/* sample: stablecoin-mint-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={8}
+  import { parseUnits, type Address } from "viem";
+  import { publicClient } from "../../shared/clients.js";
+  import { b20Abi } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function mintAndVerify(token: Address, holder: Address) {
+    const amount = parseUnits("1000", 6);
+    await sendContract({ address: token, abi: b20Abi, functionName: "mint", args: [holder, amount] });
+    const balance = await publicClient.readContract({ address: token, abi: b20Abi, functionName: "balanceOf", args: [holder] });
+    if (balance < amount) throw new Error("Minted balance was not recorded");
+    return balance;
+  }
+  ```
+
+  {/* sample: stablecoin-mint-solidity */}
+
+  ```solidity Solidity lines wrap expandable highlight={1}
+      function mintStablecoin(address token, address holder) public {
+          IB20(token).mint(holder, 1_000e6);
+          require(IB20(token).balanceOf(holder) >= 1_000e6, "mint not recorded");
+      }
+  ```
+
+  {/* sample: stablecoin-mint-cli */}
+
+  ```bash CLI lines wrap expandable highlight={1}
+  base-cast send "$TOKEN_ADDRESS" "mint(address,uint256)" "$HOLDER" 1000000000 \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  base-cast call "$TOKEN_ADDRESS" "balanceOf(address)(uint256)" "$HOLDER" --rpc-url "$RPC_URL"
+  ```
+</CodeGroup>
+
+Consulta el [estándar de tokens B20](/es/specifications/b20) para ver la interfaz completa, los roles y las políticas.
+
+<Check>
+  El saldo del titular aumenta en `1,000,000,000` unidades base, es decir, 1000 MUSD.
+</Check>
+
+<Warning>
+  El llamador necesita `MINT_ROLE`, el destinatario debe superar la comprobación de `MINT_RECEIVER_POLICY` y la acuñación no debe superar el límite de suministro.
+</Warning>
+
+## Consulta también {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="Quemar suministro" icon="fire" href="/es/build-on-base/issue-stablecoins/burn-supply">
+    Retira tokens del suministro en circulación.
+  </Card>
+
+  <Card title="Límite de suministro (estándar B20)" icon="book" href="/specifications/b20/reference/interfaces/ib20/supply-cap">
+    El límite de suministro en el estándar B20.
+  </Card>
+</CardGroup>

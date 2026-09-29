@@ -1,0 +1,268 @@
+---
+title: "Estándar de token nativo B20"
+description: "Descubre cómo B20, el estándar de token nativo de Base, responde a las necesidades de emisores de stablecoins, emisores de activos del mundo real (RWA) y de acciones, y creadores de tokens de nicho."
+---
+
+B20 es la versión de [ERC-20](https://eips.ethereum.org/EIPS/eip-20) propia del ecosistema Base. Incluye un conjunto integrado de herramientas de cumplimiento normativo: políticas de transferencia, controles de congelación y reemisión, control de acceso basado en roles, memos y límites de suministro. Las interfaces publicadas de Beryl están disponibles en [Base Standard Library v1.0.0](https://github.com/base/base-std/tree/v1.0.0).
+
+Para desplegar tu primer token B20, consulta la guía de inicio rápido [Lanzar un token B20](/es/build-on-base/issue-rwa/create-an-asset-token).
+
+<Warning>
+  [Comprueba que el Registro de activación esté habilitado](/es/build-on-base/issue-rwa/create-an-asset-token) antes de intentar el despliegue.
+</Warning>
+
+B20 admite dos variantes:
+
+| Variante       | Decimales           | Funciones adicionales                                        |
+| -------------- | ------------------- | ------------------------------------------------------------ |
+| **Asset**      | 6–18 (configurable) | Multiplicador de rebase, anuncios onchain, emisión por lotes |
+| **Stablecoin** | 6 (fijo)            | Código de moneda fiduciaria autodeclarado                    |
+
+## Compatibilidad con ERC-20 {#erc-20-compatibility}
+
+Los tokens B20 se implementan como **precompilados en Rust** en lugar de como contratos inteligentes de la EVM, lo que los hace más rápidos, más económicos y más nativos de la cadena. Todos los tokens se despliegan a través del precompilado singleton B20Factory.
+
+<Check>
+  B20 es un superconjunto de ERC-20. Todas las llamadas de ERC-20 (`transfer`, `transferFrom`, `approve`, `balanceOf`, `allowance` y los eventos estándar) se comportan exactamente como lo especifica el estándar, por lo que las herramientas e integraciones de ERC-20 existentes funcionan con B20 sin necesidad de cambios.
+</Check>
+
+B20 añade métodos que ERC-20 no incluye: memos, acuñación/quema, control de acceso mediante políticas, pausa granular y `permit` de ERC-2612. Estos métodos amplían ERC-20 sin modificarlo: todos los métodos de ERC-20 existen en B20, pero no a la inversa. Para ver las ABI completas de Beryl, consulta las [definiciones de interfaz de la v1.0.0](https://github.com/base/base-std/tree/v1.0.0/src/interfaces).
+
+## Modelo de roles {#roles-model}
+
+El control de acceso basado en roles de B20 extiende `AccessControl` de OpenZeppelin con un conjunto fijo de roles y una única modificación del comportamiento al renunciar al rol de administrador.
+
+| Rol                  | Controla                                                                                                                      |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `DEFAULT_ADMIN_ROLE` | Todas las operaciones de administración: concesión de roles, actualizaciones de políticas, cambios en el límite de suministro |
+| `MINT_ROLE`          | `mint`, `mintWithMemo`                                                                                                        |
+| `BURN_ROLE`          | Quemas realizadas por el propio llamador: `burn`, `burnWithMemo`                                                              |
+| `BURN_BLOCKED_ROLE`  | Quemas de terceros sobre cuentas bloqueadas por políticas: `burnBlocked`                                                      |
+| `PAUSE_ROLE`         | `pause`                                                                                                                       |
+| `UNPAUSE_ROLE`       | `unpause`                                                                                                                     |
+| `METADATA_ROLE`      | `updateName`, `updateSymbol`, `updateContractURI`                                                                             |
+
+Se pueden definir roles personalizados mediante `setRoleAdmin` y `grantRole`. Estos roles no tienen ningún efecto predefinido: B20 solo aplica controles para los siete roles de la superficie base indicados arriba. La variante Asset añade un octavo rol, `OPERATOR_ROLE` (consulta [Variantes](#variants)).
+
+### Renuncia del administrador {#admin-renunciation}
+
+El último titular de `DEFAULT_ADMIN_ROLE` no puede eliminarse mediante `renounceRole` ni `revokeRole` (ambas revierten con `LastAdminCannotRenounce`). La función específica `renounceLastAdmin()` es la única forma de que un token pase de forma permanente a no tener administrador.
+
+Los tokens que se quieran lanzar sin administrador desde el principio pasan `initialAdmin == address(0)` al crearse, con lo que el rol nunca se otorga y se omite por completo el paso de `renounceLastAdmin`.
+
+Después de `renounceLastAdmin()` (o en el caso de tokens desplegados con `initialAdmin == address(0)`):
+
+* Las operaciones restringidas por `DEFAULT_ADMIN_ROLE` dejan de poder invocarse de forma permanente.
+* Los roles ya otorgados a otras direcciones (`MINT_ROLE`, `BURN_ROLE`, etc.) siguen funcionando de forma independiente.
+* No es posible restaurar el administrador: `grantRole`, `revokeRole` y `setRoleAdmin` revierten con `AccessControlUnauthorizedAccount`, incluso si quien llama posee un rol personalizado.
+
+## Registro de políticas {#policy-registry}
+
+El PolicyRegistry es un precompilado singleton que gestiona listas de permitidos y de bloqueados. Los tokens B20 hacen referencia a las políticas mediante un ID `uint64`. Cualquier llamador puede crear una política y designar a su administrador.
+
+<Note>
+  Las funciones del PolicyRegistry que modifican el estado están controladas por el ActivationRegistry, que registra qué funcionalidades de Base están activas. Las funciones de lectura (`isAuthorized`, `policyExists`, `policyAdmin`, `pendingPolicyAdmin`) se pueden invocar en cualquier momento.
+</Note>
+
+### Tipos de políticas {#policy-types}
+
+| Tipo        | Valor predeterminado | Comportamiento                                                                                                                          |
+| ----------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `BLOCKLIST` | Autorizado           | Todas las cuentas están autorizadas de forma predeterminada; se deniega el acceso a las cuentas que figuran explícitamente en la lista. |
+| `ALLOWLIST` | Denegado             | Se deniega el acceso a todas las cuentas de forma predeterminada; las cuentas que figuran explícitamente en la lista están autorizadas. |
+
+### IDs de política {#policy-ids}
+
+Los IDs de política son valores `uint64`. El byte más significativo codifica el `PolicyType`; los 56 bits inferiores son un contador global que empieza en `2`.
+
+Hay dos IDs integrados que no es necesario crear:
+
+| Constante      | ID                               | Comportamiento                                                                                            |
+| -------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `ALWAYS_ALLOW` | `0`                              | Autoriza incondicionalmente a todas las cuentas. Valor de ámbito predeterminado en los nuevos tokens B20. |
+| `ALWAYS_BLOCK` | `(uint64(ALLOWLIST) << 56) \| 1` | Deniega incondicionalmente a todas las cuentas.                                                           |
+
+`isAuthorized` nunca revierte ante un ID de política inexistente: se comporta como un conjunto de miembros vacío (una `BLOCKLIST` inexistente autoriza a todos; una `ALLOWLIST` inexistente deniega a todos).
+
+<Warning>
+  Los consumidores que escriben un ID de política (p. ej., `updatePolicy`) DEBEN validar `policyExists(policyId)` en el momento de la escritura para no quedar vinculados, sin advertirlo, a una política de conjunto vacío no deseada.
+</Warning>
+
+### Modelo de administración {#admin-model}
+
+Cada política tiene un único administrador. La transferencia del rol de administrador se realiza en dos pasos: el administrador actual llama a `stageUpdateAdmin(policyId, newAdmin)` y, después, el administrador pendiente llama a `finalizeUpdateAdmin(policyId)`. `renounceAdmin(policyId)` congela la política de forma permanente: su membresía ya no podrá modificarse nunca.
+
+### Creación y gestión de políticas {#creating-and-managing-policies}
+
+```solidity Policy Management Example lines wrap expandable
+// Crear una política (primero el administrador y después el tipo)
+uint64 policyId = policyRegistry.createPolicy(adminAddress, PolicyType.BLOCKLIST);
+// O definir el conjunto inicial de miembros en una sola llamada:
+// uint64 policyId = policyRegistry.createPolicyWithAccounts(adminAddress, PolicyType.BLOCKLIST, accounts);
+
+// Actualizar los miembros (por lotes). El setter depende del tipo; el bool determina si se añaden o se quitan.
+policyRegistry.updateBlocklist(policyId, true, accounts);   // bloquear estas cuentas
+policyRegistry.updateBlocklist(policyId, false, accounts);  // desbloquear estas cuentas
+// Para políticas de tipo ALLOWLIST: policyRegistry.updateAllowlist(policyId, allowed, accounts)
+```
+
+### Interfaz de lectura {#read-interface}
+
+| Método                            | Descripción                                                           |
+| --------------------------------- | --------------------------------------------------------------------- |
+| `isAuthorized(policyId, account)` | Indica si `account` está autorizada según `policyId`. Nunca revierte. |
+| `policyExists(policyId)`          | Indica si se ha creado una política con este ID.                      |
+| `policyAdmin(policyId)`           | Dirección del administrador actual.                                   |
+| `pendingPolicyAdmin(policyId)`    | Administrador pendiente durante una transferencia en dos pasos.       |
+
+## Integración de políticas {#policy-integration}
+
+B20 declara un conjunto fijo de ámbitos de política. Cada ámbito almacena un ID de política `uint64` que apunta al PolicyRegistry. En cada operación restringida, B20 llama a `isAuthorized` sobre el ámbito correspondiente y revierte con `PolicyForbids` si la cuenta no está autorizada.
+
+| Ámbito                     | Restringe                                                                                       |
+| -------------------------- | ----------------------------------------------------------------------------------------------- |
+| `TRANSFER_SENDER_POLICY`   | El `from` de `transfer` / `transferFrom`                                                        |
+| `TRANSFER_RECEIVER_POLICY` | El `to` de `transfer` / `transferFrom`                                                          |
+| `TRANSFER_EXECUTOR_POLICY` | El `msg.sender` de `transferFrom`, cuando es distinto de `from` (no se comprueba en `transfer`) |
+| `MINT_RECEIVER_POLICY`     | El `to` de `mint`                                                                               |
+
+`approve` no está sujeto a políticas: solo se comprueban los movimientos reales de saldo mediante `transfer` / `transferFrom`.
+
+<Warning>
+  Al crear el token, todos los ámbitos toman `ALWAYS_ALLOW` como valor predeterminado, salvo que se sobrescriban en las `initCalls` de arranque. Un despliegue de B20 sin configurar queda completamente abierto: el comportamiento del token debe restringirse de forma deliberada.
+</Warning>
+
+Los ámbitos se leen con `policyId(scope)` y se modifican con `updatePolicy(scope, policyId)`. Solo el administrador puede llamar a `updatePolicy`, que revierte si el ámbito no se reconoce.
+
+## Mint {#mint}
+
+El nuevo suministro se crea mediante `mint` / `mintWithMemo`, operaciones restringidas por `MINT_ROLE`. Se comprueba que el destinatario cumpla la política `MINT_RECEIVER_POLICY`. La operación revierte con `SupplyCapExceeded` si hiciera que `totalSupply` superara el límite máximo.
+
+## Quema {#burn}
+
+Existen dos vías de quema:
+
+* **`burn` / `burnWithMemo`**: quien realiza la llamada quema tokens de su propio saldo. Está restringida por `BURN_ROLE`.
+* **`burnBlocked`**: quema tokens del saldo de un tercero. Está restringida por `BURN_BLOCKED_ROLE`. La cuenta objetivo DEBE estar denegada por `TRANSFER_SENDER_POLICY`; esta es la vía de congelación e incautación para emisores regulados.
+
+## Límite de suministro {#supply-cap}
+
+El límite de suministro es opcional. El valor centinela `type(uint128).max` indica que no hay límite (es el valor predeterminado al crear el token); también es el límite máximo permitido, por lo que `totalSupply` nunca puede superarlo. La función `updateSupplyCap(newCap)` solo puede invocarla el administrador y emite `SupplyCapUpdated`. Revierte con `InvalidSupplyCap` si `newCap` es inferior al `totalSupply` actual o superior a `type(uint128).max`.
+
+## Memos {#memos}
+
+Un memo es una carga útil opcional de tipo `bytes32` que se adjunta a una operación de token como referencia offchain. Toda operación que emite un memo emite `Memo(address indexed caller, bytes32 indexed memo)` justo después del evento principal de la operación. Los indexadores relacionan ambos eventos mediante `(transactionHash, logIndex − 1)`.
+
+Puntos de entrada que emiten memos: `transferWithMemo`, `transferFromWithMemo`, `mintWithMemo`, `burnWithMemo`.
+
+## Pausa {#pause}
+
+Las pausas son granulares: el enum `PausableFeature` divide la superficie del token en operaciones que se pueden pausar de forma independiente: `TRANSFER`, `MINT` y `BURN`. El enum es de solo anexión (append-only). Por diseño, `pause(features)` y `unpause(features)` están controladas por roles distintos (`PAUSE_ROLE` y `UNPAUSE_ROLE`).
+
+## Permit de ERC-2612 / EIP-712 {#erc-2612-permit-eip-712}
+
+B20 implementa ERC-2612 (aprobaciones firmadas) mediante un dominio EIP-712 con la estructura `(name, version, chainId, verifyingContract)`, donde `version` tiene el valor fijo `"1"`. `updateName` cambia el separador de dominio y emite `EIP712DomainChanged` (ERC-5267). No se aceptan firmas de contrato ERC-1271: solo se admite ECDSA.
+
+## URI del contrato (ERC-7572) {#contract-uri-erc-7572}
+
+`contractURI()` devuelve una cadena de texto que apunta a metadatos off-chain, según ERC-7572. Para llamar a `updateContractURI(newUri)` se requiere el rol `METADATA_ROLE`.
+
+## Actualizaciones de metadatos {#metadata-updates}
+
+`METADATA_ROLE` controla el acceso a:
+
+* `updateName(newName)`: actualiza `name` y rota el separador de dominio EIP-712. Emite `NameUpdated` y `EIP712DomainChanged`.
+* `updateSymbol(newSymbol)`: actualiza solo `symbol`. Emite `SymbolUpdated`.
+
+## Fábrica {#factory}
+
+Todos los tokens B20 se crean a través del precompilado singleton B20Factory mediante `createB20(variant, salt, params, initCalls)`. En `base-std` se expone como `StdPrecompiles.B20_FACTORY`.
+
+| Parámetro   | Descripción                                                                                                                                                                                                                                        |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `variant`   | `ASSET` o `STABLECOIN`                                                                                                                                                                                                                             |
+| `salt`      | Entropía elegida por quien realiza la llamada para derivar la dirección                                                                                                                                                                            |
+| `params`    | Estructura de creación específica de cada variante, codificada en ABI (versionada según el byte inicial)                                                                                                                                           |
+| `initCalls` | Array opcional de llamadas codificadas en ABI que se despachan tras la creación; durante este intervalo, las llamadas originadas por la fábrica omiten las restricciones de roles y las restricciones de políticas aplicables a las transferencias |
+
+`createB20` revierte con `IActivationRegistry.FeatureNotActivated` si la funcionalidad de la variante solicitada aún no se ha activado en la cadena.
+
+### Derivación de direcciones {#address-derivation}
+
+Las direcciones B20 son deterministas y codifican directamente la variante:
+
+```text Address Derivation
+[10-byte B20 prefix][1-byte variant][9-byte keccak256(deployer, salt)]
+```
+
+La variante puede determinarse únicamente a partir de la dirección, sin necesidad de una llamada RPC: basta con inspeccionar el byte 10 (empezando a contar desde cero) para identificar el tipo de token. La fábrica ofrece las funciones auxiliares `getB20Address(variant, deployer, salt)`, `isB20(addr)` e `isB20Initialized(addr)`.
+
+### Semántica de initCalls {#initcalls-semantics}
+
+Las `initCalls` se despachan después de la creación del token. Durante esta ventana de arranque, las llamadas originadas en la fábrica eluden los controles de roles del token y sus controles de políticas de transferencia (`TRANSFER_SENDER_POLICY`, `TRANSFER_RECEIVER_POLICY`, `TRANSFER_EXECUTOR_POLICY`), lo que permite realizar configuraciones restringidas al administrador (p. ej., establecer políticas u otorgar roles) y transferencias de arranque en la misma transacción del despliegue. Esta exención es deliberadamente parcial:
+
+* `MINT_RECEIVER_POLICY` siempre se aplica, incluso durante las `initCalls`.
+* El estado de pausa nunca se elude.
+* Las invariantes del token (límite de suministro, etc.) nunca se eluden.
+
+## Variantes {#variants}
+
+Cada variante se identifica mediante un valor de 1 byte codificado directamente en la dirección del token (consulta [Derivación de direcciones](#address-derivation)):
+
+| Variante     | Byte   |
+| ------------ | ------ |
+| `ASSET`      | `0x00` |
+| `STABLECOIN` | `0x01` |
+
+### Asset {#asset}
+
+La variante de uso general para activos de cualquier tipo. Los decimales se pueden configurar entre 6 y 18 durante el despliegue y no se pueden modificar una vez creado el token.
+
+Además de la interfaz base de B20, los tokens Asset incorporan varias funcionalidades. Un nuevo `OPERATOR_ROLE` controla el multiplicador y los anuncios; la acuñación por lotes y los metadatos adicionales reutilizan los roles existentes `MINT_ROLE` y `METADATA_ROLE`, respectivamente.
+
+#### Multiplicador {#multiplier}
+
+Un multiplicador de rebase con precisión WAD que se aplica a todas las lecturas de saldo. Los saldos brutos se almacenan sin modificaciones; el multiplicador escala el valor que se devuelve a quienes realizan la llamada.
+
+| Método                            | Descripción                                                |
+| --------------------------------- | ---------------------------------------------------------- |
+| `multiplier()`                    | Multiplicador actual con precisión WAD                     |
+| `scaledBalanceOf(account)`        | Saldo bruto × multiplicador                                |
+| `toScaledBalance(raw)`            | Convierte una cantidad bruta en escalada                   |
+| `toRawBalance(scaled)`            | Convierte una cantidad escalada en bruta                   |
+| `updateMultiplier(newMultiplier)` | Actualiza el multiplicador. Restringido a `OPERATOR_ROLE`. |
+
+#### Anuncios {#announcements}
+
+Bloques de divulgación on-chain que encapsulan operaciones sensibles (p. ej., acuñaciones por lotes, actualizaciones de multiplicadores) con un período de aviso público. Restringidos por `OPERATOR_ROLE`.
+
+`announce(internalCalls, id, description, uri)` emite un evento `Announcement`, ejecuta `internalCalls` y, a continuación, emite `EndAnnouncement`. El `id` debe ser único, y esta unicidad se exige de forma permanente. Las reversiones de las llamadas internas se encapsulan en `InternalCallFailed`.
+
+#### Acuñación por lotes {#batch-mint}
+
+`batchMint(recipients, amounts)` acuña tokens para varios destinatarios en una sola llamada. Su uso está restringido a `MINT_ROLE`. Por transparencia, conviene envolver la llamada en `announce()`.
+
+#### Metadatos adicionales {#extra-metadata}
+
+Un almacén de clave/valor arbitrario para metadatos on-chain definidos por el emisor.
+
+| Método                            | Descripción                                                                                        |
+| --------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `extraMetadata(key)`              | Lee el valor asociado a una clave                                                                  |
+| `updateExtraMetadata(key, value)` | Escribe un valor. Requiere `METADATA_ROLE`. Si se establece un valor vacío, se elimina la entrada. |
+
+### Stablecoin {#stablecoin}
+
+La variante especial con decimales fijos y respaldada por moneda fiduciaria. Los decimales están fijados de forma permanente en `6` y no se pueden configurar.
+
+Añade `currency()`, que devuelve una cadena con un código de moneda al estilo ISO (p. ej., `"USD"`, `"EUR"`). El código se establece una sola vez durante la creación mediante `B20StablecoinCreateParams.currency` y solo admite caracteres de la `A` a la `Z`. Es autodeclarado y no se contrasta con ningún registro externo.
+
+## Direcciones de los precompilados {#precompile-addresses}
+
+Estas direcciones son idénticas en todas las redes en las que B20 está activo (Mainnet, Base Sepolia, Vibenet y `base-anvil` en local).
+
+| Precompilado                              | Dirección                                    |
+| ----------------------------------------- | -------------------------------------------- |
+| [B20Factory](#factory)                    | `0xB20f000000000000000000000000000000000000` |
+| Registro de activación                    | `0x8453000000000000000000000000000000000001` |
+| [Registro de políticas](#policy-registry) | `0x8453000000000000000000000000000000000002` |

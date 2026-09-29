@@ -1,0 +1,69 @@
+---
+title: "Predicados y seguridad"
+description: "Usa los predicados de validez de forma segura."
+---
+
+Los predicados son condiciones de inclusión. No garantizan la inclusión ni que la ejecución se complete correctamente.
+
+## Tipos de predicados {#predicate-types}
+
+| Tipo               | Parámetros                                          |
+| ------------------ | --------------------------------------------------- |
+| `balance`          | `address`, `op`, `value`                            |
+| `storage`          | `address`, `slot`, `op`, `value`, `mask` (opcional) |
+| `block_number`     | `op`, `value`                                       |
+| `flashblock_index` | `op`, `value`                                       |
+
+Los operadores admitidos son `<`, `<=`, `=`, `!=`, `>` y `>=`. Los valores de los predicados se expresan como cadenas hexadecimales con el prefijo `0x`.
+
+## Evaluación {#evaluation}
+
+Base verifica una transacción antes de incluirla. Si un predicado es falso, la transacción sigue pendiente.
+
+Una transacción anterior puede modificar el saldo o el valor de almacenamiento que vigila una transacción pendiente. En ese caso, la transacción pendiente puede volverse apta para su inclusión en el mismo Flashblock.
+
+## Ejemplo de saldo {#balance-example}
+
+```json Balance predicate lines wrap expandable
+{
+  "type": "balance",
+  "params": {
+    "address": "0x2222222222222222222222222222222222222222",
+    "op": ">=",
+    "value": "0x1"
+  }
+}
+```
+
+## Ejemplo de almacenamiento {#storage-example}
+
+```json Storage predicate lines wrap expandable
+{
+  "type": "storage",
+  "params": {
+    "address": "0x2222222222222222222222222222222222222222",
+    "slot": "0x7",
+    "mask": "0xff",
+    "op": "=",
+    "value": "0x2a"
+  }
+}
+```
+
+Base compara `(storage[address][slot] & mask)` con `value`. Omite `mask` para comparar la palabra de almacenamiento completa.
+
+## Posición de bloque y de Flashblock {#block-and-flashblock-position}
+
+Usa `block_number` para seleccionar un bloque y `flashblock_index` para seleccionar una posición dentro de ese Flashblock. Agrega predicados independientes cuando deban cumplirse ambas condiciones.
+
+## Seguridad {#safety}
+
+Un predicado no simula una transacción. Mantén las comprobaciones críticas en la llamada de la aplicación.
+
+Los predicados leen el almacenamiento en bruto. No pueden llamar a funciones view ni evaluar valores calculados. Verifica la disposición del almacenamiento del contrato de destino antes de usar un predicado de almacenamiento.
+
+El estado puede cambiar durante la construcción del bloque. Una condición puede pasar a ser verdadera o falsa antes de que la transacción se incluya.
+
+No uses la posición de la transacción como fuente de aleatoriedad. No des por hecho que un slot con valor cero garantiza que sea seguro llamar a una dirección CREATE2, a un proxy o a un contrato no inicializado.
+
+Los criterios de validez no se registran onchain. No incluyas secretos en el calldata ni en los valores de los predicados.

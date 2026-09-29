@@ -1,0 +1,428 @@
+---
+title: "P2P"
+description: "ロールアップノードのピアツーピアネットワークの仕様。ノードディスカバリ、ゴシッププロトコル、unsafe ブロックの伝播について説明します。"
+---
+
+## 概要 {#overview}
+
+[ロールアップノード](/ja/specifications/base-protocol/consensus/specification)には、オプションのピアツーピア (P2P) ネットワークサービスがあります。これは、正常系ではL1を経由せず、かつ単一の中央集権的なエンドポイントにも依存せずに、シーケンサーが把握しているチェーンの状態をネットワークの他のノードへ低レイテンシで伝えるためのものです。
+
+また、同期の目標となるブロックヘッダーを提供することで、高速な履歴同期のブートストラップも可能になります。すべてを1ブロックずつ処理する場合とは異なり、L2チェーンの入力をL1データと照合するだけで済みます。
+
+ロールアップノードは *常に* L1を優先し、正規チェーンに一致するように再編成を行います。
+P2Pインターフェースを介して取得されたL2データは、あくまで投機的な拡張 (「unsafe」チェーンとも呼ばれます) であり、正常系のパフォーマンスを向上させるためのものです。
+
+したがって、P2Pにおける挙動はソフトルールとなります。ノードはスコアリングを行い、最終的には悪意のあるピアをアイデンティティまたはIPによってBANすることで、互いを監視し合います。P2Pレイヤー上でどのような挙動があってもロールアップのセキュリティには影響せず、最悪の場合でも、ノードはレイテンシの高いL1からのデータに頼って処理を行うだけです。
+
+まとめると、P2Pスタックは次のように構成されます。
+
+* ピアを発見するためのディスカバリー：[Discv5][discv5]
+* 接続、ピアリング、トランスポートセキュリティ、多重化、ゴシップ：[LibP2P][libp2p]
+* L2ブロックなど、ゴシップされたメッセージのアプリケーション層での公開と検証
+
+本ドキュメントでは、これらのネットワークライブラリの構成と設定のみを規定します。
+これらのコンポーネントにはそれぞれ独自の標準があり、Go/Rust/Java/Nim/JSなどによる実装も存在します。また、他の複数のブロックチェーンでも採用されており、その代表例が[L1コンセンサスレイヤー (Eth2) ][eth2-p2p]です。
+
+## P2P 設定 {#p2p-configuration}
+
+### 識別 {#identification}
+
+ノードは、ネットワークアイデンティティとコンセンサスアイデンティティを**別々に**持ちます。
+ネットワークアイデンティティは `secp256k1` 鍵であり、ディスカバリーとアクティブな LibP2P 接続の両方に使用されます。
+
+ネットワークアイデンティティの一般的な表現形式は次のとおりです。
+
+* `PeerID`: 公開鍵から (protobuf エンコーディング、型付け、ハッシュ化を経て) 導出される LibP2P 固有の ID
+* `NodeID`: 公開鍵から (ハッシュ化により) 導出される Discv5 固有の ID (DHT で使用)
+* `Multi-address`: IP、TCP ポート、PeerID を含む署名なしのアドレス
+* `ENR`: ディスカバリーに使用される署名付きレコード。IP、TCP ポート、UDP ポート、署名 (ここから公開鍵を導出可能) 、
+  および L2 ネットワークの識別情報を含みます。通常は base64 でエンコードされます。
+
+### Discv5 {#discv5}
+
+#### コンセンサス層の構造 {#consensus-layer-structure}
+
+Base ロールアップノードの Ethereum Node Record (ENR) には、一意のキーで識別される以下の値が含まれていなければなりません。
+
+* IPv4 アドレス (`ip` フィールド) と IPv6 アドレス (`ip6` フィールド) のいずれか、または両方。
+* ローカルの libp2p リッスンポートを表す TCP ポート (`tcp` フィールド) 。
+* ローカルの discv5 リッスンポートを表す UDP ポート (`udp` フィールド) 。
+* OpStack の L2 ネットワーク識別子 (`opstack` フィールド)
+
+`opstack` の値は、以下を連結した単一の RLP `bytes` 値としてエンコードされます。
+
+* チェーン ID (`unsigned varint`)
+* フォーク ID (`unsigned varint`)
+
+なお、DiscV5 は共有 DHT (分散ハッシュテーブル) です。L1 のコンセンサスノードや実行ノードのほか、
+テストネットのノード、さらには外部の IoT ノードまでもが、この大規模な共通 DHT 上でレコードをやり取りします。
+そのため、ノードレコードのディスカバリーを検閲することが難しくなります。
+
+Base におけるディスカバリープロセスは、ノードレコードを処理するパイプラインとして構成されます。
+
+1. 必要に応じて `FINDNODES` でテーブルを埋める (Discv5 ライブラリが実行)
+2. 必要に応じて、ランダムなノード ID を検索して追加のレコードを取得する
+   (例：Go 実装では [`RandomNodes()`][discv5-random-nodes] を反復処理する)
+3. ピアを探す際に DiscV5 モジュールからレコードを取得する
+4. レコードに `opstack` エントリが含まれているかを確認し、チェーン ID と、現在または将来のフォーク番号に一致するかを検証する
+5. 未接続で、かつ最近切断されておらず拒否リストにも登録されていない場合は、ダイヤルを試みる。
+
+### LibP2P {#libp2p}
+
+#### トランスポート {#transport}
+
+TCPトランスポートを使用します。LibP2Pは他のトランスポートもサポートしていますが、それらは必須ではありません。
+
+#### ダイヤル {#dialing}
+
+ノードは、外部からダイヤル可能な状態で公開され、リレー拡張機能に依存せず、IPv4 と IPv6 の両方でダイヤルできる必要があります。
+
+#### NAT {#nat}
+
+リッスンエンドポイントは外部に公開されている必要がありますが、NAT の背後に配置することも可能です。
+LibP2P は PMP / UPNP ベースの手法を用いて、ノードの外部 IP を追跡します。
+外部 IP が静的で、手動で設定している場合は、この機能を無効にすることを推奨します。
+
+#### ピア管理 {#peer-management}
+
+デフォルトでは、アクティブなピア数に基づく潮位 (tide) 方式でピア数を維持します。
+
+* 「低潮位 (low tide) 」になると、ノードは追加のピア接続を積極的に探索し始めます。
+* 「高潮位 (high tide) 」になると、ノードはアクティブな接続の刈り込み (pruning) を開始します。
+  ただし、信頼済みとしてマークされた接続や猶予期間中の接続は対象外です。
+
+ピアには、参加後の一定期間 (設定可能) にわたって猶予期間が与えられます。
+メモリ不足などの緊急時には、ノードはより積極的に刈り込みを開始するべきです (should) 。
+
+ピアレコードはディスクに永続化できるため、ロールアップノードの再起動後も既知のピアへ素早く再接続できます。
+
+ディスカバリープロセスは、接続先となるピアレコードに生存期間 (TTL) のタグを付けてピアストアに供給します。
+現在の P2P プロセスでは、基本的なネットワーク参加要件によるフィルタリングを除き、
+トピックごとに選択的なピア接続を行う必要はありません。
+
+パフォーマンススコアが低すぎる場合や、客観的に悪意のある行為が検出された場合、ピアは禁止 (ban) されることがあります。
+
+禁止されたピアは、ピアストアのレコードと同じデータストアに永続化されます。
+
+#### トランスポートセキュリティ {#transport-security}
+
+[Libp2p-noise][libp2p-noise] の `XX` ハンドシェイクを、`secp256k1` の P2P アイデンティティと組み合わせて使用します。これは Eth2 で広く普及した方式です。
+TLS オプションも利用可能ですが、ネゴシエーションでは `noise` を優先すべきです (SHOULD) 。
+
+#### プロトコルネゴシエーション {#protocol-negotiation}
+
+[Multistream-select 1.0][multistream-select] (`/multistream/1.0.0`) は、LibP2P ピア間でサポートされるサブプロトコルをネゴシエートするための
+対話型プロトコルです。将来的には Multistream-select 2.0 が使用される可能性があります。
+
+#### Identify {#identify}
+
+LibP2P には、クライアントのバージョンやプログラミング言語を共有するための最小限の識別モジュールが用意されています。
+このモジュールは任意であり、プライバシーを高めるために無効化することもできます。
+また、同様のプロトコルネゴシエーション情報も含まれているため、初回接続を高速化できます。
+
+#### Ping {#ping}
+
+LibP2P には、接続ごとのレイテンシを追跡するためのシンプルな ping プロトコルが組み込まれています。
+ネットワークの健全性を把握しやすくするため、このプロトコルは有効にしておくべきです。
+
+#### 多重化 {#multiplexing}
+
+同一の接続上で複数のチャネルを介した非同期通信を行うため、多重化を使用します。
+[mplex][mplex] (`/mplex/6.7.0`) は必須です。[yamux][yamux] (`/yamux/1.0.0`) は任意ですが、サポートを推奨します
+
+#### GossipSub {#gossipsub}
+
+[GossipSub 1.1][gossipsub] (`/meshsub/1.1.0`、つまりピアスコアリング拡張を含むもの) は、メッシュネットワーク向けの pubsub プロトコルです。
+L1 コンセンサス (Eth2) や Filecoin などのプロトコルで採用されており、豊富なカスタマイズオプションを備えています。
+
+##### コンテンツベースのメッセージ識別 {#content-based-message-identification}
+
+メッセージは重複排除され、アプリケーション層の署名検証によってフィルタリングされます。
+そのため送信元スタンプ (origin-stamping) は無効化されており、公開されるメッセージにはアプリケーションデータのみを含める必要があります。
+これは [`StrictNoSign` 署名ポリシー][signature-policy]によって強制されます。
+
+これによりプライバシーが向上するとともに、シーケンサー (コンセンサスアイデンティティ) は冗長性を確保するために
+複数のネットワークアイデンティティを保持できます。
+
+##### メッセージの圧縮と制限 {#message-compression-and-limits}
+
+アプリケーションのコンテンツは、 (フレーム圧縮ではなく) [snappy][snappy] のシングルブロック圧縮で圧縮され、
+サイズは 10 MiB までに制限されます。
+
+##### メッセージIDの計算 {#message-id-computation}
+
+[L1と同様][l1-message-id]ですが、圧縮を考慮します。
+
+* `message.data` がsnappyで正常に展開できる場合、`MESSAGE_DOMAIN_VALID_SNAPPY` とsnappy展開後のメッセージデータを連結した値の `SHA256` ハッシュの
+  先頭20バイトを `message-id` に設定します。
+  すなわち `SHA256(MESSAGE_DOMAIN_VALID_SNAPPY + snappy_decompress(message.data))[:20]` です。
+* それ以外の場合は、`MESSAGE_DOMAIN_INVALID_SNAPPY` と生のメッセージデータを連結した値の `SHA256` ハッシュの
+  先頭20バイトを `message-id` に設定します。
+  すなわち `SHA256(MESSAGE_DOMAIN_INVALID_SNAPPY + message.data)[:20]` です。
+
+#### ハートビートとパラメータ {#heartbeat-and-parameters}
+
+GossipSub の[パラメータ][gossip-parameters]:
+
+* `D` (トピックの安定メッシュの目標ピア数) : 8
+* `D_low` (トピックの安定メッシュの下限しきい値) : 6
+* `D_high` (トピックの安定メッシュの上限しきい値) : 12
+* `D_lazy` (ゴシップの目標ピア数) : 6
+* `heartbeat_interval` (ハートビートの間隔、秒単位) : 0.5
+* `fanout_ttl` (購読はしていないがパブリッシュしたことのあるトピックに対する fanout マップの TTL、秒単位) : 24
+* `mcache_len` (`IWANT` レスポンス用に完全なメッセージをキャッシュに保持するウィンドウ数) : 12
+* `mcache_gossip` (ゴシップの対象とするウィンドウ数) : 3
+* `seen_ttl` (メッセージ ID を保持するハートビート間隔の数) : 130 (= 65 秒)
+
+L1 コンセンサス (Eth2) との主な違い:
+
+* `seen_ttl` は L1 のエポック全体 (6.4 分) をカバーする必要はなく、最新のブロックをカバーする短いウィンドウで十分です
+* `fanout_ttl`: `seen_ttl` より短くなるよう調整しています
+* `mcache_len`: ゴシップのノイズがはるかに少ないため、より多くのハートビート分を保持できます。
+* `heartbeat_interval`: レイテンシを抑えるために間隔を短くしています。L1 では 0.7 秒の間隔を使用していますが、
+  それと比べて各間隔でゴシップするメッセージがはるかに少ないため、帯域幅は引き続き妥当な範囲に収まります。
+
+#### トピックの設定 {#topic-configuration}
+
+トピックは文字列の識別子を持ち、メッセージやサブスクリプションを通じて伝達されます。
+`/optimism/chain_id/hardfork_version/Name`
+
+* `chain_id`: チェーンIDの10進数表現に置き換えます
+* `hardfork_version`: ハードフォークの10進数表現に置き換えます (`0` から開始)
+* `Name`: トピックのアプリケーション名
+
+なお、L1とは異なり、トピックのエンコーディングはトピックによって決まります。
+これは、トピックの数が少なく、すべてsnappyで圧縮されているためです。
+
+#### トピック検証 {#topic-validation}
+
+有効なメッセージのみを中継し、悪意のあるピアをアプリケーションの挙動に基づいてスコアリングするため、
+メッセージは中継または処理される前に[拡張バリデーター][extended-validator]によって検査されます。
+拡張バリデーターは、次のいずれかの検証シグナルを発行します。
+
+* `ACCEPT`：有効。他のピアに中継され、ローカルのトピックサブスクライバーに渡される
+* `IGNORE`：非アクティブ時と同様にスコアリングされる。メッセージは破棄され、処理されない
+* `REJECT`：スコアにペナルティが科される。メッセージは破棄される
+
+## ゴシップトピック {#gossip-topics}
+
+L1を経由して中継するよりも高速に他のノードへブロックを配信するためのトピックを以下に示します。具体的には次のとおりです。
+
+### `blocksv1` {#blocksv1}
+
+Canyon/Shanghai より前のブロックは `/optimism/<chainId>/0/blocks` でブロードキャストされます。
+
+### `blocksv2` {#blocksv2}
+
+Canyon/Delta のブロックは `/optimism/<chainId>/1/blocks` でブロードキャストされます。
+
+### `blocksv3` {#blocksv3}
+
+Ecotoneブロックは`/optimism/<chainId>/2/blocks`トピックでブロードキャストされます。
+
+### `blocksv4` {#blocksv4}
+
+Isthmus のブロックは `/optimism/<chainId>/3/blocks` 上でブロードキャストされます。
+
+### ブロックのエンコーディング {#block-encoding}
+
+ブロックは、以下を連結した構造になっています。
+
+* V1およびV2トピック
+  * `signature`: `secp256k1`署名。常に65バイトで、`r (uint256), s (uint256), y_parity (uint8)`
+  * `payload`: SSZエンコードされた`ExecutionPayload`。常に残りのすべてのバイト。
+* V3トピック
+  * `signature`: `secp256k1`署名。常に65バイトで、`r (uint256), s (uint256), y_parity (uint8)`
+  * `parentBeaconBlockRoot`: L1 originの親ビーコンブロックルート。常に32バイト
+  * `payload`: SSZエンコードされた`ExecutionPayload`。常に残りのすべてのバイト。
+* V4トピック
+  * `signature`: `secp256k1`署名。常に65バイトで、`r (uint256), s (uint256), y_parity (uint8)`
+  * `parentBeaconBlockRoot`: L1 originの親ビーコンブロックルート。常に32バイト
+  * `payload`: SSZエンコードされた`ExecutionPayload`。常に残りのすべてのバイト。
+    * *注記* - `ExecutionPayload`はIsthmusで初めて変更されます。Isthmus仕様の
+      [「`ExecutionPayload`の更新」](/ja/upgrades/isthmus/exec-engine#update-to-executionpayload)を参照してください。
+
+すべてのトピックでSnappyのブロック圧縮を使用します (つまり、Snappyのフレーム形式は使用しません) 。
+上記のデータは、エンコード後に圧縮し、デコード前に展開する必要があります。
+
+### ブロック署名 {#block-signatures}
+
+`signature` は `secp256k1` 署名であり、次のメッセージに対して署名します:
+`keccak256(domain ++ chain_id ++ payload_hash)`。各要素は以下のとおりです。
+
+* `domain` は32バイトで、メッセージタイプおよびバージョン情報用に予約されています。この署名ではすべてゼロです。
+* `chain_id` はビッグエンディアンでエンコードされた `uint256` です。
+* `payload_hash` は `keccak256(payload)` であり、`payload` は次のとおりです:
+  * V1 および V2 では `payload`
+  * V3 および V4 では `parentBeaconBlockRoot ++ payload`(*注*: V4 では、`payload` が拡張され、
+    `withdrawalsRoot` も含まれます)。
+
+`chain_id` はすでに署名対象に含まれているため、`secp256k1` 署名は `y_parity = 1 or 0` でなければなりません。
+
+### ブロック検証 {#block-validation}
+
+[extended-validator] は、受信したメッセージを以下の順序でチェックします。
+
+* 圧縮が有効でない場合は `[REJECT]`
+* ブロックのエンコーディングが有効でない場合は `[REJECT]`
+* `payload.timestamp` が 60 秒以上過去である場合は `[REJECT]`
+  (最悪ケースの伝播遅延とクロックのずれを考慮した猶予境界)
+* `payload.timestamp` が 5 秒以上未来である場合は `[REJECT]`
+* `payload` 内の `block_hash` が有効でない場合は `[REJECT]`
+* ブロックが V1 トピック上にあり、引き出し (withdrawals) を含む場合は `[REJECT]`
+* ブロックが V1 トピック上にあり、引き出しリストを持つ場合は `[REJECT]`
+* ブロックが `topic >= V2` 上にあり、引き出しリストが空でない場合は `[REJECT]`
+* ブロックが `topic <= V2` 上にあり、blob gas-used の値が設定されている場合は `[REJECT]`
+* ブロックが `topic <= V2` 上にあり、excess blob gas の値が設定されている場合は `[REJECT]`
+* ブロックが `topic <= V2` 上にあり、親ビーコンブロックルートが nil でない場合は `[REJECT]`
+* ブロックが `topic >= V3` 上にあり、blob gas-used の値がゼロでない場合は `[REJECT]`
+* ブロックが `topic >= V3` 上にあり、excess blob gas の値がゼロでない場合は `[REJECT]`
+* ブロックが `topic >= V3` 上にあり、親ビーコンブロックルートが nil である場合は `[REJECT]`
+* ブロックが `topic <= V3` 上にあり、L2 引き出しルートが nil でない場合は `[REJECT]`
+* ブロックが `topic >= V4` 上にあり、L2 引き出しルートが nil である場合は `[REJECT]`
+* 同じブロック高で 5 つを超える異なるブロックがすでに観測されている場合は `[REJECT]`
+* ブロックがすでに観測済みである場合は `[IGNORE]`
+* シーケンサーによる署名が有効でない場合は `[REJECT]`
+* 当該ブロック高について、そのブロックを観測済みとしてマークする
+
+悪意のあるメッセージを除外するため、ブロックには対応するシーケンサーが署名します。
+現在のシーケンサーモデルは単一構成ですが、将来的に複数シーケンサー構成に変更される可能性があります。
+デフォルトのシーケンサー公開鍵はロールアップノードに同梱して配布され、設定変更できるようにすべきです (should) 。
+
+なお、L1 がすでに別のブロックを確定している場合でも、ブロックが伝播されることがあります。
+ノードのローカルな L1 のビューが誤っている可能性もありますが、スパムは時刻と署名の検証によって防止されます。
+そのため、伝播ステップごとに実行エンジンを呼び出してブロックを検索するのは、追加の遅延に見合いません。
+
+#### ブロック処理 {#block-processing}
+
+ノードは、以下の条件が満たされる場合に限り、L1 で利用可能になる前にブロックをローカルエンジンに適用してもよい。
+
+* 遅延して到着した L1 情報と競合した場合に備え、ブロックの適用を取り消せること
+* 後続のフォークチョイス更新によって、このブロックが「unsafe」として認識されること
+  ([fork choice updated](/ja/specifications/base-protocol/consensus/derivation#engine-api-usage) を参照)
+
+#### ブランチ選択 {#branch-selection}
+
+ノードはシーケンサーがエクイボケーション (矛盾するブロックの提示) を行わないことを前提としています。そのため、unsafe ブロックに対するフォーク選択ルールは「最初のブロックが優先される」モデルとなっており、unsafe チェーンは一度延長されると、L1 に公開された safe データによって無効化されない限り変更されません。
+
+最初に異なる unsafe ブロックを受け取ったノード同士は、L1 への公開が行われるまで合意に至りません。L1 への公開によって、この不一致は解消されます。L1 に公開されるデータはバッチャーから見たデータに依存するため、safe head は、バッチャーのデータソースの unsafe head がどのようなものであれ、それに基づいて決まります。
+
+#### ブロックトピックのスコアリングパラメータ {#block-topic-scoring-parameters}
+
+## Req-Resp {#req-resp}
+
+コンセンサスクライアント (`base-consensus`) は、同期プロトコルにおいて、L1 のイーサリアム Beacon-Chain と同様のリクエスト・レスポンスエンコーディングを実装しています。
+[L1 P2P-interface req-resp specification][eth2-p2p-reqresp] および [Altair P2P update][eth2-p2p-altair-reqresp] を参照してください。
+
+ただし、L1 で見られたいくつかの問題を回避するため、プロトコルは簡素化されています。
+
+* レスポンス内のエラー文字列は、代替レスポンスが存在する場合でも、
+  圧縮したり、人為的なグローバル長制限を設けたりする必要はありません。
+* ペイロード長は固定長とすべきです。基盤となるストリームから uvarint を 1 バイトずつ読み取る方式は望ましくありません。
+* `<context-bytes>` は、beacon-chain の `ForkDigest` ではなく `uint32` をエンコードするよう要件が緩和されています。
+* ペイロードエンコーディングはハードフォークごとに変わる可能性があるため、プロトコル ID には含めません。
+* レスポンスチャンクを使用するかどうかは req-resp メソッドごとに異なります。基本的な req-resp のほとんどでは、チャンク化されたレスポンスは必要ありません。
+* 圧縮は、必要に応じて req-resp メソッド固有のペイロードエンコーディングに組み込むことが推奨されます。
+  たとえば ping などでは、ストリーミングフレーム圧縮などは不要です。
+
+また、プロトコル ID の形式は L1 と同じ方式に従いますが、
+末尾のエンコーディングスキーマ部分のみ異なり、メッセージごとに固有のものとなっています。
+
+```text Protocol ID Format
+/ProtocolPrefix/MessageName/SchemaVersion/
+```
+
+コンセンサスクライアントが提供する req-resp プロトコルは、いずれも `/ProtocolPrefix` が `/opstack/req` に設定されています。
+
+通信がチェーン固有である場合、どのチェーンを対象とするメソッドかがすぐに分かるよう、
+個々のメソッドでは `/MessageName` セグメントの一部としてチェーン ID を含めることがあります。
+また、L1 ビーコンチェーンの req-resp プロトコルにおける `ForkDigest` `<context-bytes>` のように、
+リクエストデータやレスポンスデータ (またはその両方) にチェーン情報を含めるメソッドもあります。
+
+各セグメントは `/` で始まり、複数の `/` を含むことができます。最終的なプロトコル ID の末尾には `/` が付きます。
+
+### `payload_by_number` {#payload_by_number}
+
+これは、番号を指定して実行ペイロードを要求・提供するための、オプションのチェーン同期メソッドです。
+ゴシップを取りこぼした際の欠落を埋めたり、短〜中程度の範囲の unsafe な L2 ブロックを同期したりするために使用します。
+
+プロトコル ID: `/opstack/req/payload_by_number/<chain-id>/0/`
+
+* `/MessageName` は `/payload_by_number/<chain-id>` であり、`<chain-id>` にはコンセンサスクライアントの L2 チェーン ID を設定します。
+* `/SchemaVersion` は `/0` です
+
+リクエスト形式: `<num>`: リトルエンディアンの `uint64` - 要求するブロック番号。
+
+レスポンス形式: `<response> = <res><version><payload>`
+
+* `<res>` は結果を表すバイトコードです。
+  * 成功時は `0` で、その後に `<version><payload>` が続くべきです (should) 。
+  * リクエストは有効だがペイロードが利用できない場合は `1`。
+  * リクエストが無効な場合は `2`
+  * その他のエラーの場合は `3+`
+  * `>= 128` の範囲は将来の使用のために予約されています。
+* `<version>` はリトルエンディアンの `uint32` で、レスポンスの種類 (fork 固有) を識別します
+* `<payload>` はエンコードされたブロックで、ストリームの EOF まで読み取ります。
+
+予期しないリソース消費や zip 爆弾型の攻撃を防ぐため、`<response>` の入力および生成される解凍後の出力はいずれも制限すべきです (should) 。
+すべてのブロックを確実に同期できるよう、上限は 10 MB を推奨します。
+この同期メソッドはオプションであるため、実装は異なる上限を選択してもかまいません。
+
+`<version>` の一覧:
+
+* `0`: Snappy フレーミング圧縮を施した SSZ エンコードの `ExecutionPayload`。
+  L1 Merge、L2 Bedrock、L2 Canyon の各バージョンにおける `ExecutionPayload` の SSZ 定義に一致します。
+* `1`: Snappy フレーミング圧縮を施した SSZ エンコードの `ExecutionPayloadEnvelope`。
+  L2 Ecotone バージョンにおける `ExecutionPayloadEnvelope` の SSZ 定義に一致します。
+* `2`: Snappy フレーミング圧縮を施した SSZ エンコードの `ExecutionPayload`。
+  L2 Isthmus バージョンにおける `ExecutionPayload` の SSZ 定義に一致します。
+
+リクエストはブロック番号単位で行われるため、多数のピアからチェーンを並列に取得できます。
+
+`res = 0` のレスポンスについては、次の点を検証すべきです (should) 。
+
+* ブロック番号が要求したブロック番号と一致すること。
+* `blockhash` がブロックの他の内容と整合していること。
+* 既知の正規ブロックへとつながること。
+  * これは、以前に信頼した正規ブロックの親ハッシュが、取得したブロックの検証済みハッシュと一致するかを確認することで検証できます。
+  * unsafe ブロックについては、以前に信頼した任意のブロックの親ハッシュとの照合へと条件を緩和してもかまいません。
+    * ゴシップ検証プロセスにより、同期先として信頼できるブロックの数は制限されます。
+    * unsafe ブロックはキューに入れて処理すべきであり、最終的な L2 チェーンを L1 データから再現できるようになるまでは、
+      最後に受信した L2 の unsafe ブロックが常にそれ以前のチェーンを上書きするべきです。
+
+`res > 0` のレスポンスコードは受け入れるべきではありません (should not) 。結果コードはデバッグに役立ちますが、
+応答したピアは信頼できないため、クライアントはいかなるエラーも、応答のなかったリクエストと同様に扱うべきです。
+
+***
+
+[libp2p]: https://libp2p.io/
+
+[discv5]: https://github.com/ethereum/devp2p/blob/master/discv5/discv5.md
+
+[discv5-random-nodes]: https://pkg.go.dev/github.com/ethereum/go-ethereum@v1.10.12/p2p/discover#UDPv5.RandomNodes
+
+[eth2-p2p]: https://github.com/ethereum/consensus-specs/blob/master/specs/phase0/p2p-interface.md
+
+[eth2-p2p-reqresp]: https://github.com/ethereum/consensus-specs/blob/master/specs/phase0/p2p-interface.md#the-reqresp-domain
+
+[eth2-p2p-altair-reqresp]: https://github.com/ethereum/consensus-specs/blob/master/specs/altair/p2p-interface.md#the-reqresp-domain
+
+[libp2p-noise]: https://github.com/libp2p/specs/tree/master/noise
+
+[multistream-select]: https://github.com/multiformats/multistream-select/
+
+[mplex]: https://github.com/libp2p/specs/tree/master/mplex
+
+[yamux]: https://github.com/hashicorp/yamux/blob/master/spec.md
+
+[gossipsub]: https://github.com/libp2p/specs/blob/master/pubsub/gossipsub/gossipsub-v1.1.md
+
+[signature-policy]: https://github.com/libp2p/specs/blob/master/pubsub/README.md#signature-policy-options
+
+[snappy]: https://github.com/google/snappy
+
+[l1-message-id]: https://github.com/ethereum/consensus-specs/blob/master/specs/phase0/p2p-interface.md#topics-and-messages
+
+[gossip-parameters]: https://github.com/libp2p/specs/blob/master/pubsub/gossipsub/gossipsub-v1.0.md#parameters
+
+[extended-validator]: https://github.com/libp2p/specs/blob/master/pubsub/gossipsub/gossipsub-v1.1.md#extended-validators

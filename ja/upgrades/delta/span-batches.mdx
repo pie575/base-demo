@@ -1,0 +1,376 @@
+---
+title: "Span-Batches"
+description: "Deltaで導入されたスパンバッチの仕様。スパンバッチは、連続するL2ブロックを圧縮してL1へのデータ投稿を効率化する新しいバッチフォーマットです。"
+---
+
+[g-deposit-tx-type]: /specifications/reference/glossary#deposited-transaction-type
+
+[derivation]: /specifications/base-protocol/consensus/derivation
+
+[channel-format]: /specifications/base-protocol/consensus/derivation#channel-format
+
+[batch-format]: /specifications/base-protocol/consensus/derivation#batch-format
+
+[frame-format]: /specifications/base-protocol/consensus/derivation#frame-format
+
+[batch-queue]: /specifications/base-protocol/consensus/derivation#batch-queue
+
+[batcher]: /specifications/base-protocol/batcher
+
+## はじめに {#introduction}
+
+Span-batch は、オーバーヘッドを削減する新しいバッチ仕様であり、
+[Delta](./overview) ネットワークアップグレードで導入されました。
+
+連続する L2 ブロックのスパンをより効率的に表現することで、
+通常のバッチデータと同じ整合性チェックを維持しつつ、オーバーヘッドを削減します。
+
+なお、[チャネル][channel-format]と
+[フレーム][frame-format]のフォーマットは変更されません。
+データの分割、パッキング、および複数トランザクションにまたがる転送はすでに最適化されているためです。
+
+[V0 バッチフォーマット][derivation]におけるオーバーヘッドの原因は以下のとおりです。
+
+* メタデータ属性が L2 ブロックごとに繰り返されていますが、その大部分はすでに暗黙的に導出できます。
+  * 親ハッシュ (32 バイト)
+  * L1 エポック：ブロックハッシュ (32 バイト) とブロック番号 (約 4 バイト)
+  * タイムスタンプ (約 4 バイト)
+* ブロックデータの構成が非効率です。
+  * 類似した属性が離れた位置に配置されているため、効果的に圧縮できる可能性が低くなります。
+  * ハッシュのようなランダムなデータが、より圧縮しやすいアプリケーションデータの間に配置されています。
+* データの RLP エンコーディングにより、不要なオーバーヘッドが生じます。
+  * 属性は既知であるため、外側のリストに長さをエンコードする必要はありません。
+  * 固定長の属性にエンコーディングは不要です。
+  * バッチフォーマットは静的であり、さらに最適化できます。
+* 整合性チェック用に残るメタデータも、さらに最適化できます。
+  * メタデータは整合性チェックに必要な安全性さえ確保できれば十分です。たとえば、ハッシュの 20 バイト分で足りる場合があります。
+
+Span-batch は、新しいバッチフォーマットバージョンによってこれらの非効率性を解消します。
+
+## Span Batch Format {#span-batch-format}
+
+[span-batch-format]: #span-batch-format
+
+span-batch は従来の単一バッチとは異なり、
+*連続する複数の* L2 ブロックをまとめてエンコードする点に注意してください。
+
+[batch-format][batch-format] テーブルにバージョン `1` を追加します:
+
+| `batch_version` | `content`           |
+| --------------- | ------------------- |
+| 1               | `prefix ++ payload` |
+
+表記:
+
+* `++`: バイト列の連結
+* `span_start`: スパン内の最初の L2 ブロック
+* `span_end`: スパン内の最後の L2 ブロック
+* `uvarint`: [protobuf spec] で定義されている符号なし Base128 varint
+* `rlp_encode`: バッチを RLP 形式に従ってエンコードする関数。
+  また、`[x, y, z]` は項目 `x`、`y`、`z` を含むリストを表す
+
+[protobuf spec]: https://protobuf.dev/programming-guides/encoding/#varints
+
+span-batch において、標準ビットリストはビッグエンディアンの整数としてエンコードされ、
+8 ビットの倍数になるまで左側がゼロでパディングされます。
+
+ここで:
+
+* `prefix = rel_timestamp ++ l1_origin_num ++ parent_check ++ l1_origin_check`
+  * `rel_timestamp`: L2 ジェネシスからの相対タイムスタンプを表す `uvarint`。
+    すなわち `span_start.timestamp - config.genesis.timestamp`。
+  * `l1_origin_num`: 最後の L1 オリジン番号を表す `uvarint`。すなわち `span_end.l1_origin.number`
+  * `parent_check`: 親ハッシュの先頭 20 バイト。効率化のためハッシュは 20 バイトに切り詰められる。
+    すなわち `span_start.parent_hash[:20]`。
+  * `l1_origin_check`: 最後の L1 オリジンのブロックハッシュを参照する。
+    効率化のためハッシュは 20 バイトに切り詰められる。すなわち `span_end.l1_origin.hash[:20]`。
+* `payload = block_count ++ origin_bits ++ block_tx_counts ++ txs`:
+  * `block_count`: L2 ブロック数を表す `uvarint`。1 以上でなければならず、空の span batch は無効である。
+  * `origin_bits`: `block_count` ビットの標準ビットリスト:
+    L2 ブロックごとに 1 ビットで、その L2 ブロックで L1 オリジンが変化したかどうかを示す。
+  * `block_tx_counts`: 各ブロックの `len(block.transactions)` を表す `uvarint`。
+  * `txs`: 以下のように再構成・エンコードされた L2 トランザクション。
+* `txs = contract_creation_bits ++ y_parity_bits ++
+  tx_sigs ++ tx_tos ++ tx_datas ++ tx_nonces ++ tx_gases ++ protected_bits`
+  * `contract_creation_bits`: `sum(block_tx_counts)` ビットの標準ビットリスト:
+    L2 トランザクションごとに 1 ビットで、そのトランザクションがコントラクト作成トランザクションかどうかを示す。
+  * `y_parity_bits`: `sum(block_tx_counts)` ビットの標準ビットリスト:
+    L2 トランザクションごとに 1 ビットで、トランザクション送信者アドレスを復元する際の y パリティ値を示す。
+  * `tx_sigs`: トランザクション署名を連結したリスト
+    * `r` はビッグエンディアンの `uint256` としてエンコードされる
+    * `s` はビッグエンディアンの `uint256` としてエンコードされる
+  * `tx_tos`: `to` フィールドを連結したリスト。コントラクト作成トランザクションの `to` フィールドは `nil` となり、無視される。
+  * `tx_datas`: 可変長の RLP エンコード済みデータを連結したリスト。
+    各フィールドのエンコーディングは、`TransactionType` の [EIP-2718] 形式に準拠する。
+    * `legacy`: `rlp_encode(value, gasPrice, data)`
+    * `1`: ([EIP-2930]): `0x01 ++ rlp_encode(value, gasPrice, data, accessList)`
+    * `2`: ([EIP-1559]): `0x02 ++ rlp_encode(value, max_priority_fee_per_gas, max_fee_per_gas, data, access_list)`
+  * `tx_nonces`: `nonce` フィールドの `uvarint` を連結したリスト。
+  * `tx_gases`: ガスリミットの `uvarint` を連結したリスト。
+    * `legacy`: `gasLimit`
+    * `1`: ([EIP-2930]): `gasLimit`
+    * `2`: ([EIP-1559]): `gas_limit`
+  * `protected_bits`: レガシートランザクションの数を長さとする標準ビットリスト:
+    L2 レガシートランザクションごとに 1 ビットで、そのトランザクションが保護されている ([EIP-155]) かどうかを示す。
+
+[EIP-2718]: https://eips.ethereum.org/EIPS/eip-2718
+
+[EIP-2930]: https://eips.ethereum.org/EIPS/eip-2930
+
+[EIP-1559]: https://eips.ethereum.org/EIPS/eip-1559
+
+[EIP-155]: https://eips.ethereum.org/EIPS/eip-155
+
+### Span Batch のサイズ制限 {#span-batch-size-limits}
+
+エンコードされた span batch の合計サイズは `MAX_RLP_BYTES_PER_CHANNEL` までに制限されます。この値は
+[プロトコルパラメータ表](/ja/specifications/base-protocol/consensus/derivation#protocol-parameters)で定義されています。
+この制限は span batch 単位ではなく、チャネル単位で適用されます。
+
+バイト数の制限に加えて、ブロック数および合計トランザクション数も `MAX_SPAN_BATCH_ELEMENT_COUNT` までに制限されます。
+したがって、ブロックあたりの最大トランザクション数も `MAX_SPAN_BATCH_ELEMENT_COUNT` となります。
+`MAX_SPAN_BATCH_ELEMENT_COUNT` は[プロトコルパラメータ表](/ja/specifications/base-protocol/consensus/derivation#protocol-parameters)で定義されています。
+
+### 将来のバッチフォーマット拡張 {#future-batch-format-extension}
+
+これはspan-batchフォーマットの実験的な拡張であり、Delta アップグレードではまだ有効化されていません。
+
+[batch-format][batch-format] の表にバージョン `2` を追加します:
+
+| `batch_version` | `content`           |
+| --------------- | ------------------- |
+| 2               | `prefix ++ payload` |
+
+各要素の定義は以下のとおりです:
+
+* `prefix = rel_timestamp ++ l1_origin_num ++ parent_check ++ l1_origin_check`:
+  * `batch_version` 1 と同一
+* `payload = block_count ++ origin_bits ++ block_tx_counts ++ txs ++ fee_recipients`:
+  * 空のspan-batch (すなわち `block_count == 0` のもの) は無効であり、処理してはなりません (must not)。
+  * より分散化されたシーケンシングをサポートするために `fee_recipients` が追加されている点を除き、
+    各フィールドの定義は `batch_version` 1 と同一です。
+  * `fee_recipients = fee_recipients_idxs + fee_recipients_set`
+    * `fee_recipients_set`: 重複のない L2 手数料受取人アドレスを連結したリスト。
+    * `fee_recipients_idxs`: 各ブロックについて、
+      `fee_recipients_set` から手数料受取人をデコードするためのインデックスを表す `uvarint` 値。
+
+## スパンバッチの有効化ルール {#span-batch-activation-rule}
+
+スパンバッチのアップグレードは、タイムスタンプに基づいて有効化されます。
+
+有効化ルール: `upgradeTime != null && span_start.l1_origin.timestamp >= upgradeTime`
+
+`span_start.l1_origin.timestamp` は、スパンバッチ内の最初のブロックの L1 オリジンブロックのタイムスタンプです。
+このルールにより、このスパンバッチに関するチェーン上のすべての処理が、ハードフォーク後に行われることが保証されます。
+つまり、スパン内のすべてのブロックは、ハードフォーク後に作成され、L1 に送信され、L1 から導出されます。
+
+## 最適化の戦略 {#optimization-strategies}
+
+### 情報の切り詰めと必要なデータのみの保存 {#truncating-information-and-storing-only-necessary-data}
+
+以下のフィールドには、切り詰めたデータを格納します:
+
+* `rel_timestamp`: 完全な `span_start.timestamp` の代わりに `rel_timestamp` を格納することで、2 バイトを節約できます。
+* `parent_check` と `l1_origin_check`: 完全なハッシュから 12 バイトを切り詰めることで、十分な安全性を確保しつつ
+  12 バイトを節約できます。
+
+### 初期仕様からの `tx_data_headers` の削除 {#tx_data_headers-removal-from-initial-specs}
+
+`tx_datas` の各要素は可変長ですが、要素ごとに長さを保存する必要はありません。
+各要素自体が RLP エンコードされており、その長さは RLP プレフィックスに含まれているためです。
+
+### 初期仕様からの `Chain ID` の削除 {#chain-id-removal-from-initial-specs}
+
+すべてのトランザクションにはチェーンIDが含まれています。L2 は自身のチェーンIDをすでに把握しており、導出時のスパンバッチ処理にはその値を使用するため、スパンバッチにチェーンIDを含める必要はありません。
+
+### 固定長トランザクションフィールドの再編成 {#reorganization-of-constant-length-transaction-fields}
+
+`signature`、`nonce`、`gaslimit`、`to` の各フィールドは固定サイズであるため、完全に分離し、
+フィールドごとに個別の配列へまとめています。
+これにより複雑さは増しますが、データパターンが類似するデータ同士をグループ化することで、圧縮効率が高まるようにデータが整理されます。
+
+### 可変長フィールドのみに対する RLP エンコーディング {#rlp-encoding-for-only-variable-length-fields}
+
+`access_list` などの可変長フィールドをパッキングすれば、さらにサイズを最適化できます。
+しかし、そうするとサイズ削減で得られるメリットに比べて、コードの複雑さが大幅に増してしまいます。
+
+私たちの目標は、コードの複雑さとスパンバッチのサイズとのトレードオフにおいて、最適なバランスを見つけることです。
+煩雑な独自のエンコード/デコード実装でコードベースをリスクにさらすことなく、
+すべての可変長フィールドに RLP を使用するのが最善の選択肢であると判断しました。
+
+### `v` の代わりに `y_parity` と `protected_bit` を格納する {#store-y_parity-and-protected_bit-instead-of-v}
+
+オプションで保護できるのはレガシータイプのトランザクションのみです。保護されている場合 ([EIP-155]) は `v = 2 * ChainID + 35 + y_parity` となります。
+保護されていない場合は `v = 27 + y_parity` となります。その他のタイプのトランザクションでは `v = y_parity` です。
+`y_parity` は L2 トランザクションごとに 1 ビットとして格納します。
+`protected_bit` は、トランザクションが保護されていることを示すために、L2 のレガシータイプのトランザクションごとに 1 ビットとして格納します。
+
+この最適化は、デポジットトランザクションを除いたトランザクション数に対するレガシータイプのトランザクション数の比率が高いほど、大きな効果を発揮します。
+デポジットトランザクションはバッチに含まれず、L1 に書き込まれることもないため、分析の対象からも除外しています。
+
+### 圧縮率向上のための `txs` データレイアウトの調整 {#adjust-txs-data-layout-for-better-compression}
+
+`txs` のフィールドの並べ方は (8 choose 2) * 6! = 20160 通りあります。8! 通りにならないのは、
+`tx_tos` をデコードする前に `contract_creation_bits` をデコードしておく必要があるためです。
+さまざまなデータレイアウトを試した結果、ランダムなデータ (`tx_sigs`、
+`tx_tos`、`tx_datas`) をそれ以外のデータと分けて配置すると、zlib の圧縮率が最も向上することがわかりました。
+
+### `fee_recipients` のエンコード方式 {#fee_recipients-encoding-scheme}
+
+`K` := スパンバッチあたりの一意な手数料受取人の数 (濃度) 、`N` := L2 ブロックの数とします。
+すべての手数料受取人を単純に連結してエンコードすると、`20 * N` バイトが必要になります。
+`fee_recipients_idxs` と `fee_recipients_set` を管理する場合、必要なサイズはそれぞれ最大で `max uvarint size * N = 8 * N` バイトと
+`20 * K` バイトです。`20 * N > 8 * N + 20 * K` であれば、手数料受取人のインデックスを保持することでサイズを削減できます。
+
+シーケンサーのローテーションはそれほど頻繁には発生しないと考えられるため、`K` は `N` よりもはるかに小さいと想定しました。
+この想定のもとでは上記の不等式が成り立ちます。そこで、`fee_recipients_idxs` と
+`fee_recipients_set` を個別に管理することにしました。これにより実装は複雑になりますが、データ量を削減できます。
+
+## Span Batch における導出の仕組み {#how-derivation-works-with-span-batches}
+
+* ブロックタイムスタンプ
+  * 最初の L2 ブロックのブロックタイムスタンプは `rel_timestamp + L2Genesis.Timestamp` です。
+  * 以降のブロックのタイムスタンプは、L2 のブロック時間を順に加算することで導出できます。
+* L1 オリジン番号
+  * 最初の L2 ブロックの親の L1 オリジン番号は `l1_origin_num - sum(origin_bits)` です。
+  * 以降のブロックの L1 オリジン番号は、`origin_bits` を用いて導出できます。
+    * `i-th block's L1 origin number = (i-1)th block's L1 origin number + (origin_bits[i] ? 1 : 0)`
+* L1 オリジンハッシュ
+  * 必要なのは `l1_origin_check`、すなわち Span Batch の最後の L2 ブロックの L1 オリジンハッシュを切り詰めた値だけです。
+  * 最後のブロックが正規の L1 チェーンをオリジンとして参照していれば、
+    他のすべてのブロックのオリジンも正規の L1 チェーンと整合していることが保証されます。
+* 親ハッシュ
+  * V0 Batch の仕様では、バッチの親が現在の L2 セーフヘッドと整合しているかを検証するために、バッチの親ハッシュが必要です。
+  * 一方 Span Batch では、スパン内の連続した L2 ブロックが含まれるため、
+    最初のブロック以外の親ハッシュを検証する必要はありません。
+* トランザクション
+  * デポジットトランザクションは、V0 バッチと同様に、その L1 オリジンから導出できます。
+  * ユーザートランザクションは、次の手順で導出できます。
+    * 最適化戦略で説明したとおり、`y_parity_bits` と L2 のチェーン ID から TX 署名の `V` 値を復元します。
+    * `tx_tos` を解析する際は、`contract_creation_bits` を用いて TX が `to` 値を持つかどうかを判定します。
+
+## 統合 {#integration}
+
+### Channel Reader (バッチのデコード) {#channel-reader-batch-decoding}
+
+Channel Reader は、[span-batch 形式](#span-batch-format)の説明に従って span-batch をデコードします。
+
+前述のとおり一連の導出属性が計算され、デコード結果とともにキャッシュされます：
+
+### Batch Queue {#batch-queue}
+
+span-batchは、開始タイムスタンプ (変換後の `rel_timestamp`) をキーとして、
+単一の大きなバッチとしてバッファリングされます。
+
+span-batchはv0バッチと同じキューを共有し、バッチはL1への取り込み順に処理されます。
+
+span-batchには、一部変更を加えた検証ルールが適用されます。
+
+これらのルールは、v0バッチの検証と同じ[コンテキスト上の定義][batch-queue]に基づいて適用されます：
+`epoch`、`inclusion_block_number`、`next_timestamp`
+
+定義：
+
+* `batch`：[Span batchフォーマットのセクション][span-batch-format]で定義されたもの。
+* `prev_l2_block`：現在のセーフチェーン上のL2ブロックのうち、
+  タイムスタンプが `span_start.timestamp - l2_block_time` であるもの
+
+span-batchのルール (検証順) ：
+
+* `batch_origin` は、単一バッチの場合と同じ方法で決定されます：
+  * `batch.epoch_num == epoch.number+1`:
+    * `next_epoch` が不明な場合 -&gt; `undecided`:
+      つまり、L1 オリジンを変更するバッチは、その L1 オリジンのデータが得られるまで処理できません。
+    * 判明している場合は、`batch_origin` を `next_epoch` と定義します
+* `batch_origin.timestamp < span_batch_upgrade_timestamp` -&gt; `drop`:
+  つまり、[span batch アップグレードの有効化ルール](#span-batch-activation-rule)を適用します。
+* `span_start.timestamp > next_timestamp` -&gt; `future`: つまり、バッチは処理可能な状態でなければなりませんが、
+  以前に処理されたブロックと重複する場合があるため、`next_timestamp` ちょうどから始まっている必要はありません。
+* `span_end.timestamp < next_timestamp` -&gt; `drop`: つまり、バッチには処理対象となる新しいブロックが少なくとも 1 つ含まれていなければなりません。
+* 現在の safe チェーンに `prev_l2_block` が存在しない場合 -&gt; `drop`: つまり、タイムスタンプは揃っていなければなりません。
+* `batch.parent_check != prev_l2_block.hash[:20]` -&gt; `drop`:
+  つまり、親ハッシュのうちチェック対象の部分は、対応する L2 ブロックハッシュの同じ部分と一致していなければなりません。
+* シーケンシングウィンドウのチェック：
+  * 注: シーケンシングウィンドウは*バッチ全体*に対して適用されます。
+    仮にバッチを部分的に無効とすると、最も古い L2 ブロックが破棄され、
+    それによって後続の L2 ブロックが無効になってしまいます。
+  * 変数:
+    * `origin_changed_bit = origin_bits[0]`: 最初の L2 ブロックで L1 オリジンが変更された場合は `true`、それ以外の場合は `false`。
+    * `start_epoch_num = batch.l1_origin_num - sum(origin_bits) + (origin_changed_bit ? 1 : 0)`
+    * `end_epoch_num = batch.l1_origin_num`
+  * ルール:
+    * `start_epoch_num + sequence_window_size < inclusion_block_number` -&gt; `drop`:
+      つまり、バッチは期限内に取り込まれなければなりません。
+    * `start_epoch_num > prev_l2_block.l1_origin.number + 1` -&gt; `drop`:
+      つまり、L1 オリジンは L2 ブロック 1 つにつき L1 ブロック 1 つ分を超えて変化できません。
+    * `batch.l1_origin_check` が `end_epoch_num` における正規の L1 チェーンと一致しない場合 -&gt; `drop`:
+      バッチがこの L1 チェーン向けであることを検証します。
+      * 上記の `l1_origin_check` のチェックを通過した後は、次の不変条件が成り立つため、
+        オリジンが `inclusion_block_number` を過ぎているかどうかを確認する必要はありません。
+      * 不変条件: バッチ内のエポック番号が常に取り込みブロック番号より小さくなるのは、
+        L1 エポックハッシュが正しい場合であり、かつその場合に限ります。
+    * `start_epoch_num < prev_l2_block.l1_origin.number` -&gt; `drop`:
+      エポック番号は親ブロックのオリジンより古くすることはできません
+* シーケンサーの最大時間ドリフトおよびその他のL1オリジンに関するチェック：
+  * 注: 出力のバリエーションを少なく抑えるため、最大時間ドリフトは*バッチ全体*に対して適用されます。
+  * 変数:
+    * `block_input`: span-batch 内の L2 ブロック。
+      その L1 オリジンは、`origin_bits` と、この時点で確定した正規の L1 チェーンから導出されます。
+    * `next_epoch`: `block_input.origin` の次の L1 ブロック。
+      span の L1 オリジンの範囲外にある次のオリジンに及ぶ場合があります。
+  * ルール:
+    * タイムスタンプが `safe_head.timestamp` より大きい各 `block_input` について:
+      * `block_input.l1_origin.number < safe_head.l1_origin.number` -&gt; `drop`: L1 オリジンが単調増加することを強制します。
+      * `block_input.timestamp < block_input.origin.time` -&gt; `drop`: 最小 L2 タイムスタンプルールを強制します。
+      * `block_input.timestamp > block_input.origin.time + max_sequencer_drift`: L2 タイムスタンプのドリフトルールを強制します。
+        ただし、前述の最小 L2 タイムスタンプの不変条件を維持するため、以下の例外があります:
+        * `len(block_input.transactions) == 0`:
+          * `origin_bits[i] == 0`: `i` は span batch 内における `block_input` のインデックスです。
+            これは block&#95;input が L1 オリジンを進めなかったことを意味するため、
+            `next_epoch` と照らし合わせてチェックする必要があります。
+            * `next_epoch` が不明な場合 -&gt; `undecided`:
+              次の L1 オリジンがわからない限り、時間の不変条件を維持できたかどうかはまだ判断できません。
+            * `block_input.timestamp >= next_epoch.time` の場合 -&gt; `drop`:
+              このバッチは `L2 time >= L1 time` の不変条件を破ることなく、次の L1 オリジンを採用できたはずです。
+        * `len(block_input.transactions) > 0`: -&gt; `drop`:
+          シーケンサーの時間ドリフトを超過している場合、シーケンサーがトランザクションを含めることは一切許可されません。
+* また、すべてのトランザクションに対して次の条件が適用されます:
+  * `batch.tx_datas` リストに、無効なトランザクション、
+    または他の手段でのみ導出されるトランザクションが含まれている場合は `drop`:
+    * 空のトランザクション (長さゼロの `tx_data`)
+    * [デポジットトランザクション][g-deposit-tx-type] (`tx_data` 内のトランザクションタイププレフィックスバイトで識別される)
+    * タイプが &gt; 2 の将来のトランザクション (なお、
+      [Isthmus ではタイプ 4 の `SetCode` トランザクションの](../isthmus/derivation#activation)
+      サポートが追加される)
+* 重複ブロックのチェック：
+  * 注: span batch が現在の L2 safe chain と重複する場合、重複しているすべてのブロックを検証する必要があります。
+  * 変数:
+    * `block_input`: span-batch から導出された L2 ブロック。
+    * `safe_block`: 現在の L2 safe chain 上にある、`block_input` と同じタイムスタンプの L2 ブロック。
+  * ルール:
+    * タイムスタンプが `next_timestamp` 未満の各 `block_input` について:
+      * `block_input.l1_origin.number != safe_block.l1_origin.number` -&gt; `drop`
+      * `block_input.transactions != safe_block.transactions` -&gt; `drop`
+        * デポジットトランザクションを除いて比較する
+
+検証が完了すると、batch-queue は span-batch に含まれる各ブロックについて block-input を出力します。
+そのため、次の導出ステージが認識するのは個々のブロック入力のみとなり、従来の V0 バッチと同様に扱えます。
+ただし、厳密にはもはや「v0 batch」ではありません。
+
+### Batcher {#batcher}
+
+L2ブロックをバッチに変換するのではなく、
+ブロックをバッファリングしてspan-batchを構成する必要があります。
+
+span-batchがカバーするブロックの範囲を最大化するため、L2ブロックはblock-inputとしてバッファリングするのが理想的です。
+単一のL2ブロックからなるspan-batchでは、範囲が大きい場合ほどの効率向上は得られません。
+
+つまり、`(c *channelBuilder) AddBlock` 関数は、
+`(co *ChannelOut) AddBatch` を直接呼び出さず、一定数以上のブロックがバッファリングされるまでその呼び出しを遅延させるように変更されます。
+
+キューに溜まったブロックの出力サイズは、span-batchがチャネルに書き込まれるまで見積もることができません。
+ブロック数が一定を超えた時点で、見積もりのためにチャネルへ書き込み、その後さらにブロックが到着した場合は書き込み直すことができます。
+
+それ以外の点では、[batcherの機能][batcher]に変更はありません。unsafeブロックはバッチに変換され、
+圧縮されたチャネルにエンコードされた後、L1に送信するためにフレームに分割されます。
+Batcherの実装では、ガス効率が最も高いdata-txを構築するために、さまざまなヒューリスティックや再試行の仕組みを実装できます。

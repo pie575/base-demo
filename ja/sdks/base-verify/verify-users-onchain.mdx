@@ -1,0 +1,419 @@
+---
+title: "オンチェーンでユーザーを検証する"
+description: "あらゆる Base コントラクト内で Sybil 耐性とポリシーによるゲーティングを実現します。Base Verify が有効期限の短い検証データに署名し、コントラクトはクレーム、デポジット、投票と同じトランザクション内でそれを検証します。これにより、実在する 1 つのアイデンティティは 1 回しかカウントされず、設定した基準を満たすウォレットだけが参加できます。"
+---
+
+## 概要 {#summary}
+
+**Base Verify Onchain を使うと、スマートコントラクト上で「実在する1人につき1回」の制限を適用したり、有効な Coinbase One メンバーシップなどの現実世界の属性に基づいてアクセスを制限したりできます。チェックはコントラクト内で実行されるため、検証用のバックエンドを運用する必要はありません。** Base Verify が有効期間の短い検証に署名し、コントラクトはクレーム、デポジット、投票などと同じトランザクション内でその検証をチェックします。
+
+<Note>
+  Base Verify Onchain は Base Sepolia でのみ動作します。Base mainnet にはデプロイされていないため、開発やテストには利用できますが、
+  本番環境の資産を扱う用途には使用しないでください。[デモ](https://verify.base.dev/onchain-demo)をお試しいただくか、想定しているユースケースがあれば[お問い合わせ](https://forms.gle/WTcuWyKkvUV6gGik6)ください。
+</Note>
+
+統合は次の3ステップで行います。
+
+1. **コントラクトをデプロイまたはアップグレード**して `BaseVerifyConsumer` を継承し、イミュータブルな `provider` と `conditions` (適格性ポリシー) を宣言します。
+2. アプリで**検証を取得**します。ユーザーが自身のコントラクトを指定した SIWE メッセージに署名し、そのメッセージを `POST /v1/onchain_verifications` に POST します。
+3. 返された `{ identityHash, expiration, signature }` をコントラクトに**送信**します。コントラクトは `registry.verifyVerification(...)` を呼び出し、`identityHash` を使って重複を排除します。
+
+| 項目               | 値 (Base Sepolia)                                                                                                                |
+| :--------------- | :------------------------------------------------------------------------------------------------------------------------------ |
+| `SignerRegistry` | [`0x4f15593fbF7e3491d15080e1610E7AF8deBA1a02`](https://sepolia.basescan.org/address/0x4f15593fbF7e3491d15080e1610E7AF8deBA1a02) |
+| API ベース URL      | `https://verify.base.dev/v1`                                                                                                    |
+| チェーン             | Base Sepolia (`84532`) 、テストネットのみ                                                                                                |
+| コンシューマーの基底コントラクト | `BaseVerifyConsumer.sol`                                                                                                        |
+
+参考にできるコンシューマーの実装例を2つ紹介します。
+
+* [認証済み X アカウントの例](https://sepolia.basescan.org/address/0x691fedA6dfCd10082b195b2453EBC7c87ff31678) — 認証済みの X アカウントを条件にアクセスを制限します。
+* [Coinbase One の例](https://sepolia.basescan.org/address/0x3ccD255C67a129e780F945Fa1773441Ec100059f) — 有効な Coinbase One メンバーシップを条件にアクセスを制限します。
+
+## Base Verify Onchainとは {#what-is-base-verify-onchain}
+
+[Base Verify](/ja/sdks/base-verify/verify-social-accounts) を使うと、ユーザーはアカウントの詳細を明かすことなく、認証済みアカウント (X、Coinbase、Instagram、TikTok) の所有を証明できます。これにより、ウォレットだけでは解決できない2つの課題に対処できます。1つは**Sybil耐性** (1人の実在する人物は、いくつのウォレットに分散していても1回としてカウントされる) 、もう1つは**ポリシーによるゲーティング** (ウォレットのオンチェーン履歴がほとんどない場合でも、有効なCoinbase One メンバーシップなど、現実世界の基準を満たすユーザーだけを受け入れる) です。
+
+**Base Verify Onchainは、この両方をコントラクト内で直接適用します。** Base Verifyのバックエンドが有効期間の短い [EIP-712](https://eips.ethereum.org/EIPS/eip-712) 検証に署名し、コントラクトはそれをクレーム、デポジット、ミント、投票と同じトランザクション内で確認します。クレーム時にバックエンドは不要で、コントラクトがユーザーの身元を知ることもありません。
+
+* **Sybil耐性**は `identityHash` によって実現されます。同じ現実世界のアイデンティティは、どのウォレットを使っても、そのコントラクトに対して常に同じハッシュを生成します。そのため、コントラクトは実在する人物ごとに1回だけカウントできます。
+* **ポリシーによるゲーティング**は、コントラクトのポリシーによって実現されます。`provider` と `conditions` (例：Xのフォロワー数が10,000以上、または有効なCoinbase One メンバーシップ) を宣言すると、Base Verifyがユーザーの実際の認証情報をそれらと照合し、条件を満たした場合にのみ署名します。
+
+1回のチェックで両方を同時に行えます。つまり、同じトランザクション内でポリシーによるゲーティング&#95;と&#95;アイデンティティによる重複排除を実行できます。すでにアプリ側のオフチェーン (独自のバックエンドとデータベース) でこれを適用している場合は、代わりに [Verify Social Accounts](/ja/sdks/base-verify/verify-social-accounts) から始めてください。このガイドは、コントラクト内で適用する場合を対象としています。
+
+APIレスポンスにもコントラクトにもユーザーのアイデンティティは含まれませんが、クレーム自体は公開トランザクションです。具体的に何が公開されるかについては、[オンチェーンに記録される内容](#what-goes-onchain)を参照してください。
+
+## 基本概念 {#core-concepts}
+
+### Verification {#verification}
+
+Base Verify バックエンドが署名する有効期間の短いオブジェクトで、コントラクトは `SignerRegistry` を介してこれを検証します。EIP-712 型付きデータとして署名されており、次の内容を含みます。
+
+* `identityHash` — ユーザーの実世界での身元から算出した一方向ハッシュ (重複排除用のキー) 。
+* `policyHash` — Verification を、特定のチェーン上のコントラクトのポリシーに紐付けます。レジストリがオンチェーンで再計算するため、レスポンスには含まれません。
+* `expiration` — Unix 秒。Verification の有効期間は短く、数分程度です。
+
+### identityHash {#identityhash}
+
+重複排除に使うキーです。この値は ID とコントラクトの組み合わせごとに決定論的に定まります。つまり、同じ実在の人物であれば、どのウォレットで検証しても、自分のコントラクトに対しては常に同じ `identityHash` が生成されます。各 `identityHash` を保存し、重複するものは拒否してください。
+
+* **一方向性** — この値からユーザーの ID を復元することはできません。
+* **コントラクト単位** — コントラクトごとに異なる値になるため、アプリをまたいで ID を紐付けることはできません。
+* **ウォレット横断** — 同じ人物が別のウォレットを使っても同じハッシュが生成されるため、コントラクト側で重複をブロックできます。
+
+### ポリシー (provider + conditions) {#policy-provider-conditions}
+
+対象となるユーザーの要件は、コントラクト側で宣言します。ポリシーは、1つの `provider` と1つ以上の `conditions` (たとえば、有効な Coinbase One メンバーシップや、X のフォロワー数が 1000 以上であることなど) で構成されます。Base Verify のバックエンドはこのポリシーをコントラクトから直接読み取り、署名する前に、ユーザーの保存済み認証情報がポリシーを満たしているかどうかを確認します。
+
+### 適格性の判定方法 {#how-eligibility-is-enforced}
+
+ここでいう「Base Verify」とは、署名鍵を保持するオフチェーンサービスである Base Verify バックエンドを指し、Base Chain のことではありません。Base Verify は、コントラクトの `provider` と `conditions` をオンチェーンで (`eth_call` を使用して) 読み取り、ユーザーの保存済み認証情報と照合して評価し、条件を満たす場合にのみ検証に署名します。条件は常にコントラクトから取得され、ユーザーが指定することはありません。そのため、ユーザーが条件を削除したり偽装したりして、本来資格のない検証を不正に取得することはできません。
+
+## アーキテクチャとフロー {#architecture-and-flow}
+
+クレームは、アプリ、Base Verify API、コントラクトを経由して処理されます。
+
+1. ユーザーがアプリでウォレットを接続します。
+2. アプリは、コントラクトを (`Resources` 行で) 指定した SIWE メッセージを作成し、ユーザーに署名してもらいます。
+3. アプリは、メッセージと署名を Base Verify API に送信します。
+4. Base は署名からウォレットアドレスを復元し、コントラクトの `provider` と `conditions` をオンチェーンで読み取ったうえで、そのウォレットに保存されている認証情報がそれらを満たしているかを確認します。
+5. 成功すると、Base は署名付きの検証結果 (`identityHash`、`expiration`、`signature`) を返します。ユーザーが未検証の場合や条件を満たしていない場合は、代わりに `404` または `400` を返します。
+6. アプリは、検証結果をコントラクトの `enroll` 関数 (または入金、借入、クレームの処理) に送信します。
+7. コントラクトは `registry.verifyVerification(...)` を呼び出します。この関数は署名と有効期限を確認し、現在有効なポリシーから `policyHash` を再計算します。その後、コントラクトは `identityHash` で重複を排除し、ユーザーの参加を許可します。
+
+## オンチェーンに記録される内容 {#what-goes-onchain}
+
+クレームは通常のパブリックトランザクションです。いったんマイニングされると、以下の情報はすべて永続的に残り、誰でも閲覧でき、Base Verify では管理できなくなります。ポリシーやコントラクトを設計する際は、この点を十分に考慮してください。
+
+### オンチェーンに書き込まれるデータ {#written-onchain}
+
+| データ                                      | 記録される場所                                                | 備考                                         |
+| :--------------------------------------- | :----------------------------------------------------- | :----------------------------------------- |
+| `identityHash`                           | トランザクションの calldata、コントラクトのストレージ、およびこの値を含めて発行するすべてのイベント | コントラクト内で、クレーム元のウォレットとこのアイデンティティが永続的に紐付けられます  |
+| クレーム元のウォレットアドレス                            | トランザクションの送信者、およびこの値を含めて発行するすべてのイベント                    | SIWE メッセージに署名し、クレームを送信したウォレット                |
+| `expiration` と Base Verify の `signature` | トランザクションの calldata                                     | 公開されますが、コントラクトとそのウォレットに紐付けられており、数分以内に失効します |
+| 設定した `provider` と `conditions`           | デプロイしたコントラクトの public な view 関数                         | トランザクションを送信しなくても、誰でもポリシーを読み取れます            |
+
+クレームに伴ってコントラクトが独自に保存・発行するデータも、同様に公開されます。上記リンク先にある 2 つのコンシューマー実装例では、`mapping(bytes32 identityHash => bool)` を保持し、`Claimed(address indexed user, bytes32 indexed identityHash)` を発行しています。そのため、ウォレットとハッシュの対応関係をログから直接照会できます。
+
+### オンチェーンに記録されない情報 {#never-onchain}
+
+* プロバイダーアカウント：ユーザー名、ハンドル、アカウントID、プロフィールリンクは一切記録されません。
+* トレイト値：フォロワー数、サブスクリプションの状態、その他の認証データは記録されません。
+* OAuthトークンなど、Base Verifyがユーザーのために保持しているデータ。
+* `policyHash`：レジストリは検証時にこれをメモリ上で再計算するだけで、保存することもイベントとして発行することもありません。
+* ユーザーの現実世界での身元：`identityHash`は一方向ハッシュであり、元の情報を復元することはできません。
+
+### 観察者が推測できること {#what-an-observer-can-infer}
+
+ポリシーもクレームも公開されているため、誰でも両者を突き合わせることができます。Coinbase One のサンプルコンシューマーは `provider = "coinbase"` と条件 `coinbase_one_active eq true` を宣言しています。そのため、その `Claimed` ログに記録されたすべてのウォレットは、クレーム時点で有効な Coinbase One メンバーシップを保有していたことが公になります。観察者はどの Coinbase アカウントかまでは特定できませんが、そのウォレットがアカウントを保有していたことはわかります。
+
+ポリシーの条件を絞り込むほど、クレームから明らかになる情報は多くなります。`followers gte 10000` を条件にすると、クレームした各ウォレットが大規模な X アカウントであることが示されます。一方、`verified eq true` を条件にした場合に明らかになる情報ははるかに少なくなります。コントラクト名やアクションの命名についても同様です。
+
+`identityHash` はコントラクトごとにスコープされるため、同一人物が 2 つの異なるコントラクトでクレームすると、互いに無関係な 2 つのハッシュが生成され、観察者はそれらを紐付けることができません。一方、単一のコントラクト内では、その人物によるクレームはすべて同じハッシュになります。まさにこの性質によって重複排除が機能します。
+
+### クレーム履歴の保存場所 {#where-claim-history-lives}
+
+`verify.base.dev` に表示されるのは、ユーザーのオフチェーンの認証情報のみです。具体的には、ユーザーがどのプロバイダーで検証を済ませたかと、Base Verify がそのユーザーについて保存している属性です。オンチェーンのクレームは参照できないため、表示、編集、取り消しはいずれもできません。
+
+オンチェーンのクレーム履歴は、開発者自身のコントラクト、すなわち自身のストレージ、イベント、チェーン上に存在します。ユーザーや第三者は、ブロックエクスプローラーやコントラクトの公開ゲッターを通じてこの履歴を参照します。ユーザーが自分のクレーム履歴を確認できるようにしたい場合は、そのための画面を自分で構築する必要があります。
+
+<Warning>
+  `verify.base.dev` で検証を削除すると、ユーザーのオフチェーンの認証情報が削除され、Base Verify はそのユーザーに対する新たな検証への
+  署名を停止します。ただし、すでにオンチェーンに書き込まれた内容には一切影響しません。コントラクトが
+  記録済みのクレームはそのまま残り、トランザクションもチェーンの履歴に残り続けます。
+</Warning>
+
+## 実装 {#implementation}
+
+<Steps>
+  <Step title="コントラクトを作成する">
+    `BaseVerifyConsumer` を継承してポリシーをオンチェーンで読み取れるようにし、レジストリ経由で検証状況を確認したうえで、`identityHash` によって重複を排除します。この例では、実在する 1 人につき、検証済みかつポリシーの条件を満たす ID を 1 つだけ登録します。これにより、1 人のファーマーが複数のウォレットを使い分けて報酬を水増しすることを防げます。
+
+    ```solidity IncentiveProgram.sol lines expandable highlight={15-23,25-33} theme={null}
+    // SPDX-License-Identifier: MIT
+    pragma solidity 0.8.28;
+
+    import {BaseVerifyConsumer} from "@baseverify/BaseVerifyConsumer.sol";
+
+    contract IncentiveProgram is BaseVerifyConsumer {
+        mapping(bytes32 identityHash => bool enrolled) public enrolled;
+        mapping(address wallet => bool active) public isParticipant;
+
+        error AlreadyEnrolled();
+
+        // 使用するチェーンの SignerRegistry アドレスを渡します。
+        constructor(address registry_) BaseVerifyConsumer(registry_) {}
+
+        // 資格ポリシー。どちらも不変（constant / pure）でなければなりません（MUST）。
+        function provider() external pure override returns (string memory) {
+            return "coinbase";
+        }
+
+        function conditions() external pure override returns (Condition[] memory) {
+            Condition[] memory c = new Condition[](1);
+            c[0] = Condition({name: "coinbase_one_active", op: "eq", value: "true"});
+            return c;
+        }
+
+        function enroll(bytes32 identityHash, uint40 expiration, bytes calldata signature) external {
+            // 実在する ID 1 つにつき登録は 1 回まで（本人が管理するすべてのウォレットを合わせて）。
+            if (enrolled[identityHash]) revert AlreadyEnrolled();
+
+            // msg.sender を検証済みウォレットとして紐付けます。検証が無効または期限切れの場合はリバートします。
+            _verify(identityHash, expiration, signature);
+
+            enrolled[identityHash] = true;
+            isParticipant[msg.sender] = true;
+
+            // ... msg.sender へのブースト報酬の付与を開始 ...
+        }
+    }
+    ```
+
+    <Warning>
+      `provider()` と `conditions()` はイミュータブル (定数を返す) でなければなりません。これらは `policyHash` に組み込まれるため、変更されると既存の検証結果がすべて無効になります。さらに、同一のアイデンティティが新しいハッシュで再登録できるようになり、Sybil 耐性が損なわれます。
+    </Warning>
+  </Step>
+
+  <Step title="アプリで検証結果を取得する">
+    コントラクト名を記載した [SIWE](https://eips.ethereum.org/EIPS/eip-4361) メッセージにユーザーの署名をもらい、その署名済みメッセージを Base Verify API に POST します。
+
+    ```typescript lib/fetch-verification.ts lines expandable highlight={6-14,20-24} theme={null}
+    import { createSiweMessage, generateSiweNonce } from 'viem/siwe';
+
+    const MY_CONTRACT_ADDRESS = '0x...'; // デプロイ済みのコンシューマーコントラクト
+    const CHAIN_ID = 84532; // Base Sepolia
+
+    export async function fetchVerification(
+      userAddress: `0x${string}`,
+      signMessageAsync: (args: { message: string }) => Promise<string>,
+    ) {
+      // 以下の statement と Resources の行は API で必須です。記載どおりに指定してください。
+      const message = createSiweMessage({
+        domain: window.location.host,
+        address: userAddress,
+        statement: 'Claim eligibility for a Base Verify onchain benefit.',
+        uri: window.location.origin,
+        version: '1',
+        chainId: CHAIN_ID,
+        nonce: generateSiweNonce(),
+        resources: [`eip155:${CHAIN_ID}:${MY_CONTRACT_ADDRESS}`],
+      });
+
+      const signature = await signMessageAsync({ message });
+
+      const res = await fetch('https://verify.base.dev/v1/onchain_verifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, signature }),
+      });
+
+      if (!res.ok) {
+        // 後述のエラー処理を参照してください(例: 404 の場合は、先にユーザーを Base Verify へ誘導します)。
+        throw new Error(`verification failed: ${res.status}`);
+      }
+
+      // { identityHash, expiration, signature }
+      return res.json();
+    }
+    ```
+
+    <Note>
+      API キーは不要です。SIWE 署名自体が認証情報となるため、リクエストに `Authorization` ヘッダーを付ける必要はありません。
+    </Note>
+  </Step>
+
+  <Step title="検証結果をコントラクトに送信する">
+    API レスポンスは、そのままコントラクトの `enroll` 関数 (または預け入れ、借り入れ、請求 (claim) の処理) に渡してください。
+
+    ```typescript enroll.ts highlight={7-9} theme={null}
+    import { INCENTIVE_PROGRAM_ABI } from './abi';
+
+    const { identityHash, expiration, signature } = await fetchVerification(userAddress, signMessageAsync);
+
+    await writeContract({
+      address: MY_CONTRACT_ADDRESS,
+      abi: INCENTIVE_PROGRAM_ABI,
+      functionName: 'enroll',
+      args: [identityHash, expiration, signature],
+    });
+    ```
+
+    コントラクトは `registry.verifyVerification(...)` を呼び出します。署名、有効期限、ポリシーのいずれにも問題がなければ、`enroll()` が `identityHash` を記録します。同一人物が別のウォレットを使っても同じ `identityHash` が生成されるため、登録は拒否されます。
+  </Step>
+</Steps>
+
+### エラー処理 {#error-handling}
+
+API が `200` を返さない場合は、トランザクションを送信しないでください。ステータスごとに以下のように対処します。
+
+| レスポンス                              | 対処方法                                                                              |
+| :--------------------------------- | :-------------------------------------------------------------------------------- |
+| **404** `contract_not_found`       | 指定したコントラクトがこのチェーンにデプロイされていないか、ポリシーを公開していません。アドレスとチェーンを確認してください。                   |
+| **404** `verification_not_found`   | ウォレットに、コントラクトで指定したプロバイダーの認証情報がありません。ユーザーを Base Verify にリダイレクトして検証を行ってもらってください。 |
+| **404** `needs_reauth`             | 認証情報がコントラクトのカットオフブロックより古くなっています。ユーザーを Base Verify に誘導して再認証してもらってください。          |
+| **400** `conditions_not_satisfied` | ウォレットは検証済みですが、条件を満たしていません。メッセージを表示するのみとし、リダイレクトや再試行は行わないでください。                    |
+| **400** `invalid_policy`           | コントラクトのプロバイダー/条件/演算子の組み合わせがサポートされていません。コントラクトのポリシーを修正してください。                      |
+| **400** `invalid_argument`         | SIWE の形式が不正または期限切れであるか、ステートメントやチェーンが正しくありません。メッセージを作成し直してください。                    |
+| **200**                            | `identityHash`、`expiration`、`signature` をコントラクトに送信します。                            |
+
+ユーザーを Base Verify に誘導して OAuth を完了してもらうには、アプリの URL とプロバイダーを指定して `https://verify.base.dev` にリダイレクトします。
+
+```text Base Verify redirect URL format theme={null}
+https://verify.base.dev?redirect_uri={your_app_url}&providers={provider}
+```
+
+## API リファレンス {#api-reference}
+
+### POST /v1/onchain_verifications {#post-v1onchain_verifications}
+
+SIWE 署名と引き換えに、署名済みで有効期間の短いオンチェーン検証を発行します。API キーは不要です。SIWE 署名自体が認証情報となり、発行された検証は、署名したウォレットが、検証内で指定されたコントラクトに対してのみ使用できます。
+
+#### リクエスト {#request}
+
+```json POST /v1/onchain_verifications request body theme={null}
+{
+  "message": "<SIWE message; its Resources line names your contract>",
+  "signature": "0x<wallet signature over the message>"
+}
+```
+
+<ParamField body="message" type="string" required>
+  SIWE メッセージです。`statement` は `Claim eligibility for a Base Verify onchain benefit.` と完全に一致させる必要があります。`chainId` にはクレームを行うチェーンを指定してください (現在サポートされているのは Base Sepolia `84532` のみです) 。また、`Resources` には `eip155:<chainId>:<yourContractAddress>` を含める必要があります。
+</ParamField>
+
+<ParamField body="signature" type="string" required>
+  SIWE メッセージに対するウォレットの署名です。Base Account のスマートウォレット
+  ([ERC-1271](https://eips.ethereum.org/EIPS/eip-1271) /
+  [ERC-6492](https://eips.ethereum.org/EIPS/eip-6492)) による署名にも対応しています。
+</ParamField>
+
+#### リクエスト例 {#example-request}
+
+```bash POST /v1/onchain_verifications cURL example wrap theme={null}
+curl -X POST https://verify.base.dev/v1/onchain_verifications \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "app.example.com wants you to sign in with your Ethereum account:...",
+    "signature": "0x1234..."
+  }'
+```
+
+#### レスポンス `200` {#response-200}
+
+```json 200 OK response theme={null}
+{
+  "identityHash": "0x88c9f0a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b",
+  "expiration": 1723497600,
+  "signature": "0x4d3c2b1a..."
+}
+```
+
+<ResponseField name="identityHash" type="string (bytes32)">
+  ユーザーの実世界のアイデンティティから生成される一方向ハッシュです。同じアイデンティティと
+  同じコントラクトの組み合わせに対しては常に同じ値になります。この値を保存し、重複排除のキーとして使用してください。
+</ResponseField>
+
+<ResponseField name="expiration" type="integer">
+  検証が無効になる時刻 (Unix 秒) です。検証の有効期間は
+  短い (数分程度) ため、速やかにトランザクションを送信してください。
+</ResponseField>
+
+<ResponseField name="signature" type="string">
+  Base が運用する署名者による EIP-712 署名です。この署名をコントラクトに渡してください。
+</ResponseField>
+
+レスポンスには `policyHash` とコントラクトアドレスは含まれません。`policyHash` はコントラクトが自身のポリシーから再計算し、検証済みウォレットにはコンシューマーがレジストリに渡す `msg.sender` が使われるためです。
+
+エラーレスポンスについては、[エラー処理](#error-handling)を参照してください。
+
+## コントラクト {#contracts}
+
+### SignerRegistry {#signerregistry}
+
+Base がデプロイするステートレスな検証コントラクトです。保持するのは署名者の許可リストのみで、答えるのは「この検証は信頼された署名者によって署名され、有効期限内であり、かつ呼び出し元コントラクトのポリシーに紐付けられているか」という 1 つの問いだけです。`identityHash` の重複排除は、各利用側のコントラクトに委ねられています。
+
+コントラクトから `verifyVerification` を呼び出します。検証が有効でない場合、この呼び出しはリバートします。
+
+```solidity SignerRegistry.verifyVerification lines expandable theme={null}
+function verifyVerification(
+    address user,
+    bytes32 identityHash,
+    uint40 expiration,
+    bytes calldata signature
+) external view;
+// block.timestamp > expiration の場合、VerificationExpired(expiration) でリバートします。
+// 署名から署名者を復元できない場合、InvalidSignature() でリバートします。
+// 復元した署名者が許可リストに含まれていない場合、NotSigner(signer) でリバートします。
+```
+
+`msg.sender` はコンシューマーコントラクトであるため、検証を別のコントラクトでリプレイすることはできません。レジストリは呼び出し元の現在のポリシーから `policyHash` を再計算します。別のコントラクトのポリシーからは異なるハッシュが生成されるため、署名の復元に失敗します。
+
+### BaseVerifyConsumer {#baseverifyconsumer}
+
+コンシューマーコントラクトが継承する基底コントラクトです。ポリシーをオンチェーンで公開するほか、呼び出し元を検証済みウォレットとしてバインドするヘルパーを提供します。
+
+```solidity BaseVerifyConsumer interface lines expandable highlight={2-4,7,15-16} theme={null}
+abstract contract BaseVerifyConsumer {
+    struct Condition {
+        string name;  // 例: "followers"
+        string op;    // eq | gt | gte | lt | lte | in
+        string value; // 例: "1000"
+    }
+
+    // 独自の資格要件ポリシー。不変（constant / pure）でなければなりません（MUST）。
+    function provider() external view virtual returns (string memory);
+    function conditions() external view virtual returns (Condition[] memory);
+
+    // 任意: 最終認証がこのブロックより前のクレデンシャルを拒否します。カットオフを設けない場合は 0 を返します。
+    function cutoffBlock() external view virtual returns (uint256);
+
+    // msg.sender を検証済みウォレットとして渡すため、検証結果を使用できるのはその所有者のみです。
+    function _verify(bytes32 identityHash, uint40 expiration, bytes calldata signature) internal view;
+}
+```
+
+<Note>
+  `cutoffBlock()` は `policyHash` に含まれないため、既存の有効な検証を無効にすることなく
+  変更できます。ポリシーやセキュリティ設定の変更後など、改めて認証を求めたい場合に
+  使用してください。
+</Note>
+
+### サポートされているプロバイダーと条件 {#supported-providers-and-conditions}
+
+ポリシーは、1 つの `provider` と 1 つ以上の `conditions` で構成されます。サポートされている演算子は `eq`、`gt`、`gte`、`lt`、`lte`、`in` です。
+
+| プロバイダー      | 条件                                                | 型      | 演算子                        | 例                             |
+| :---------- | :------------------------------------------------ | :----- | :------------------------- | :---------------------------- |
+| `x`         | `followers`                                       | int    | `eq` `gt` `gte` `lt` `lte` | `followers gte 1000`          |
+| `x`         | `verified`                                        | bool   | `eq`                       | `verified eq true`            |
+| `x`         | `verified_type`                                   | string | `eq`                       | `verified_type eq blue`       |
+| `coinbase`  | `coinbase_one_active`                             | bool   | `eq`                       | `coinbase_one_active eq true` |
+| `coinbase`  | `coinbase_one_billed`                             | bool   | `eq`                       | `coinbase_one_billed eq true` |
+| `instagram` | `followers_count`                                 | int    | `eq` `gt` `gte` `lt` `lte` | `followers_count gte 5000`    |
+| `instagram` | `username`                                        | string | `eq`                       | `username eq base`            |
+| `tiktok`    | `follower_count`                                  | int    | `eq` `gt` `gte` `lt` `lte` | `follower_count gte 10000`    |
+| `tiktok`    | `following_count` / `likes_count` / `video_count` | int    | `eq` `gt` `gte` `lt` `lte` | `video_count gte 50`          |
+
+1 つのプロバイダーに複数の条件を宣言した場合は、そのすべての条件を満たす必要があります (AND 条件) 。
+
+## セキュリティ {#security}
+
+### Base Verify が保証すること {#what-base-verify-enforces}
+
+* **資格要件**は、コントラクトのポリシーから読み取った条件に基づき、ユーザーの実際の認証情報に対して検証されます。そのため、ユーザーが条件を偽ることはできません。
+* **1つのアイデンティティにつき1回のアクション**を、重複排除に使用する決定論的な `identityHash` によって担保します。
+* **検証はバインドされます**。検証はお使いのコントラクトとチェーンに紐付けられ、短時間 (数分) で失効します。
+* **署名したウォレットのみ**が検証を送信できるため、メモリプール上でフロントランニングされることはありません (`BaseVerifyConsumer` を継承し、`msg.sender` を渡す場合) 。
+
+### 要件 {#requirements}
+
+* ポリシー (`provider` と `conditions`) はイミュータブルに保ってください。
+* クレーム処理では `identityHash` を基準に重複を排除してください。
+* チェックの成功は、検証済みの一意なアイデンティティが存在することの証明として扱ってください。特定のアカウントや個人データを証明するものではありません。
+* クレームによって何が公開されるかをユーザーに伝えてください。また、それをユーザー向けにどう表示するかは、すべて開発者側の責任となる点に留意してください。詳しくは[オンチェーンに記録される内容](#what-goes-onchain)を参照してください。
+
+## サポート {#support}
+
+**Base Verify Onchain の統合をご検討中ですか？** [関心登録フォーム](https://forms.gle/WTcuWyKkvUV6gGik6)にご記入いただければ、担当チームよりご連絡いたします。

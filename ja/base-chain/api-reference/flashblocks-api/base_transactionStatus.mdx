@@ -1,0 +1,51 @@
+---
+title: 'base_transactionStatus'
+sidebarTitle: 'base_transactionStatus'
+description: 'トランザクションがノードのメモリプールに存在するかどうかを確認します。Flashblocks エンドポイントでのみ利用できます。'
+---
+
+特定のトランザクションがノードのメモリプールに存在するかどうかを確認します。送信したトランザクションが Flashblock に含まれる前に、ノードに受信されているかを確認する用途に使用します。
+
+<Info>
+  Flashblocks エンドポイント (`https://mainnet.base.org` / `https://sepolia.base.org`) でのみ利用できます。
+</Info>
+
+<Note>
+  [base/base](https://github.com/base/base) のクライアントバージョン v0.3.0 以上が必要です。
+</Note>
+
+## パラメーター {#parameters}
+
+<ParamField body="transactionHash" type="string" required>
+  照会対象の32バイトのトランザクションハッシュ。
+</ParamField>
+
+## 戻り値 {#returns}
+
+<ResponseField name="result" type="object">
+  トランザクションのステータスオブジェクト。
+
+  <Expandable title="ステータスフィールド">
+    <ResponseField name="status" type="string">
+      トランザクションがメモリプールに存在する場合は `"Known"`、このノードで未確認の場合は `"Unknown"` です。
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## 例 {#example}
+
+<CodeGroup>
+  ```bash cURL
+  curl https://mainnet.base.org \
+    -X POST -H "Content-Type: application/json" \
+    -d '{"jsonrpc":"2.0","method":"base_transactionStatus","params":["0xabc123..."],"id":1}'
+  ```
+
+  ```json Known
+  {"jsonrpc": "2.0", "id": 1, "result": {"status": "Known"}}
+  ```
+
+  ```json Unknown
+  {"jsonrpc": "2.0", "id": 1, "result": {"status": "Unknown"}}
+  ```
+</CodeGroup>

@@ -1,0 +1,85 @@
+---
+title: "授权支付"
+keywords: ["Commerce Payments authorize", "USDC escrow Base", "PaymentAuthorized", "authorize and capture"]
+description: "在 Base 上将付款方资金转入托管，供后续捕获。"
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+如果履约发生在结账之后，应先对支付进行授权。协议授权一旦成功，代币会立即转入运营方的托管存储，因此后续捕获时，无需依赖付款方钱包中是否仍有足够资金。
+
+<Info>
+  本指南中的支付流程基于 [Commerce Payments Protocol](https://github.com/base/commerce-payments)。
+</Info>
+
+## 演示 {#demo}
+
+<PaymentsDemo flow="authorize" />
+
+<Tip>
+  上方演示仅为模拟。如需查看 Vibenet 上的链上演示，请前往 [Base 链演示](https://chain.base.org/demos)。
+</Tip>
+
+<Warning>
+  收款方签名仅代表获得了收款许可。只有在 `authorize` 成功执行并触发 `PaymentAuthorized` 事件后，才能视为资金已预留。
+</Warning>
+
+## 授权并存储支付 {#authorize-and-store-the-payment}
+
+构建一个不可变的 `PaymentInfo`，其中包含运营方 (operator) 、付款方、收款方、代币、最大金额、三个依次递进的过期时间戳、手续费上下限、手续费接收方以及一个唯一的盐值 (salt) 。请原样存储该结构体，因为后续每项操作都会重新计算其哈希值。
+
+该测试夹具会准备一个 ERC-3009 收款方签名，并以 `paymentInfo.operator` 的身份提交授权。
+
+{/* sample: usdc-authorize-ts */}
+
+```typescript TypeScript lines wrap expandable highlight={6,11,15-16}
+export async function authorizePayment(
+  merchant: Address,
+  orderId: string,
+  amount: string,
+) {
+  const payment = await prepareErc3009Payment(merchant, orderId, amount);
+  const simulation = await publicClient.simulateContract({
+    account,
+    address: AUTH_CAPTURE_ESCROW,
+    abi: authCaptureEscrowAbi,
+    functionName: "authorize",
+    args: [
+      payment.paymentInfo,
+      payment.paymentInfo.maxAmount,
+      ERC3009_PAYMENT_COLLECTOR,
+      payment.collectorData,
+    ],
+  });
+  const hash = await walletClient.writeContract(simulation.request);
+  const receipt = await publicClient.waitForTransactionReceipt({ hash, confirmations: 2 });
+  if (receipt.status !== "success") throw new Error("Payment authorization reverted");
+  return { ...payment, authorizationHash: hash };
+}
+```
+
+| 状态字段                  | 授权后的值       |
+| --------------------- | ----------- |
+| `hasCollectedPayment` | 永久为 `true`  |
+| `capturableAmount`    | 托管中冻结的已授权金额 |
+| `refundableAmount`    | 捕获前为 `0`    |
+
+<Check>
+  将 `paymentInfoHash`、完整条款、收款方、授权交易以及 `PaymentAuthorized.amount` 与订单关联并持久化存储。
+</Check>
+
+<Warning>
+  每笔付款只能收取一次。每次结账尝试都要使用新的加密安全随机盐值，包括作废 (void) 或收回 (reclaim) 后的重试。
+</Warning>
+
+## 另请参阅 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="捕获授权" icon="check" href="/zh/build-on-base/accept-payments/capture-an-authorization">
+    在授权到期前结算托管金额。
+  </Card>
+
+  <Card title="作废授权" icon="ban" href="/zh/build-on-base/accept-payments/void-an-authorization">
+    立即退还资金，或待授权到期后由付款方自行取回。
+  </Card>
+</CardGroup>

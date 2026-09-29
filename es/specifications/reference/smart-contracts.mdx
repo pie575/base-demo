@@ -1,0 +1,127 @@
+---
+title: "Contratos inteligentes"
+description: "Cómo funcionan los contratos inteligentes en Base, por qué Base necesita su propia compilación de Foundry y cómo desplegar un contrato en Base Sepolia con base-anvil."
+---
+
+Base es una L2 de Ethereum equivalente a la EVM. Los contratos inteligentes se escriben en Solidity o Vyper y se despliegan exactamente igual que en Ethereum: se usan el mismo bytecode, las mismas ABI y las mismas herramientas.
+
+## En qué se diferencia Base {#how-base-differs}
+
+Base añade **precompilados nativos** en direcciones fijas que amplían la EVM con funcionalidades integradas en el propio nodo, como el [estándar de tokens B20](/es/build-on-base/issue-rwa/create-an-asset-token), el PolicyRegistry y la B20 Factory. Estas direcciones no contienen bytecode de contrato, por lo que el Foundry estándar (`forge`, `cast`, `anvil`) no puede simular llamadas a ellas y se detiene con el error `call to non-contract address`.
+
+Base publica [base-anvil](https://github.com/base/base-anvil), un fork de Foundry que registra los precompilados de Base en su EVM. Instala `base-forge`, `base-cast` y `base-anvil` junto a tu conjunto de herramientas de Foundry actual sin sobrescribirla, de modo que los contratos se comportan en local igual que en Base.
+
+<Warning>
+  Para desarrollar en Base, usa la compilación de Foundry de Base (`base-forge`, `base-cast`, `base-anvil`) en lugar del Foundry estándar (`forge`, `cast`, `anvil`). Cualquier contrato que lea o escriba en un precompilado de Base (por ejemplo, uno que despliegue o llame a un [token B20](/es/build-on-base/issue-rwa/create-an-asset-token)) fallará con el Foundry estándar.
+</Warning>
+
+## Configura tu entorno {#set-up-your-environment}
+
+1. Crea un directorio para el nuevo proyecto
+
+```bash Terminal
+mkdir my-base-project && cd my-base-project
+```
+
+2. Instala la compilación de Foundry de Base
+
+```bash Terminal
+curl -L https://raw.githubusercontent.com/base/base-anvil/HEAD/foundryup/install | bash
+base-foundryup
+```
+
+Esto instala `base-forge`, `base-cast` y `base-anvil` junto a tu conjunto de herramientas de Foundry actual.
+
+3. Inicializa un nuevo proyecto de Solidity
+
+```bash Terminal
+base-forge init
+```
+
+Tu proyecto está listo. En `src/Counter.sol` encontrarás un contrato `Counter` de ejemplo, que puedes reemplazar por tus propios contratos.
+
+<Tip>
+  La compilación de Foundry de Base ofrece las mismas herramientas que Foundry estándar, pero con los precompilados de Base integrados: `base-forge` (compilar y probar), `base-cast` (interactuar con la cadena) y `base-anvil` (ejecutar un nodo local de Base). Obtén más información sobre [base-anvil](https://github.com/base/base-anvil) y sobre el conjunto de herramientas de [Foundry](https://book.getfoundry.sh/) en el que se basa.
+</Tip>
+
+## Configurar la conexión a un nodo y la clave de despliegue {#configure-a-node-connection-and-deployer-key}
+
+1. Crea un archivo `.env` en la raíz de tu proyecto y agrega las URL de RPC de Base
+
+```bash .env
+BASE_RPC_URL="https://mainnet.base.org"
+BASE_SEPOLIA_RPC_URL="https://sepolia.base.org"
+```
+
+2. Carga las variables
+
+```bash Terminal
+source .env
+```
+
+3. Guarda la clave privada de tu cuenta de despliegue en el seguro almacén de claves (keystore) de Foundry
+
+```bash Terminal
+base-cast wallet import deployer --interactive
+```
+
+Introduce tu clave privada y una contraseña cuando se te solicite. La clave se almacena en `~/.foundry/keystores`, que git no rastrea.
+
+<Warning>
+  Nunca compartas tu clave privada ni la subas a un repositorio (commit). Mantenla siempre segura y manéjala con cuidado.
+</Warning>
+
+<Tip>
+  Base Sepolia es la red de pruebas de Base y la que usaremos en el resto de esta guía. Consigue ETH de Base Sepolia gratis en alguno de los [faucets que se indican aquí](/base-chain/network-information/network-faucets).
+</Tip>
+
+## Desplegar un contrato {#deploy-a-contract}
+
+1. (Opcional) Haz una ejecución de prueba (dry run) del despliegue para verificar tu configuración:
+
+```bash Terminal
+base-forge create ./src/Counter.sol:Counter --rpc-url $BASE_SEPOLIA_RPC_URL --account deployer
+```
+
+Esto simula el despliegue sin transmitir la transacción. Verás los detalles de la transacción y la ABI del contrato, pero no se desplegará nada.
+
+2. Despliega el contrato añadiendo la opción `--broadcast`:
+
+```bash Terminal
+base-forge create ./src/Counter.sol:Counter --rpc-url $BASE_SEPOLIA_RPC_URL --account deployer --broadcast
+```
+
+El formato de la ruta del contrato es `<contract-path>:<contract-name>`.
+
+3. Si el despliegue se realiza correctamente, verás la dirección del contrato desplegado:
+
+```text Example Output
+Deployer: 0x...
+Deployed to: 0x...  <-- DIRECCIÓN DE TU CONTRATO
+Transaction hash: 0x...
+```
+
+## Verifica tu despliegue {#verify-your-deployment}
+
+1. Consulta la transacción en [Sepolia Basescan](https://sepolia.basescan.org/) con el hash de la transacción.
+2. Lee el estado del contrato desde la línea de comandos:
+
+```bash Terminal
+base-cast call <CONTRACT_ADDRESS> "number()(uint256)" --rpc-url $BASE_SEPOLIA_RPC_URL
+```
+
+Esto devuelve el valor inicial de la variable `number` del contrato `Counter`, que es `0`.
+
+## Próximos pasos {#next-steps}
+
+<CardGroup cols={2}>
+  <Card title="Estándar de token B20" icon="coins" href="/es/build-on-base/issue-rwa/create-an-asset-token">
+    Lanza tokens con el estándar nativo de Base, integrado a nivel de precompilado.
+  </Card>
+
+  <Card title="Conéctate a Base" icon="plug" href="/base-chain/quickstart/connecting-to-base">
+    Detalles de la red, endpoints RPC y configuración de wallets.
+  </Card>
+</CardGroup>
+
+Usa [wagmi](https://wagmi.sh) o [viem](https://viem.sh) para conectar tu frontend con tus contratos, y consulta la [guía de scripting de Foundry](https://www.getfoundry.sh/forge/scripting) para interactuar con ellos desde la línea de comandos.

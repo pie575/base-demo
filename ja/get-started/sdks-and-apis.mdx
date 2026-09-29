@@ -1,0 +1,47 @@
+---
+title: "SDK と API"
+keywords: ["Base SDKs", "Base API reference", "Base JSON-RPC", "Flashblocks API", "wallet SDK migration", "Wallet MCP"]
+description: "構築する内容に合わせて、Base の SDK、API、CLI を選択しましょう。"
+---
+
+アプリケーションに必要なインターフェースが決まっている場合は、これらのリファレンスを参照してください。Base が管理する各インターフェースを比較したい場合は「SDK と API の概要」から始めてください。ローカル開発やチェーンの RPC メソッドに直接進むこともできます。
+
+## 統合方法を選択する {#choose-an-integration-surface}
+
+<CardGroup cols={2}>
+  <Card title="SDK と API の概要" icon="book" href="/ja/sdks/overview">
+    Base Chain API、本人確認、コマンドラインツールを比較します。
+  </Card>
+
+  <Card title="移行済みドキュメント" icon="arrow-up-right-from-square" href="/ja/sdks/migrated-products">
+    ウォレット SDK と Wallet MCP のドキュメントは、Coinbase Developer Platform で確認できます。
+  </Card>
+
+  <Card title="base-anvil CLI" icon="terminal" href="/ja/sdks/base-anvil">
+    Base の Foundry ツールチェーンを使用して、Base ネイティブのコントラクトをローカルでビルド・テストできます。
+  </Card>
+</CardGroup>
+
+## チェーンを呼び出す {#call-the-chain}
+
+<CardGroup cols={2}>
+  <Card title="Base RPC の概要" icon="network-wired" href="/ja/base-chain/api-reference/rpc-overview">
+    標準のブロックデータと 200 ms の Flashblock プレコンファメーションのどちらを使うかを選択します。
+  </Card>
+
+  <Card title="Ethereum JSON-RPC" icon="code" href="/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_blockNumber">
+    チェーンの状態の読み取り、ガスの見積もり、トランザクションの送信、ログのクエリ、イベントの購読を行います。
+  </Card>
+
+  <Card title="Flashblocks API" icon="bolt" href="/ja/base-chain/api-reference/flashblocks-api/flashblocks-api-overview">
+    プレコンファメーション対応のメソッドとストリームを使って、1 秒未満でアプリケーションにフィードバックを返します。
+  </Card>
+
+  <Card title="Debug API" icon="bug" href="/ja/base-chain/api-reference/debug-api/debug_traceTransaction">
+    コントラクトの実行をデバッグする際に、トランザクションのトレースやブロックの再実行を行います。
+  </Card>
+
+  <Card title="Builder Stack" icon="grid-2" href="/ja/get-started/builder-stack">
+    Base のビルダーを支援する RPC、データ、セキュリティなどのサービスプロバイダーを探せます。
+  </Card>
+</CardGroup>

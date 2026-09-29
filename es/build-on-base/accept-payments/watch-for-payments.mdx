@@ -1,0 +1,86 @@
+---
+title: "Supervisar pagos"
+keywords: ["supervisar Commerce Payments", "eventos de AuthCaptureEscrow", "listener de pagos en Base", "backfill de eventos de pago"]
+description: "Supervisa los eventos de escrow, recupera los bloques perdidos y procesa de forma idempotente los cambios confirmados del ciclo de vida."
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+Convierte los logs de `AuthCaptureEscrow` en un feed de pagos persistente. Una suscripción WebSocket ofrece notificaciones de baja latencia, mientras que un backfill superpuesto de bloques confirmados actúa como fuente canónica de verdad tras desconexiones o reorgs.
+
+<Info>
+  El flujo de pago de esta guía se basa en el [Commerce Payments Protocol](https://github.com/base/commerce-payments).
+</Info>
+
+## Demostración {#demo}
+
+<PaymentsDemo flow="watch" />
+
+<Tip>
+  La demostración anterior es solo una simulación. Si quieres ver demostraciones onchain en Vibenet, visita [demostraciones de la cadena Base](https://chain.base.org/demos).
+</Tip>
+
+## Suscripción y backfill {#subscribe-and-backfill}
+
+Monitoriza el contrato de escrow v1.1.0 para detectar los eventos `PaymentAuthorized`, `PaymentCharged`, `PaymentCaptured`, `PaymentVoided`, `PaymentReclaimed` y `PaymentRefunded`. Todos comparten el campo indexado `paymentInfoHash`.
+
+{/* sample: watch-payments-ts */}
+
+```typescript TypeScript worker lines wrap expandable highlight={13-18,22,26-29}
+export async function watchPayments(
+  startBlock: bigint,
+  store: PaymentEventStore,
+) {
+  async function backfillConfirmed() {
+    const head = await client.getBlockNumber();
+    if (head <= confirmations) return;
+    const toBlock = head - confirmations;
+    const cursor = await store.lastScannedBlock();
+    const fromBlock = cursor && cursor > startBlock + confirmations
+      ? cursor - confirmations
+      : startBlock;
+    const logs = await client.getContractEvents({
+      address: AUTH_CAPTURE_ESCROW,
+      abi: authCaptureEscrowAbi,
+      fromBlock,
+      toBlock,
+      strict: true,
+    });
+
+    // Reemplaza el rango solapado y avanza el cursor en una única transacción de base de datos.
+    await store.replaceRange(fromBlock, toBlock, logs);
+  }
+
+  await backfillConfirmed();
+  return client.watchContractEvent({
+    address: AUTH_CAPTURE_ESCROW,
+    abi: authCaptureEscrowAbi,
+    onLogs: backfillConfirmed,
+    onError: (error) => console.error("Payment watcher failed", error),
+  });
+}
+```
+
+Implementa `replaceRange` como una única transacción de base de datos: elimina las filas del solapamiento, inserta los logs canónicos actuales, reconstruye el estado de pagos afectado y avanza el cursor solo cuando todas las escrituras se hayan completado correctamente.
+
+<Check>
+  Tras reconexiones o reorgs cortos, el escaneo del solapamiento converge en los eventos canónicos del protocolo sin aplicar ningún log dos veces.
+</Check>
+
+<Warning>
+  No mezcles las ABI de eventos de v1.0 y v1.1. Los topics de los eventos `PaymentCharged` y `PaymentCaptured` cambiaron cuando la liquidación pasó de usar `feeBps` a un `feeAmount` absoluto.
+</Warning>
+
+Elige una política de confirmación acorde con tu tolerancia al riesgo. Consulta [finalidad de las transacciones](/es/specifications/transactions/transaction-finality).
+
+## Consulta también {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="Verificar un pago" icon="shield-check" href="/es/build-on-base/accept-payments/verify-a-payment">
+    Valida cada evento candidato con su pedido correspondiente.
+  </Card>
+
+  <Card title="Conciliar pagos" icon="table" href="/es/build-on-base/accept-payments/reconcile-payments">
+    Genera filas de cargos, capturas, comisiones y reembolsos.
+  </Card>
+</CardGroup>

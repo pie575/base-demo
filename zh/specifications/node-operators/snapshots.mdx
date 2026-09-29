@@ -1,0 +1,166 @@
+---
+title: 节点快照
+sidebarTitle: 快照
+description: 下载并恢复 Base 节点快照，大幅缩短节点的初始同步时间。
+---
+
+使用快照可以大幅缩短 Base 节点初始同步所需的时间。快照会定期更新。
+
+如果你正打算运行或已经在运行 Base 节点，可以从快照恢复，以加快初始同步。请仔细按照以下步骤操作。
+
+<Warning>
+  **需要操作：迁移到 reth V2 存储。** Base Mainnet 节点运营者必须在 **8 月中旬之前**完成升级并迁移到 reth V2 存储。V1 快照将在未来几周内逐步停用，请尽早安排迁移。
+
+  迁移方式有两种：
+
+  * **下载全新的 V2 快照** (推荐，速度更快) ——按照下方[从快照恢复](#restoring-from-snapshot)中的说明，使用 `base-reth-node download`。
+  * **就地迁移现有 V1 数据**——运行 `base-reth-node db migrate-v2`。这种方式的耗时预计会比下载**长得多**，且不支持非归档节点。
+
+  迁移可能需要较长时间，因此我们强烈建议立即着手。详情请参阅 [v1.2.0 发布说明](https://github.com/base/base/releases/tag/v1.2.0)。
+</Warning>
+
+## 从快照恢复 {#restoring-from-snapshot}
+
+以下步骤假定你当前位于克隆下来的 [base/base](https://github.com/base/base) 目录中 (即包含 `docker-compose.yml` 的目录) 。
+
+<Note>
+  以下步骤使用 `base-reth-node` CLI 下载快照。如果尚未安装该工具，请先按照[安装说明](https://github.com/base/base#install-binaries)完成安装。
+</Note>
+
+1. **准备数据目录**：
+   * **首次运行 Docker 之前**，请在宿主机上创建数据目录，用于映射到 Docker 容器中。该目录必须与 `docker-compose.yml` 文件中的 `volumes` 映射保持一致。
+     ```bash
+     mkdir ./reth-data
+     ```
+   * 如果您之前运行过节点且已有数据目录，请先**停止节点** (`docker compose down`) ，清空现有目录中的&#95;内容&#95; (例如 `rm -rf ./reth-data/*`) ，然后继续后续步骤。
+
+2. **选择链**：使用 `--chain` 标志选择网络
+
+   | 网络           | `--chain` 值    |
+   | ------------ | -------------- |
+   | Base Mainnet | `base`         |
+   | Base Sepolia | `base-sepolia` |
+
+3. **下载快照**：V2 快照不再是单个归档文件，而是拆分为许多较小的分段文件。CLI 只列出一个 `archive` 快照，因为它包含全部可用文件。`full` 和 `minimal` 选项则从该归档中选取逐级缩小的子集：
+
+   | 配置          | 标志          | 包含内容                                              | 适用场景                    |
+   | ----------- | ----------- | ------------------------------------------------- | ----------------------- |
+   | **Minimal** | `--minimal` | 启动所需的最小数据集：最新状态 + 区块头 (以及必需的最少历史数据) 。             | 希望下载最快、体积最小，且不需要历史数据。   |
+   | **Full**    | `--full`    | 与默认全节点修剪设置相匹配的全节点数据 (状态、区块头，以及限定窗口内的交易、收据和历史数据) 。 | 需要标准全节点，但无需保留完整归档。      |
+   | **Archive** | `--archive` | 全部可用数据——所有交易、收据以及账户/存储历史，不做任何修剪。                  | 需要完整的历史数据 (例如归档查询、索引) 。 |
+
+   <Note>
+     请确保有足够的可用磁盘空间来下载快照&#95;并&#95;解压其内容。解压后的数据会比归档文件大得多。
+   </Note>
+
+   上述预设是便捷的默认配置，可在 [chain.base.org/snapshots](https://chain.base.org/snapshots) 获取。您仍可通过 `.env.mainnet` (或 `.env.sepolia`) 中的 [`RETH_PRUNING_ARGS` 变量](https://github.com/base/base/blob/main/.env.mainnet#L34)配置自定义修剪标志，但必须先下载归档快照，再配置自定义修剪参数。
+
+   ```bash
+   # Base Mainnet 上的最小节点
+   base-reth-node download --minimal --datadir ./reth-data --chain base --resumable
+
+   # Base Sepolia 上的全节点
+   base-reth-node download --full --datadir ./reth-data --chain base-sepolia --resumable
+   ```
+
+   另外，如果是归档节点，也可以运行 `base-reth-node db migrate-v2`。不过这预计会比直接下载耗时**长得多**，且 `migrate-v2` 不支持 `--resumable`。
+
+4. **&#x20;(可选) - 调整下载并发数：**
+
+   `--download-concurrency` 标志用于控制整个快照任务中同时进行的 HTTP 下载数量。
+   默认值为 `8`，对大多数机器而言是不错的基准。
+
+   如果您的硬件配置较高，可以放心调大该值以加快下载。一条实用的经验法则是设为
+   **物理 CPU 核心数的 2 倍**：
+
+   ```bash
+   # 示例：16 个物理核心的机器
+   base-reth-node download --full --datadir ./reth-data --chain base --download-concurrency 32
+   ```
+
+5. <span id="start-the-node" />**启动节点**：快照数据就绪后，返回 Base 节点文件夹的根目录并启动节点：
+
+   ```bash
+   cd ..
+
+   # 拉取已发布的镜像
+   docker compose up
+
+   # 或在本地编译 base/base 代码树
+   docker compose up --build
+   ```
+
+   节点应从快照中的最后一个区块开始同步。
+
+6. **验证**：查看节点日志 (`docker compose logs -f <service_name>`) ，或使用[同步监控](/zh/specifications/node-operators/run-a-node#syncing)命令，确认节点从快照的区块高度开始同步。
+
+## 证明快照 {#proofs-snapshots}
+
+<Note>
+  V2 证明快照即将推出。
+</Note>
+
+如果你正在运行[历史证明 ExEx](/zh/specifications/node-operators/run-a-node#enable-historical-proofs-rpcs)，可以使用证明数据库的快照，省去 24-48 小时的回填过程。
+
+证明快照目前仍以归档文件形式分发，因此你需要使用 `aria2c`。这是一款支持断点续传的下载工具，能够应对 Cloudflare 周期性造成的连接中断。如果尚未安装，请执行：
+
+<CodeGroup>
+  ```bash macOS
+  brew install aria2
+  ```
+
+  ```bash Ubuntu / Debian
+  sudo apt-get install aria2
+  ```
+</CodeGroup>
+
+| 网络  | 下载命令                                                                                                                                      |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| 测试网 | `aria2c -c -x 16 -s 16 "https://sepolia-reth-proofs-snapshots.base.org/$(curl -s https://sepolia-reth-proofs-snapshots.base.org/latest)"` |
+| 主网  | `aria2c -c -x 16 -s 16 "https://mainnet-reth-proofs-snapshots.base.org/$(curl -s https://mainnet-reth-proofs-snapshots.base.org/latest)"` |
+
+<Note>
+  请确保有足够的可用磁盘空间，既能下载快照归档文件 (`.tar.gz` / `.tar.zst` 文件) ，*又*能解压其内容。解压后的数据会比归档文件大得多。
+</Note>
+
+下载完成后，解压归档文件。请将 `snapshot-filename` 替换为实际下载的文件名：
+
+```bash Extract the Snapshot
+tar -xzvf <snapshot-filename.tar.gz>
+
+# 如为 .tar.zst 文件
+tar -I zstd -xvf <snapshot-filename.tar.zst>
+```
+
+解压后通常会生成一个 `reth` 目录。请将该目录下的*内容*移动到你在上一节 [**准备数据目录**](#restoring-from-snapshot) 中创建的数据目录中：
+
+```bash Move Chain Data
+mv ./reth/* ./reth-data/
+rm -rf ./reth    # 清理解压后留下的空目录
+```
+
+目标是让链数据目录 (例如 `chaindata`、`nodes`、`segments` 等) 直接位于 `./reth-data` 下，而不是嵌套在子文件夹中。确认无误后，即可放心删除已下载的快照压缩包 (`.tar.gz` 文件) ，以释放磁盘空间。
+
+然后回到上文的 **启动节点** 部分继续操作。
+
+## 常见问题 {#faq}
+
+<AccordionGroup>
+  <Accordion title="Full 节点与 Minimal 节点有什么区别？">
+    在 Reth 中，“full”节点其实只是采用特定预设的修剪节点，并不是一种独立的节点类型。Reth 的 `--full` 预设会保留最近的 **10,064 个区块** (在以太坊上约为 1.4 天；由于 Base 出块更快，在 Base 上约为 5-6 小时) 。
+
+    如需进一步了解 Full 节点与 Minimal 节点的区别，请参阅 [Reth 文档](https://reth.rs/run/storage/minimal)。
+  </Accordion>
+
+  <Accordion title="如何在 v2 存储下沿用我之前的修剪节点配置？">
+    如果你的 v1 存储修剪节点的修剪距离超过 10064 个区块，则必须先拉取 Archival 快照，再添加修剪参数。
+
+    Full 快照无法满足要求，因为它只包含最近的 10064 个区块。
+  </Accordion>
+
+  <Accordion title="出现提示：Archive Extracted, but Output Verification Failed.">
+    这是因为在你下载期间，有更新的快照上传了。请中断下载命令并重新运行。
+
+    注意：下载操作是幂等的，因此不会重复下载已下载的文件，只会获取差异部分。
+  </Accordion>
+</AccordionGroup>

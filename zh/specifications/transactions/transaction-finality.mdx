@@ -1,0 +1,90 @@
+---
+title: 交易最终性
+description: 详细介绍 Base 上的交易最终性。
+---
+
+最终性是指发送到 Base 的交易变得不可逆转的时间点。达到最终性后，可以确保交易不会被回滚或丢失。
+
+对于修改 Base L2 状态的普通交易和将资金从 Base L2 提取到 Ethereum L1 的交易，最终性的运作方式并不相同。
+
+<Note>
+  **只有将资金从 Base 提取到 Ethereum 的交易才需要等待 7 天。** Base 内的常规交易 (例如兑换或转账) &#95;无需&#95;等待 7 天。
+</Note>
+
+## Base L2 交易的最终性 {#finality-for-base-l2-transactions}
+
+本文介绍 Base 上交易的最终性，但不包括将资金从 Base 转移到 Ethereum L1 的提款交易。
+
+对于 Base 上的交易，最终性并不是某个固定的等待时长，而是分为 4 个阶段，安全保障逐级增强。
+
+<Frame>
+  ![Base 上交易最终性各阶段示意图](/images/transaction-finality/base-tx-finality.jpg)
+</Frame>
+
+<Steps>
+  <Step title="纳入 Flashblock：约 200ms" titleSize="h3">
+    大约 200ms 后，交易会被 Base sequencer 打包进预确认区块 (Flashblock) 。
+
+    <Accordion title="重组概率低于 0.001%。">
+      * Flashblocks 发生重组的概率低于 0.001%
+      * 你可以在我们的[公开统计页面](https://base.org/stats)中查看重组历史。
+    </Accordion>
+  </Step>
+
+  <Step title="纳入 L2 区块：约 2s" titleSize="h3">
+    大约 2 秒后，sequencer 已将交易打包进 L2 区块，并分发给验证节点。
+
+    <Accordion title="重组概率接近 0%。">
+      * 迄今为止，Base 仅发生过一次 L2 区块重组，涉及的交易占比为 0.0000003%。相关数据可[在此查看](https://base.blockscout.com/blocks?tab=reorgs)
+    </Accordion>
+  </Step>
+
+  <Step title="纳入 L1 批次：约 2m" titleSize="h3">
+    大约 2 分钟后，包含该交易的 Base 批次已发布到 Ethereum。
+
+    <Accordion title="重组概率实际上为 0%。">
+      * 已批量提交到 Ethereum L1 的 L2 区块从未发生过重组。
+      * **Ethereum L1 发生重组时，Base L2 链不必随之重组。** sequencer 和验证节点会与 Ethereum 链头保持一段可配置的延迟，因此常见的 L1 重组不会产生任何影响。即使 Ethereum 发生较大规模的重组，Base 也可以在 L1 上重新提交批次数据，而无需更改已排序的 L2 区块。
+    </Accordion>
+  </Step>
+
+  <Step title="L1 批次最终性：约 20m" titleSize="h3">
+    包含该交易的 Ethereum L1 批次已超过 2 个 epoch，即 64 个 L1 区块。
+
+    <Accordion title="重组概率实际上为 0%。">
+      * 已达到 L1 批次最终性的 L2 区块与 Ethereum 已最终确定的区块享有同等的防重组保护，实际上不可能被回滚。
+    </Accordion>
+  </Step>
+</Steps>
+
+## 提款交易的最终性 {#finality-for-withdrawal-transactions}
+
+本节介绍将资金从 Base 转移到 Ethereum 的交易的最终性
+
+**只有提款到 Ethereum 的交易需要等待 7 天完成最终确认，之后资金才能释放到 Ethereum L1 上的地址。** 这使 Base 的故障证明 (Fault Proof) 系统能够为桥接到 Base 的资金提供极高的安全保障。
+
+<Accordion title="这 7 天内会发生什么？">
+  当一笔交易发起从 Base 到 Ethereum 的提款时，资金会从 Base 上的账户余额中扣除。随后，一个无需许可的“提议者” (proposer) 必须向 Ethereum 提交证明，表明 Base 中包含这笔提款。
+
+  然而，由于 Ethereum 和 Base 是相互独立的区块链，Ethereum 无法原生确认 Base 上发生了什么。因此，系统设有 7 天的窗口期，在此期间，任何无需许可的“挑战者” (challenger) 都可以对其认为存在恶意的提议发起争议。如果 7 天内无人发起挑战，即可基于已最终确认的输出根 (output root) 证明该提款，并将资金释放给 L1 上的接收方。但如果有人发起挑战，提议者和挑战者将进行所谓的故障争议博弈 (Fault Dispute Game) 。在该博弈中，双方需要不断追加保证金，直至最终决出胜者。如果提议者获胜，该输出根将被最终确认，并可用于证明提款 (从而在 L1 上释放资金) 。如果挑战者获胜，该输出提议将失效。
+
+  该系统只需存在一个诚实方即可保证安全。Base 将始终运行诚实的提议者和挑战者。
+
+  注意：如果挑战者在争议博弈中获胜，L2 链的状态不会发生重组 (reorg) 。该输出提议会被标记为无效，所有基于它证明的提款都无法完成最终确认。这些提款需要基于另一个有效的输出根重新证明。
+</Accordion>
+
+## 常见问题 {#faq}
+
+<AccordionGroup>
+  <Accordion title="如果 Ethereum 发生重组，是否会导致 Base 也发生重组？">
+    几乎在所有情况下都不会。Base 可以透明地将批次数据重新提交到 Ethereum，而 L2 链会继续正常推进。
+  </Accordion>
+
+  <Accordion title="存款交易需要多长时间才能最终确定？">
+    将资金从 Ethereum L1 转入 Base 的交易必须在 Ethereum 上发起，通常会在 3 分钟内被 Base sequencer 打包上链。
+  </Accordion>
+
+  <Accordion title="如果挑战者赢得争议博弈，L2 链是否会发生重组？">
+    不会。被挑战的输出提议会被标记为无效，所有使用了其输出根的操作也会随之失效。具体来说，从 Base 提款到 L1 时，若此前是基于该输出根完成的证明，现在必须改为基于另一个有效的输出根重新证明。
+  </Accordion>
+</AccordionGroup>

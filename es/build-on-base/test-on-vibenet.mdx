@@ -1,0 +1,103 @@
+---
+title: "Pruebas en Vibenet"
+description: "Desarrolla y prueba con las funcionalidades más recientes a nivel de cadena de Base en Vibenet, la red experimental de vista previa de Base, y consulta qué está activo en chain.base.org/vibenet."
+---
+
+Vibenet es la red experimental de vista previa de Base: una red de desarrollo (devnet) en la que las nuevas funcionalidades a nivel de cadena se activan antes de llegar a Sepolia o Mainnet. Úsala para desarrollar con las capacidades más avanzadas de Base.
+
+<Warning>
+  Vibenet está pensada únicamente para experimentar. No está destinada a entornos de producción ni a aplicaciones dirigidas a usuarios, y su estado puede restablecerse sin previo aviso.
+</Warning>
+
+## Descubre qué está disponible en Vibenet {#see-whats-live-on-vibenet}
+
+[chain.base.org/vibenet](https://chain.base.org/vibenet) es el punto central de Vibenet: sigue las funcionalidades más recientes a medida que se lanzan, consulta el explorador de bloques y solicita ETH de testnet en el faucet.
+
+<iframe src="https://chain.base.org/vibenet" title="Base Vibenet, chain.base.org" width="100%" height="640" style={{ border: "1px solid rgba(128,128,128,0.25)", borderRadius: "12px" }} loading="lazy" referrerpolicy="strict-origin-when-cross-origin" />
+
+<Note>
+  Si el contenido incrustado no se carga, abre [chain.base.org/vibenet](https://chain.base.org/vibenet) directamente en una pestaña nueva.
+</Note>
+
+## Detalles de la red {#network-details}
+
+|                           |                                                                            |
+| :------------------------ | :------------------------------------------------------------------------- |
+| **Nombre de la red**      | Base Vibenet                                                               |
+| **Endpoint RPC**          | [rpc.vibes.base.org](https://rpc.vibes.base.org)                           |
+| **Endpoint WebSocket**    | `wss://rpc.vibes.base.org/ws`                                              |
+| **ID de cadena**          | 84538453                                                                   |
+| **Símbolo de la moneda**  | ETH                                                                        |
+| **Faucet**                | [chain.base.org/vibenet/faucet](https://chain.base.org/vibenet/faucet)     |
+| **Explorador de bloques** | [chain.base.org/vibenet/explorer](https://chain.base.org/vibenet/explorer) |
+
+Para añadir Vibenet a tu billetera, consulta [Conectarse a Base](/base-chain/quickstart/connecting-to-base).
+
+## Obtener ETH de testnet {#get-testnet-eth}
+
+Las transacciones en Vibenet requieren gas. Solicita ETH de testnet en el [faucet de Vibenet](https://chain.base.org/vibenet/faucet) u obtenlo de forma programática:
+
+```bash Terminal
+curl -X POST https://api.vibes.base.org/api/vibenet/faucet/drip \
+  -H "content-type: application/json" \
+  -d '{"address":"0xYourAddress"}'
+```
+
+## Streaming con WebSockets {#stream-with-websockets}
+
+Vibenet expone un endpoint WebSocket público en `wss://rpc.vibes.base.org/ws`. Suscríbete con `eth_subscribe` para recibir actualizaciones push en lugar de hacer polling:
+
+* **`newHeads`**: un nuevo evento por cada bloque, para seguir el estado de la cadena y de los bloques.
+* **`logs`**: eventos de contratos filtrados por dirección y por topics indexados, para seguir el estado de la aplicación.
+
+```javascript newHeads subscription lines wrap expandable
+import WebSocket from "ws";
+
+const ws = new WebSocket("wss://rpc.vibes.base.org/ws");
+
+ws.on("open", () => {
+  ws.send(JSON.stringify({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "eth_subscribe",
+    params: ["newHeads"],
+  }));
+});
+
+ws.on("message", (data) => {
+  const msg = JSON.parse(data.toString());
+  if (msg.method === "eth_subscription") {
+    console.log("new head:", msg.params.result.number);
+  }
+});
+```
+
+Con bloques de 200 ms, un sondeo cada 250–1000 ms puede saltarse varios bloques, así que usa las notificaciones push por WebSocket como fuente principal. Mantén pocas conexiones de larga duración, multiplexa las suscripciones y las llamadas JSON-RPC habituales en una sola conexión, y reserva el sondeo para la conciliación (saldos, comisiones y comprobaciones de estado). Conserva una vía de llamadas RPC por HTTPS como respaldo por si se cae el socket.
+
+<Note>
+  Este WebSocket público solo está disponible en Vibenet. Base no ofrece un endpoint RPC WebSocket público y gratuito para Base Mainnet ni para Base Sepolia; en esas redes, los endpoints públicos son solo HTTP. Para acceder por WebSocket en Sepolia o Mainnet, ejecuta tu propio nodo o usa un proveedor compatible con WebSocket del [Builder Stack](/es/get-started/builder-stack).
+</Note>
+
+## Disponible ahora {#whats-available-now}
+
+<CardGroup cols={2}>
+  <Card title="Estándar de tokens B20" icon="coins" href="/es/build-on-base/issue-rwa/create-an-asset-token">
+    El estándar de tokens nativo de Base: roles, límites de suministro, control de acceso basado en políticas y memos integrados en la propia cadena.
+  </Card>
+
+  <Card title="Bloques nativos de 200 ms" icon="clock" href="/es/upgrades/denim/200ms-blocks">
+    Prueba los bloques canónicos de 200 ms y migra tus integraciones de Flashblocks.
+  </Card>
+</CardGroup>
+
+## Próximos pasos {#next-steps}
+
+<CardGroup cols={2}>
+  <Card title="Conéctate a Base" icon="plug" href="/base-chain/quickstart/connecting-to-base">
+    Agrega Vibenet a tu billetera y a tu entorno de desarrollo.
+  </Card>
+
+  <Card title="Lanza un token B20" icon="rocket" href="/es/build-on-base/issue-rwa/create-an-asset-token">
+    Despliega un token en Vibenet con una sola llamada al contrato factory.
+  </Card>
+</CardGroup>

@@ -1,0 +1,96 @@
+---
+title: "Builder Codes para desarrolladores de agentes"
+sidebarTitle: "Para desarrolladores de agentes"
+description: "Atribuye las transacciones onchain de tu agente de IA a tu identidad en Base y desbloquea funciones de analítica y tablas de clasificación."
+---
+
+Los agentes de IA operan de forma autónoma y envían transacciones sin que un usuario tenga que activar manualmente cada una. Con los Builder Codes, puedes atribuir toda esa actividad a la identidad de tu agente en Base.
+
+## Por qué los agentes necesitan Builder Codes {#why-agents-need-builder-codes}
+
+* **Atribución**: cada transacción que envía tu agente queda vinculada a tu identidad en el registro de Base. Sin esta atribución, la actividad onchain de tu agente es anónima.
+* **Analíticas**: haz un seguimiento del volumen de transacciones, el alcance entre usuarios y la conversión onchain de tu agente en [base.dev](https://base.dev).
+* **Visibilidad**: los agentes con Builder Codes pueden aparecer en espacios de descubrimiento como el App Leaderboard de Base y en las secciones destacadas del ecosistema.
+
+## Cómo funciona {#how-it-works}
+
+Un Builder Code es un identificador único (p. ej., `bc_a1b2c3d4`) que se añade al calldata de las transacciones de tu agente como sufijo [ERC-8021](https://eip.tools/eip/8021). Los contratos inteligentes ignoran el sufijo, y son los indexadores offchain los que lo extraen posteriormente. El coste adicional de gas es mínimo (16 de gas por cada byte distinto de cero).
+
+## Referencia de la API {#api-reference}
+
+### Registra tu agente {#register-your-agent}
+
+```http Register an agent Builder Code
+POST /v1/agents/builder-codes
+```
+
+No requiere autenticación.
+
+| Campo           | Tipo   | Obligatorio | Descripción                                          |
+| --------------- | ------ | ----------- | ---------------------------------------------------- |
+| `walletAddress` | string | Sí          | Dirección de la billetera EVM de tu agente (`0x...`) |
+
+Devuelve el builder code correspondiente a la billetera indicada. Una misma dirección de billetera siempre devuelve el mismo código.
+
+```bash Terminal
+curl -X POST https://api.base.dev/v1/agents/builder-codes \
+  -H "Content-Type: application/json" \
+  -d '{
+    "walletAddress": "<your-wallet-address>"
+  }'
+```
+
+```json Response
+{
+  "builderCode": "bc_a1b2c3d4",
+  "walletAddress": "0x..."
+}
+```
+
+<Info>
+  ¿Ya te registraste? Si vuelves a llamar a este endpoint con la misma dirección de billetera, obtendrás tu builder code existente. Puedes llamarlo sin problema en cada despliegue.
+</Info>
+
+## Uso de la skill de Base {#using-the-base-skill}
+
+Si usas una herramienta de programación con IA (Claude Code, Cursor, Codex), instala el paquete de skills de Base y deja que la skill se encargue de todo el proceso de registro:
+
+```bash Terminal
+npx skills add base/base-skills
+```
+
+Luego, pídele a tu agente: **&quot;Registra mi agente para obtener un builder code en Base.dev.&quot;**
+
+El skill se encarga de validar la billetera, llamar a la API de registro, escribir el código devuelto en `src/constants/builderCode.ts`, instalar `ox` e integrar el `dataSuffix` de ERC-8021 en tu cliente de transacciones (viem, ethers.js o un servicio gestionado).
+
+## Verificar la atribución {#verify-attribution}
+
+Para confirmar que tu Builder Code se está añadiendo correctamente:
+
+**1. Consulta base.dev**
+
+* Visita [base.dev](https://base.dev)
+* Selecciona **Onchain** en el menú desplegable de tipo de transacción
+* En la sección Total Transactions, el recuento de atribuciones aumenta cuando se procesan transacciones que incluyen tu código
+
+**2. Usa un explorador de bloques (Basescan, Etherscan, etc.)**
+
+* Busca el hash de tu transacción
+* Revisa el campo de datos de entrada (input data)
+* Comprueba que los últimos 16 bytes correspondan al patrón repetido `8021`
+* Decodifica el sufijo para confirmar que tu Builder Code está presente
+
+**3. Herramientas de código abierto**
+
+* Usa la herramienta [Builder Code Validation](https://builder-code-checker.vercel.app/)
+* Selecciona el tipo de transacción
+* Introduce el hash de la transacción o de la UserOperation
+* Haz clic en el botón **Check Attribution**
+
+## Próximos pasos {#next-steps}
+
+<CardGroup cols={2}>
+  <Card title="Descripción general de los Builder Codes" icon="book-open" href="/es/specifications/builder-codes/overview">
+    Descubre cómo funcionan los Builder Codes en aplicaciones, billeteras y agentes.
+  </Card>
+</CardGroup>

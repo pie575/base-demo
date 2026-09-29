@@ -1,0 +1,44 @@
+---
+title: 'eth_syncing'
+sidebarTitle: 'eth_syncing'
+description: '返回节点的同步状态。'
+---
+
+返回节点的同步状态。节点完全同步后返回 `false`。
+
+## 参数 {#parameters}
+
+无参数。
+
+## 返回值 {#returns}
+
+<ResponseField name="result" type="object | boolean">
+  如果节点已完全同步，则返回 `false`；否则返回同步状态对象。
+
+  <Expandable title="同步状态字段（同步进行中）">
+    <ResponseField name="startingBlock" type="string">开始同步时的区块 (十六进制) 。</ResponseField>
+    <ResponseField name="currentBlock" type="string">当前正在处理的区块 (十六进制) 。</ResponseField>
+    <ResponseField name="highestBlock" type="string">预估的最高区块 (十六进制) 。</ResponseField>
+  </Expandable>
+</ResponseField>
+
+## 示例 {#example}
+
+<CodeGroup>
+  ```json Request
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_syncing",
+    "params": [],
+    "id": 1
+  }
+  ```
+
+  ```json Response (synced)
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": false
+  }
+  ```
+</CodeGroup>

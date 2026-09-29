@@ -1,0 +1,78 @@
+---
+title: "Conciliar con memos"
+keywords: ["memo de stablecoin", "evento memo de B20", "conciliar pagos onchain", "transferWithMemo B20"]
+description: "Etiqueta las operaciones con stablecoins con una referencia onchain para poder cotejarlas con registros offchain a gran escala."
+---
+
+import { StablecoinDemo } from "/snippets/StablecoinDemo.jsx"
+
+Vincula la actividad onchain con tu contabilidad. Un **memo** adjunta una referencia `bytes32` a una operación y emite un evento `Memo` junto con ella, de modo que la conciliación se reduce a una consulta de logs en lugar de requerir una dirección de depósito para cada cliente. Cada llamada principal tiene su variante con memo: `mintWithMemo`, `burnWithMemo`, `transferWithMemo` y `transferFromWithMemo`.
+
+Si gestionas el lado del comercio y necesitas un informe de liquidación que abarque capturas, reembolsos y pagos salientes, consulta [Conciliar pagos](/es/build-on-base/accept-payments/reconcile-payments).
+
+## Demostración {#demo}
+
+<StablecoinDemo flow="reconcile" />
+
+<Tip>
+  La demostración utiliza una cuenta local generada en el navegador para enviar transacciones reales en **Base Vibenet**. Si Vibenet o sus funciones de B20 no están disponibles, cambia automáticamente a una versión ilustrativa sin conexión.
+</Tip>
+
+<Note>
+  ¿Es la primera vez que usas B20? Consulta el [estándar de tokens B20](/es/specifications/b20) para conocer los conceptos y seguir una guía completa de lanzamiento. Estos ejemplos están pensados para `base-std@1505323`, `viem@2.55.11` y Base Foundry `v1.1.1`.
+</Note>
+
+## Adjuntar y leer un memo de factura {#attach-and-read-an-invoice-memo}
+
+<CodeGroup>
+  {/* sample: stablecoin-memo-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={7,10}
+  import { hexToString, parseEventLogs, parseUnits, stringToHex, type Address } from "viem";
+  import { b20Abi } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function payWithMemo(token: Address, merchant: Address) {
+    const memo = stringToHex("invoice-8842", { size: 32 });
+    const receipt = await sendContract({
+      address: token,
+      abi: b20Abi,
+      functionName: "transferWithMemo",
+      args: [merchant, parseUnits("25", 6), memo],
+    });
+    const [event] = parseEventLogs({ abi: b20Abi, logs: receipt.logs, eventName: "Memo" });
+    return hexToString(event.args.memo, { size: 32 }).replace(/\0+$/, "");
+  }
+  ```
+
+  {/* sample: stablecoin-memo-cli */}
+
+  ```bash CLI lines wrap expandable highlight={2}
+  MEMO=$(base-cast format-bytes32-string "invoice-8842")
+  TX=$(base-cast send "$TOKEN_ADDRESS" "transferWithMemo(address,uint256,bytes32)" \
+    "$MERCHANT" 25000000 "$MEMO" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" --json | jq -r .transactionHash)
+  base-cast receipt "$TX" --rpc-url "$RPC_URL"
+  ```
+</CodeGroup>
+
+Consulta el [estándar de tokens B20](/es/specifications/b20) para ver la interfaz completa, los roles y las políticas.
+
+<Check>
+  El recibo contiene `Transfer` seguido inmediatamente de `Memo`, con `invoice-8842` codificado como `bytes32`.
+</Check>
+
+<Note>
+  Asocia cada memo a la operación inmediatamente anterior mediante `(transactionHash, logIndex - 1)`. Asegúrate de que el ID de factura offchain sea único.
+</Note>
+
+## Consulta también {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="Solicitar un pago de Commerce" icon="credit-card" href="/es/build-on-base/accept-payments/request-a-payment">
+    Usa un collector compatible cuando las políticas del token permitan transferencias de pagos del protocolo.
+  </Card>
+
+  <Card title="Consultar eventos de B20 (CDP SQL API)" icon="database" href="https://docs.cdp.coinbase.com/data/sql-api/b20-events">
+    Concilia a gran escala con la CDP SQL API.
+  </Card>
+</CardGroup>

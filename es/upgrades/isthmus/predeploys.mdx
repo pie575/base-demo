@@ -1,0 +1,35 @@
+---
+title: "Predeploys"
+description: "Cambios en los predeploys introducidos por la actualización Isthmus, incluidas las modificaciones de L1Block y el nuevo contrato OperatorFeeVault."
+---
+
+## Descripción general {#overview}
+
+### L1Block {#l1block}
+
+#### Interfaz {#interface}
+
+##### `setIsthmus` {#setisthmus}
+
+Esta función está pensada para invocarse una sola vez en el bloque de activación de la actualización de red Isthmus.
+Solo DEBE poder invocarla `DEPOSITOR_ACCOUNT`, y una única vez. Al invocarse, DEBE
+llamar a cada getter de la configuración específica de la red y guardar los datos devueltos (returndata) en el almacenamiento.
+
+### GasPriceOracle {#gaspriceoracle}
+
+A partir de la actualización Isthmus, se incorpora un nuevo método: `getOperatorFee(uint256)`. Este método
+devuelve la comisión del operador correspondiente al `gasUsed` indicado. El cálculo de la comisión del operador se rige por la fórmula
+descrita en la sección [Comisión del operador](./exec-engine#operator-fee) de la especificación del motor de ejecución.
+
+El valor que devuelve `getOperatorFee(uint256)` está limitado al valor máximo de `U256`.
+
+### OperatorFeeVault {#operatorfeevault}
+
+Este vault implementa `FeeVault`, al igual que `BaseFeeVault`, `SequencerFeeVault` y `L1FeeVault`.
+No se requiere ninguna lógica especial para depositar o retirar fondos.
+
+Su dirección será `0x420000000000000000000000000000000000001b`.
+
+Consulta también [Fee Vaults](./exec-engine#fee-vaults).
+
+## Consideraciones de seguridad {#security-considerations}

@@ -1,0 +1,1064 @@
+---
+title: "導出"
+description: "L2チェーン導出パイプラインの仕様。L1データとシーケンサーバッチからL2ブロックを決定論的に導出する仕組みを説明します。"
+---
+
+[g-derivation]: /specifications/reference/glossary#l2-chain-derivation
+
+[g-payload-attr]: /specifications/reference/glossary#payload-attributes
+
+[g-block]: /specifications/reference/glossary#block
+
+[g-exec-engine]: /specifications/reference/glossary#execution-engine
+
+[g-reorg]: /specifications/reference/glossary#chain-re-organization
+
+[g-receipts]: /specifications/reference/glossary#receipt
+
+[g-deposit-contract]: /specifications/reference/glossary#deposit-contract
+
+[g-deposited]: /specifications/reference/glossary#deposited-transaction
+
+[g-l1-attr-deposit]: /specifications/reference/glossary#l1-attributes-deposited-transaction
+
+[g-l1-origin]: /specifications/reference/glossary#l1-origin
+
+[g-user-deposited]: /specifications/reference/glossary#user-deposited-transaction
+
+[g-deposits]: /specifications/reference/glossary#deposits
+
+[g-sequencing]: /specifications/reference/glossary#sequencing
+
+[g-sequencer]: /specifications/reference/glossary#sequencer
+
+[g-sequencing-epoch]: /specifications/reference/glossary#sequencing-epoch
+
+[g-sequencing-window]: /specifications/reference/glossary#sequencing-window
+
+[g-sequencer-batch]: /specifications/reference/glossary#sequencer-batch
+
+[g-l2-genesis]: /specifications/reference/glossary#l2-genesis-block
+
+[g-l2-chain-inception]: /specifications/reference/glossary#l2-chain-inception
+
+[g-l2-genesis-block]: /specifications/reference/glossary#l2-genesis-block
+
+[g-batcher-transaction]: /specifications/reference/glossary#batcher-transaction
+
+[g-avail-provider]: /specifications/reference/glossary#data-availability-provider
+
+[g-batcher]: /specifications/reference/glossary#batcher
+
+[g-l2-output]: /specifications/reference/glossary#l2-output-root
+
+[g-fault-proof]: /specifications/reference/glossary#fault-proof
+
+[g-channel]: /specifications/reference/glossary#channel
+
+[g-channel-frame]: /specifications/reference/glossary#channel-frame
+
+[g-rollup-node]: /specifications/reference/glossary#rollup-node
+
+[g-block-time]: /specifications/reference/glossary#block-time
+
+[g-time-slot]: /specifications/reference/glossary#time-slot
+
+[g-consolidation]: /specifications/reference/glossary#unsafe-block-consolidation
+
+[g-safe-l2-head]: /specifications/reference/glossary#safe-l2-head
+
+[g-safe-l2-block]: /specifications/reference/glossary#safe-l2-block
+
+[g-unsafe-l2-head]: /specifications/reference/glossary#unsafe-l2-head
+
+[g-unsafe-l2-block]: /specifications/reference/glossary#unsafe-l2-block
+
+[g-unsafe-sync]: /specifications/reference/glossary#unsafe-sync
+
+[g-deposit-tx-type]: /specifications/reference/glossary#deposited-transaction-type
+
+[g-finalized-l2-head]: /specifications/reference/glossary#finalized-l2-head
+
+[g-system-config]: /specifications/reference/glossary#system-configuration
+
+## 概要 {#overview}
+
+> **注記** 以下では、シーケンサーとバッチャーがそれぞれ単一であることを前提としています。将来的には、このような主体が複数存在する場合にも
+> 対応できるよう設計が調整される予定です。
+
+[L2 チェーン導出][g-derivation] (L1 データから L2 [ブロック][g-block]を導出すること) は、[ロールアップノード][g-rollup-node]の主要な役割の 1 つです。
+これはバリデーターモードとシーケンサーモードのどちらでも行われます (シーケンサーモードでは、導出はシーケンシングの健全性
+チェックとして機能し、L1 チェーンの[リオルグ][g-reorg]の検出も可能にします) 。
+
+L2 チェーンは L1 チェーンから導出されます。具体的には、[L2 チェーン
+開始][g-l2-chain-inception]以降の各 L1 ブロックは、少なくとも 1 つの L2 ブロックからなる
+[シーケンシングエポック][g-sequencing-epoch]に対応付けられます。各 L2 ブロックはちょうど 1 つのエポックに属し、対応する L1
+ブロックをその [L1 origin][g-l1-origin] と呼びます。エポックの番号は、その L1 origin ブロックの番号と同じです。
+
+エポック番号 `E` の L2 ブロックを導出するには、以下の入力が必要です。
+
+* 範囲 `[E, E + SWS)` の L1 ブロック。これをエポックの[シーケンシングウィンドウ][g-sequencing-window]と呼び、`SWS`
+  をシーケンシングウィンドウサイズと呼びます (シーケンシングウィンドウは互いに重なり合う点に注意してください) 。
+* シーケンシングウィンドウ内のブロックに含まれる[バッチャートランザクション][g-batcher-transaction]。
+  * これらのトランザクションから、エポックの[シーケンサーバッチ][g-sequencer-batch]を再構築できます。各
+    シーケンサーバッチからは 1 つの L2 ブロックが生成されます。以下の点に注意してください。
+    * 各バッチには L1 origin のハッシュが[含まれていなければならない](#batch-format)ため、
+      L1 origin にシーケンサーバッチの構築に必要なデータが含まれることはありません。
+    * シーケンサーバッチが 1 つも存在しないエポックもあり得ます。
+* L1 origin で行われた[デポジット][g-deposits] ([デポジット
+  コントラクト][g-deposit-contract]が発行するイベントとして取得) 。
+* L1 origin の L1 ブロック属性 ([L1 属性デポジットトランザクション][g-l1-attr-deposit]の導出に使用) 。
+* 前のエポックの最後の L2 ブロックを適用した後の L2 チェーンの状態。`E` が最初のエポックである場合は [L2 ジェネシス状態][g-l2-genesis]。
+
+L2 チェーン全体を最初から導出するには、[L2 ジェネシス状態][g-l2-genesis]と、
+最初の L2 ブロックとなる [L2 ジェネシスブロック][g-l2-genesis-block]から開始します。その後、[L2 チェーン開始][g-l2-chain-inception]以降の
+最初の L1 ブロックを起点に、各エポックの L2 ブロックを順番に導出します。実際の実装方法の詳細については、
+[アーキテクチャのセクション][architecture]を参照してください。
+L2 チェーンには Bedrock 以前の履歴が含まれる場合がありますが、ここでいう L2 ジェネシスは Bedrock の L2
+ジェネシスブロックを指します。
+
+origin が `l1_origin` である各 L2 `block` には、以下の制約が課されます (値の単位は
+秒です) 。
+
+* `block.timestamp = prev_l2_timestamp + l2_block_time`
+
+  * `prev_l2_timestamp` は、このブロックの直前の L2 ブロックのタイムスタンプです。直前の
+    ブロックが存在しない場合、このブロックはジェネシスブロックであり、そのタイムスタンプは明示的に
+    指定されます。
+  * `l2_block_time` は、L2 ブロックの生成間隔を表す設定可能なパラメーターです (Base では 2 秒) 。
+
+* `l1_origin.timestamp <= block.timestamp <= max_l2_timestamp` (ここで、
+  * `max_l2_timestamp = max(l1_origin.timestamp + max_sequencer_drift, prev_l2_timestamp + l2_block_time)`
+    * `max_sequencer_drift` は、シーケンサーが L1 よりどれだけ先行できるかの上限を定める設定可能な
+      パラメーターです。)
+
+最後に、各エポックには少なくとも 1 つの L2 ブロックが必要です。
+
+1 つ目の制約は、L2 チェーン開始以降、`l2_block_time` 秒ごとに L2 ブロックが存在しなければ
+ならないことを意味します。
+
+2 つ目の制約により、L2 ブロックのタイムスタンプがその L1 origin のタイムスタンプより前になることはなく、
+また `max_sequencer_drift` を超えて先行することもありません。唯一の例外は、この制約によって
+l2&#95;block&#95;time 秒ごとの L2 ブロック生成が妨げられかねない、まれなケースです (このようなケースは、
+たとえば proof-of-work の L1 で L1 ブロックが一時的に高速で生成された場合などに起こり得ます) 。いずれの
+場合も、`max_sequencer_drift` を超過している間、シーケンサーは `len(batch.transactions) == 0` を強制します。
+詳細については [Batch Queue](#batch-queue) を参照してください。
+
+各エポックに少なくとも1つのL2ブロックが必要であるという最後の要件により、シーケンサーバッチが存在しない場合でも、L1の関連情報 (デポジットなど) がすべて
+L2に反映されることが保証されます。
+
+マージ後のEthereumの[ブロック時間][g-block-time]は12秒に固定されていますが、一部のスロットがスキップされる
+ことがあります。したがって、L2のブロック時間が2秒の場合、各エポックには通常`12/2 = 6`個のL2
+ブロックが含まれることになります。ただし、L1でスロットがスキップされた場合や、L1との接続が一時的に失われた場合でも
+ライブネスを維持するため、シーケンサーはより大きなエポックを生成します。接続が失われた
+ケースでは、L2のタイムスタンプが先行し続けてずれが拡大するのを防ぐため、接続の復旧後により小さなエポックが生成される
+ことがあります。
+
+## 先行的なブロック導出 {#eager-block-derivation}
+
+L2ブロックを導出するには、そのシーケンサーバッチを構築し終え、かつそれより前のすべてのL2
+ブロックと状態更新を導出し終えている必要があります。そのため通常は、シーケンシングウィンドウ全体を待たずに、エポックのL2ブロックを
+*先行的に* 導出できます。導出前にシーケンシングウィンドウ全体が必要になるのは、エポックの最初のブロックに対応する
+シーケンサーバッチの一部が、ウィンドウの最後のL1ブロックに含まれるという最悪のケースだけです。なお、これが
+当てはまるのは *ブロック* の導出に限られます。シーケンサーバッチ自体は、そこからブロックを導出しなくても、導出して
+暫定的にキューに入れておくことができます。
+
+## プロトコルパラメータ {#protocol-parameters}
+
+次の表は、主なプロトコルパラメータの概要と、プロトコルアップグレードによる各パラメータの変化を示しています。
+
+| パラメータ                          | Bedrock (デフォルト) 値 | 最新 (デフォルト) 値  | 変更                                                                                                           | 備考                            |
+| ------------------------------ | ----------------- | ------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------- |
+| `max_sequencer_drift`          | 600               | 1800          | [Fjord](/ja/upgrades/fjord/derivation#constant-maximum-sequencer-drift)                                         | Fjord でチェーンパラメータから定数に変更されました。 |
+| `MAX_RLP_BYTES_PER_CHANNEL`    | 10,000,000        | 100,000,000   | [Fjord](/ja/upgrades/fjord/derivation#increasing-max_rlp_bytes_per_channel-and-max_channel_bank_size)           | Fjord で定数の値が引き上げられました。        |
+| `MAX_CHANNEL_BANK_SIZE`        | 100,000,000       | 1,000,000,000 | [Fjord](/ja/upgrades/fjord/derivation#increasing-max_rlp_bytes_per_channel-and-max_channel_bank_size)           | Fjord で定数の値が引き上げられました。        |
+| `MAX_SPAN_BATCH_ELEMENT_COUNT` | 10,000,000        | 10,000,000    | 実質的には [Fjord](/ja/upgrades/fjord/derivation#increasing-max_rlp_bytes_per_channel-and-max_channel_bank_size) で導入 | 要素数                           |
+
+## システム設定 {#system-configuration}
+
+`SystemConfig` は、ロールアップの設定変更をログイベントとして発行する L1 コントラクトです。
+導出パイプラインはこれらのイベントを取得して L2 の状態に適用します。これにより、すべてのノードが
+同じ L2 ブロック高で同じ設定に収束することが保証されます。`SystemConfig` は、
+Base における設定値の信頼できる唯一の情報源 (source of truth) です。
+
+### System Config の更新 {#system-config-updates}
+
+System Config の更新は `ConfigUpdate(uint256,uint8,bytes)` イベントによって通知されます。このイベントの
+構造は次のとおりです。
+
+* 1 番目のトピックはバージョンを示します
+* 2 番目のトピックは更新の種類を示します
+* 残りのイベントデータには設定の更新内容がエンコードされます
+
+バージョン `0` では、次の更新タイプがサポートされています。
+
+* タイプ `0`: `batcherHash` の上書き (`bytes32` ペイロード)
+* タイプ `1`: Ecotone 以前は、`overhead` と `scalar` の上書き (パックされた 2 つの `uint256` エントリ) 。
+  Ecotone アップグレード後は `overhead` が無視され、`scalar` は `baseFeeScalar` と `blobBaseFeeScalar` を
+  更新するバージョン付きエンコーディングとして解釈されます
+* タイプ `2`: `gasLimit` の上書き (`uint64` ペイロード)
+* タイプ `3`: `unsafeBlockSigner` の上書き (`address` ペイロード)
+* タイプ `4`: `eip1559Params` の上書き (denomination と elasticity をエンコードした `uint256` ペイロード)
+* タイプ `5`: `operatorFeeParams` の上書き (scalar と constant をエンコードした `uint256` ペイロード)
+* タイプ `6`: `minBaseFee` の上書き (`uint64` ペイロード)
+* タイプ `7`: `daFootprintGasScalar` の上書き (`uint16` ペイロード)
+
+何らかの理由で System Config の更新を解析できない場合、その更新は適用されずにスキップされます。
+
+***
+
+## バッチの送信 {#batch-submission}
+
+## シーケンシングとバッチ送信の概要 {#sequencing-batch-submission-overview}
+
+[シーケンサー][g-sequencer]はユーザーから L2 トランザクションを受け付け、それらをもとにブロックを構築する役割を担います。
+また、各ブロックに対応する[シーケンサーバッチ][g-sequencer-batch]も作成します。さらに、各バッチを[データ可用性プロバイダー][g-avail-provider] (例：Ethereum の calldata) へ送信する役割も担っており、この処理は
+[バッチャー][g-batcher]コンポーネントを介して行われます。
+
+L2 ブロックとバッチの違いはわずかですが重要です。ブロックには L2 ステートルートが含まれるのに対し、
+バッチは特定の L2 タイムスタンプ (すなわち L2 ブロック番号) におけるトランザクションにのみコミットします。また、ブロックには
+直前のブロックへの参照も含まれます (*) 。
+
+(*) これは、L1 のリオルグが発生し、あるバッチは L1 チェーンに再投稿されたものの、
+その直前のバッチは再投稿されなかったというエッジケースで問題になります。一方、L2 ブロックの場合、直前のブロックが変わることはあり得ません。
+
+したがって、シーケンサーが状態遷移を誤って適用した場合でも、バッチ内のトランザクションは
+正規の L2 チェーンの一部とみなされます。ただし、バッチには引き続き有効性チェックが適用され (正しくエンコードされている必要があるなど) 、
+バッチ内の個々のトランザクションも同様です (署名が有効である必要があるなど) 。無効なバッチ、および
+バッチ自体は有効でもその中に含まれる無効なトランザクションは、正しく動作するノードによって破棄されます。
+
+シーケンサーが状態遷移を誤って適用したうえで[出力ルート][g-l2-output]を投稿した場合、その出力ルートは
+誤ったものになります。誤った出力ルートは[証明][g-fault-proof]によって異議申し立てを受け、
+**既存のシーケンサーバッチに基づく**正しい出力ルートに置き換えられます。
+
+詳細については、[バッチ送信の仕様][batcher-spec]を参照してください。
+
+[batcher-spec]: /specifications/base-protocol/batcher
+
+## バッチ送信のワイヤーフォーマット {#batch-submission-wire-format}
+
+[wire-format]: #batch-submission-wire-format
+
+バッチ送信はL2チェーンの導出と密接に関係しています。導出プロセスでは、バッチ送信用にエンコードされたバッチを
+デコードする必要があるためです。
+
+[バッチャー][g-batcher]は、[バッチャートランザクション][g-batcher-transaction]を[データ可用性プロバイダー][g-avail-provider]に送信します。これらのトランザクションには1つ以上の[チャネルフレーム][g-channel-frame]が含まれます。チャネルフレームとは、[チャネル][g-channel]に属するデータのチャンクです。
+
+[チャネル][g-channel]とは、 (任意のL2ブロックの) 一連の[シーケンサーバッチ][g-sequencer-batch]をまとめて圧縮したものです。
+複数のバッチをまとめるのは、単に圧縮率を高め、データ可用性のコストを削減するためです。
+
+チャネルは1つの[バッチャートランザクション][g-batcher-transaction]に収まらないほど大きくなる場合があるため、
+[チャネルフレーム][g-channel-frame]と呼ばれるチャンクに分割する必要があります。また、1つのバッチャートランザクションに複数のフレーム
+(同じチャネルのものでも、異なるチャネルのものでも構いません) を含めることもできます。
+
+この設計により、バッチをチャネルに集約する方法や、チャネルを複数のバッチャートランザクションに分割する方法を、
+最大限柔軟に選択できます。特に、バッチャートランザクション内のデータ利用率を最大化できる点が重要です。たとえば、
+あるチャネルの最後の (小さな) フレームを、次のチャネルの 1 つ以上のフレームと同じトランザクションに詰め込むことができます。
+
+また、ストリーミング圧縮方式を使用しているため、チャネルに最終的にいくつのバッチが含まれるかを、チャネルの開始時点で把握しておく必要はなく、
+チャネルの最初のフレームを送信する段階でさえ把握しておく必要はない点にも注意してください。
+
+さらに、channel を複数のデータトランザクションに分割すれば、L2 ではデータ可用性レイヤーが対応できるサイズを超えるブロックデータも扱えます。
+
+これらの全体像を次の図に示します。詳細は図の後で説明します。
+
+<img src="/static/assets/batch-deriv-chain.svg" alt="バッチ導出の流れを示す図" width="10662" height="6124" style={{ margin: 0 }} />
+
+1行目は、L1ブロックとそのブロック番号を示しています。L1ブロックの下にあるボックスは、
+そのブロックに含まれる[バッチャートランザクション][g-batcher-transaction]を表します。L1ブロックの下にある波線は、
+[デポジット][g-deposits] (より正確には、[デポジットコントラクト][g-deposit-contract]が発行するイベント) を表します。
+
+ボックス内の色付きの各チャンクは、それぞれ1つの[チャネルフレーム][g-channel-frame]を表します。つまり、`A` と `B` は
+[チャネル][g-channel]で、`A0`、`A1`、`B0`、`B1`、`B2` はフレームです。ここで、次の点に注目してください。
+
+* 複数のチャネルがインターリーブされる
+* フレームは順番どおりに送信する必要はない
+* 1つのバッチャートランザクションに、複数のチャネルのフレームを含めることができる
+
+次の行の角丸のボックスは、チャネルから抽出された個々の[シーケンサーバッチ][g-sequencer-batch]を表しています。
+青・紫・ピンクの4つはチャネル `A` から、それ以外はチャネル `B` から導出されたものです。
+ここでは、これらのバッチをバッチからデコードされた順序で示しています(この例では `B` が先にデコードされます)。
+
+> **注記** ここのキャプションには「Channel B was seen first and will be decoded into batches first」 (channel B が最初に観測されたため、先にバッチへデコードされる) とありますが、これは
+> 必須要件ではありません。たとえば、実装が各 channel の中身を事前に確認し、最も古いバッチを含む channel から
+> 先にデコードしても、同様に問題ありません。
+
+図の残りの部分は、概念的には最初の部分とは別のものであり、channel の並べ替えが完了した後の L2 チェーンの導出を表しています。
+
+1行目はバッチャートランザクションを表しています。この例では、チャネル内のすべてのフレームが連続して並ぶようなバッチの順序が存在する点に注意してください。
+ただし、一般にはそうとは限りません。たとえば、2番目のトランザクションで `A1` と `B0` の位置を入れ替えても、結果はまったく同じになり、図の他の部分を変更する必要はありません。
+
+2行目は、再構築されたchannelを正しい順序で並べたものです。3行目は、channelから抽出されたバッチです。
+channelは順序付けられており、channel内のバッチも連続しているため、結果としてバッチも
+順序付けられることになります。4行目は、各バッチから導出された[L2ブロック][g-block]です。ここではバッチとブロックが
+1対1で対応していますが、後述するように、L1に投稿されたバッチに「ギャップ」がある場合は、
+どのバッチにも対応しない空のブロックが挿入されることがあります。
+
+5 行目は [L1 属性デポジットトランザクション][g-l1-attr-deposit] を示しています。このトランザクションは各 L2 ブロック内に含まれ、
+その L2 ブロックのエポックに対応する L1 ブロックの情報を記録します。1 つ目の数値はエポック/L1x 番号を表し、
+2 つ目の数値 (「シーケンス番号」) はエポック内での位置を表します。
+
+最後に、6 行目は、前述の [deposit
+contract][g-deposit-contract] のイベントから導出された[ユーザーデポジットトランザクション][g-user-deposited]を示しています。
+
+図の右下にある `101-0` の L1 属性トランザクションに注目してください。これがその位置に存在できるのは、
+フレーム `B2` がチャネル内の最後のフレームであることを示しており、かつ (2) 空のブロックを挿入する必要がない場合に限られます。
+
+図には使用されているシーケンシングウィンドウのサイズが明示されていませんが、少なくとも 4
+ブロックはあるはずだと推測できます。チャネル `A` の最後のフレームはブロック 102 に含まれていますが、エポック 99 に属しているためです。
+
+「セキュリティタイプ」に関するコメントは、L1 および L2 で使用されるブロックの分類を説明したものです。
+
+* [Unsafe L2 ブロック][g-unsafe-l2-block]:
+* [Safe L2 ブロック][g-safe-l2-block]:
+* Finalized L2 ブロック: [ファイナライズ済み][g-finalized-l2-head]の L1 データから導出されたブロックを指します。
+
+これらのセキュリティレベルは、[execution-engine API][exec-engine] とやり取りする際に送信される
+`headBlockHash`、`safeBlockHash`、`finalizedBlockHash` の値にそれぞれ対応します。
+
+### バッチャートランザクションのフォーマット {#batcher-transaction-format}
+
+バッチャートランザクションは `version_byte ++ rollup_payload` としてエンコードされます (`++` は連結を表します) 。
+
+| `version_byte` | `rollup_payload`                       |
+| -------------- | -------------------------------------- |
+| 0              | `frame ...` (1 つ以上のフレームを連結したもの)        |
+| 1              | `da_commitment` (実験的なデータ可用性コミットメント形式)  |
+
+未知のバージョンを持つバッチャートランザクションは無効となります (ロールアップノードはこれを無視しなければなりません) 。
+バッチャートランザクション内のすべてのフレームはパース可能でなければなりません。1 つでもパースに失敗したフレームがあれば、
+そのトランザクション内のすべてのフレームが拒否されます。
+
+バッチトランザクションの認証では、トランザクションの `to` アドレスがバッチインボックスアドレスと一致すること、および `from` アドレスが、トランザクションデータの読み取り元となる L1 ブロックの時点における[システム設定][g-system-config]のバッチ送信者アドレスと
+一致することを検証します。
+
+### フレームフォーマット {#frame-format}
+
+[チャネルフレーム][g-channel-frame]は、次のようにエンコードされます。
+
+```text Frame Format
+frame = channel_id ++ frame_number ++ frame_data_length ++ frame_data ++ is_last
+
+channel_id        = bytes16
+frame_number      = uint16
+frame_data_length = uint32
+frame_data        = bytes
+is_last           = bool
+```
+
+ここで、`uint32` および `uint16` はいずれもビッグエンディアンの符号なし整数です。型名は
+[Solidity ABI][solidity-abi] に従って解釈およびエンコードされるものとします。
+
+[solidity-abi]: https://docs.soliditylang.org/en/v0.8.16/abi-spec.html
+
+frame 内のデータは、`frame_data` を除いてすべて固定サイズです。固定オーバーヘッドは `16 + 2 + 4 + 1 = 23 bytes` です。
+frame のメタデータを固定サイズにすることで、目標とする合計データ長との循環依存を回避し、
+コンテンツ長の異なる frame を簡単にパッキングできるようにしています。
+
+各フィールドの意味は以下のとおりです。
+
+* `channel_id` は チャネル の不透明な識別子です。再利用すべきではなく、ランダムな値にすることが推奨されます。ただし、
+  タイムアウトルールを除き、その有効性はチェックされません
+* `frame_number` は チャネル 内における frame のインデックスを示します
+* `frame_data_length` は `frame_data` のバイト長です。上限は 1,000,000 バイトです。
+* `frame_data` は チャネル に属するバイト列であり、論理的には前の frame のバイト列の後に続きます
+* `is_last` は 1 バイトの値で、frame が チャネル 内の最後のものであれば 1、チャネル 内にまだ frame が
+  ある場合は 0 となります。それ以外の値の場合、その frame は無効となります (ロールアップノードはこれを無視しなければなりません) 。
+
+### チャネルフォーマット {#channel-format}
+
+[channel-format]: #channel-format
+
+チャネルは、バッチのリストにストリーミング圧縮アルゴリズムを適用してエンコードされます。
+
+```text Batch Encoding
+encoded_batches = []
+for batch in batches:
+    encoded_batches ++ batch.encode()
+rlp_batches = rlp_encode(encoded_batches)
+```
+
+ここで:
+
+* `batches` は入力であり、次のセクション (「Batch Encoding」) で定義されるバイトエンコーダー関数
+  `.encode()` をそれぞれ備えたバッチのシーケンスです
+* `encoded_batches` はバイト配列で、エンコードされたバッチを連結したものです
+* `rlp_batches` は、連結したエンコード済みバッチを RLP エンコードしたものです
+
+```text Channel Encoding
+channel_encoding = zlib_compress(rlp_batches)
+```
+
+ここで zlib&#95;compress は、辞書を使用しない ZLIB アルゴリズム ([RFC-1950][rfc1950] で規定) です。
+
+[rfc1950]: https://www.rfc-editor.org/rfc/rfc1950.html
+
+Fjord アップグレードでは、別の圧縮アルゴリズムをサポートするため、[バージョン付きチャネルエンコーディング
+形式](/ja/upgrades/fjord/derivation#brotli-channel-compression)が新たに導入されています。
+
+チャネルを展開する際は、「zip ボム」型の攻撃 (小さな圧縮入力が膨大な量のデータに展開される攻撃) を防ぐため、
+展開後のデータ量を `MAX_RLP_BYTES_PER_CHANNEL` ([プロトコルパラメータの表](#protocol-parameters)で定義) までに制限します。
+展開後のデータが上限を超えた場合は、チャネルに展開後の先頭 `MAX_RLP_BYTES_PER_CHANNEL` バイトのみが
+含まれていたものとして処理を続行します。この上限は RLP デコードに適用されるため、`MAX_RLP_BYTES_PER_CHANNEL` 以内でデコードできるバッチはすべて、
+チャネルのサイズが `MAX_RLP_BYTES_PER_CHANNEL` を超えていても受け入れられます。厳密な要件は `length(input) <= MAX_RLP_BYTES_PER_CHANNEL` です。
+
+上記の疑似コードでは、すべてのバッチが事前にわかっていることが前提のように見えますが、RLP エンコードされたバッチは
+ストリーミング方式で圧縮・展開できます。そのため、チャネルに含まれるバッチ数 (およびフレーム数) が確定する前から、
+チャネルのフレームを[バッチャートランザクション][g-batcher-transaction]に含め始めることができます。
+
+### バッチフォーマット {#batch-format}
+
+[batch-format]: #batch-format
+
+前述のとおり、バッチには特定の L2 ブロックに含めるトランザクションのリストが格納されています。
+
+バッチは `batch_version ++ content` としてエンコードされます。ここで `content` の内容は `batch_version` によって異なります。
+Delta アップグレード以前は、すべてのバッチの batch&#95;version が 0 であり、以下のようにエンコードされます。
+
+| `batch_version` | `content`                                                                          |
+| --------------- | ---------------------------------------------------------------------------------- |
+| 0               | `rlp_encode([parent_hash, epoch_number, epoch_hash, timestamp, transaction_list])` |
+
+各項目の意味は次のとおりです。
+
+* `batch_version` は 1 バイトの値で、トランザクションの型指定と同様に RLP コンテンツの前に付加されます。
+* `rlp_encode` は [RLP format] に従ってバッチをエンコードする関数であり、`[x, y, z]` は項目 `x`、`y`、`z` を
+  含むリストを表します
+* `parent_hash` は直前の L2 ブロックのブロックハッシュです
+* `epoch_number` と `epoch_hash` は、L2 ブロックの[シーケンシング
+  エポック][g-sequencing-epoch]に対応する L1 ブロックの番号とハッシュです
+* `timestamp` は L2 ブロックのタイムスタンプです
+* `transaction_list` は、[EIP-2718] 形式でエンコードされたトランザクションを RLP エンコードしたリストです。
+
+[RLP format]: https://ethereum.org/en/developers/docs/data-structures-and-encoding/rlp/
+
+[EIP-2718]: https://eips.ethereum.org/EIPS/eip-2718
+
+Delta アップグレードでは、新たなバッチタイプとして[スパンバッチ][span-batches]が導入されました。
+
+[span-batches]: /upgrades/delta/span-batches
+
+バージョンが未知の場合、そのバッチは無効となります (ロールアップノードはそのバッチを無視しなければなりません) 。コンテンツの形式が不正な場合も同様です。
+
+> **Note** バッチのバージョンとコンテンツを正しく RLP デコードできても、バッチの後ろに余分なデータが存在する場合、
+> その追加データはパース時に無視してもかまいません。RLP エンコードされたバッチ *同士の間* にあるデータは無視してはなりません
+> (不正な形式のバッチとみなされるため) 。ただし、RLP デコードによってバッチを完全に記述できる場合、
+> 余分なデータがあってもデコードされたバッチは無効になりません。
+
+`epoch_number` と `timestamp` は、[Batch Queue][batch-queue] セクションに記載された制約も満たさなければなりません。
+満たさない場合、そのバッチは無効とみなされ、無視されます。
+
+***
+
+## アーキテクチャ {#architecture}
+
+[architecture]: #architecture
+
+ここまでは主に、L2チェーンの導出で使用される一般的なエンコーディング、
+特に[バッチャートランザクション][g-batcher-transaction]内でのバッチのエンコード方法について説明しました。
+
+このセクションでは、パイプラインアーキテクチャを用いてL1のバッチからL2チェーンを生成する方法を説明します。
+
+検証者はこれとは異なる方法で実装してもかまいませんが、L2チェーンから乖離しないよう、意味的に等価でなければなりません。
+
+## L2チェーン導出パイプライン {#l2-chain-derivation-pipeline}
+
+本アーキテクチャでは、導出プロセスを以下のステージで構成されるパイプラインに分解しています。
+
+1. L1 Traversal
+2. L1 Retrieval
+3. Frame Queue
+4. Channel Bank
+5. Channel Reader (バッチデコード)
+6. Batch Queue
+7. Payload Attributes Derivation
+8. Engine Queue
+
+データはパイプラインの始点 (外側) から終点 (内側) に向かって流れます。
+つまり、最も内側のステージが、最も外側のステージからデータをプル (取得) します。
+
+ただし、データの *処理* は逆の順序で行われます。つまり、最後のステージに処理すべきデータがあれば、それが最初に処理されます。処理は、各ステージで実行できる「ステップ」単位で進みます。最後の (最も内側の) ステージでできる限り多くのステップを実行してから、その外側のステージのステップを実行し、以降も同様に進めます。
+
+これにより、新たにデータをプルする前に手元のデータを使い切ることができ、データが導出パイプラインを通過する際のレイテンシを最小限に抑えられます。
+
+各ステージは、必要に応じて独自の内部状態を保持できます。特に各ステージは、最新のL1ブロックへの参照 (番号 + ハッシュ) を保持します。この最新のL1ブロックとは、それより前のブロックに由来するデータがすべて処理済みで、かつそのブロック自体のデータが処理中または処理済みであるブロックを指します。これにより、最も内側のステージは、L2チェーンの生成に使われたL1データ可用性のファイナライズを考慮し、L2チェーンの入力が不可逆になった時点でそれをL2チェーンのforkchoiceに反映できます。
+
+以下、パイプラインの各ステージについて簡単に説明します。
+
+### L1 Traversal {#l1-traversal}
+
+*L1 Traversal* ステージでは、次の L1 ブロックのヘッダーを読み取るだけです。通常の運用では、読み取るのは新たに生成されたばかりの
+L1 ブロックですが、同期中や L1 の[リオルグ][g-reorg]が発生した場合には、古いブロックを読み取ることもあります。
+
+L1 ブロックを走査すると、L1 retrieval ステージが使用する[システム設定][g-system-config]のコピーが
+更新されます。これにより、バッチ送信者の認証は常に、そのステージが読み取る L1 ブロックと正確に一致した状態に保たれます。
+
+### L1 Retrieval {#l1-retrieval}
+
+*L1 Retrieval* ステージでは、外側のステージ (L1 traversal) から受け取ったブロックを読み取り、
+その[バッチャートランザクション][g-batcher-transaction]からデータを抽出します。バッチャー
+トランザクションとは、以下の特性を持つトランザクションです。
+
+* [`to`] フィールドが、設定済みのバッチャーインボックスアドレスと一致する。
+
+* トランザクションタイプが `0`、`1`、`2`、`3`、`0x7e` (Base 上でバッチャートランザクションの強制取り込みを
+  サポートするための L2 [Deposited transaction type][g-deposit-tx-type]) のいずれかである。
+
+* トランザクション署名 (`v`、`r`、`s`) から復元した送信者が、そのデータの L1 ブロックに対応する
+  システム設定から読み込まれたバッチャーアドレスである。
+
+各バッチャートランザクションはバージョン付けされており、Frame Queue が読み取る一連の [チャネルフレーム][g-channel-frame] を
+含みます ([Batch Submission Wire Format][wire-format] を参照) 。ブロック内の各バッチャー
+トランザクションは、ブロック内での出現順に処理され、その calldata が
+次のフェーズに渡されます。
+
+[`to`]: https://github.com/ethereum/execution-specs/blob/3fe6514f2d9d234e760d11af883a47c1263eff51/src/ethereum/frontier/fork_types.py#L52C31-L52C31
+
+### Frame Queue {#frame-queue}
+
+Frame Queueは、データトランザクションを一度に1つずつ[チャネルフレーム][g-channel-frame]にデコードしてバッファリングし、
+次のステージで消費できるようにします。
+詳細は、[バッチャートランザクションの形式](#batcher-transaction-format)および[フレームの形式](#frame-format)の仕様を参照してください。
+
+### Channel Bank {#channel-bank}
+
+*Channel Bank* ステージは、L1 取得ステージが書き込んだ チャネル bank のバッファリングを管理します。チャネル bank ステージの各ステップでは、「準備完了」状態の チャネル からデータの読み取りを試みます。
+
+現在、チャネル は読み取られるか破棄されるまで完全にバッファリングされます。
+将来のバージョンの ChannelBank では、ストリーミング チャネル がサポートされる可能性があります。
+
+リソース使用量を抑えるため、Channel Bank は チャネル のサイズに基づいてプルーニングを行い、古い チャネル をタイムアウトさせます。
+
+チャネル は、*チャネル queue* と呼ばれる構造に FIFO 順で記録されます。チャネル は、その チャネル に属する frame が初めて検出された時点で チャネル queue に追加されます。
+
+#### プルーニング {#pruning}
+
+新しいフレームの挿入に成功すると、ChannelBank はプルーニングされます。
+`total_size <= MAX_CHANNEL_BANK_SIZE` を満たすまで、チャネルが FIFO 順に破棄されます。各項目の意味は次のとおりです。
+
+* `total_size` は各チャネルのサイズの合計です。各チャネルのサイズは、そのチャネルにバッファされているすべてのフレームデータの合計に、
+  フレームごとのオーバーヘッドとして `200` バイトを加えた値です。
+* `MAX_CHANNEL_BANK_SIZE` は、[プロトコルパラメータ表](#protocol-parameters)で定義されているプロトコル定数です。
+
+#### タイムアウト {#timeouts}
+
+チャネルがオープンされた L1 origin は、`channel.open_l1_block` としてチャネルとともに追跡されます。
+これにより、チャネルデータが破棄 (プルーニング) されるまでに保持される L1 ブロックの最大範囲が決まります。
+
+次の条件を満たす場合、チャネルはタイムアウトとなります: `current_l1_block.number > channel.open_l1_block.number + CHANNEL_TIMEOUT`。各項目の意味は次のとおりです。
+
+* `current_l1_block` は、ステージが現在走査している L1 origin です。
+* `CHANNEL_TIMEOUT` はロールアップごとに設定可能な値で、L1 ブロック数で表されます。
+
+タイムアウトしたチャネルに対する新しいフレームは、バッファリングされずに破棄されます。
+
+#### 読み取り {#reading}
+
+読み取り時には、最初にオープンされたチャネルがタイムアウトしている限り、そのチャネルをチャネル-bankから削除します。
+
+Canyonネットワークアップグレード以前は、最初にオープンされたチャネルが存在し、それがタイムアウトしておらず準備完了であれば、
+そのチャネルが読み取られ、チャネル-bankから削除されます。Canyonネットワークアップグレード以降は、チャネル bank全体が
+(オープン時刻に基づく) FIFO順でスキャンされ、最初に見つかった準備完了 (すなわちタイムアウトしていない) チャネルが返されます。
+
+Canyonの動作は、タイムスタンプがCanyon時刻以上であるL1ブロックのフレームが初めてチャネル queueに入った時点で
+有効になります。
+
+チャネルは、次の条件を満たす場合に準備完了となります。
+
+* チャネルがクローズされている
+* チャネルが、クローズフレームまで途切れなく連続したフレームを持っている
+
+準備完了のチャネルがない場合は、次のフレームが読み取られ、チャネル bankに取り込まれます。
+
+#### フレームの読み込み {#loading-frames}
+
+フレームが参照するチャネル ID が Channel Bank にまだ存在しない場合、
+新しいチャネルがオープンされ、現在の L1 ブロックでタグ付けされたうえで、チャネルキューに追加されます。
+
+フレーム挿入の条件:
+
+* タイムアウトしたものの channel-bank からまだ削除されていないチャネルに一致する新しいフレームは破棄されます。
+* channel-bank から削除されていないフレームと重複するフレーム (フレーム番号で判定) は破棄されます。
+* 重複したクローズ (新しいフレームが `is_last == 1` だが、そのチャネルがすでにクローズフレームを受信済みで、かつ
+  channel-bank からまだ削除されていない場合) は破棄されます。
+
+フレームがクローズフレーム (`is_last == 1`) である場合、それより番号の大きい既存のフレームはすべてチャネルから削除されます。
+
+なお、この仕組みでは channel-bank から削除された後のチャネル ID を再利用できますが、
+バッチャーの実装では一意のチャネル ID を使用することが推奨されます。
+
+### チャネルリーダー (バッチのデコード) {#channel-reader-batch-decoding}
+
+このステージでは、前のステージから取得したチャネルを解凍し、解凍後のバイトストリームから
+[バッチ][g-sequencer-batch]をパースします。
+
+解凍およびデコードの仕様については、[チャネルフォーマット][channel-format]と[バッチフォーマット][batch-format]を
+参照してください。
+
+### Batch Queue {#batch-queue}
+
+[batch-queue]: #batch-queue
+
+*Batch Buffering* ステージでは、バッチをタイムスタンプ順に並べ替えます。一部の[タイム
+スロット][g-time-slot]でバッチが欠落しており、かつそれより大きいタイムスタンプを持つ有効なバッチが存在する場合、このステージは
+空のバッチを生成してその隙間を埋めます。
+
+現在の [safe L2 head][g-safe-l2-head] (正規の L1 チェーンから導出できる最後のブロック) のタイムスタンプの直後に続く
+連続したバッチが 1 つ存在すると、そのバッチは次のステージへ送られます。
+また、バッチの親ハッシュは現在の safe L2 head のハッシュと一致していなければなりません。
+
+L1 から導出されたバッチに隙間が 1 つでもある場合、このステージは空のバッチを生成する前に
+[シーケンシングウィンドウ][g-sequencing-window]全体にわたってバッファリングする必要がある点に注意してください (最悪の場合、欠落しているバッチの
+データがウィンドウ内の最後の L1 ブロックに含まれている可能性があるためです) 。
+
+バッチの有効性には次の 4 種類があります。
+
+* `drop`: バッチは無効であり、リオルグが発生しない限り、今後も常に無効です。バッファから削除できます。
+* `accept`: バッチは有効であり、処理されるべきです。
+* `undecided`: バッチのフィルタリングを進めるための L1 の情報が不足しています。
+* `future`: バッチは有効である可能性がありますが、まだ処理できないため、後で再度チェックする必要があります。
+
+バッチは L1 に取り込まれた順に処理されます。複数のバッチが `accept` 可能な場合は、最初のバッチが適用されます。
+実装では、検証作業を減らすために `future` バッチの処理を後の導出ステップまで延期できます。
+
+バッチの有効性は次のように導出されます。
+
+定義:
+
+* `batch` は [バッチフォーマット セクション][batch-format]で定義されたものです。
+* `epoch = safe_l2_head.l1_origin` はバッチに紐づく [L1 origin][g-l1-origin] であり、次のプロパティを持ちます:
+  `number` (L1 ブロック番号) 、`hash` (L1 ブロックハッシュ) 、`timestamp` (L1 ブロックタイムスタンプ) 。
+* `inclusion_block_number` は、`batch` が最初に *完全に* 導出された、
+  すなわち前のステージによってデコードされ出力された時点の L1 ブロック番号です。
+* `next_timestamp = safe_l2_head.timestamp + block_time` は、次のバッチが持つと想定される L2 タイムスタンプです。
+  [ブロック時間の情報][g-block-time]を参照してください。
+* `next_epoch` はまだ判明していない場合がありますが、判明していれば `epoch` の次の L1 ブロックです。
+* `batch_origin` は、検証結果に応じて `epoch` または `next_epoch` のいずれかになります。
+
+`future` バッチはいずれにせよ保持しておく必要があるため、
+バッチの処理は `batch.timestamp <= next_timestamp` となるまで延期できる点に注意してください。
+
+ルール (検証順) :
+
+* `batch.timestamp > next_timestamp` -&gt; `future`: つまり、バッチは処理可能な状態になっていなければなりません。
+* `batch.timestamp < next_timestamp` -&gt; `drop`: つまり、バッチは古すぎてはなりません。
+* `batch.parent_hash != safe_l2_head.hash` -&gt; `drop`: つまり、親ハッシュは L2 セーフヘッドブロックのハッシュと等しくなければなりません。
+* `batch.epoch_num + sequence_window_size < inclusion_block_number` -&gt; `drop`: つまり、バッチは期限内に取り込まれなければなりません。
+* `batch.epoch_num < epoch.number` -&gt; `drop`: つまり、バッチのオリジンは L2 セーフヘッドのオリジンより古くてはなりません。
+* `batch.epoch_num == epoch.number`: `batch_origin` を `epoch` と定義します。
+* `batch.epoch_num == epoch.number+1`:
+  * `next_epoch` が不明な場合 -&gt; `undecided`:
+    つまり、L1 origin を変更するバッチは、その L1 origin のデータが得られるまで処理できません。
+  * 判明している場合は、`batch_origin` を `next_epoch` と定義します
+* `batch.epoch_num > epoch.number+1` -&gt; `drop`: つまり、L1 origin は L2 ブロック 1 つにつき L1 ブロック 1 つ分を超えて進んではなりません。
+* `batch.epoch_hash != batch_origin.hash` -&gt; `drop`: つまり、バッチは正規の L1 origin を参照しなければなりません。
+  これは、想定外の L1 チェーン上でバッチがリプレイされるのを防ぐためです。
+* `batch.timestamp < batch_origin.time` -&gt; `drop`: 最小 L2 タイムスタンプのルールを適用します。
+* `batch.timestamp > batch_origin.time + max_sequencer_drift`: L2 タイムスタンプのドリフトルールを適用します。
+  ただし、上記の最小 L2 タイムスタンプの不変条件を維持するため、以下の例外があります:
+  * `len(batch.transactions) == 0`:
+    * `epoch.number == batch.epoch_num`:
+      これはバッチがまだ L1 origin を進めていないことを意味するため、`next_epoch` と照合する必要があります。
+      * `next_epoch` が不明な場合 -&gt; `undecided`:
+        次の L1 origin がなければ、時間の不変条件を維持できたかどうかをまだ判断できません。
+      * `batch.timestamp >= next_epoch.time` の場合 -&gt; `drop`:
+        このバッチは `L2 time >= L1 time` の不変条件を破ることなく次の L1 origin を採用できたはずです。
+  * `len(batch.transactions) > 0`: -&gt; `drop`:
+    シーケンサーの時間ドリフトを超えている場合、シーケンサーによるトランザクションの取り込みは一切許可されません。
+* `batch.transactions`: `batch.transactions` リストに、無効なトランザクション、
+  または他の手段でのみ導出されるトランザクションが含まれている場合は `drop`:
+  * 空のトランザクション (長さゼロのバイト列)
+  * [デポジットトランザクション][g-deposit-tx-type] (トランザクションタイプのプレフィックスバイトで識別されます)
+  * タイプが 2 より大きい将来のタイプのトランザクション (なお、
+    [Isthmus ではタイプ 4 の `SetCode` トランザクションのサポートが追加されます](/ja/upgrades/isthmus/derivation#activation)
+    )
+
+どのバッチも `accept` できず、かつこのステージが高さ `epoch.number + sequence_window_size` の L1 ブロックから
+完全に読み取れるすべてのバッチのバッファリングを完了しており、かつ `next_epoch` が利用可能である場合、
+以下の特性を持つ空のバッチを導出できます:
+
+* `parent_hash = safe_l2_head.hash`
+* `timestamp = next_timestamp`
+* `transactions` は空、つまりシーケンサーのトランザクションは含まれません。デポジットトランザクションは次のステージで追加される場合があります。
+* `next_timestamp < next_epoch.time` の場合: L2 時間の不変条件を維持するため、現在の L1 origin を繰り返し使用します。
+  * `epoch_num = epoch.number`
+  * `epoch_hash = epoch.hash`
+* バッチがエポックの最初のバッチである場合、エポックごとに少なくとも 1 つの L2 ブロックが存在することを保証するため、
+  エポックを進めずにそのエポックを使用します。
+  * `epoch_num = epoch.number`
+  * `epoch_hash = epoch.hash`
+* それ以外の場合:
+  * `epoch_num = next_epoch.number`
+  * `epoch_hash = next_epoch.hash`
+
+### ペイロード属性の導出 {#payload-attributes-derivation}
+
+*ペイロード属性の導出* (Payload Attributes Derivation) ステージでは、前のステージから受け取ったバッチを [`PayloadAttributes`][g-payload-attr] 構造体のインスタンスに変換します。この構造体には、ブロックに含めるべきトランザクションのほか、その他のブロック入力 (タイムスタンプ、fee recipient など) がエンコードされます。ペイロード属性の導出の詳細については、後述の[ペイロード属性の導出][deriving-payload-attr]セクションを参照してください。
+
+このステージは、L1 取得ステージとは別に、[システム構成][g-system-config]の独自のコピーを保持します。システム構成は、バッチ入力が参照する L1 エポックが変わるたびに、L1 のログイベントに基づいて更新されます。
+
+### Engine Queue {#engine-queue}
+
+*Engine Queue* ステージでは、前段で導出された `PayloadAttributes` 構造体がバッファリングされたうえで
+[実行エンジン][g-exec-engine]に送信され、実行されて正式な L2 ブロックに変換されます。
+
+このステージは、次の 3 つの L2 ブロックへの参照を保持します。
+
+* [ファイナライズ済み L2 ヘッド][g-finalized-l2-head]: このブロック以前 (このブロックを含む) のすべてを、L1 チェーンのうち
+  [ファイナライズ済み][l1-finality] (すなわち正規であり、永久に覆らない) の部分から完全に導出できます。
+* [safe L2 ヘッド][g-safe-l2-head]: このブロック以前 (このブロックを含む) のすべてを、
+  現時点で正規の L1 チェーンから完全に導出できます。
+* [unsafe L2 ヘッド][g-unsafe-l2-head]: 安全なヘッドと安全でないヘッドの間にあるブロックは、L1 から導出されていない[安全でない
+  ブロック][g-unsafe-l2-block]です。これらのブロックは、シーケンシング (シーケンサー
+  モードの場合) か、シーケンサーからの[安全でない同期][g-unsafe-sync] (バリデーターモードの場合) のいずれかによって得られます。
+  これは「latest」ヘッドとも呼ばれます。
+
+さらに、このステージは最近処理された安全な L2 ブロックへの参照の短い履歴を、各ブロックの導出元となった L1 ブロックへの参照とあわせて
+バッファリングします。
+この履歴は完全である必要はありませんが、これにより、後から届く L1 のファイナリティシグナルを L2 のファイナリティに変換できます。
+
+#### Engine API の使用 {#engine-api-usage}
+
+エンジンとのやり取りには[実行エンジン API][exec-engine]を使用し、次の JSON-RPC メソッドを用います。
+
+[exec-engine]: /specifications/base-protocol/execution/l2-execution-engine
+
+##### Bedrock、Canyon、Delta：API の使用方法 {#bedrock-canyon-delta-api-usage}
+
+* [`engine_forkchoiceUpdatedV2`] — フォークチョイス (つまりチェーンヘッド) が `headBlockHash` と異なる場合は `headBlockHash` に更新し、
+  ペイロード属性パラメータが `null` でない場合は、実行ペイロードの構築を開始するようエンジンに指示します。
+* [`engine_getPayloadV2`] — 以前にリクエストした実行ペイロードの構築結果を取得します。
+* [`engine_newPayloadV2`] — 実行ペイロードを実行してブロックを作成します。
+
+##### Ecotone: API の使用 {#ecotone-api-usage}
+
+* [`engine_forkchoiceUpdatedV3`] — フォークチョイス (つまりチェーンヘッド) が `headBlockHash` と異なる場合はそれに更新し、
+  ペイロード属性パラメータが `null` でない場合は、実行ペイロードの構築を開始するようエンジンに指示します。
+* [`engine_getPayloadV3`] — 以前にリクエストした実行ペイロードの構築結果を取得します。
+* `engine_newPayload`
+  * [`engine_newPayloadV2`] — Bedrock/Canyon/Delta の実行ペイロードを実行してブロックを作成します。
+  * [`engine_newPayloadV3`] — Ecotone の実行ペイロードを実行してブロックを作成します。
+  * [`engine_newPayloadV4`] - Isthmus の実行ペイロードを実行してブロックを作成します。
+
+`engine_newPayloadV4` は Isthmus の実行ペイロードしかサポートしないため、`base-consensus` は [`engine_forkchoiceUpdatedV3`] と [`engine_getPayloadV4`] に加えて、
+`engine_newPayloadV3` と `engine_newPayloadV2` も使用します。`engine_forkchoiceUpdatedV3` は Ecotone、Bedrock、Canyon、
+Delta の各ペイロードに対して後方互換性があります。
+
+以前のバージョンでは `v3`、`v2`、`v1` のメソッドを使用していました。
+
+[`engine_forkchoiceUpdatedV2`]: /specifications/base-protocol/execution/l2-execution-engine#engine_forkchoiceupdatedv2
+
+[`engine_forkchoiceUpdatedV3`]: /specifications/base-protocol/execution/l2-execution-engine#engine_forkchoiceupdatedv3
+
+[`engine_getPayloadV2`]: /specifications/base-protocol/execution/l2-execution-engine#engine_getpayloadv2
+
+[`engine_getPayloadV3`]: /specifications/base-protocol/execution/l2-execution-engine#engine_getpayloadv3
+
+[`engine_getPayloadV4`]: /specifications/base-protocol/execution/l2-execution-engine#engine_getpayloadv4
+
+[`engine_newPayloadV2`]: /specifications/base-protocol/execution/l2-execution-engine#engine_newpayloadv2
+
+[`engine_newPayloadV3`]: /specifications/base-protocol/execution/l2-execution-engine#engine_newpayloadv3
+
+[`engine_newPayloadV4`]: /specifications/base-protocol/execution/l2-execution-engine#engine_newpayloadv4
+
+実行ペイロードは [`ExecutionPayloadV3`][eth-payload] 型のオブジェクトです。
+
+[eth-payload]: https://github.com/ethereum/execution-apis/blob/main/src/engine/cancun.md
+
+`ExecutionPayload` には次の要件があります。
+
+* Bedrock
+  * withdrawals フィールドは nil でなければならない (MUST)
+  * blob gas used フィールドは nil でなければならない (MUST)
+  * blob gas limit フィールドは nil でなければならない (MUST)
+* Canyon、Delta
+  * withdrawals フィールドは nil であってはならない (MUST)
+  * withdrawals フィールドは空のリストでなければならない (MUST)
+  * blob gas used フィールドは nil でなければならない (MUST)
+  * blob gas limit フィールドは nil でなければならない (MUST)
+* Ecotone
+  * withdrawals フィールドは nil であってはならない (MUST)
+  * withdrawals フィールドは空のリストでなければならない (MUST)
+  * blob gas used フィールドは 0 でなければならない (MUST)
+  * blob gas limit フィールドは 0 でなければならない (MUST)
+
+#### フォークチョイスの同期 {#forkchoice-synchronization}
+
+適用すべきフォークチョイス更新がある場合は、追加の入力を導出または処理する前に、
+まずそれらをエンジンに適用します。
+
+この同期は、次のような場合に行われます。
+
+* L1 のファイナリティシグナルによって 1 つ以上の L2 ブロックがファイナライズされたとき：「finalized」L2 ブロックを更新します。
+* unsafe な L2 ブロックの統合 (consolidation) が成功したとき：「safe」L2 ブロックを更新します。
+* 導出パイプラインのリセット直後に最初に行う処理として：実行エンジンのフォークチョイス状態の一貫性を確保します。
+
+新しいフォークチョイス状態は、エンジン API の [fork choice updated](#engine-api-usage) を呼び出すことで適用されます。
+フォークチョイス状態の有効性エラーが発生した場合は、一貫した状態に復旧するため、導出パイプラインをリセットしなければなりません (must) 。
+
+#### L1統合：ペイロード属性の照合 {#l1-consolidation-payload-attributes-matching}
+
+unsafeヘッドがsafeヘッドより先行している場合は[統合][g-consolidation]が試行され、既存のunsafeなL2チェーンが、正規のL1データから導出されたL2入力と一致するかどうかが検証されます。
+
+統合では、最も古いunsafeなL2ブロック、つまりsafeヘッドの直後にあるunsafeなL2ブロックを対象とします。ペイロード属性がこの最も古いunsafeなL2ブロックと一致すれば、そのブロックは「safe」とみなされ、新しいsafeヘッドになります。
+
+導出されたL2ペイロード属性のうち、以下のフィールドについてL2ブロックとの一致が確認されます。
+
+* Bedrock、Canyon、Delta、Ecotoneブロック
+  * `parent_hash`
+  * `timestamp`
+  * `randao`
+  * `fee_recipient`
+  * `transactions_list` (まず長さを確認し、次にデポジットを含むエンコード済みの各トランザクションが一致するかを確認)
+  * `gas_limit`
+* Canyon、Delta、Ecotoneブロック
+  * `withdrawals` (まず有無を確認し、次に長さ、最後にエンコード済みの各引き出しが一致するかを確認)
+* Ecotoneブロック
+  * `parent_beacon_block_root`
+
+統合が成功した場合、フォークチョイスの変更は前述のセクションで説明したとおりに同期されます。
+
+統合が失敗した場合、L2ペイロード属性は後述のセクションで説明するとおり直ちに処理されます。このときペイロード属性が既存のunsafeなL2ブロックよりも優先して採用され、現在のsafeブロックを起点にL2チェーンのリオルグが発生します。実行エンジンによってはチェーン先端の線形な巻き戻しがサポートされていない場合があるため、新しい代替属性を直ちに処理することで、実行エンジンがこの変更を確実に適用できるようにしています。
+
+#### L1同期：ペイロード属性の処理 {#l1-sync-payload-attributes-processing}
+
+[exec-engine-comm]: /specifications/base-protocol/execution/l2-execution-engine#engine-api
+
+safe L2ヘッドとunsafe L2ヘッドが同一である場合 (統合の失敗によるものかどうかにかかわらず) 、L2ペイロード属性を実行エンジンに送信し、正規のL2ブロックとして構築させます。
+このL2ブロックが、新しいL2 safeヘッドかつunsafeヘッドとなります。
+
+バッチから作成されたペイロード属性が検証エラー (つまり、ブロック内に無効なトランザクションや無効な状態遷移が含まれていた場合) によってチェーンに挿入できない場合、そのバッチは破棄されるべきであり、safeヘッドを進めるべきではありません。エンジンキューは、そのタイムスタンプに対応する次のバッチをバッチキューから取得して使用しようとします。有効なバッチが見つからない場合、ロールアップノードはデポジットのみのバッチを作成します。デポジットは常に有効であるため、このバッチは必ず検証を通過するはずです。
+
+実行エンジンAPIを介した実行エンジンとのやり取りの詳細については、[実行エンジンとの通信][exec-engine-comm]セクションを参照してください。
+
+その後、ペイロード属性は次の一連の手順で処理されます。
+
+* [Engine: Fork choice updated](#engine-api-usage)：ステージの現在のフォークチョイス状態と属性を渡し、ブロック構築を開始します。
+  * 期待されるブロックを再構築するため、tx-poolなどの非決定的なソースは無効化しなければなりません。
+* [Engine: Get Payload](#engine-api-usage)：前のステップの結果に含まれるpayload-IDを用いてペイロードを取得します。
+* [Engine: New Payload](#engine-api-usage)：新しいペイロードを実行エンジンにインポートします。
+* [Engine: Fork Choice Updated](#engine-api-usage)：新しいペイロードを正規 (canonical) にします。
+  このとき、`safe`フィールドと`unsafe`フィールドの両方がそのペイロードを参照するように変更し、ペイロード属性は渡しません。
+
+Engine APIのエラー処理：
+
+* RPC関連のエラーの場合、ペイロード属性の処理は後のステップで再試行されるべきです。
+* ペイロード処理エラーの場合、属性は破棄しなければならず、フォークチョイス状態は変更せずに維持しなければなりません。
+  * 最終的に、導出パイプラインはバッチの有無にかかわらず、代替のペイロード属性を生成します。
+  * ペイロード属性にデポジットのみが含まれていた場合、それらが無効であれば重大な導出エラーとなります。
+* フォークチョイス状態の妥当性エラーの場合、一貫した状態に回復するため、導出パイプラインをリセットしなければなりません。
+
+#### 未確定 (unsafe) ペイロード属性の処理 {#processing-unsafe-payload-attributes}
+
+処理すべきフォークチョイス更新や L1 データが残っておらず、かつ次に生成されうる L2 ブロックが、シーケンサーによる p2p ネットワーク経由の公開といった未確定 (unsafe) ソースからすでに入手可能な場合、そのブロックは「unsafe」ブロックとして楽観的に処理されます。これにより、正常系では後続の導出作業が L1 との統合 (consolidation) だけで済むようになります。また、L1 が L2 バッチを確定するよりも早く、ユーザーが L2 チェーンのヘッドを確認できるようになります。
+
+unsafe ペイロードを処理するには、ペイロードが次の条件を満たす必要があります (MUST) 。
+
+* ブロック番号が現在の safe L2 ヘッドよりも大きいこと。
+  * safe L2 ヘッドがリオルグで除外されるのは、L1 でリオルグが発生した場合に限られます。
+* 親ブロックハッシュが現在の unsafe L2 ヘッドと一致すること。
+  * これにより、unsafe L2 チェーン内の大きなギャップを実行エンジンが単独で同期することを防ぎます。
+  * これにより、unsafe L2 ブロックが、検証済みの他の L2 ブロックをリオルグすることを防ぎます。
+  * このチェックは、将来のバージョンで、たとえば L1 の snap-sync プロトコルを採用するために変更される可能性があります。
+
+その後、ペイロードは次の手順で処理されます。
+
+* Bedrock/Canyon/Delta ペイロード
+  * `engine_newPayloadV2`：ペイロードを処理します。この時点ではまだ正規 (canonical) にはなりません。
+  * `engine_forkchoiceUpdatedV2`：ペイロードを正規の unsafe L2 ヘッドとし、safe/finalized L2 ヘッドは維持します。
+* Ecotone ペイロード
+  * `engine_newPayloadV3`：ペイロードを処理します。この時点ではまだ正規にはなりません。
+  * `engine_forkchoiceUpdatedV3`：ペイロードを正規の unsafe L2 ヘッドとし、safe/finalized L2 ヘッドは維持します。
+* Isthmus ペイロード
+  * `engine_newPayloadV4`：ペイロードを処理します。この時点ではまだ正規にはなりません。
+
+Engine API のエラー処理：
+
+* RPC 系のエラーが発生した場合、ペイロードの処理は後続のステップで再試行すべきです (SHOULD) 。
+* ペイロード処理エラーが発生した場合、ペイロードは破棄しなければならず (MUST) 、正規としてマークしてはなりません。
+* フォークチョイス状態の妥当性エラーが発生した場合、一貫した状態に回復するため、導出パイプラインをリセットしなければなりません (MUST) 。
+
+### パイプラインのリセット {#resetting-the-pipeline}
+
+パイプラインはリセットできます。たとえば、L1 の[リオルグ (再編成) ][g-reorg]を検出した場合などです。
+**これにより、ロールアップノードは L1 チェーンのリオルグイベントに対処できます。**
+
+リセットを行うと、パイプラインは完全な L2 導出プロセスと同じ出力を生成する状態に復元されます。
+ただし、その起点は既存の L2 チェーンであり、現在の L1 チェーンと整合が取れるところまで必要最小限だけ遡ります。
+
+このアルゴリズムは、次のような重要なユースケースに対応しています。
+
+* 0 から開始せずにパイプラインを初期化する。例：ロールアップノードが既存のエンジンインスタンスを使って再起動する場合。
+* 実行エンジンのチェーンと不整合になったパイプラインを復旧する。例：エンジンが同期した場合や、エンジンのチェーンが変化した場合。
+* L1 チェーンが再編成された際にパイプラインを復旧する。例：遅れて届いた L1 ブロックが孤立した場合や、より大規模なアテステーション障害が発生した場合。
+* 証明プログラム内で、それ以前の L1 および L2 の履歴を用いて、係争中の L2 ブロックを導出するためにパイプラインを初期化する。
+
+これらのケースに対処できるため、ノードを 0 承認で L1 データを積極的に同期するよう設定することも可能です。
+後から L1 がそのデータを正規のものと認めなかった場合でも変更を取り消せるので、低レイテンシでも安全に利用できます。
+
+まず Engine Queue がリセットされ、導出を再開する L1 および L2 の開始点が決定されます。
+その後、他のステージはそれぞれ独立してリセットされます。
+
+#### 同期開始点の特定 {#finding-the-sync-starting-point}
+
+開始点を特定するには、チェーンのヘッドから遡りながら、以下のステップを実行します。
+
+1. 現在の L2 フォークチョイス状態を特定する
+   * `finalized` ブロックが見つからない場合は、Bedrock のジェネシスブロックから開始します。
+   * `safe` ブロックが見つからない場合は、`finalized` ブロックにフォールバックします。
+   * `unsafe` ブロックは常に利用可能で、かつ上記と整合しているはずです
+     (まれなエンジン破損からの復旧時にはそうならない場合があり、この点は現在検討中です) 。
+2. 新しい `unsafe` 開始点として、妥当な L1 参照を持つ最初の L2 ブロックを探す。
+   探索は以前の `unsafe` から開始し、`finalized` まで遡り、それ以上は遡りません。
+   * 妥当である必要十分条件：L2 ブロックの L1 origin が既知かつ正規であること、または未知であり、そのブロック番号が L1 よりも先であること。
+3. 新しい `safe` 開始点として、シーケンシングウィンドウよりも古い L1 参照を持つ最初の L2 ブロックを探す。
+   探索は上記の妥当な `unsafe` ヘッドから開始し、`finalized` まで遡り、それ以上は遡りません。
+   * 途中で L1 origin が既知であるにもかかわらず正規でない場合、`unsafe` ヘッドは現在のブロックの親に修正されます。
+   * 既知かつ正規の L1 origin を持つ最も高い L2 ブロックは、`highest` として記憶されます。
+   * 途中でブロック内の L1 origin が導出ルールに照らして破損していた場合は、エラーとします。破損には以下が含まれます：
+     * L1 origin のブロック番号または親ハッシュが、親の L1 origin と整合しない
+     * L1 シーケンス番号が整合しない (L1 origin が変わる場合は常に `0` になり、変わらない場合は `1` ずつ増加する)
+   * L2 ブロック `n` の L1 origin が `highest` の L1 origin よりもシーケンスウィンドウを超えて古く、
+     かつ `n.sequence_number == 0` である場合、`n` の親 L2 ブロックが `safe` 開始点となります。
+4. `finalized` L2 ブロックは、そのまま `finalized` 開始点として維持されます。
+5. チャネルタイムアウトよりも古い L1 参照を持つ最初の L2 ブロックを探す
+   * このブロックが参照する L1 origin (`l2base` と呼びます) が、L2 パイプライン導出の `base` となります。
+     ここから開始することで、各ステージは必要なデータをバッファリングしつつ、L1 の走査が実際の L2 safe ヘッドに追いつくまで、
+     不完全な導出出力を破棄できます。
+
+L2 チェーンを遡って走査する際、実装は設定ミスによる大規模なリオルグを避けるため、
+開始点が既存のフォークチョイス状態に比べて過度に遡った位置に設定されていないかをサニティチェックしてもかまいません。
+
+実装者向けの注記：ステップ 1～4 は `FindL2Heads` と呼ばれています。ステップ 5 は現在、Engine Queue のリセット処理に含まれています。
+開始点の探索を純粋なリセットロジックから切り離すため、今後この構成は変更される可能性があります。
+
+#### 導出ステージのリセット {#resetting-derivation-stages}
+
+1. L1 Traversal：L1 の `base` を、次のステージが最初に取得するブロックとして開始します。
+2. L1 Retrieval：以前のデータを破棄し、`base` の L1 データを取得します。あるいは、取得処理をパイプラインの後続ステップに延期します。
+3. Frame Queue：キューを空にします。
+4. Channel Bank：チャネルバンクを空にします。
+5. チャネルリーダー：バッチのデコード状態をすべてリセットします。
+6. Batch Queue：バッチキューを空にし、`base` を L1 の初期参照点として使用します。
+7. ペイロード属性の導出：バッチ／属性の状態をすべて破棄します。
+8. Engine Queue：
+   * L2 の フォークチョイス 状態を、同期開始点の状態 (`finalized`/`safe`/`unsafe`) で初期化します。
+   * このステージの L1 参照点を `base` に初期化します。
+   * 最初のタスクとして フォークチョイス の更新を必須とします。
+   * ファイナリティに関するデータをすべてリセットします。
+
+必要に応じて、`base` から開始するステージは、`l2base` ブロックにエンコードされたデータを基に system-config を初期化できます。
+
+#### マージ後のリオルグについて {#about-reorgs-post-merge}
+
+[merge]後は、リオルグの深さが[L1 ファイナリティ遅延][l1-finality]によって制限される点に注意してください
+(ネットワークの 1/3 超が継続的に合意しない場合を除き、2 L1 ビーコンエポック、つまり約 13 分) 。
+新しい L1 ブロックは L1 ビーコンエポックごと (約 6.4 分) にファイナライズされる可能性があり、これらの
+ファイナリティシグナルとバッチの取り込み状況に応じて、導出された L2 チェーンも不可逆になります。
+
+この形式のファイナライズが影響するのは入力のみである点に注意してください。ノードは、これらの不可逆な入力と、定められたプロトコルのルールおよびパラメータからチェーンを再現することで、
+チェーンが不可逆であると主観的に判断できます。
+
+ただし、これは L1 に投稿される出力とはまったく関係ありません。出力をファイナライズするには、フォールトプルーフや
+zk プルーフなど、何らかの形式の証明が必要です。L1 上の出金などの Optimistic Rollup の出力は、異議申し立てのないまま 1 週間
+(フォールトプルーフのチャレンジ期間) が経過して初めて「finalized」とラベル付けされます。これはプルーフ・オブ・ステークにおけるファイナライズと名前が重複しているので注意が必要です。
+
+[merge]: https://ethereum.org/en/upgrades/merge/
+
+[l1-finality]: https://ethereum.org/en/developers/docs/consensus-mechanisms/pos/#finality
+
+***
+
+## ペイロード属性の導出 {#deriving-payload-attributes}
+
+[deriving-payload-attr]: #deriving-payload-attributes
+
+L1 データから導出される各 L2 ブロックについて、[ペイロード属性][g-payload-attr]を構築する必要があります。
+ペイロード属性は [`PayloadAttributesV2`][eth-payload] オブジェクトの[拡張版][expanded-payload]で表され、
+`transactions` フィールドと `noTxPool` フィールドが追加されています。
+
+この処理は、検証ノードが実行するペイロード属性キューで行われるほか、シーケンサーノードが実行するブロック生成でも行われます
+(トランザクションがバッチ送信される場合、シーケンサーは tx-pool の使用を有効にすることがあります) 。
+
+[expanded-payload]: /specifications/base-protocol/execution/l2-execution-engine#extended-payloadattributesv1
+
+## トランザクションリストの導出 {#deriving-the-transaction-list}
+
+シーケンサーが作成する各 L2 ブロックについて、対象の L2 ブロック番号に一致する [シーケンサーバッチ][g-sequencer-batch] を起点とします。L1 チェーンに対象の L2 ブロック番号のバッチが含まれていなかった場合、これは自動生成された空のバッチになることがあります。[前述のとおり][batch-format]、バッチには [シーケンシングエポック][g-sequencing-epoch] 番号、L2 タイムスタンプ、およびトランザクションリストが含まれます。
+
+このブロックは [シーケンシングエポック][g-sequencing-epoch] の一部であり、
+そのエポック番号は L1 ブロック (その *[L1 origin][g-l1-origin]*) の番号と一致します。
+この L1 ブロックは、L1 属性と (エポック内の最初の L2 ブロックの場合は) ユーザーデポジットの導出に使用されます。
+
+したがって、[`PayloadAttributesV2`][expanded-payload] オブジェクトには以下のトランザクションを含める必要があります。
+
+* 1 つ以上の [デポジットトランザクション][g-deposited]。次の 2 種類があります。
+  * L1 origin から導出される、単一の *[L1 属性デポジットトランザクション][g-l1-attr-deposit]*。
+  * エポック内の最初の L2 ブロックの場合、L1 origin の [レシート][g-receipts] から導出される 0 個以上の
+    *[ユーザーデポジットトランザクション][g-user-deposited]*。
+* 0 個以上の [network upgrade automation transactions]：ネットワークアップグレードを実行するための特殊なトランザクション。
+* 0 個以上の *[シーケンスされたトランザクション][g-sequencing]*：L2 ユーザーが署名し、シーケンサーバッチに含まれる
+  通常のトランザクション。
+
+ペイロード属性内のトランザクションは、この順序で並んでいる**必要があります**。
+
+L1 属性は L1 ブロックのヘッダーから、デポジットは L1 ブロックの [レシート][g-receipts] から読み取られます。
+デポジットをログエントリとしてエンコードする方法の詳細については、[**デポジットコントラクト仕様**][deposit-contract-spec] を
+参照してください。
+
+[deposit-contract-spec]: /specifications/base-protocol/bridging/deposits#deposit-contract
+
+ログは、[On Future Proof Transaction Log Derivation](#on-future-proof-transaction-log-derivation) で説明されている、
+将来の変更にも対応できるベストエフォートのプロセスに従ってトランザクションから導出されます。
+
+### ネットワークアップグレード自動化トランザクション {#network-upgrade-automation-transactions}
+
+[network upgrade automation transactions]: #network-upgrade-automation-transactions
+
+一部のネットワークアップグレードでは、特定のブロックでコントラクトの変更やデプロイを自動的に行う必要があります。
+実行レイヤーに永続的な変更を加えずにこれを自動化するため、
+導出プロセスの一環として特別なトランザクションが挿入されることがあります。
+
+## 個々のペイロード属性の構築 {#building-individual-payload-attributes}
+
+トランザクションリストを導出した後、ロールアップノードは次のようにして [`PayloadAttributesV2`][extended-attributes] を
+構築します。
+
+* `timestamp` にはバッチのタイムスタンプを設定します。
+* `random` には L1 ブロックの属性 `prev_randao` を設定します。
+* `suggestedFeeRecipient` には Sequencer Fee Vault のアドレスを設定します。詳細は [Fee Vaults] の仕様を参照してください。
+* `transactions` は導出されたトランザクション (デポジットトランザクションとシーケンスされたトランザクション) の配列で、いずれも
+  [EIP-2718] でエンコードされます。
+* `noTxPool` は `true` に設定します。これにより、ブロック構築時に上記の `transactions` リストがそのまま使用されます。
+* `gasLimit` には、このペイロードの[システム構成][g-system-config]における現在の `gasLimit` の値を設定します。
+* `withdrawals` は、Canyon より前は nil、Canyon 以降は空の配列に設定します
+
+[extended-attributes]: /specifications/base-protocol/execution/l2-execution-engine#extended-payloadattributesv1
+
+[Fee Vaults]: /specifications/base-protocol/execution/l2-execution-engine#fee-vaults
+
+## 将来を見据えたトランザクションログの導出について {#on-future-proof-transaction-log-derivation}
+
+[L1 Retrieval](#l1-retrieval) で説明したとおり、バッチャートランザクションのタイプは、固定の許可リストに含まれるものでなければなりません。
+
+一方で、デポジットトランザクションおよび `SystemConfig` の更新イベントについては、将来のトランザクションタイプのレシートからであっても、
+以下のベストエフォートの手順でレシートをデコードできる限り、導出できるようにしたいと考えています。
+
+将来のトランザクションタイプが [EIP-2718](https://eips.ethereum.org/EIPS/eip-2718) 仕様に従っている限り、
+そのタイプはトランザクション (またはそのレシート) のバイナリエンコーディングの先頭バイトからデコードできます。そのうえで、以下の手順に従い、
+そうした将来のトランザクションのログを取得するか、トランザクションのレシートを無効として破棄します。
+
+* 既知のトランザクションタイプ、すなわち legacy (エンコーディングの先頭バイトが `[0xc0, 0xfe]` の範囲内) であるか、
+  先頭バイトが `[0, 4]` の範囲内または `0x7e` (*deposited*) である場合、そのトランザクションは *将来のトランザクション* ではなく、
+  レシートのデコード方法も既知であるため、この手順は適用されません。
+* トランザクションの先頭バイトが `[0x05, 0x7d]` の範囲内である場合、*将来の* EIP-2718 トランザクションであるとみなされるため、
+  レシートの処理に進むことができます。なお、`0x7e` を除外しているのは、既知のデポジットトランザクションタイプであるためです。
+* *将来の* レシートのエンコーディングの先頭バイトは、トランザクションのエンコーディングの先頭バイトと一致しなければならず、
+  一致しない場合は無効として破棄されます。処理を続行するには、EIP-2718 でエンコードされたレシートである必要があるためです。
+* レシートのペイロードは、`rlp([status, cumulative_transaction_gas_used, logs_bloom,
+  logs])` の形式でエンコードされているものとしてデコードされます。これは、既知の非 legacy トランザクションタイプで用いられるエンコーディングです。
+  * このデコードに失敗した場合、トランザクションのレシートは無効として破棄されます。
+  * このデコードに成功した場合、`logs` が取得され、既知のトランザクションタイプのログと同様に処理できます。
+
+このベストエフォートのデコード手順は、新しい L1 トランザクションタイプが導入されてもプロトコルが対応し続けられるようにすることを目的としています。

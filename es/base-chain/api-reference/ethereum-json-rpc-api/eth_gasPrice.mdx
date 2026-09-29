@@ -1,0 +1,38 @@
+---
+title: 'eth_gasPrice'
+sidebarTitle: 'eth_gasPrice'
+description: 'Devuelve el precio actual del gas en wei.'
+---
+
+Devuelve el precio actual del gas en wei. Para transacciones EIP-1559, usa en su lugar [`eth_maxPriorityFeePerGas`](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_maxPriorityFeePerGas) y [`eth_feeHistory`](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_feeHistory).
+
+## Parámetros {#parameters}
+
+Sin parámetros.
+
+## Valor devuelto {#returns}
+
+<ResponseField name="result" type="string">
+  El precio actual del gas en wei, expresado como cadena hexadecimal.
+</ResponseField>
+
+## Ejemplo {#example}
+
+<CodeGroup>
+  ```json Request
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_gasPrice",
+    "params": [],
+    "id": 1
+  }
+  ```
+
+  ```json Response
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x5b8d80"
+  }
+  ```
+</CodeGroup>

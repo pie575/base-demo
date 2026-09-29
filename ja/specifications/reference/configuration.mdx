@@ -1,0 +1,61 @@
+---
+title: "設定"
+description: "コンセンサス、ポリシー、管理、シーケンサーの各カテゴリにわたる Base Chain の設定パラメータのリファレンスです。"
+---
+
+Base の設定は、次の 4 つのカテゴリに分類されます。
+
+* **コンセンサスパラメータ**: ジェネシス時に固定されるパラメータ、または特権アカウントやプロトコルアップグレードによって変更できるパラメータです。
+* **ポリシーパラメータ**: プロトコルが課す制約の範囲内であれば、コンセンサスを損なわずに変更できるパラメータです。
+* **管理ロール**: コントラクトのアップグレード、ロール所有者の変更、プロトコルパラメータの更新を行えるアカウントです。通常はコールドウォレットやマルチシグウォレットが使用されます。
+* **サービスロール**: 日常的な運用に使用されるアカウントです。通常はホットウォレットが使用されます。
+
+## コンセンサスパラメータ {#consensus-parameters}
+
+| パラメータ                                                                                | 説明                                                                                       | 管理者                                 |
+| ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- | ----------------------------------- |
+| [Batch Inbox Address](/ja/specifications/reference/glossary#batch-inbox)                | [バッチャートランザクション](/ja/specifications/reference/glossary#batcher-transaction)の投稿先となる L1 アドレス   | 固定                                  |
+| [Batcher Hash](/ja/specifications/reference/glossary#batcher-hash)                      | 承認済みバッチャー送信者のバージョン付きハッシュ                                                                 | [System Config Owner](#admin-roles) |
+| Chain ID                                                                             | トランザクション署名の検証に使用する一意のチェーン ID                                                             | 固定                                  |
+| Proof Maturity Delay                                                                 | 出金を証明してからファイナライズするまでの時間。1 日。                                                             | [L1 Proxy Admin](#admin-roles)      |
+| Respected Game Type                                                                  | `OptimismPortal` が出金のファイナライズ時に受け入れるゲームタイプ。集約検証器 (`621`) 。                                | [Guardian](#service-roles)          |
+| Bond Withdrawal Delay                                                                | ディスピュートゲームのボンドを引き出せるようになるまでの時間。1 日。                                                      | 固定                                  |
+| [Fee Scalar](/ja/specifications/reference/glossary#fee-scalars)                         | L1 データの実コストに対するトランザクション手数料の上乗せ分。手数料マージンは 0%～50%。                                         | [System Config Owner](#admin-roles) |
+| [Gas Limit](/ja/specifications/base-protocol/consensus/derivation#system-configuration) | L2 ブロックのガスリミット。200,000,000 ガス以下。                                                         | [System Config Owner](#admin-roles) |
+| [Genesis State](/ja/specifications/base-protocol/execution/predeploys#overview)         | すべてのプリデプロイのコードとストレージを含むチェーンの初期状態。標準のプリデプロイとプリインストールのみ。                                   | 固定                                  |
+| L2 Block Time                                                                        | [導出](/ja/specifications/base-protocol/consensus/derivation)によって L2 ブロックが生成される間隔。1 秒または 2 秒。 | [L1 Proxy Admin](#admin-roles)      |
+| [Sequencing Window Size](/ja/specifications/reference/glossary#sequencing-window)       | L1 フォールバックが発動するまでに許容されるバッチ提出間隔の上限。3,600 L1 ブロック (L1 ブロック時間 12 秒の場合は 12 時間) 。             | 固定                                  |
+| Start Block                                                                          | `SystemConfig` が最初に初期化された L1 ブロック                                                        | [L1 Proxy Admin](#admin-roles)      |
+| Superchain Target                                                                    | L2 間の設定に使用する `SuperchainConfig` および `ProtocolVersions` のアドレス。Mainnet または Sepolia。        | 固定                                  |
+| Governance Token                                                                     | OP ガバナンストークン。無効。                                                                         | 該当なし                                |
+| [Operator Fee Params](/ja/upgrades/isthmus/exec-engine#operator-fee)                    | 手数料計算に使用するオペレーター手数料スカラー (operator fee scalar) と定数。標準値は 0。op-succinct などの非標準構成では 0 以外の値。  | [System Config Owner](#admin-roles) |
+| [DA Footprint Gas Scalar](/ja/upgrades/jovian/exec-engine)                              | DA フットプリントの計算に使用するスカラー                                                                   | [System Config Owner](#admin-roles) |
+| [Minimum Base Fee](/ja/upgrades/jovian/exec-engine#minimum-base-fee)                    | L2 の最低ベースフィー                                                                             | [System Config Owner](#admin-roles) |
+
+## ポリシーパラメータ {#policy-parameters}
+
+| パラメーター                                                                     | 説明                                                                                                                      | 管理者                               |
+| -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| [データ可用性タイプ](/ja/specifications/reference/glossary#data-availability-provider) | バッチャーがデータをblobとcalldataのどちらで投稿するか。Ethereum (BlobsまたはCalldata) 。Alt-DAには対応していません。                                        | [Batch Submitter](#service-roles) |
+| バッチ送信頻度                                                                    | L1への[バッチャートランザクション](/ja/specifications/reference/glossary#batcher-transaction)の送信頻度。1,800 L1ブロック以下 (L1ブロック時間が12秒の場合、6時間) 。 | [Batch Submitter](#service-roles) |
+| 出力頻度                                                                       | L1への出力ルートの送信頻度。43,200 L2ブロック以下 (L2ブロック時間が2秒の場合、24時間) 。ゼロ以外の値である必要があります。フォールトプルーフの有効化後は非推奨となります。                         | [L1 Proxy Admin](#admin-roles)    |
+
+## 管理ロール {#admin-roles}
+
+| ロール                                                                                            | 説明                                                                                                                                                                                                                                                             | 管理対象                                                                                          |
+| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| L1 Proxy Admin                                                                                 | 最新の `op-contracts` リリースに含まれる `ProxyAdmin` で、L1 コントラクトをアップグレードする権限を持ちます                                                                                                                                                                                         | L1 コントラクト                                                                                     |
+| L1 ProxyAdmin Owner                                                                            | L1 Proxy Admin を更新する権限を持ちます。[0x5a0Aae59D09fccBdDb6C6CcEB07B7279367C3d2A](https://etherscan.io/address/0x5a0Aae59D09fccBdDb6C6CcEB07B7279367C3d2A)                                                                                                              | [L1 Proxy Admin](#admin-roles)                                                                |
+| L2 Proxy Admin                                                                                 | `0x4200000000000000000000000000000000000018` にデプロイされた `ProxyAdmin` で、L2 コントラクトをアップグレードする権限を持ちます                                                                                                                                                                | [Predeploys](/ja/specifications/base-protocol/execution/predeploys#overview)                     |
+| L2 ProxyAdmin Owner                                                                            | L1 ProxyAdmin Owner の[エイリアス](/ja/specifications/reference/glossary#address-aliasing)アドレスで、`ProxyAdmin` を介して L2 コントラクトをアップグレードします。[0x6B1BAE59D09fCcbdDB6C6cceb07B7279367C4E3b](https://optimistic.etherscan.io/address/0x6B1BAE59D09fCcbdDB6C6cceb07B7279367C4E3b) | [L2 Proxy Admin](#admin-roles)                                                                |
+| [System Config Owner](/ja/specifications/base-protocol/consensus/derivation#system-configuration) | `SystemConfig` コントラクトの値を変更する権限を持ちます                                                                                                                                                                                                                            | [Batch Submitter](#service-roles)、[Sequencer P2P Signer](#service-roles)、Fee Scalar、Gas Limit |
+
+## サービスロール {#service-roles}
+
+| ロール                                                                            | 説明                                                                                                                                                                                                          | 管理者                                 |
+| ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| [Batch Submitter](/ja/specifications/reference/glossary#batcher)                  | L1 に提出されるバッチを認証します                                                                                                                                                                                          | [System Config Owner](#admin-roles) |
+| Challenger                                                                     | 許可制のディスピュートゲームを操作します。[0x9BA6e03D8B90dE867373Db8cF1A58d2F7F006b3A](https://etherscan.io/address/0x9BA6e03D8B90dE867373Db8cF1A58d2F7F006b3A)                                                                  | [L1 Proxy Admin](#admin-roles)      |
+| Guardian                                                                       | L1 からの出金の一時停止、ディスピュートゲームのブラックリスト登録、`OptimismPortal` における respected game type の設定を行います。[0x09f7150D8c019BeF34450d6920f6B3608ceFdAf2](https://etherscan.io/address/0x09f7150D8c019BeF34450d6920f6B3608ceFdAf2) | [L1 Proxy Admin](#admin-roles)      |
+| Proposer                                                                       | L1 上で許可制のディスピュートゲームを作成します。                                                                                                                                                                                  | [L1 Proxy Admin](#admin-roles)      |
+| [Sequencer P2P Signer](/ja/specifications/reference/glossary#unsafe-block-signer) | P2P レイヤーで unsafe ブロック (提出前のブロック) に署名します                                                                                                                                                                     | [System Config Owner](#admin-roles) |

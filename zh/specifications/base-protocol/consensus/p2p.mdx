@@ -1,0 +1,431 @@
+---
+title: "P2P"
+description: "Rollup 节点点对点网络规范，涵盖节点发现、Gossip 协议以及 unsafe 区块的传播。"
+---
+
+## 概述 {#overview}
+
+[rollup 节点](/zh/specifications/base-protocol/consensus/specification)提供一项可选的点对点 (P2P) 网络服务。在正常情况下，该服务可绕过 L1，缩短 sequencer 与网络其余节点之间的视图延迟，
+且无需依赖单一的中心化端点。
+
+此外，该服务还能提供可作为同步目标的区块 header，从而加快历史同步的启动；
+节点只需将 L2 链输入与 L1 数据进行比对，而无需逐个区块处理全部内容。
+
+rollup 节点&#95;始终&#95;以 L1 为准，并通过重组与规范链保持一致。
+通过 P2P 接口获取的 L2 数据严格来说只是一种推测性扩展，也称为“unsafe”链，
+用于提升正常情况下的性能。
+
+这也意味着 P2P 行为只是软性规则：节点之间通过评分机制相互制约，并最终按身份或 IP 封禁恶意对等节点。P2P 层上的任何行为都不会影响 rollup 的安全性，最坏情况下，节点也只是改为依赖延迟较高的 L1 数据来提供服务。
+
+概括来说，P2P 协议栈的构成如下：
+
+* 对等节点发现：[Discv5][discv5]
+* 连接、节点对等、传输安全、多路复用、gossip：[LibP2P][libp2p]
+* 应用层：负责发布和验证通过 gossip 传播的消息 (如 L2 区块) 。
+
+本文档仅规定这些网络库的组合方式与配置。
+这些组件各有其标准，并有 Go/Rust/Java/Nim/JS 等多种语言的实现，
+且已被多条其他区块链采用，其中最具代表性的是 [L1 共识层 (Eth2) ][eth2-p2p]。
+
+## P2P 配置 {#p2p-configuration}
+
+### 身份标识 {#identification}
+
+节点的网络身份与共识身份是**相互独立的**。
+网络身份是一个 `secp256k1` 密钥，节点发现和活跃的 LibP2P 连接均使用该密钥。
+
+网络身份的常见表示形式：
+
+* `PeerID`：LibP2P 专用 ID，由公钥派生 (经过 protobuf 编码、添加类型信息和哈希处理)
+* `NodeID`：Discv5 专用 ID，由公钥派生 (经过哈希处理，用于 DHT)
+* `Multi-address`：未签名的地址，包含 IP、TCP 端口和 PeerID
+* `ENR`：用于节点发现的已签名记录，包含 IP、TCP 端口、UDP 端口、签名 (可从中推导出公钥)
+  以及 L2 网络标识。通常采用 base64 编码。
+
+### Discv5 {#discv5}
+
+#### 共识层结构 {#consensus-layer-structure}
+
+Base rollup 节点的以太坊节点记录 (ENR) 必须包含以下值，每个值由唯一的键标识：
+
+* IPv4 地址 (`ip` 字段) 和/或 IPv6 地址 (`ip6` 字段) 。
+* TCP 端口 (`tcp` 字段) ，表示本地 libp2p 监听端口。
+* UDP 端口 (`udp` 字段) ，表示本地 discv5 监听端口。
+* OpStack (`opstack` 字段) L2 网络标识符
+
+`opstack` 值编码为单个 RLP `bytes` 值，由以下两项拼接而成：
+
+* 链 ID (`unsigned varint`)
+* 分叉 ID (`unsigned varint`)
+
+请注意，DiscV5 是一个共享的 DHT (分布式哈希表) ：L1 共识节点和执行节点、测试网节点，乃至外部 IOT 节点，都在这个大型公共 DHT 中交换记录。
+因此，想要审查节点记录的发现过程会更加困难。
+
+Base 中的发现过程是一条处理节点记录的流水线：
+
+1. 必要时使用 `FINDNODES` 填充路由表 (由 Discv5 库执行)
+2. 必要时通过搜索随机节点 ID 拉取更多记录
+   (例如，在 Go 实现中迭代 [`RandomNodes()`][discv5-random-nodes])
+3. 查找对等节点时，从 DiscV5 模块拉取记录
+4. 检查记录是否包含 `opstack` 条目，并验证其是否与链 ID 以及当前或未来的分叉编号相匹配
+5. 如果尚未建立连接，且最近未断开连接、也未被列入拒绝列表，则尝试拨号连接。
+
+### LibP2P {#libp2p}
+
+#### 传输 {#transport}
+
+使用 TCP 传输。LibP2P 还支持其他传输方式，但不作要求。
+
+#### 拨号 {#dialing}
+
+节点应当可被公开拨号，不依赖中继扩展，并且能够拨号 IPv4 和 IPv6 地址。
+
+#### NAT {#nat}
+
+监听端点必须可从公网访问，但可以部署在 NAT 之后。
+LibP2P 会使用基于 PMP / UPNP 的技术来跟踪节点的外部 IP。
+如果外部 IP 是静态的且已手动配置，建议禁用上述功能。
+
+#### 对等节点管理 {#peer-management}
+
+默认情况下，节点采用基于活跃对等节点数量的潮汐机制来维持对等节点数量：
+
+* 处于“低潮”时，节点开始主动寻找更多对等连接。
+* 处于“高潮”时，节点开始裁剪活跃连接，
+  但被标记为受信任或仍处于宽限期内的连接除外。
+
+对等节点加入后会获得一段宽限期，时长可配置。
+在紧急情况下 (即内存不足时) ，节点应更积极地裁剪连接。
+
+对等节点记录可以持久化到磁盘，以便 rollup 节点重启后快速重连已知的对等节点。
+
+发现过程会将待连接的对等节点记录写入 peerstore，并为其附上生存时间 (TTL) 标记。
+除了按基本的网络参与要求进行过滤外，当前的 P2P 流程无需针对特定主题有选择地建立对等连接。
+
+如果对等节点的性能评分过低，或被检测到存在客观上的恶意行为，则可能会被封禁。
+
+被封禁的对等节点将与 peerstore 记录持久化到同一数据存储中。
+
+#### 传输安全 {#transport-security}
+
+使用 [Libp2p-noise][libp2p-noise] 的 `XX` 握手，并采用 `secp256k1` P2P 身份，这一方案因 Eth2 而得到广泛采用。
+也可选用 TLS，但协商时应优先选择 `noise`。
+
+#### 协议协商 {#protocol-negotiation}
+
+[Multistream-select 1.0][multistream-select] (`/multistream/1.0.0`) 是一种交互式协议，
+用于在 LibP2P 对等节点之间协商双方支持的子协议。未来可能会改用 Multistream-select 2.0。
+
+#### Identify {#identify}
+
+LibP2P 提供了一个极简的身份识别 (identify) 模块，用于共享客户端版本和编程语言信息。
+该模块为可选项，可将其禁用以增强隐私保护。
+它同样包含协议协商信息，有助于加快初始连接速度。
+
+#### Ping {#ping}
+
+LibP2P 内置了一个简单的 ping 协议，用于跟踪各连接的延迟。
+应启用该协议，以帮助了解网络的健康状况。
+
+#### 多路复用 {#multiplexing}
+
+多路复用用于在同一连接上通过多个不同通道进行异步通信。
+[mplex][mplex] (`/mplex/6.7.0`) 为必需，[yamux][yamux] (`/yamux/1.0.0`) 为推荐但可选
+
+#### GossipSub {#gossipsub}
+
+[GossipSub 1.1][gossipsub] (`/meshsub/1.1.0`，即带有节点评分扩展的版本) 是一种面向网状网络的发布/订阅 (pubsub) 协议，
+已部署于 L1 共识层 (Eth2) 以及 Filecoin 等其他协议中，提供丰富的可定制选项。
+
+##### 基于内容的消息标识 {#content-based-message-identification}
+
+消息会先去重，再通过应用层签名验证进行过滤。
+因此，来源标记 (origin-stamping) 处于禁用状态，发布的消息只能包含应用数据，
+这一点由 [`StrictNoSign` 签名策略][signature-policy]强制保证。
+
+这样可以更好地保护隐私，同时允许 sequencer (共识身份) 维护
+多个网络身份，以实现冗余。
+
+##### 消息压缩与限制 {#message-compression-and-limits}
+
+应用内容采用 [snappy][snappy] 单块压缩 (而非帧压缩) ，
+大小上限为 10 MiB。
+
+##### 消息 ID 计算 {#message-id-computation}
+
+[与 L1 相同][l1-message-id]，但需考虑压缩：
+
+* 如果 `message.data` 能够成功进行 snappy 解压，则将 `message-id` 设为
+  `MESSAGE_DOMAIN_VALID_SNAPPY` 与 snappy 解压后的消息数据拼接后 `SHA256` 哈希值的前 20 个字节，
+  即 `SHA256(MESSAGE_DOMAIN_VALID_SNAPPY + snappy_decompress(message.data))[:20]`。
+* 否则，将 `message-id` 设为
+  `MESSAGE_DOMAIN_INVALID_SNAPPY` 与原始消息数据拼接后 `SHA256` 哈希值的前 20 个字节，
+  即 `SHA256(MESSAGE_DOMAIN_INVALID_SNAPPY + message.data)[:20]`。
+
+#### 心跳与参数 {#heartbeat-and-parameters}
+
+GossipSub [参数][gossip-parameters]：
+
+* `D` (主题稳定 mesh 目标节点数) ：8
+* `D_low` (主题稳定 mesh 低水位线) ：6
+* `D_high` (主题稳定 mesh 高水位线) ：12
+* `D_lazy` (gossip 目标节点数) ：6
+* `heartbeat_interval` (心跳间隔，单位为秒) ：0.5
+* `fanout_ttl` (对于未订阅但曾向其发布消息的主题，其 fanout 映射的 ttl，单位为秒) ：24
+* `mcache_len` (在缓存中保留完整消息以响应 `IWANT` 的窗口数) ：12
+* `mcache_gossip` (参与 gossip 的窗口数) ：3
+* `seen_ttl` (消息 ID 的保留时长，以心跳间隔数计) ：130 (= 65 秒)
+
+与 L1 共识 (Eth2) 的主要差异：
+
+* `seen_ttl` 无需覆盖完整的 L1 epoch (6.4 分钟) ，只需覆盖包含最新区块的一个小窗口即可
+* `fanout_ttl`：调整为小于 `seen_ttl`
+* `mcache_len`：由于 gossip 噪声小得多，因此可以保留更多心跳周期的消息。
+* `heartbeat_interval`：采用更短的间隔以降低延迟；带宽占用应仍处于合理范围，因为
+  L1 使用 0.7 秒的间隔，而这里每个间隔内需要 gossip 的消息要少得多。
+
+#### 主题配置 {#topic-configuration}
+
+主题以字符串作为标识符，并在消息和订阅中传递。
+`/optimism/chain_id/hardfork_version/Name`
+
+* `chain_id`：替换为链 ID 的十进制表示
+* `hardfork_version`：替换为硬分叉版本的十进制表示，从 `0` 开始
+* `Name`：主题的应用名称
+
+请注意，与 L1 不同，这里的主题编码不随主题而变化，
+因为主题数量较少，且全部采用 snappy 压缩。
+
+#### 主题验证 {#topic-validation}
+
+为确保只中继有效消息，并根据应用层行为对恶意对等节点进行评分，
+[扩展验证器][extended-validator]会在中继或处理消息之前先对其进行检查。
+扩展验证器会发出以下验证信号之一：
+
+* `ACCEPT`：消息有效，中继给其他对等节点，并传递给本地主题订阅者
+* `IGNORE`：按不活跃行为评分，丢弃消息且不做处理
+* `REJECT`：施加评分惩罚，丢弃消息
+
+## Gossip 主题 {#gossip-topics}
+
+以下主题用于向其他节点分发区块，速度比经由 L1 中转更快。具体如下：
+
+### `blocksv1` {#blocksv1}
+
+Canyon/Shanghai 升级之前的区块通过 `/optimism/<chainId>/0/blocks` 主题广播。
+
+### `blocksv2` {#blocksv2}
+
+Canyon/Delta 区块通过 `/optimism/<chainId>/1/blocks` 主题广播。
+
+### `blocksv3` {#blocksv3}
+
+Ecotone 区块在 `/optimism/<chainId>/2/blocks` 上广播。
+
+### `blocksv4` {#blocksv4}
+
+Isthmus 区块在 `/optimism/<chainId>/3/blocks` 上广播。
+
+### 区块编码 {#block-encoding}
+
+一个区块由以下各部分依次拼接而成：
+
+* V1 和 V2 主题
+  * `signature`：一个 `secp256k1` 签名，固定为 65 字节，`r (uint256), s (uint256), y_parity (uint8)`
+  * `payload`：一个经 SSZ 编码的 `ExecutionPayload`，始终占据剩余的全部字节。
+* V3 主题
+  * `signature`：一个 `secp256k1` 签名，固定为 65 字节，`r (uint256), s (uint256), y_parity (uint8)`
+  * `parentBeaconBlockRoot`：L1 origin 的父信标区块根，固定为 32 字节
+  * `payload`：一个经 SSZ 编码的 `ExecutionPayload`，始终占据剩余的全部字节。
+* V4 主题
+  * `signature`：一个 `secp256k1` 签名，固定为 65 字节，`r (uint256), s (uint256), y_parity (uint8)`
+  * `parentBeaconBlockRoot`：L1 origin 的父信标区块根，固定为 32 字节
+  * `payload`：一个经 SSZ 编码的 `ExecutionPayload`，始终占据剩余的全部字节。
+    * *注意* - `ExecutionPayload` 首次修改是在 Isthmus 中。请参阅
+      Isthmus 规范中的[“`ExecutionPayload` 的更新”](/zh/upgrades/isthmus/exec-engine#update-to-executionpayload)。
+
+所有主题均使用 Snappy 块压缩 (即不使用 snappy 帧) ：
+上述数据须在编码后压缩，并在解码前解压。
+
+### 区块签名 {#block-signatures}
+
+`signature` 是一个 `secp256k1` 签名，其签名的消息为：
+`keccak256(domain ++ chain_id ++ payload_hash)`，其中：
+
+* `domain` 为 32 字节，预留用于表示消息类型和版本信息。对于此签名，该值全为零。
+* `chain_id` 是以大端序编码的 `uint256`。
+* `payload_hash` 为 `keccak256(payload)`，其中 `payload` 为：
+  * 在 V1 和 V2 中，为 `payload` 本身；
+  * 在 V3 和 V4 中，为 `parentBeaconBlockRoot ++ payload` (*注意*：在 V4 中，`payload` 经过扩展，额外包含
+    `withdrawalsRoot`) 。
+
+`secp256k1` 签名必须满足 `y_parity = 1 or 0`，因为 `chain_id` 已包含在签名内容中。
+
+### 区块验证 {#block-validation}
+
+[extended-validator] 按以下操作顺序检查传入的消息：
+
+* `[REJECT]`：压缩无效
+* `[REJECT]`：区块编码无效
+* `[REJECT]`：`payload.timestamp` 早于当前时间 60 秒以上
+  (为最坏情况下的传播延迟和时钟偏差预留的宽限边界)
+* `[REJECT]`：`payload.timestamp` 晚于当前时间 5 秒以上
+* `[REJECT]`：`payload` 中的 `block_hash` 无效
+* `[REJECT]`：区块位于 V1 主题且包含提款
+* `[REJECT]`：区块位于 V1 主题且包含提款列表
+* `[REJECT]`：区块位于 `topic >= V2` 且提款列表不为空
+* `[REJECT]`：区块位于 `topic <= V2` 且设置了 blob gas 使用量值
+* `[REJECT]`：区块位于 `topic <= V2` 且设置了超额 blob gas 值
+* `[REJECT]`：区块位于 `topic <= V2` 且父信标区块根不为 nil
+* `[REJECT]`：区块位于 `topic >= V3` 且 blob gas 使用量值不为零
+* `[REJECT]`：区块位于 `topic >= V3` 且超额 blob gas 值不为零
+* `[REJECT]`：区块位于 `topic >= V3` 且父信标区块根为 nil
+* `[REJECT]`：区块位于 `topic <= V3` 且 L2 提款根不为 nil
+* `[REJECT]`：区块位于 `topic >= V4` 且 L2 提款根为 nil
+* `[REJECT]`：同一区块高度上已出现超过 5 个不同的区块
+* `[IGNORE]`：该区块此前已出现过
+* `[REJECT]`：sequencer 的签名无效
+* 将该区块在对应区块高度上标记为已出现
+
+区块由相应的 sequencer 签名，以过滤恶意消息。
+目前采用单一 sequencer 模型，但未来可能改为多个 sequencer。
+默认的 sequencer 公钥随 rollup 节点一同分发，并且应当支持配置。
+
+请注意，即使 L1 已确认了另一个区块，某个区块仍可能继续传播。
+节点本地的 L1 视图可能有误，而时间和签名验证足以防止垃圾消息。
+因此，在每个传播步骤中都调用执行引擎查询区块，所增加的延迟得不偿失。
+
+#### 区块处理 {#block-processing}
+
+节点可以在 L1 数据可用之前将区块应用到其本地引擎，但须确保：
+
+* 区块的应用是可逆的，以便在与延迟到达的 L1 信息发生冲突时能够回退
+* 随后的 forkchoice 更新会确保该区块被识别为“unsafe”
+  (参见 [fork choice updated](/zh/specifications/base-protocol/consensus/derivation#engine-api-usage))
+
+#### 分支选择 {#branch-selection}
+
+节点预期 sequencer 不会发生双重表态 (equivocate) ，因此 unsafe 区块的分叉选择规则采用“先到区块获胜”模型：unsafe 链一旦被延长就不会再改变，除非被发布到 L1 的安全数据判定为无效。
+
+如果节点看到的初始 unsafe 区块不同，那么在数据发布到 L1 之前，它们无法达成共识；数据发布到 L1 后，这一分歧即可消除。由于发布到 L1 的数据取决于 batcher 所看到的数据，安全链头 (safe head) 将以 batcher 数据源的 unsafe 链头 (unsafe head) 为准。
+
+#### 区块主题评分参数 {#block-topic-scoring-parameters}
+
+## Req-Resp {#req-resp}
+
+共识客户端 (`base-consensus`) 的同步协议采用了与 L1 以太坊信标链 (Beacon-Chain) 类似的请求-响应编码。
+参见 [L1 P2P 接口 req-resp 规范][eth2-p2p-reqresp] 和 [Altair P2P 更新][eth2-p2p-altair-reqresp]。
+
+不过，该协议做了简化，以规避 L1 中出现的若干问题：
+
+* 响应中的错误字符串 (如有替代响应)
+  不应要求压缩，也不应设置人为的全局长度限制。
+* 载荷长度应为固定长度：应避免从底层流中逐字节读取 uvarint。
+* `<context-bytes>` 放宽为编码一个 `uint32`，而非信标链的 `ForkDigest`。
+* 载荷编码可能随硬分叉而变化，因此不纳入协议 ID。
+* 是否使用响应分块 (response-chunks) 取决于具体的 req-resp 方法：大多数基本的 req-resp 无需分块响应。
+* 建议在必要时将压缩纳入载荷编码，并由具体的 req-resp 方法决定：
+  ping 之类的消息无需流式帧压缩等机制。
+
+协议 ID 格式沿用 L1 的方案，
+唯一的区别在于末尾的编码模式部分，现在该部分因消息而异：
+
+```text Protocol ID Format
+/ProtocolPrefix/MessageName/SchemaVersion/
+```
+
+共识客户端提供的所有 req-resp 协议，其 `/ProtocolPrefix` 均设为 `/opstack/req`。
+
+如果通信仅针对特定链，各个方法可以在 `/MessageName` 段中包含链 ID，
+从而一眼就能看出该方法适用于哪条链。
+其他方法则可以在请求和/或响应数据中携带链信息，
+例如 L1 信标链 req-resp 协议中的 `ForkDigest` `<context-bytes>`。
+
+每个段都以 `/` 开头，且可以包含多个 `/`，最终的协议 ID 以 `/` 结尾。
+
+### `payload_by_number` {#payload_by_number}
+
+这是一种可选的链同步方法，用于按编号请求/提供执行载荷。
+它可用于在错过 gossip 消息时填补缺口，以及同步中短范围的 unsafe L2 区块。
+
+协议 ID：`/opstack/req/payload_by_number/<chain-id>/0/`
+
+* `/MessageName` 为 `/payload_by_number/<chain-id>`，其中 `<chain-id>` 设置为共识客户端的 L2 链 ID。
+* `/SchemaVersion` 为 `/0`
+
+请求格式：`<num>`：小端序 `uint64`，即所请求的区块编号。
+
+响应格式：`<response> = <res><version><payload>`
+
+* `<res>` 是描述结果的字节码。
+  * `0` 表示成功，其后应跟随 `<version><payload>`。
+  * `1` 表示请求有效，但载荷不可用。
+  * `2` 表示请求无效
+  * `3+` 表示其他错误
+  * `>= 128` 范围保留供将来使用。
+* `<version>` 是小端序 `uint32`，用于标识响应类型 (因分叉版本而异)
+* `<payload>` 是编码后的区块，一直读取到流 EOF 为止。
+
+应对 `<response>` 的输入以及解压生成的任何输出加以限制，
+以避免意外的资源消耗或 zip 炸弹类攻击。
+建议设置 10 MB 的上限，以确保所有区块都能同步。
+由于该同步方法是可选的，各实现可以选择不同的上限。
+
+`<version>` 列表：
+
+* `0`：SSZ 编码的 `ExecutionPayload`，采用 Snappy 帧压缩，
+  与 L1 Merge、L2 Bedrock 和 L2 Canyon 版本的 `ExecutionPayload` SSZ 定义一致。
+* `1`：SSZ 编码的 `ExecutionPayloadEnvelope`，采用 Snappy 帧压缩，
+  与 L2 Ecotone 版本的 `ExecutionPayloadEnvelope` SSZ 定义一致。
+* `2`：SSZ 编码的 `ExecutionPayload`，采用 Snappy 帧压缩，
+  与 L2 Isthmus 版本的 `ExecutionPayload` SSZ 定义一致。
+
+请求按区块编号发起，因此可以从多个对等节点并行获取一条链。
+
+对于 `res = 0` 的响应，应验证：
+
+* 区块编号与所请求的区块编号一致。
+* `blockhash` 与区块其他内容相符。
+* 能够向一个已知的规范区块延伸构建。
+  * 验证方法是检查先前受信任的规范区块的父哈希是否与所获取区块经验证的哈希相匹配。
+  * 对于 unsafe 区块，此要求可放宽为针对任意先前受信任区块的父哈希进行验证：
+    * gossip 验证过程会限制可作为同步目标而受信任的区块数量。
+    * unsafe 区块应排队等待处理，最新收到的 L2 unsafe 区块应始终
+      覆盖先前的任何链，直到能够根据 L1 数据重现最终的 L2 链。
+
+不应接受 `res > 0` 的响应码。结果码有助于调试，
+但由于响应的对等节点不可信，客户端应将任何错误都视为未获应答的请求来处理。
+
+***
+
+[libp2p]: https://libp2p.io/
+
+[discv5]: https://github.com/ethereum/devp2p/blob/master/discv5/discv5.md
+
+[discv5-random-nodes]: https://pkg.go.dev/github.com/ethereum/go-ethereum@v1.10.12/p2p/discover#UDPv5.RandomNodes
+
+[eth2-p2p]: https://github.com/ethereum/consensus-specs/blob/master/specs/phase0/p2p-interface.md
+
+[eth2-p2p-reqresp]: https://github.com/ethereum/consensus-specs/blob/master/specs/phase0/p2p-interface.md#the-reqresp-domain
+
+[eth2-p2p-altair-reqresp]: https://github.com/ethereum/consensus-specs/blob/master/specs/altair/p2p-interface.md#the-reqresp-domain
+
+[libp2p-noise]: https://github.com/libp2p/specs/tree/master/noise
+
+[multistream-select]: https://github.com/multiformats/multistream-select/
+
+[mplex]: https://github.com/libp2p/specs/tree/master/mplex
+
+[yamux]: https://github.com/hashicorp/yamux/blob/master/spec.md
+
+[gossipsub]: https://github.com/libp2p/specs/blob/master/pubsub/gossipsub/gossipsub-v1.1.md
+
+[signature-policy]: https://github.com/libp2p/specs/blob/master/pubsub/README.md#signature-policy-options
+
+[snappy]: https://github.com/google/snappy
+
+[l1-message-id]: https://github.com/ethereum/consensus-specs/blob/master/specs/phase0/p2p-interface.md#topics-and-messages
+
+[gossip-parameters]: https://github.com/libp2p/specs/blob/master/pubsub/gossipsub/gossipsub-v1.0.md#parameters
+
+[extended-validator]: https://github.com/libp2p/specs/blob/master/pubsub/gossipsub/gossipsub-v1.1.md#extended-validators

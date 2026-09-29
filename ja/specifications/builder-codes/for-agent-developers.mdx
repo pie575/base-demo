@@ -1,0 +1,96 @@
+---
+title: "エージェント開発者向けの Builder Codes"
+sidebarTitle: "エージェント開発者向け"
+description: "AI エージェントのオンチェーントランザクションを Base 上のあなたのアイデンティティに紐付けて、分析機能やリーダーボード機能を活用しましょう。"
+---
+
+AI エージェントは自律的に動作するため、ユーザーがトランザクションを一つひとつ手動で実行しなくても送信を行います。Builder Codes を使えば、こうしたアクティビティをすべて Base 上のエージェントのアイデンティティに紐付けられます。
+
+## エージェントに Builder Codes が必要な理由 {#why-agents-need-builder-codes}
+
+* **アトリビューション** — エージェントが送信するすべてのトランザクションは、Base レジストリ上のあなたの ID に紐付けられます。Builder Codes がなければ、エージェントのオンチェーンアクティビティは匿名のままです。
+* **分析** — [base.dev](https://base.dev) で、エージェントのトランザクション量、リーチしたユーザー数、オンチェーンでのコンバージョンを追跡できます。
+* **可視性** — Builder Codes を持つエージェントは、Base の App Leaderboard やエコシステムのスポットライト企画など、ユーザーの目に触れる場に掲載される可能性があります。
+
+## 仕組み {#how-it-works}
+
+Builder Code は一意の識別子 (例: `bc_a1b2c3d4`) で、[ERC-8021](https://eip.tools/eip/8021) サフィックスとしてエージェントのトランザクションの calldata に付加されます。スマートコントラクトはこのサフィックスを無視し、サフィックスは後からオフチェーンのインデクサーによって抽出されます。ガスのオーバーヘッドはごくわずかです (非ゼロバイトあたり 16 gas) 。
+
+## API リファレンス {#api-reference}
+
+### エージェントを登録する {#register-your-agent}
+
+```http Register an agent Builder Code
+POST /v1/agents/builder-codes
+```
+
+認証は不要です。
+
+| フィールド           | 型      | 必須 | 説明                               |
+| --------------- | ------ | -- | -------------------------------- |
+| `walletAddress` | string | はい | エージェントの EVM ウォレットアドレス (`0x...`)  |
+
+指定したウォレットのBuilder Codeを返します。同じウォレットアドレスからは、常に同じコードが返されます。
+
+```bash Terminal
+curl -X POST https://api.base.dev/v1/agents/builder-codes \
+  -H "Content-Type: application/json" \
+  -d '{
+    "walletAddress": "<your-wallet-address>"
+  }'
+```
+
+```json Response
+{
+  "builderCode": "bc_a1b2c3d4",
+  "walletAddress": "0x..."
+}
+```
+
+<Info>
+  すでに登録済みですか？同じウォレットアドレスでこのエンドポイントを再度呼び出すと、既存のBuilder Codeが返されます。そのため、デプロイのたびに呼び出しても問題ありません。
+</Info>
+
+## Base スキルを使用する {#using-the-base-skill}
+
+AI コーディングツール (Claude Code、Cursor、Codex など) を使用している場合は、Base スキルパッケージをインストールすれば、登録作業を最初から最後までスキルに任せられます。
+
+```bash Terminal
+npx skills add base/base-skills
+```
+
+次に、エージェントに次のように依頼します: **&quot;Register my agent for a builder code on Base.dev.&quot;**
+
+このスキルは、ウォレットの検証、登録 API の呼び出し、返されたコードの `src/constants/builderCode.ts` への書き込み、`ox` のインストールを自動で行い、ERC-8021 の `dataSuffix` をトランザクションクライアント (viem、ethers.js、またはマネージドサービス) に組み込みます。
+
+## アトリビューションの確認 {#verify-attribution}
+
+Builder Code が正しく付加されているかどうかは、次の方法で確認できます。
+
+**1. base.dev で確認する**
+
+* [base.dev](https://base.dev) にアクセスします
+* トランザクションタイプのドロップダウンから **Onchain** を選択します
+* あなたのコードを含むトランザクションが処理されると、Total Transactions セクションのアトリビューション数が増加します
+
+**2. ブロックエクスプローラー (Basescan、Etherscan など) を使用する**
+
+* 対象のトランザクションハッシュを見つけます
+* input data フィールドを表示します
+* 末尾の 16 バイトが `8021` の繰り返しになっていることを確認します
+* サフィックスをデコードし、Builder Code が含まれていることを確認します
+
+**3. オープンソースツールを使用する**
+
+* [Builder Code Validation](https://builder-code-checker.vercel.app/) ツールを開きます
+* トランザクションタイプを選択します
+* トランザクションハッシュまたは UserOperation ハッシュを入力します
+* **Check Attribution** ボタンをクリックします
+
+## 次のステップ {#next-steps}
+
+<CardGroup cols={2}>
+  <Card title="Builder Codes の概要" icon="book-open" href="/ja/specifications/builder-codes/overview">
+    アプリ、ウォレット、エージェントで Builder Codes がどのように機能するかを確認しましょう。
+  </Card>
+</CardGroup>

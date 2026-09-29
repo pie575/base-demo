@@ -1,0 +1,135 @@
+---
+title: "执行引擎"
+description: "Azul 硬分叉中的执行引擎变更，包括 EIP-7825 单笔交易 gas 上限以及 secp256r1 预编译合约的费用调整。"
+---
+
+## EVM 变更 {#evm-changes}
+
+### 交易 Gas 上限 {#transaction-gas-limit-cap}
+
+[EIP-7825](https://eips.ethereum.org/EIPS/eip-7825) 在协议层面为单笔交易引入了最大 gas 上限，
+即 16,777,216 (2^24) 。超过此上限的交易将在验证阶段被拒绝。
+
+Base 采用与 L1 相同的上限，以最大限度地保持与以太坊的等效性。
+
+<Note>
+  存款交易将不受交易 gas 上限约束。它们本身已被限制在 [20,000,000 gas][gas-market] 以内，因为这是单个 L1 区块所能容纳的最大 gas 量。
+</Note>
+
+[gas-market]: /specifications/base-protocol/bridging/deposits#default-values
+
+### MODEXP 输入上限 {#upper-bound-modexp}
+
+[EIP-7823](https://eips.ethereum.org/EIPS/eip-7823) 将 MODEXP 预编译合约的每个输入字段限制为最多
+1024 字节。输入超出此上限的调用将被拒绝。
+
+### MODEXP Gas 成本上调 {#modexp-gas-cost-increase}
+
+[EIP-7883](https://eips.ethereum.org/EIPS/eip-7883) 将 MODEXP 预编译合约的最低 gas 成本
+从 200 上调至 500，并将通用成本计算结果提高到原来的三倍。
+
+### CLZ 操作码 {#clz-opcode}
+
+[EIP-7939](https://eips.ethereum.org/EIPS/eip-7939) 新增了 `CLZ` 操作码，用于统计 256 位字中前导零位的
+个数；若输入为零，则返回 256。
+
+### secp256r1 预编译合约的 Gas 成本 {#secp256r1-precompile-gas-cost}
+
+[EIP-7951](https://eips.ethereum.org/EIPS/eip-7951) 规定 secp256r1 预编译合约位于地址 `0x100`，
+Gas 成本为 3,450。
+
+Base 已在同一地址上提供 `p256Verify` 预编译合约 (在 Fjord 升级中通过
+[RIP-7212](https://github.com/ethereum/RIPs/blob/master/RIPS/rip-7212.md) 引入) ，其 Gas 成本为 3,450。
+自 Azul 升级起，该 Gas 成本将提高至 6,900，与 EIP-7951 中规定的 L1 Gas 成本保持一致，从而
+确保与 L1 预编译合约的定价严格等效。
+
+## 网络变更 {#networking-changes}
+
+### eth/69 {#eth69}
+
+[EIP-7642](https://eips.ethereum.org/EIPS/eip-7642) 将以太坊线路协议 (wire protocol) 升级至版本 69，
+移除了 `Status` 消息中的旧版字段，并简化了握手流程。
+
+### 发现协议现使用 `basev0` 协议 ID {#discovery-protocol-now-uses-basev0-protocol-id}
+
+执行层的发现协议现已改用 `basev0` 作为协议 ID，使 Base 节点能够更快地发现彼此，在 Sepolia 等节点较少的网络上效果尤为明显。
+
+### 移除账户余额与回执 {#remove-account-balances-receipts}
+
+在 Azul 中，通过 Flashblocks WebSocket 传输的 `FlashblocksMetadata` payload 已被简化。
+`new_account_balances` 和 `receipts` 字段已移除。`access_list` 字段仍会保留，但在
+Azul 中不会被填充。
+
+**变更前：**
+
+```json FlashblocksMetadata Before Azul lines wrap expandable
+{
+  "block_number": 43403718,
+  "new_account_balances": {
+    "0x4200000000000000000000000000000000000006": "0x35277a9715c6df1c99de"
+  },
+  "receipts": {
+    "0x1ef9be45b3f7d44de9d98767ddb7c0e330b21777b67a3c79d469be9ffab091dd": {
+      "cumulativeGasUsed": "0x177d7bd",
+      "logs": [],
+      "status": "0x1",
+      "type": "0x2"
+    }
+  },
+  "access_list": null
+}
+```
+
+**变更后：**
+
+```json FlashblocksMetadata After Azul
+{
+  "block_number": 43403718,
+  "access_list": null
+}
+```
+
+## RPC 变更 {#rpc-changes}
+
+### Engine API 使用方式 {#engine-api-usage}
+
+自 Azul 激活起，区块生产与导入使用以下 Engine API 方法：
+
+* `engine_forkchoiceUpdatedV3`：用于启动区块构建及分叉选择 (forkchoice) 同步。
+* `engine_getPayloadV5`：用于获取已构建的 payload。
+* `engine_newPayloadV4`：用于将 payload 导入执行引擎。
+
+`engine_getPayloadV5` 返回 V5 封装结构，但其中的执行 payload 仍采用 V4 格式。
+因此，payload 仍通过 `engine_newPayloadV4` 插入 (Base Azul 客户端不使用 `engine_newPayloadV5`
+路径) 。
+
+Azul 对该流程的约束如下：
+
+* 与 blob 相关的 Engine API 输入必须为空值：
+  * `expectedBlobVersionedHashes` MUST 为空数组。
+  * `engine_getPayloadV5` 响应中的 `blobsBundle` 应为空。
+* `engine_newPayloadV4` 中的 `executionRequests` MUST 为空数组。
+
+### eth_config RPC 方法 {#eth_config-rpc-method}
+
+[EIP-7910](https://eips.ethereum.org/EIPS/eip-7910) 引入了 `eth_config` JSON-RPC 方法，
+用于返回链配置参数，例如分叉激活时间戳。
+
+Base Azul 按照标准的 EIP-7910 响应模式提供 `eth_config`。
+
+Base 特有的行为如下：
+
+* `blobSchedule` 的 `current`、`next` 和 `last` 始终返回零值。
+  Base 不支持原生 blob 交易，因此不得对外公布合成的以太坊 blob
+  调度默认值。
+* `precompiles` 反映该分叉下已激活的 EVM 预编译合约集合，包括标准的
+  以太坊预编译合约，以及
+  [预编译合约规范](/zh/specifications/base-protocol/execution/precompiles)中记录的所有已在 Base 上激活的新增预编译合约。
+* `systemContracts` 仅包含 EIP-7910 能够表示的合约。在 Base 上具体为：
+  * Ecotone 激活后，包含 `BEACON_ROOTS_ADDRESS`。
+  * Isthmus 激活后，包含 `HISTORY_STORAGE_ADDRESS`。
+  * 不包含 `DEPOSIT_CONTRACT_ADDRESS`、`CONSOLIDATION_REQUEST_PREDEPLOY_ADDRESS` 和
+    `WITHDRAWAL_REQUEST_PREDEPLOY_ADDRESS`。
+
+[预部署合约规范](/zh/specifications/base-protocol/execution/predeploys)中记录的 Base 特有预部署合约及其他 Base 系统合约，除非属于 EIP-7910 模式的一部分，否则不会序列化到
+`eth_config` 中。

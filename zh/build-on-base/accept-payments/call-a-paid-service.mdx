@@ -1,0 +1,64 @@
+---
+title: "调用付费服务"
+keywords: ["x402 买方", "智能体为 API 付费", "x402 客户端支出策略", "智能体 USDC 支付"]
+description: "通过智能体调用 x402 服务，并对网络、代币、单次请求及会话的支出加以限制。"
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+封装智能体的 HTTP 客户端，使其能够解析 402 响应、选择受支持的方案、完成签名并重试请求。在生成任何签名之前，须先应用本地策略。
+
+## 演示 {#demo}
+
+<PaymentsDemo flow="x402Buyer" />
+
+<Tip>
+  上方演示仅为模拟效果。如需查看 Vibenet 上的链上演示，请前往 [Base 链演示](https://chain.base.org/demos)。
+</Tip>
+
+## 在签名前强制执行支出策略 {#enforce-spend-policy-before-signing}
+
+{/* sample: x402-buyer-ts */}
+
+```typescript TypeScript buyer lines wrap expandable highlight={9,13-17,20}
+const account = privateKeyToAccount(required("EVM_PRIVATE_KEY") as `0x${string}`);
+const publicClient = createPublicClient({ chain: baseSepolia, transport: http() });
+const client = new x402Client()
+  .register("eip155:*", new ExactEvmScheme(account))
+  .register("eip155:*", new UptoEvmScheme(account))
+  .register("eip155:*", new BatchSettlementEvmScheme(toClientEvmSigner(account, publicClient)));
+
+const baseSepoliaUsdc = "0x036CbD53842c5426634e7929541eC2318f3dCF7c";
+let authorizedThisSession = 0n;
+client.onBeforePaymentCreation(async ({ selectedRequirements }) => {
+  if (selectedRequirements.network !== "eip155:84532") return { abort: true, reason: "Wrong network" };
+  if (selectedRequirements.asset.toLowerCase() !== baseSepoliaUsdc.toLowerCase()) return { abort: true, reason: "Wrong asset" };
+  const amount = BigInt(selectedRequirements.amount);
+  if (amount > 100_000n || authorizedThisSession + amount > 1_000_000n) {
+    return { abort: true, reason: "Spend limit exceeded" };
+  }
+  authorizedThisSession += amount;
+});
+
+const fetchWithPayment = wrapFetchWithPayment(fetch, client);
+const response = await fetchWithPayment("http://localhost:4021/fixed");
+if (!response.ok) throw new Error(`Paid request failed: ${response.status}`);
+console.log(await response.json());
+```
+
+该封装器自动处理的是支付协商，而不是信任。应将响应的 schema 和内容视为不可信输入进行校验，并确保钱包策略不受服务返回的任何指令影响。
+
+<Check>
+  仅当请求使用 Base Sepolia USDC，且金额同时低于单次请求上限和会话上限时，客户端才会付款。
+</Check>
+
+<Warning>
+  公共 x402.org facilitator 仅适用于测试网。在 Base Mainnet 上，请选用生产级 facilitator，妥善保护签名密钥，跨进程持久地限制累计支出，并拒绝不受支持的方案或资产。
+</Warning>
+
+## 另请参阅 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="为 API 收费" icon="server" href="/zh/build-on-base/accept-payments/charge-for-an-api">实现 exact 支付的卖方逻辑。</Card>
+  <Card title="批量处理高频支付" icon="layer-group" href="/zh/build-on-base/accept-payments/batch-high-frequency-payments">降低重复调用的结算频率。</Card>
+</CardGroup>

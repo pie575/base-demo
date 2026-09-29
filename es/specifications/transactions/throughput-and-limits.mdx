@@ -1,0 +1,68 @@
+---
+title: Rendimiento y límites
+description: Límites de gas y parámetros de red relacionados con el rendimiento en Base.
+---
+
+El rendimiento de Base está condicionado por los límites de gas, el rendimiento de disponibilidad de datos, los parámetros del mercado de comisiones y los límites de los endpoints. No existe un único valor de transacciones por segundo aplicable a todas las cargas de trabajo, ya que cada transacción consume una cantidad distinta de gas y de datos.
+
+Base ha sostenido en varias ocasiones picos de más de 5000 TPS, y el rendimiento sigue aumentando a medida que la cadena escala. Para más información, consulta [Introducing Base Azul](https://blog.base.dev/introducing-base-azul).
+
+## Límites actuales {#current-limits}
+
+| Límite                                   | Valor                                                                  |
+| ---------------------------------------- | ---------------------------------------------------------------------- |
+| Presupuesto de gas del bloque completo   | ~400M de gas                                                           |
+| Presupuesto de gas del primer Flashblock | ~40M de gas                                                            |
+| Máximo de gas por transacción            | 16,777,216 de gas (2^24)                                               |
+| Límite de las transacciones de depósito  | Gas máximo que se puede incluir en un bloque de L1 (20,000,000 de gas) |
+
+Mientras se construye el bloque, su presupuesto total de gas se reparte entre los Flashblocks. El Flashblock 1 puede usar 1/10 del límite de gas del bloque, el Flashblock 2 puede usar 2/10, y así sucesivamente hasta llegar al Flashblock 10, que dispone del límite completo. Consulta [Ordenamiento de transacciones](/es/specifications/transactions/transaction-ordering#flashblocks) para ver cómo influye esto en el orden de las transacciones.
+
+## Rendimiento de Flashblocks {#flashblock-performance}
+
+Flashblocks transmite actualizaciones incrementales de bloque aproximadamente cada 200 ms, lo que ofrece a las aplicaciones preconfirmaciones en menos de un segundo dentro del bloque estándar de 2 segundos.
+
+| Métrica                                       | Valor      |
+| --------------------------------------------- | ---------- |
+| Tiempo de construcción de un Flashblock (P50) | ~10 ms     |
+| Latencia de preconfirmación                   | ~200 ms    |
+| Tiempo de bloque completo                     | 2 segundos |
+| Flashblocks por bloque                        | 10         |
+| Tasa de reorg                                 | &lt; 0,1 % |
+
+Consulta la [Referencia de Flashblocks](/es/specifications/flashblocks) para obtener información sobre la gestión de reorgs y otras preguntas frecuentes.
+
+## Máximo de gas por transacción {#per-transaction-gas-maximum}
+
+A partir del [hardfork Azul](/es/upgrades/azul/exec-engine#transaction-gas-limit-cap), Base aplica a nivel de protocolo un máximo de gas por transacción de **16,777,216 gas (2^24)** mediante [EIP-7825](https://eips.ethereum.org/EIPS/eip-7825). Las transacciones que especifican un límite de gas superior a este valor se **rechazan durante la validación del bloque**. En ese caso, `eth_sendTransaction` o `eth_sendRawTransaction` devolverán un error de JSON-RPC (por ejemplo: `exceeds maximum per-transaction gas limit`).
+
+<Note>
+  Las transacciones de depósito están exentas de este límite. En su caso, el límite es el máximo de gas que puede incluirse en un bloque de L1 (20,000,000 gas).
+</Note>
+
+Los operadores de bundlers para billeteras de contratos inteligentes deben configurar sus sistemas para que el tamaño de los bundles no supere este límite.
+
+## Parámetros de comisiones {#fee-parameters}
+
+Las comisiones influyen en el rendimiento real porque determinan si las transacciones pueden incluirse cuando la demanda se acerca a la capacidad disponible.
+
+| Parámetro                                             | Valor actual               |
+| ----------------------------------------------------- | -------------------------- |
+| Comisión base mínima                                  | 5,000,000 wei (0.005 gwei) |
+| Elasticidad de EIP-1559                               | 6                          |
+| Denominador de EIP-1559                               | 125                        |
+| Variación máxima de la comisión base de L2 por bloque | 4 %                        |
+
+Consulta [Comisiones de red](/es/specifications/transactions/network-fees) para saber cómo se estructuran las comisiones de las transacciones en Base, incluidas la comisión de ejecución de L2 y la comisión de seguridad de L1.
+
+## Rendimiento de disponibilidad de datos {#data-availability-throughput}
+
+Los datos de las transacciones de Base se publican en Ethereum para garantizar su disponibilidad. Si el rendimiento de la disponibilidad de datos se ve limitado, el sequencer puede restringir el rendimiento de transacciones de L2 mientras el batcher se pone al día.
+
+Durante la limitación de DA, incluso las transacciones con tarifas de prioridad altas pueden sufrir retrasos. No hay ningún endpoint RPC que estime la tarifa de prioridad teniendo en cuenta esta limitación. Consulta [Solución de problemas de transacciones](/es/specifications/transactions/troubleshooting-transactions#priority-fee-too-low) para conocer cómo afecta esto al envío de transacciones.
+
+## Límites de los endpoints {#endpoint-limits}
+
+Los endpoints públicos tienen límites de frecuencia y no son aptos para tráfico de producción. Los proveedores de RPC alojados también pueden imponer límites de solicitudes por segundo, de unidades de cómputo, de datos de archivo o de suscripciones de WebSocket, así como restricciones de métodos.
+
+Los límites de los endpoints no modifican la capacidad del protocolo de Base, pero en la práctica pueden convertirse en el cuello de botella para aplicaciones, billeteras, indexadores y sistemas de monitoreo. Para uso en producción, elige un proveedor de RPC del [Builder Stack](/es/get-started/builder-stack) o [ejecuta un nodo de Base](/es/specifications/node-operators/run-a-node).

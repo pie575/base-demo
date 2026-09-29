@@ -1,0 +1,51 @@
+---
+title: 'base_transactionStatus'
+sidebarTitle: 'base_transactionStatus'
+description: '检查交易是否在节点的内存池中。仅适用于 Flashblocks 端点。'
+---
+
+检查指定交易是否存在于节点的内存池中。在已提交的交易出现在 Flashblock 中之前，可通过此方法确认节点是否已收到该交易。
+
+<Info>
+  仅适用于 Flashblocks 端点：`https://mainnet.base.org` / `https://sepolia.base.org`。
+</Info>
+
+<Note>
+  需要 [base/base](https://github.com/base/base) 客户端版本不低于 v0.3.0。
+</Note>
+
+## 参数 {#parameters}
+
+<ParamField body="transactionHash" type="string" required>
+  要查询的 32 字节交易哈希。
+</ParamField>
+
+## 返回值 {#returns}
+
+<ResponseField name="result" type="object">
+  交易状态对象。
+
+  <Expandable title="状态字段">
+    <ResponseField name="status" type="string">
+      若交易存在于内存池中，则为 `"Known"`；若该节点尚未收到过此交易，则为 `"Unknown"`。
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## 示例 {#example}
+
+<CodeGroup>
+  ```bash cURL
+  curl https://mainnet.base.org \
+    -X POST -H "Content-Type: application/json" \
+    -d '{"jsonrpc":"2.0","method":"base_transactionStatus","params":["0xabc123..."],"id":1}'
+  ```
+
+  ```json Known
+  {"jsonrpc": "2.0", "id": 1, "result": {"status": "Known"}}
+  ```
+
+  ```json Unknown
+  {"jsonrpc": "2.0", "id": 1, "result": {"status": "Unknown"}}
+  ```
+</CodeGroup>

@@ -1,0 +1,40 @@
+---
+title: "Transferir dentro de un libro contable"
+keywords: ["transferencia en libro contable de Base", "transferencia privada", "pagos confidenciales en Base", "saldo fuera de la cadena"]
+description: "Transfiere saldos entre cuentas dentro de un libro contable sin exponer el remitente, el destinatario ni el importe en la cadena pública."
+---
+
+import { LedgersDemo } from "/snippets/LedgersDemo.jsx"
+
+Una vez que los fondos están en un libro contable, las cuentas pueden transferir, intercambiar y generar rendimientos sin que los saldos ni la actividad aparezcan en los exploradores de bloques públicos. Solo los depósitos y los retiros pasan por Base. Todo lo que ocurre entre ambos es privado. Consulta [Transacciones privadas](/es/get-started/private-transactions).
+
+## Demostración {#demo}
+
+<LedgersDemo flow="transact" />
+
+<Tip>
+  La demostración anterior es solo una simulación. Si quieres ver demostraciones onchain en Vibenet, visita [Base chain demos](https://chain.base.org/demos).
+</Tip>
+
+## Qué se expone en la cadena {#whats-exposed-onchain}
+
+| Dato         | ¿Público? | Motivo                                        |
+| ------------ | --------- | --------------------------------------------- |
+| Remitente    | Oculto    | La transferencia no sale del libro contable.  |
+| Destinatario | Oculto    | La transferencia no sale del libro contable.  |
+| Importe      | Oculto    | La transferencia no sale del libro contable.  |
+| Actividad    | Oculta    | Ningún dato de la transferencia llega a Base. |
+
+El libro contable es agnóstico respecto al sistema fuera de la cadena que lo respalda, por lo que puedes gestionar tu propia contabilidad y tu propia lógica de transacciones personalizada.
+
+## Véase también {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="Depositar en un libro contable" icon="download" href="/es/build-on-base/ledgers/deposit">
+    Transfiere fondos de Base a un libro contable.
+  </Card>
+
+  <Card title="Retirar de un libro contable" icon="upload" href="/es/build-on-base/ledgers/withdraw">
+    Devuelve fondos de un libro contable a Base.
+  </Card>
+</CardGroup>

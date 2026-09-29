@@ -1,0 +1,229 @@
+---
+title: ノードを実行する
+description: Base ノードのセットアップと実行方法を解説するチュートリアルです。
+---
+
+このチュートリアルでは、自分専用の [Base ノード](https://github.com/base/base)をセットアップする手順を順を追って説明します。
+
+## 目標 {#objectives}
+
+このチュートリアルを終えると、次のことができるようになります。
+
+* Base ノードをデプロイして同期する
+* Flashblocks を有効にして、200ms のプレコンファメーションを利用する
+
+## 前提条件 {#prerequisites}
+
+<Warning>
+  ノードの運用には時間とリソースがかかり、費用もかさむ可能性があります。自分でノードを運用すべき理由が特にないのであれば、おそらく運用する必要はありません。
+
+  これから始める方で RPC URL が必要な場合は、当社が提供する無料のエンドポイントを利用できます：
+
+  * **Mainnet**: `https://mainnet.base.org`
+  * **テストネット (Sepolia)**: `https://sepolia.base.org`
+
+  **注意：** 当社の RPC にはレート制限があるため、本番環境のアプリには適していません。
+
+  アプリの堅牢性を高め、ユーザーがレート制限を受けないようにしたい場合は、[Builder Stack](/ja/get-started/builder-stack) から RPC プロバイダーを選んでください。
+</Warning>
+
+### ハードウェア要件 {#hardware-requirements}
+
+ハードウェアの詳細な仕様、ストレージ要件、本番環境向けのハードウェア構成例については、[ノードパフォーマンスガイド](/ja/specifications/node-operators/performance-tuning#hardware)を参照してください。
+
+### ネットワーク {#networking}
+
+ピアの検出と同期を行うため、以下のポートを許可するようにファイアウォールを設定してください。エグレスルールを厳格に運用しているオペレーターは、Base のブートノードに接続するためにアウトバウンドポートを開放する必要があります。
+
+<Tabs>
+  <Tab title="イングレス">
+    | ポート     | プロトコル   | 用途                                |
+    | ------- | ------- | --------------------------------- |
+    | `9222`  | TCP/UDP | Reth Discovery v5 (discv5)        |
+    | `30303` | TCP/UDP | P2P Discovery (discv4) &amp; RLPx |
+  </Tab>
+
+  <Tab title="エグレス">
+    | ポート     | プロトコル   | 用途                                |
+    | ------- | ------- | --------------------------------- |
+    | `9200`  | UDP     | ブートノードへの接続                        |
+    | `9222`  | TCP/UDP | Reth Discovery v5 (discv5)        |
+    | `30301` | TCP/UDP | ブートノードへの接続                        |
+    | `30303` | TCP/UDP | P2P Discovery (discv4) &amp; RLPx |
+
+    <Note>
+      Base のブートノードに到達するには、ポート `9200` (UDP) と `30301` (TCP/UDP) の開放が必要です。これらのポートへのアウトバウンド通信がブロックされていると、ノードは初期ピア接続を確立できません。
+    </Note>
+
+    <Warning>
+      エグレス制御に (AWS SG などのステートフルなセキュリティグループではなく) ネットワーク ACL を使用している場合は、エフェメラルポート範囲 **32768–60999** (TCP/UDP) へのアウトバウンド通信も許可する必要があります。ステートフルファイアウォールは戻りトラフィックを自動的に追跡しますが、ACL は追跡しません。このルールがないと、ピアからの応答パケットがエラーも出さずに破棄されます。
+    </Warning>
+  </Tab>
+</Tabs>
+
+### Docker {#docker}
+
+このチュートリアルは、[Docker](https://www.docker.com/) の基本的な使い方を理解しており、お使いのマシンで Docker が実行されていることを前提としています。
+
+### L1 RPC URL {#l1-rpc-url}
+
+専用の L1 RPC URL が必要です。エンドポイントを自前で運用するか、[Builder Stack](/ja/get-started/builder-stack) からサードパーティのプロバイダーを選んでください。
+
+## ノードの実行 {#running-a-node}
+
+<Warning>
+  **base/node は [base/base](https://github.com/base/base) に移行しました。** **v1.3.0** 以降、オペレーターノードは base/base から公開されており、新しいリリースはすべて base/base で提供されます。
+
+  **base/node は 2026年9月4日にアーカイブされ**、読み取り専用 (新しい issue、PR、リリースは受け付けません) となります。以降は v1.3.0 より前のリリースの参照用としてのみ利用できます。新規セットアップやアップグレードには base/base を使用してください。
+</Warning>
+
+ルートの `docker-compose.yml` は、デフォルトで `ghcr.io/base/node` を取得します。現在のソースツリーをコンパイルして使用する場合は、`--build` を指定してください。
+
+1. [リポジトリ](https://github.com/base/base)をクローンします。
+2. Ethereum L1 フルノードの RPC (Base のものではありません) を用意し、該当する `.env` ファイル (`.env.mainnet` または `.env.sepolia`) で `BASE_NODE_L1_ETH_RPC` と `BASE_NODE_L1_BEACON` を設定します。独自の L1 ノードを運用している場合は、Base が完全に同期するより前に、その L1 ノードの同期が完了している必要があります。
+3. ノードを起動します：
+   * **Mainnet (公開イメージを取得)&#x20;**: `docker compose up`
+   * **Mainnet (ソースからコンパイル)&#x20;**: `docker compose up --build`
+   * **テストネット**: `NETWORK_ENV=.env.sepolia docker compose up`
+4. 以下のコマンドでレスポンスが返ってくることを確認します：
+
+```bash Terminal
+curl -d '{"id":0,"jsonrpc":"2.0","method":"eth_getBlockByNumber","params":["latest",false]}' \
+  -H "Content-Type: application/json" http://localhost:8545
+```
+
+<Warning>
+  ノードの同期には**数日**かかる場合があり、リクエストクォータを大量に消費します。使用量を必ず監視し、必要に応じてプランをアップグレードしてください。
+</Warning>
+
+### `NODE_TAG` でリリース済みイメージを固定する {#pin-a-released-image-with-node_tag}
+
+`docker compose up` は、デフォルトで `ghcr.io/base/node:latest` をプルします。ソースから再コンパイルせずに特定のリリースを実行するには、`NODE_TAG` に公開済みのタグを設定します。
+
+```bash Terminal
+NODE_TAG=v1.3.0 docker compose up
+```
+
+`NODE_TAG` を固定するとソースからのビルドが完全にスキップされるため、イメージのプルが完了し次第ノードが起動します。`NODE_TAG` を使用する場合は `--build` を指定しないでください。`--build` を指定するとローカルでのコンパイルが強制され、固定したイメージよりも優先されてしまいます。
+
+### Compose の環境変数 {#compose-environment-variables}
+
+ルートの `docker-compose.yml` には、compose ファイルを編集せずにシェルや `.env` ファイルからデフォルト値を上書きできるよう、いくつかの設定項目が用意されています。
+
+| 変数              | デフォルト          | 用途                                                                                      |
+| --------------- | -------------- | --------------------------------------------------------------------------------------- |
+| `NODE_TAG`      | `latest`       | `ghcr.io/base/node` から取得するイメージタグ。バージョンを固定するには、リリースタグ (例: `v1.3.0`) を設定します。              |
+| `NETWORK_ENV`   | `.env.mainnet` | `execution` サービスと `node` サービスが読み込むネットワーク用の env ファイル。テストネットを使う場合は `.env.sepolia` を設定します。 |
+| `HOST_DATA_DIR` | `./reth-data`  | execution コンテナの `/data` にマウントされるホスト側のパス。外部ボリュームを使う場合は変更します。                             |
+| `PROFILE`       | `maxperf`      | `--build` を指定した際に使用される Cargo のビルドプロファイル。公開イメージのビルドに使われているプロファイルと同じです。                   |
+
+`docker compose up --build` を実行すると、`etc/docker/Dockerfile.rust-services` の `base` ターゲット (公開されている `ghcr.io/base/node` イメージの生成に使われるものと同じターゲット) で現在の `base/base` ツリーがコンパイルされます。そのため、ソースからビルドした場合も、固定したイメージを使う場合も、バイナリの構成は同じになります。
+
+### スナップショット {#snapshots}
+
+Base ノードを運用していて、初回同期にかかる時間を大幅に短縮したい場合は、[スナップショットから復元](/ja/specifications/node-operators/snapshots#restoring-from-snapshot)できます。スナップショットは毎週更新されます。
+
+### 同期 {#syncing}
+
+同期の進行状況は、次のコマンドで確認できます。
+
+```bash Terminal
+echo Latest synced block behind by: $((($(date +%s)-$( \
+  curl -d '{"id":0,"jsonrpc":"2.0","method":"optimism_syncStatus"}' \
+  -H "Content-Type: application/json" http://localhost:7545 | \
+  jq -r .result.unsafe_l2.timestamp))/60)) minutes
+```
+
+また、ノードを使ってデプロイしようとした際に `Error: nonce has already been used` が返される場合も、同期がまだ完了していないと判断できます。
+
+<Tip>
+  より詳細なノードデータの取得や診断チェックには、Base ノードオペレーター向けの CLI である [`basectl`](https://github.com/base/base/tree/main/bin/basectl) を使用してください。
+</Tip>
+
+***
+
+## Flashblocks を有効にする {#enable-flashblocks}
+
+ノードの同期が完了したら、Flashblocks を有効にすることで、アプリケーションに 200ms のプレコンファメーションを提供できるようになります。
+
+### 設定 {#configuration}
+
+Flashblocks を有効にするには、ノードの起動時に `RETH_FB_WEBSOCKET_URL` を設定します。
+
+```sh Terminal
+RETH_FB_WEBSOCKET_URL="wss://mainnet.flashblocks.base.org/ws" docker compose up --build
+```
+
+| 変数                      | 説明                                    |
+| ----------------------- | ------------------------------------- |
+| `RETH_FB_WEBSOCKET_URL` | Flashblocks の WebSocket エンドポイント (後述)  |
+
+### WebSocket エンドポイント {#websocket-endpoints}
+
+| ネットワーク  | URL                                     |
+| ------- | --------------------------------------- |
+| Mainnet | `wss://mainnet.flashblocks.base.org/ws` |
+| Sepolia | `wss://sepolia.flashblocks.base.org/ws` |
+
+<Warning>
+  **これらの WebSocket エンドポイントはノードインフラストラクチャ専用です。**
+
+  アプリケーションから `wss://mainnet.flashblocks.base.org/ws` に直接接続しないでください。Flashblocks のデータは、アプリから自身の RPC ノードにクエリして取得してください。詳細は [RPC の概要](/ja/base-chain/api-reference/rpc-overview#flashblocks)を参照してください。
+</Warning>
+
+<Note>
+  [base](https://github.com/base/base) バイナリは Flashblocks の WebSocket ストリームを受信し、プレコンファメーションデータをキャッシュします。Flashblocks 対応の RPC メソッドが呼び出されると、このキャッシュからデータを返します。メッセージスキーマとペイロード構造の詳細については、[Flashblocks API の概要](/ja/base-chain/api-reference/flashblocks-api/flashblocks-api-overview)を参照してください。
+</Note>
+
+<Tip>
+  [base/base](https://github.com/base/base) リポジトリで `docker compose up --build` を実行した場合も、`RETH_FB_WEBSOCKET_URL` が設定されていれば Flashblocks の設定が適用されます。ソースをコンパイルせずに実行するには、`.env` ファイルに `RETH_FB_WEBSOCKET_URL` を設定し、`NODE_TAG=vX.Y.Z docker compose up` を実行してください。
+</Tip>
+
+### Flashblocks の動作を確認する {#verify-flashblocks-functionality}
+
+pending ブロックをクエリして、ノードが Flashblocks を正しく提供しているかどうかを確認します：
+
+```sh Health Check
+curl -X POST \
+  --data '{"jsonrpc":"2.0","method":"eth_getBlockByNumber","params":["pending", false],"id":1}' \
+  http://localhost:8545
+```
+
+リクエストが成功すると、レスポンスには最新の Flashblock のブロックデータが含まれます。Flashblocks が一時的に利用できない場合、ノードはフォールバックとして最新のファイナライズ済みブロックを返します。
+
+### 利用可能な RPC メソッド {#available-rpc-methods}
+
+Flashblocks 対応ノードでは、Ethereum の標準 JSON-RPC メソッドすべてに加え、Flashblocks 固有のメソッドと WebSocket サブスクリプションを利用できます。コード例やパラメーターの詳細を含む全一覧は、[Flashblocks API リファレンス](/ja/base-chain/api-reference/flashblocks-api/flashblocks-api-overview)を参照してください。
+
+## 履歴プルーフ用 RPC の有効化 {#enable-historical-proofs-rpcs}
+
+`eth_getProof`、`debug_executionWitness`、`debug_executePayload` などのメソッドを効率的に提供するには、履歴プルーフ用の実行拡張機能 (ExEx) をセットアップする必要があります。この ExEx は、これらのメソッドの提供に必要なデータを格納する専用のデータベースを管理します。このデータベースによってストレージ使用量が数百 GB 増える場合があり、より高い I/O スループットを備えたマシンが必要になります。ほとんどのユーザーは、これらの RPC を有効にする必要はありません。
+
+履歴プルーフ用の ExEx を実行するには、次の環境変数を設定するだけです。
+
+```bash Terminal
+RETH_HISTORICAL_PROOFS=true
+```
+
+ノードを初めて起動すると、既存のステートが `<datadir>/proofs` 内の新しいプルーフデータベースにバックフィルされます。この処理にはかなりの時間がかかります (mainnet の場合は 24〜48 時間) 。
+
+バックフィルを省略するには、プルーフデータベースのスナップショットを利用できます。ダウンロード手順については [スナップショット](/ja/specifications/node-operators/snapshots#proofs-snapshots) ページを参照してください。
+
+<Note>
+  ExEx が最初に起動したブロックが、これらの RPC を利用できる最も古いブロックになります。proofs ExEx が有効な場合、`--rpc.eth-proof-window` フラグは無視されます。
+
+  デフォルトでは、ExEx は 28 日分のブロックを保存しますが、`RETH_PROOFS_HISTORY_WINDOW=<num_blocks>` を設定することで変更できます。
+</Note>
+
+### パフォーマンスの改善 {#improving-performance}
+
+proofs ExEx は、チェーンの先端から 1024 ブロック以内にあるときに最も高いパフォーマンスを発揮します。そのため、先端に追いつくまでの同期中はパフォーマンスが低下する可能性があります。Base Mainnet での初期同期中は、ExEx が大きく遅れてしまい、自力では追いつけなくなる場合があります。
+
+この問題を解決するには、`base-consensus` をフォローモードで実行し、proofs ExEx との差が 512 ブロック以内に収まるようにします。
+
+```bash Terminal
+BASE_NODE_SOURCE_L2_RPC=<trusted_rpc>
+BASE_NODE_PROOFS=true
+```
+
+proofs ExEx が効率的に同期していることは、state root の計算時間と実行時間がいずれも 0 になっていることで確認できます。この場合、ExEx はブロックを実行しておらず、実行済みブロックのデータをディスクに書き込んでいるだけです。

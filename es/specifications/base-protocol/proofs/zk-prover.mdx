@@ -1,0 +1,304 @@
+---
+title: "Probador ZK"
+description: "Especificación del probador ZK, un servicio offchain que utiliza programas SP1 para generar pruebas sin permisos para propuestas de checkpoints y disputas."
+---
+
+El probador ZK es un servicio offchain que utiliza programas SP1 para generar pruebas sin permisos para
+propuestas de checkpoints y disputas. Un servicio de generación de pruebas acepta solicitudes de rangos de bloques, almacena de forma persistente el estado
+de las pruebas, envía trabajos a la infraestructura de generación de pruebas de SP1 y devuelve recibos que los llamadores pueden enviar a
+`AggregateVerifier`.
+
+La vía ZK no requiere permisos: cualquier operador con acceso RPC canónico a L1 y L2, un backend de SP1
+configurado y un firmante de transacciones de L1 puede solicitar pruebas y enviar material de prueba válido onchain.
+
+## Responsabilidades {#responsibilities}
+
+Una pila de probador ZK conforme realiza las siguientes tareas:
+
+1. Aceptar solicitudes de prueba para rangos de bloques de L2.
+2. Generar la entrada del testigo (witness) a partir de los RPC canónicos de L1, L2 y de la beacon chain.
+3. Probar el programa de rango con SP1.
+4. En las solicitudes Groth16, agregar la prueba de rango completada en un SNARK verificable onchain.
+5. Persistir el estado de las solicitudes de prueba y de las sesiones del backend para que el trabajo pueda reanudarse tras reiniciar el proceso.
+6. Exponer el estado de las pruebas y la obtención de recibos mediante gRPC.
+7. Codificar los recibos en el formato que esperan los challengers, los proposers y `ZKVerifier`.
+
+El probador ZK no decide si un juego es válido. Son los proposers y los challengers quienes eligen el rango que se va a
+probar, recalculan por su cuenta las raíces canónicas y vuelven a comprobar el estado del juego antes de enviar el material de prueba
+onchain.
+
+## API del servicio de generación de pruebas {#proving-service-api}
+
+El servicio de generación de pruebas expone:
+
+```text Proving Service API
+ProveBlock(ProveBlockRequest) -> ProveBlockResponse
+GetProof(GetProofRequest) -> GetProofResponse
+```
+
+`ProveBlock` pone en cola una solicitud de prueba y devuelve un `session_id`. `GetProof` devuelve el estado
+actual y, cuando la prueba se completa, los bytes del recibo solicitado.
+
+### Solicitud ProveBlock {#proveblock-request}
+
+`ProveBlockRequest` contiene:
+
+| Campo                       | Significado                                                                                                                         |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `start_block_number`        | Bloque de L2 cuyo output root es el estado inicial de confianza del rango.                                                          |
+| `number_of_blocks_to_prove` | Número de bloques de L2 que se deben probar después de `start_block_number`.                                                        |
+| `sequence_window`           | Margen opcional de bloques de L1 hacia adelante que se usa al derivar un head de L1 para generar el testigo.                        |
+| `proof_type`                | `PROOF_TYPE_COMPRESSED` o `PROOF_TYPE_SNARK_GROTH16`.                                                                               |
+| `session_id`                | UUID opcional proporcionado por el llamante que se usa para que las solicitudes sean idempotentes.                                  |
+| `prover_address`            | Dirección de L1 incluida en el journal de Groth16 para que otro remitente no pueda reutilizar una prueba. Obligatoria para Groth16. |
+| `l1_head`                   | Hash hexadecimal opcional de 32 bytes de un bloque de L1 que se usa para generar el testigo.                                        |
+
+Si se proporciona `session_id`, las solicitudes duplicadas con el mismo UUID devuelven la sesión existente. Esto
+permite que los challengers deriven IDs de sesión deterministas a partir de `(game address, invalid checkpoint index)`
+y reintenten de forma segura aunque el proceso se reinicie.
+
+Los llamantes proporcionan `l1_head` cuando el journal de la prueba debe coincidir con un contexto de juego específico ya
+registrado onchain (por ejemplo, pruebas de disputa contra un juego existente). Si se omite, el servicio
+deriva un head de L1 a partir del L1 origin del bloque de L2 más la ventana de secuencia de la solicitud o del servicio, lo cual
+es adecuado para propuestas nuevas en las que el llamante aún no se ha comprometido con ningún head de L1.
+
+`PROOF_TYPE_SNARK_GROTH16` requiere `prover_address`: el programa de agregación incluye esta dirección
+en el digest del journal, y `AggregateVerifier` vuelve a verificar ese mismo digest antes de aceptar la
+prueba, de modo que cada recibo de Groth16 queda vinculado al remitente de L1 que lo solicitó.
+
+### Tipos de prueba {#proof-types}
+
+El servicio admite dos tipos de prueba:
+
+| Tipo de prueba             | Sesiones de backend | Resultado                                                                     |
+| -------------------------- | ------------------- | ----------------------------------------------------------------------------- |
+| `PROOF_TYPE_COMPRESSED`    | `STARK`             | Una prueba de rango SP1 comprimida.                                           |
+| `PROOF_TYPE_SNARK_GROTH16` | `STARK`, `SNARK`    | Una prueba de rango y una prueba de agregación Groth16 apta para uso onchain. |
+
+Para `PROOF_TYPE_SNARK_GROTH16`, el servicio envía primero el programa de rango como una sesión STARK
+comprimida. Cuando esa sesión finaliza, el servicio envía el programa de agregación como una sesión
+SNARK Groth16.
+
+## Ciclo de vida de una solicitud {#request-lifecycle}
+
+Una solicitud de prueba comienza en el estado `CREATED` una vez que la solicitud y la entrada del outbox se han persistido. A
+continuación, un worker reclama la tarea del outbox y pasa la solicitud a `PENDING` mientras prepara y
+envía el trabajo al backend. En cuanto existe al menos una sesión de backend, la solicitud pasa a `RUNNING`. La
+solicitud pasa a `SUCCEEDED` cuando se completan todas las sesiones que requiere el tipo de prueba y se almacenan los bytes
+del recibo, o a `FAILED` si la validación, la generación del testigo, el envío al backend, la ejecución
+en el backend, la descarga del recibo o la recuperación mediante reintentos fallan de forma permanente.
+
+Las sesiones de backend registran los estados `RUNNING`, `COMPLETED` o `FAILED` con independencia de la solicitud de prueba. Una
+solicitud comprimida se completa correctamente cuando terminan todas las sesiones STARK. Una solicitud Groth16 solo se completa correctamente
+cuando han terminado tanto la sesión STARK como la SNARK. Si falla cualquier sesión, falla también la solicitud principal.
+
+## Obtención de recibos {#receipt-retrieval}
+
+`GetProofRequest` contiene:
+
+| Campo          | Significado                                                                   |
+| -------------- | ----------------------------------------------------------------------------- |
+| `session_id`   | UUID devuelto por `ProveBlock`.                                               |
+| `receipt_type` | Selector de recibo opcional. El valor predeterminado es `RECEIPT_TYPE_STARK`. |
+
+El selector de recibo puede tomar los siguientes valores:
+
+| Tipo de recibo                | Bytes de respuesta                                                                                       |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `RECEIPT_TYPE_STARK`          | Prueba con valores públicos (proof-with-public-values) de SP1 serializada para la prueba de rango.       |
+| `RECEIPT_TYPE_SNARK`          | Prueba con valores públicos (proof-with-public-values) de SP1 serializada para la prueba de agregación.  |
+| `RECEIPT_TYPE_ON_CHAIN_SNARK` | Bytes de prueba onchain extraídos del recibo SNARK almacenado, destinados al verificador Groth16 de SP1. |
+
+`GetProof` devuelve bytes de recibo vacíos mientras una solicitud se encuentra en estado `CREATED`, `PENDING` o `RUNNING`.
+Las solicitudes fallidas devuelven `STATUS_FAILED` junto con el mensaje de error almacenado. Una respuesta correcta siempre
+contiene bytes de recibo no vacíos; si la solicitud almacenada está en estado `Succeeded`, pero no existe el tipo de recibo
+solicitado, `GetProof` devuelve el error gRPC `NOT_FOUND` en lugar de una respuesta correcta vacía.
+
+Corresponde a quien realiza la llamada encapsular los bytes de recibo devueltos en el formato de prueba de `AggregateVerifier`.
+Para enviar impugnaciones, anulaciones y pruebas adicionales, quien llama antepone al recibo el byte del tipo de prueba ZK.
+Para inicializar el juego, quien llama también debe incluir los campos del L1 origin
+que requiere `initializeWithInitData()`. Consulta [Contratos](/es/specifications/base-protocol/proofs/proof-contracts) para conocer el formato del lado del verificador.
+
+## Modos de backend {#backend-modes}
+
+El servicio de generación de pruebas admite los siguientes modos de backend:
+
+| Modo      | Finalidad                                                                   |
+| --------- | --------------------------------------------------------------------------- |
+| `mock`    | Genera recibos simulados para pruebas locales sin generar testigos.         |
+| `cluster` | Envía el trabajo a un clúster SP1 autoalojado con artefactos en Redis o S3. |
+| `network` | Envía el trabajo a SP1 Network con la política de ejecución configurada.    |
+
+Los backends `cluster` y `network` comparten la misma ruta de generación de testigos; solo difieren en el envío,
+el sondeo y la recuperación de artefactos. El backend `mock` omite por completo la generación de testigos.
+
+## Programa de rango de SP1 {#sp1-range-program}
+
+El programa de rango prueba una transición de estado de la L2 de Base a lo largo de un rango contiguo de bloques. Su stdin
+contiene:
+
+```text Range Program Stdin
+rkyv(DefaultWitnessData)
+intermediateRootInterval
+```
+
+El programa reconstruye el oráculo de preimágenes y el proveedor de blobs de la beacon chain a partir del testigo, ejecuta el
+ejecutor de testigos de DA de Ethereum y confirma un `BootInfoStruct`.
+
+La información de arranque confirmada contiene:
+
+| Campo               | Significado                                                                  |
+| ------------------- | ---------------------------------------------------------------------------- |
+| `l2PreRoot`         | Output root del bloque L2 inicial de confianza.                              |
+| `l2PreBlockNumber`  | Número del bloque L2 inicial.                                                |
+| `l2PostRoot`        | Output root tras ejecutar el rango solicitado.                               |
+| `l2BlockNumber`     | Número del bloque L2 final.                                                  |
+| `l1Head`            | Hash del bloque L1 utilizado para los datos de derivación.                   |
+| `rollupConfigHash`  | Hash de la configuración del rollup utilizada durante la ejecución.          |
+| `intermediateRoots` | Output roots ordenados, muestreados en cada intervalo de raíces intermedias. |
+
+La última raíz intermedia debe corresponder al bloque L2 final del rango que se está demostrando.
+
+## Programa de agregación de SP1 {#sp1-aggregation-program}
+
+El programa de agregación transforma las pruebas de rango completadas en el digest del journal que se utiliza en la verificación
+onchain. Sus entradas son:
+
+```text Aggregation Program Inputs
+AggregationInputs              (sp1_zkvm::io::read)
+L1 headers (CBOR-encoded)      (sp1_zkvm::io::read_vec)
+compressed range proofs        (SP1 proof-input channel)
+```
+
+Las pruebas de rango comprimidas se pasan mediante el mecanismo de entrada de pruebas de SP1, no como bytes planos por stdin,
+y se verifican dentro del programa con `sp1_lib::verify::verify_sp1_proof`.
+
+`AggregationInputs` contiene los boot infos de rango, el head del último checkpoint de L1, la clave de
+verificación del programa de rango y la dirección del prover.
+
+El programa de agregación verifica que:
+
+1. Haya al menos un boot info de rango.
+
+2. Los boot infos de rango adyacentes sean consecutivos:
+
+   ```text
+   previous.l2PostRoot == next.l2PreRoot
+   previous.l2BlockNumber == next.l2PreBlockNumber
+   ```
+
+3. Todos los rangos usen el mismo `rollupConfigHash`.
+
+4. Cada prueba de rango comprimida se verifique correctamente con la clave de verificación de rango proporcionada.
+
+5. Los encabezados de L1 proporcionados formen una cadena enlazada que termine en `latest_l1_checkpoint_head`.
+
+6. El `l1Head` de cada rango aparezca en esa cadena de encabezados.
+
+A continuación, el programa aplana todas las raíces intermedias y genera una única salida agregada:
+
+```text Aggregate Output Fields lines wrap expandable
+proverAddress
+l1Head
+l2PreRoot
+startingL2SequenceNumber
+l2PostRoot
+endingL2SequenceNumber
+intermediateRoots
+rollupConfigHash
+imageHash
+```
+
+`imageHash` es el compromiso de la clave de verificación del programa de rango. El programa de agregación confirma los siguientes valores:
+
+```text Committed Journal Digest
+keccak256(abi.encodePacked(AggregationOutputs))
+```
+
+Este digest coincide con el hash del journal que ensambla `AggregateVerifier` para verificar pruebas ZK. En la
+terminología de [Contratos](/es/specifications/base-protocol/proofs/proof-contracts), `imageHash` es `ZK_RANGE_HASH` y la clave de verificación
+de agregación configurada en `ZKVerifier` es `ZK_AGGREGATE_HASH`.
+
+## Reproducibilidad de los ELF {#elf-reproducibility}
+
+Los binarios ELF de SP1 se compilan bajo demanda y no se incluyen en el repositorio. El repositorio fija los hashes SHA-256 esperados de los ELF
+en `crates/proof/succinct/elf/manifest.toml`. Cualquier cambio de código que modifique alguno de los dos programas de SP1
+debe recompilar los ELF y actualizar `manifest.toml` en ese mismo cambio.
+
+El compromiso de la clave de verificación de rango (`ZK_RANGE_HASH`) y el hash de la clave de verificación de agregación
+(`ZK_AGGREGATE_HASH`) son parámetros de seguridad onchain. Los operadores deben desplegar o configurar los contratos verificadores
+con valores derivados de los mismos ELF que utiliza el servicio de generación de pruebas.
+
+## Comportamiento de reintentos {#retry-behavior}
+
+El servicio reintenta ante condiciones transitorias sin modificar la solicitud lógica de prueba:
+
+| Condición                                                         | Comportamiento requerido                                                                         |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Tarea del outbox ya reclamada                                     | Omitir el worker duplicado.                                                                      |
+| Solicitud `PENDING` bloqueada sin una sesión activa               | Restablecer a `CREATED` con una nueva entrada en el outbox hasta agotar el límite de reintentos. |
+| Error al consultar el estado del backend                          | Mantener la solicitud en `RUNNING` y reintentar en una consulta posterior.                       |
+| Artefacto de prueba no disponible pese al éxito del backend       | Mantener la sesión en `RUNNING` o reintentar la descarga en una consulta posterior.              |
+| El backend informa de un trabajo fallido o imposible de completar | Marcar la sesión y la solicitud de prueba como `FAILED`.                                         |
+| El envío de la segunda etapa de Groth16 falla después de STARK    | Marcar la solicitud de prueba como `FAILED`.                                                     |
+
+Los clientes que realizan la llamada deben considerar `FAILED` como un estado terminal para esa solicitud almacenada. Si la prueba sigue siendo necesaria,
+deben enviar o reintentar la misma solicitud lógica usando su `session_id` determinista.
+
+## Ciclo de vida del servicio {#service-lifecycle}
+
+Al iniciarse, el servicio de generación de pruebas:
+
+1. Se conecta a Postgres.
+2. Opcionalmente, inicia proxies locales con limitación de tasa para los RPC de L1, L2 y beacon.
+3. Carga la configuración del rollup desde el RPC del rollup.
+4. Calcula las claves de prueba y de verificación para rangos y agregación.
+5. Inicializa el backend configurado.
+6. Inicia el procesador de outbox.
+7. Inicia el sondeador de estado.
+8. Inicia el servidor gRPC y el servicio de reflexión.
+
+El procesador de outbox convierte las solicitudes persistidas en sesiones del backend. El sondeador de estado sincroniza las sesiones
+en curso, descarga los recibos, activa la segunda etapa de Groth16 cuando es necesario y reintenta o marca como fallidas las solicitudes
+bloqueadas.
+
+## Entradas del operador {#operator-inputs}
+
+Un servicio de probador ZK necesita:
+
+* Endpoint RPC de ejecución de L1.
+* Endpoint RPC de beacon de L1.
+* Endpoint RPC de ejecución de L2.
+* Endpoint RPC de rollup.
+* Configuración de conexión a Postgres.
+* Configuración del backend de SP1.
+* Configuración del almacenamiento de artefactos para el modo clúster.
+* Intervalos de sondeo, tiempo de espera para solicitudes atascadas y límites de reintentos.
+* Configuración de métricas y logs.
+
+Además, el modo red requiere un firmante de SP1 Network o una configuración de solicitante de KMS. Por su parte, el modo clúster
+requiere un endpoint de clúster de SP1 y exactamente un backend de almacenamiento de artefactos.
+
+## Expectativas onchain {#onchain-expectations}
+
+Los bytes de la prueba ZK se envían a `AggregateVerifier` como tipo de prueba `ZK`. El juego construye el
+journal esperado a partir del contexto de la propuesta o de la disputa y llama a `ZKVerifier.verify()` con la
+clave de verificación de agregación configurada.
+
+Un recibo Groth16 válido demuestra que el programa de agregación comprometió el digest del journal esperado.
+No sustituye las comprobaciones de estado por parte del llamador. Los proposers y los challengers deben seguir recalculando
+las raíces canónicas y volviendo a comprobar el estado del juego antes de enviar el material de prueba.
+
+## Requisitos de seguridad {#safety-requirements}
+
+Una implementación de un probador ZK debe preservar estas propiedades de seguridad:
+
+* Usar el `l1_head` proporcionado por el llamador cuando esté presente, para que las pruebas de disputa coincidan con el contexto del juego almacenado
+  onchain.
+* Exigir `prover_address` para las pruebas Groth16, ya que se incluye como compromiso en el journal de agregación.
+* Mantener idempotente la creación de solicitudes para valores deterministas de `session_id`.
+* No devolver bytes SNARK para uso onchain a menos que el recibo SNARK almacenado se deserialice correctamente.
+* Persistir los metadatos de sesión del backend antes de depender de que el backend finalice de forma asíncrona.
+* Fijar los hashes de ELF para que las claves de verificación y la configuración onchain no diverjan sin que nadie lo advierta.
+* Tratar la falta de datos RPC, los fallos de sondeo del backend y los fallos de descarga de artefactos como condiciones del servicio que admiten reintento,
+  y no como resultados sobre la validez de la prueba.

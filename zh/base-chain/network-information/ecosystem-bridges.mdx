@@ -1,0 +1,81 @@
+---
+title: "跨链至 Base"
+description: "在 Base 与 Coinbase 账户、Ethereum、Solana 或 Bitcoin 之间转移 ETH、稳定币和代币。"
+---
+
+你可以通过以下路径将资产转入或转出 Base。请根据资产当前所在的位置选择对应的路径。
+
+## 选择路径 {#choose-a-route}
+
+| 资金来源          | 推荐路径                                                                                                                                  | 常见资产           |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| Coinbase 账户   | 直接提现到 Base (无需跨链桥)                                                                                                                    | ETH、USDC、cbBTC |
+| Ethereum (L1) | [Superbridge](https://superbridge.app/?fromChainId=1\&toChainId=8453) 或 [Brid.gg](https://www.brid.gg/?fromChainId=1\&toChainId=8453) | ETH、ERC-20 代币  |
+| Solana        | [Base–Solana 跨链桥](/zh/specifications/base-protocol/bridging/base-solana-bridge)                                                          | SOL、SPL 代币     |
+| Bitcoin       | [Garden](https://app.garden.finance/?output-chain=base\&output-asset=cbBTC)                                                           | BTC → cbBTC    |
+
+<Note>
+  如果你的资金存放在 Coinbase 账户中，许多资产都可以直接提现到 Base 网络：提现时将网络选为 **Base** 即可，无需跨链桥。对于 USDC 和 ETH 来说，这通常是最快的方式。
+</Note>
+
+## 从 Ethereum 跨链 {#from-ethereum}
+
+在 Ethereum 主网 (L1) 与 Base 之间跨链转移 ETH 及受支持的 ERC-20 代币。以下两个服务商均支持主网和 Sepolia 测试网。
+
+<CardGroup cols={2}>
+  <Card title="Superbridge" icon="bridge" href="https://superbridge.app/?fromChainId=1&toChainId=8453">
+    将 ETH 及受支持的资产从 L1 跨链转移至 Base。[测试网](https://superbridge.app/?fromChainId=11155111\&toChainId=84532)
+  </Card>
+
+  <Card title="Brid.gg" icon="bridge" href="https://www.brid.gg/?fromChainId=1&toChainId=8453">
+    另一款 L1 ↔ Base 跨链桥。[测试网](https://testnet.brid.gg/?fromChainId=11155111\&toChainId=84532)
+  </Card>
+</CardGroup>
+
+### 以编程方式跨链 {#programmatic-bridging}
+
+如需通过代码将 ETH 和 ERC-20 代币从 Ethereum 跨链到 Base，可以从[示例仓库](https://github.com/base-org/guides/tree/main/bridge/native)入手。
+
+<Warning>
+  **请仔细核对 ERC-20 代币的地址。** 确认该代币在 [Superchain 代币列表](https://github.com/ethereum-optimism/ethereum-optimism.github.io/tree/master/data)中有 `base` 条目 ([示例](https://github.com/ethereum-optimism/ethereum-optimism.github.io/blob/master/data/WETH/data.json#L16-L18)) ，并务必先用小额资金测试。此示例仅支持将资产跨链**到** Base，请勿将其修改用于提现。
+</Warning>
+
+### 面向代币发行方 {#for-token-issuers}
+
+如果你在 Ethereum 上发行了 ERC-20 代币，并希望支持将其跨链到 Base，可以基于上文的示例仓库来构建标准跨链桥合约，然后将代币添加到 Superchain 代币列表中。
+
+## 从 Solana 桥接 {#from-solana}
+
+Base–Solana 跨链桥支持在 Base 与 Solana 之间双向转移代币和传递消息：你可以转移 SOL 和 SPL 代币、发送跨链消息、在任一链上部署封装代币，还可以选择启用自动中继来即时执行。
+
+<CardGroup cols={2}>
+  <Card title="完整文档" icon="book" href="/zh/specifications/base-protocol/bridging/base-solana-bridge">
+    完整指南，附代码示例和合约地址
+  </Card>
+
+  <Card title="Terminally Onchain" icon="terminal" href="https://terminallyonchain.com/">
+    用于跨链和合约调用的生产级终端界面
+  </Card>
+</CardGroup>
+
+| 网络           | 合约     | 地址                                             |
+| ------------ | ------ | ---------------------------------------------- |
+| Base Mainnet | 跨链桥    | `0x3eff766C76a1be2Ce1aCF2B69c78bCae257D5188`   |
+| Base Mainnet | SOL 代币 | `0x311935Cd80B76769bF2ecC9D8Ab7635b2139cf82`   |
+| Solana 主网    | 跨链桥程序  | `HNCne2FkVaNghhjKXapxJzPaBvAKDG1Ge3gqhZyfVWLM` |
+
+<Info>
+  测试网地址和完整实现细节，请参阅 [Base–Solana 跨链桥文档](/zh/specifications/base-protocol/bridging/base-solana-bridge#contract-addresses)。
+</Info>
+
+## 从 Bitcoin 跨链 {#from-bitcoin}
+
+[Garden](https://app.garden.finance/?output-chain=base\&output-asset=cbBTC) 是一款快速、非托管的跨链桥，可将 BTC 及其他受支持的资产转入 Base。支持[主网](https://app.garden.finance/?output-chain=base\&output-asset=cbBTC)和 [Sepolia 测试网](https://testnet.garden.finance/?output-chain=base_sepolia\&output-asset=USDT)。
+
+<Note>
+  原 bridge.base.org 上的跨链桥已弃用，请改用上述方式。
+</Note>
+
+## 免责声明 {#disclaimer}
+
+Coinbase Technologies, Inc. 提供这些独立服务提供商的链接仅为方便您使用，对其运营不承担任何责任。您与这些提供商之间的任何往来均仅涉及您与相关提供商双方。

@@ -1,0 +1,42 @@
+---
+title: "プリコンパイル"
+description: "Base のプリコンパイル済みコントラクトの仕様。所定のアドレスで利用できるネイティブ EVM 実装についても説明します。"
+---
+
+## 概要 {#overview}
+
+[プリコンパイル済みコントラクト](/ja/specifications/reference/glossary#precompiled-contract-precompile)は、Base 上の
+事前定義されたアドレスに配置されています。プリデプロイと似ていますが、バイトコードではなく EVM 内の
+ネイティブコードとして実装されている点が異なります。プリコンパイルは、Solidity で実装するとコストが高すぎる
+計算負荷の大きい処理に使用されます。プリコンパイルはすべての実行クライアントに実装する必要があるため、可能な場合はプリデプロイが推奨されます。
+
+Base には、[標準の Ethereum プリコンパイル](https://www.evm.codes/precompiled)に加えて、少数の
+追加プリコンパイルが含まれています。追加プリコンパイルの一覧を以下の表に示します。システムバージョンは、
+そのプリコンパイルが導入された時点を示します。
+
+| 名前         | アドレス                                       | 導入    | ガスコスト             |
+| ---------- | ------------------------------------------ | ----- | ----------------- |
+| P256VERIFY | 0x0000000000000000000000000000000000000100 | Fjord | 6,900 (Azul で更新)  |
+
+## P256VERIFY {#p256verify}
+
+`P256VERIFY` プリコンパイルは、secp256r1 楕円曲線の署名検証を行います。この曲線は広く
+採用されており、Passkeys や Apple Secure Enclave をはじめ、多くのシステムで使用されています。
+
+これは [RIP-7212](https://github.com/ethereum/RIPs/blob/master/RIPS/rip-7212.md) の一部として仕様化されたもので、
+Fjord リリースにおいてガスコスト 3,450 で Base プロトコルに追加されました。
+
+[Azul ハードフォーク](/ja/upgrades/azul/exec-engine#secp256r1-precompile-gas-cost)では、[EIP-7951](https://eips.ethereum.org/EIPS/eip-7951) に準拠し、L1 のプリコンパイル価格設定との厳密な等価性を維持するため、ガスコストが **6,900** に変更されました。
+
+アドレス: `0x0000000000000000000000000000000000000100`
+
+## 標準 Ethereum プリコンパイルの変更 (Azul) {#standard-ethereum-precompile-modifications-azul}
+
+[Azul ハードフォーク](/ja/upgrades/azul/exec-engine)では、Ethereum の標準プリコンパイルのうち 2 つに変更が加えられました。
+
+### MODEXP (アドレス `0x05`) {#modexp-address-0x05}
+
+* **[EIP-7823](https://eips.ethereum.org/EIPS/eip-7823)** — 各入力フィールドの上限は 1,024 バイトです。これを超える入力を含む呼び出しは拒否されます。
+* **[EIP-7883](https://eips.ethereum.org/EIPS/eip-7883)** — 最小ガスコストが 200 から 500 に引き上げられ、一般的なコスト計算式による値は 3 倍になります。
+
+これらの変更は Azul の有効化タイムスタンプ以降に適用され、Ethereum L1 の動作と同一です。

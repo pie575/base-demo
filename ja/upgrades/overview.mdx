@@ -1,0 +1,148 @@
+---
+title: "アップグレード"
+description: "Base ネットワークのアップグレード、有効化日、および各リリースに含まれるプロトコル変更を確認できます。"
+---
+
+Base は、名前の付いたネットワークアップグレードによって進化していきます。各リリースでは、プロトコルの変更、新機能、パラメーターの更新が導入され、Base Sepolia と Base Mainnet で順次有効化されます。
+
+有効化タイムスタンプが確定していない月は計画上の目標であり、変更される可能性があります。
+
+<Update label="2026年10月" tags={["Planning"]}>
+  ## Denim {#denim}
+
+  Denim は 200ms 間隔のネイティブブロックを導入し、Flashblocks を正規のブロックストリームおよび RPC ストリームに置き換えます。
+
+  * **Base Sepolia:** 2026年10月を予定
+  * **Base Mainnet:** 2026年10月を予定
+
+  <a className="view-features-btn" href="/ja/upgrades/denim/overview">機能を見る</a>
+</Update>
+
+<Update label="2026年9月30日" tags={["Planning"]}>
+  ## Cobalt {#cobalt}
+
+  Cobalt では、B20 トークン規格の改善、有効性トランザクションの追加、動的ノードアップグレードの導入 (Mainnet ではメトリクスのみ) 、そして Base の Trusted Execution Environment (信頼できる実行環境) への移行が行われます。
+
+  * **Base Sepolia:** 2026年9月23日に有効化済み
+  * **Base Mainnet:** 2026年9月30日を予定
+
+  <a className="view-features-btn" href="/ja/upgrades/cobalt/overview">機能を見る</a>
+</Update>
+
+<Update label="2026年6月25日" tags={["Live"]}>
+  ## Beryl {#beryl}
+
+  Beryl は、B20 トークンによって Base を本格的な発行プラットフォームへと進化させるとともに、出金遅延を短縮し、Reth V2 をリファレンス実行クライアントとして採用します。
+
+  * **Base Sepolia:** 2026年6月18日に有効化済み
+  * **Base Mainnet:** 2026年6月25日に有効化済み
+
+  <a className="view-features-btn" href="/ja/upgrades/beryl/overview">機能を見る</a>
+</Update>
+
+<Update label="2026年5月28日" tags={["Live"]}>
+  ## Azul {#azul}
+
+  Azul は Base 初の独自ネットワークアップグレードです。セキュリティと分散化を強化し、毎秒 1 ギガガスの実現に向けて前進するとともに、開発者体験を向上させます。
+
+  * **Base Sepolia:** 2026年4月20日に有効化済み
+  * **Base Mainnet:** 2026年5月28日に有効化済み
+
+  <a className="view-features-btn" href="/ja/upgrades/azul/overview">機能を見る</a>
+</Update>
+
+## アップストリームの OP Stack ハードフォーク {#upstream-op-stack-hardforks}
+
+Base は、以下のアップストリーム OP Stack ハードフォークを採用しています。各項目は Base Mainnet での有効化日順に並んでいます。
+
+<Update label="2025年12月2日" tags={["Live"]}>
+  ## Jovian {#jovian}
+
+  Jovian は、手数料市場の安定性を高めるため、設定可能な最低ベースフィーと、データ可用性フットプリントのガススカラーを導入します。
+
+  * **Base Sepolia:** 2025年11月19日に有効化
+  * **Base Mainnet:** 2025年12月2日に有効化
+
+  <a className="view-features-btn" href="/ja/upgrades/jovian/overview">機能を見る</a>
+</Update>
+
+<Update label="2025年5月9日" tags={["Live"]}>
+  ## Isthmus {#isthmus}
+
+  Isthmus は、Ethereum Pectra の EIP を取り込むとともに、シーケンサーの収益源となる operator fee の仕組みを導入します。
+
+  * **Base Sepolia:** 2025年4月17日に有効化
+  * **Base Mainnet:** 2025年5月9日に有効化
+
+  <a className="view-features-btn" href="/ja/upgrades/isthmus/overview">機能を見る</a>
+</Update>
+
+<Update label="2025年1月9日" tags={["Live"]}>
+  ## Holocene {#holocene}
+
+  Holocene は、`SystemConfig` で設定可能な動的 EIP-1559 パラメータと、より厳格なブロック導出ルールを導入します。
+
+  * **Base Sepolia:** 2024年11月26日に有効化
+  * **Base Mainnet:** 2025年1月9日に有効化
+
+  <a className="view-features-btn" href="/ja/upgrades/holocene/overview">機能を見る</a>
+</Update>
+
+<Update label="2024年9月11日" tags={["Live"]}>
+  ## Granite {#granite}
+
+  Granite は、`bn256Pairing` プリコンパイルに入力サイズの制限を追加し、チャネルタイムアウトのパラメータを更新します。
+
+  * **Base Sepolia:** 2024年8月12日に有効化
+  * **Base Mainnet:** 2024年9月11日に有効化
+
+  <a className="view-features-btn" href="/ja/upgrades/granite/overview">機能を見る</a>
+</Update>
+
+<Update label="2024年7月10日" tags={["Live"]}>
+  ## Fjord {#fjord}
+
+  Fjord は、FastLZ ベースの L1 fee 推定、RIP-7212 の `secp256r1` プリコンパイル、Brotli によるチャネル圧縮を導入します。
+
+  * **Base Sepolia:** 2024年5月29日に有効化
+  * **Base Mainnet:** 2024年7月10日に有効化
+
+  <a className="view-features-btn" href="/ja/upgrades/fjord/overview">機能を見る</a>
+</Update>
+
+<Update label="2024年3月14日" tags={["Live"]}>
+  ## Ecotone {#ecotone}
+
+  Ecotone は、EIP-4844 の blob トランザクションや EIP-4788 の Beacon block roots など、Ethereum Dencun の変更を取り込みます。
+
+  * **Base Sepolia:** 2024年2月21日に有効化
+  * **Base Mainnet:** 2024年3月14日に有効化
+
+  <a className="view-features-btn" href="/ja/upgrades/ecotone/overview">機能を見る</a>
+</Update>
+
+<Update label="2024年2月22日" tags={["Live"]}>
+  ## Delta {#delta}
+
+  Delta は、スパンバッチを導入します。複数の L2 ブロックを 1 つのバッチャートランザクションに圧縮することで、L1 のデータコストを削減します。
+
+  * **Base Sepolia:** 2023年12月22日に有効化
+  * **Base Mainnet:** 2024年2月22日に有効化
+
+  <a className="view-features-btn" href="/ja/upgrades/delta/overview">機能を見る</a>
+</Update>
+
+<Update label="2024年1月11日" tags={["Live"]}>
+  ## Canyon {#canyon}
+
+  Canyon は、EIP-3651、EIP-3855、EIP-3860 をはじめとする Ethereum Shanghai の EIP を Base の実行レイヤーに導入します。
+
+  * **Base Sepolia:** 2023年11月14日に有効化
+  * **Base Mainnet:** 2024年1月11日に有効化
+
+  <a className="view-features-btn" href="/ja/upgrades/canyon/overview">機能を見る</a>
+</Update>
+
+## その他の変更 {#other-changes}
+
+特定のアップグレードに紐づかないネットワークパラメータの変更は、[設定変更履歴](/ja/base-chain/network-information/configuration-changelog)に記録されています。

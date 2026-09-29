@@ -1,0 +1,364 @@
+---
+title: "Isthmus における L2 チェーン導出の変更点"
+description: "Isthmus アップグレードにおける導出の変更点。ハードフォークの有効化時に実行されるネットワークアップグレード自動化トランザクションについて規定します。"
+---
+
+## ネットワークアップグレード自動化トランザクション {#network-upgrade-automation-transactions}
+
+Isthmus ハードフォークの有効化ブロックには、以下のトランザクションがこの順序で含まれます。
+
+* L1 Attributes トランザクション
+* L1 からのユーザーデポジット
+* ネットワークアップグレードトランザクション
+  * L1Block のデプロイ
+  * GasPriceOracle のデプロイ
+  * Operator Fee vault のデプロイ
+  * L1Block Proxy の ERC-1967 実装の更新
+  * GasPriceOracle Proxy の ERC-1967 実装の更新
+  * Operator Fee vault Proxy の ERC-1967 実装の更新
+  * GasPriceOracle での Isthmus の有効化
+  * EIP-2935 コントラクトのデプロイ
+
+ガス計算まわりのシステムの動作を変更・中断させないよう、このブロックでは `noTxPool: true` を設定し、
+シーケンスされたトランザクションを一切含めません。
+
+## L1Block のデプロイ {#l1block-deployment}
+
+`L1Block` コントラクトは、Isthmus のオペレーター手数料機能に対応するようアップグレードされます。
+
+次の属性を持つデポジットトランザクションが導出されます。
+
+* `from`: `0x4210000000000000000000000000000000000003`
+* `to`: `null`
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `425,000`
+* `data`: `0x60806040523480156100105...`
+* `sourceHash`: `0x3b2d0821ca2411ad5cd3595804d1213d15737188ae4cbd58aa19c821a6c211bf`
+   (&quot;Upgrade-deposited&quot; タイプを使用し、&#96;intent = &quot;Isthmus: L1 Block Deployment&quot; で計算) 
+
+これにより、Isthmus の L1Block コントラクトが `0xFf256497D61dcd71a9e9Ff43967C13fdE1F72D12` にデプロイされます。検証するには、次のようにします。
+
+```bash Terminal
+cast compute-address --nonce=0 0x4210000000000000000000000000000000000003
+Computed Address: 0xFf256497D61dcd71a9e9Ff43967C13fdE1F72D12
+```
+
+`sourceHash` を検証します：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Isthmus: L1 Block Deployment"))
+# 0x3b2d0821ca2411ad5cd3595804d1213d15737188ae4cbd58aa19c821a6c211bf
+```
+
+`data` を検証します：
+
+```bash Terminal
+git checkout 9436dba8c4c906e36675f5922e57d1b55582889e
+make build-contracts
+jq -r ".bytecode.object" packages/contracts-bedrock/forge-artifacts/L1Block.sol/L1Block.json
+```
+
+このトランザクションは、次のコードハッシュを持つコントラクトをデプロイしなければなりません (MUST) 。
+`0x8e3fe7a416d3e5f3b7be74ddd4e7e58e516fa3f80b67c6d930e3cd7297da4a4b`
+
+コードハッシュを検証するには、次のようにします。
+
+```bash Terminal
+git checkout 9436dba8c4c906e36675f5922e57d1b55582889e
+make build-contracts
+cast k $(jq -r ".deployedBytecode.object" packages/contracts-bedrock/forge-artifacts/L1Block.sol/L1Block.json)
+```
+
+## GasPriceOracle のデプロイ {#gaspriceoracle-deployment}
+
+Isthmus の オペレーター手数料機能をサポートするため、`GasPriceOracle` コントラクトもアップグレードされます。
+
+次の属性を持つデポジットトランザクションが導出されます。
+
+* `from`: `0x4210000000000000000000000000000000000004`
+* `to`: `null`
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `1,625,000`
+* `data`: `0x60806040523480156100105...`
+* `sourceHash`: `0xfc70b48424763fa3fab9844253b4f8d508f91eb1f7cb11a247c9baec0afb8035`、
+  &quot;Upgrade-deposited&quot; タイプと &#96;intent = &quot;Isthmus: Gas Price Oracle Deployment&quot; を使用して計算されます
+
+これにより、Isthmus の GasPriceOracle コントラクトが `0x93e57A196454CB919193fa9946f14943cf733845` にデプロイされます。検証方法は次のとおりです。
+
+```bash Terminal
+cast compute-address --nonce=0 0x4210000000000000000000000000000000000003
+Computed Address: 0xFf256497D61dcd71a9e9Ff43967C13fdE1F72D12
+```
+
+`sourceHash` を検証します：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Isthmus: Gas Price Oracle Deployment"))
+# 0xfc70b48424763fa3fab9844253b4f8d508f91eb1f7cb11a247c9baec0afb8035
+```
+
+`data` を検証します：
+
+```bash Terminal
+git checkout 9436dba8c4c906e36675f5922e57d1b55582889e
+make build-contracts
+jq -r ".bytecode.object" packages/contracts-bedrock/forge-artifacts/GasPriceOracle.sol/GasPriceOracle.json
+```
+
+このトランザクションは、次のコードハッシュを持つコントラクトをデプロイしなければなりません (MUST) 。
+`0x4d195a9d7caf9fb6d4beaf80de252c626c853afd5868c4f4f8d19c9d301c2679`
+
+コードハッシュを検証するには、次の手順を実行します。
+
+```bash Terminal
+git checkout 9436dba8c4c906e36675f5922e57d1b55582889e
+make build-contracts
+cast k $(jq -r ".deployedBytecode.object" packages/contracts-bedrock/forge-artifacts/GasPriceOracle.sol/GasPriceOracle.json)
+```
+
+## Operator Fee Vault のデプロイ {#operator-fee-vault-deployment}
+
+オペレーター手数料を受け取るため、新たに `OperatorFeeVault` コントラクトが作成されました。このコントラクトは
+次の引数で作成されます。
+
+* 受取人アドレス：base fee vault
+* 最小引き出し額：0
+* 引き出し先ネットワーク：L2
+
+次の属性を持つデポジットトランザクションが導出されます。
+
+* `from`: `0x4210000000000000000000000000000000000005`
+* `to`: `null`
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `500,000`
+* `data`: `0x60806040523480156100105...`
+* `sourceHash`: `0x107a570d3db75e6110817eb024f09f3172657e920634111ce9875d08a16daa96`。
+  &quot;Upgrade-deposited&quot; タイプと &#96;intent = &quot;Isthmus: Operator Fee Vault Deployment&quot; を用いて計算されます
+
+これにより、Isthmus の OperatorFeeVault コントラクトが
+`0x4fa2Be8cd41504037F1838BcE3bCC93bC68Ff537` にデプロイされます。検証方法は次のとおりです。
+
+```bash Terminal
+cast compute-address --nonce=0 0x4210000000000000000000000000000000000003
+Computed Address: 0x4fa2Be8cd41504037F1838BcE3bCC93bC68Ff537
+```
+
+`sourceHash` を検証します：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Isthmus: Operator Fee Vault Deployment"))
+# 0x107a570d3db75e6110817eb024f09f3172657e920634111ce9875d08a16daa96
+```
+
+`data` を検証します。
+
+```bash Terminal
+git checkout 9436dba8c4c906e36675f5922e57d1b55582889e
+make build-contracts
+jq -r ".bytecode.object" packages/contracts-bedrock/forge-artifacts/OperatorFeeVault.sol/OperatorFeeVault.json
+```
+
+このトランザクションは、次のコードハッシュを持つコントラクトをデプロイしなければなりません (MUST) 。
+`0x57dc55c9c09ca456fa728f253fe7b895d3e6aae0706104935fe87c7721001971`
+
+コードハッシュを検証するには、次のようにします。
+
+```bash Terminal
+git checkout 9436dba8c4c906e36675f5922e57d1b55582889e
+make build-contracts
+export ETH_RPC_URL=<YOUR_ETHEREUM_L1_RPC_URL> # Cancun または Prague に対応した任意の Ethereum L1 RPC
+cast k $(cast call --create $(jq -r ".bytecode.object" packages/contracts-bedrock/forge-artifacts/OperatorFeeVault.sol/OperatorFeeVault.json))
+```
+
+`OperatorFeeVault` は immutable を含む `FeeVault` コントラクトを継承しているため、この検証は他のデプロイメントとは異なる点に注意してください。
+そのため、実際にデプロイされるコントラクトのバイトコードを得るには、デプロイメントバイトコードを EVM 上で実行する必要があります。
+ただし、すべての immutable は固定の定数に設定されるため、結果として得られるコードハッシュは一定になります。
+
+## L1Block Proxy の更新 {#l1block-proxy-update}
+
+このトランザクションは、L1Block Proxy の ERC-1967 実装スロットを更新し、新しくデプロイされた L1Block を指すようにします。
+
+以下の属性を持つデポジットトランザクションが導出されます。
+
+* `from`: `0x0000000000000000000000000000000000000000`
+* `to`: `0x4200000000000000000000000000000000000015` (L1Block Proxy)
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `50,000`
+* `data`: `0x3659cfe6000000000000000000000000ff256497d61dcd71a9e9ff43967c13fde1f72d12`
+* `sourceHash`: `0xebe8b5cb10ca47e0d8bda8f5355f2d66711a54ddeb0ef1d30e29418c9bf17a0e`
+  &quot;Upgrade-deposited&quot; タイプと &#96;intent = &quot;Isthmus: L1 Block Proxy Update&quot; を用いて計算されます
+
+data の検証:
+
+```bash Terminal
+cast concat-hex $(cast sig "upgradeTo(address)") $(cast abi-encode "upgradeTo(address)" 0xff256497d61dcd71a9e9ff43967c13fde1f72d12)
+0x3659cfe6000000000000000000000000ff256497d61dcd71a9e9ff43967c13fde1f72d12
+```
+
+`sourceHash` を検証します：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Isthmus: L1 Block Proxy Update"))
+# 0xebe8b5cb10ca47e0d8bda8f5355f2d66711a54ddeb0ef1d30e29418c9bf17a0e
+```
+
+## GasPriceOracle Proxy の更新 {#gaspriceoracle-proxy-update}
+
+このトランザクションは、GasPriceOracle Proxy の ERC-1967 実装スロットを更新し、新たにデプロイされた GasPriceOracle
+を指すようにします。
+
+以下の属性を持つデポジットトランザクションが導出されます。
+
+* `from`: `0x0000000000000000000000000000000000000000`
+* `to`: `0x420000000000000000000000000000000000000F` (Gas Price Oracle Proxy)
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `50,000`
+* `data`: `0x3659cfe600000000000000000000000093e57a196454cb919193fa9946f14943cf733845`
+* `sourceHash`: `0xecf2d9161d26c54eda6b7bfdd9142719b1e1199a6e5641468d1bf705bc531ab0`
+  &quot;Upgrade-deposited&quot; タイプと `intent = "Isthmus: Gas Price Oracle Proxy Update"` を用いて計算されます
+
+data の検証:
+
+```bash Terminal
+cast concat-hex $(cast sig "upgradeTo(address)") $(cast abi-encode "upgradeTo(address)" 0x93e57a196454cb919193fa9946f14943cf733845)
+0x3659cfe600000000000000000000000093e57a196454cb919193fa9946f14943cf733845
+```
+
+`sourceHash` を検証します。
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Isthmus: Gas Price Oracle Proxy Update"))
+# 0xecf2d9161d26c54eda6b7bfdd9142719b1e1199a6e5641468d1bf705bc531ab0
+```
+
+## OperatorFeeVault Proxy Update {#operatorfeevault-proxy-update}
+
+このトランザクションは、GasPriceOracle Proxy の ERC-1967 実装スロットを更新し、新しい GasPriceOracle
+デプロイメントを指すようにします。
+
+以下の属性を持つデポジットトランザクションが導出されます。
+
+* `from`: `0x0000000000000000000000000000000000000000`
+* `to`: `0x420000000000000000000000000000000000001B` (Operator Fee Vault Proxy) 
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `50,000`
+* `data`: `0x3659cfe60000000000000000000000004fa2be8cd41504037f1838bce3bcc93bc68ff537`
+* `sourceHash`: `0xad74e1adb877ccbe176b8fa1cc559388a16e090ddbe8b512f5b37d07d887a927`
+  &quot;Upgrade-deposited&quot; タイプと `intent = "Isthmus: Operator Fee Vault Proxy Update"` を用いて計算
+
+データの検証:
+
+```bash Terminal
+cast concat-hex $(cast sig "upgradeTo(address)") $(cast abi-encode "upgradeTo(address)" 0x4fa2be8cd41504037f1838bce3bcc93bc68ff537)
+0x3659cfe60000000000000000000000004fa2be8cd41504037f1838bce3bcc93bc68ff537
+```
+
+`sourceHash` を検証します：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Isthmus: Operator Fee Vault Proxy Update"))
+# 0xad74e1adb877ccbe176b8fa1cc559388a16e090ddbe8b512f5b37d07d887a927
+```
+
+## GasPriceOracle で Isthmus を有効化 {#gaspriceoracle-enable-isthmus}
+
+このトランザクションは、Isthmus のガス計算式の使用を開始するよう GasPriceOracle に指示します。
+
+以下の属性を持つデポジットトランザクションが導出されます。
+
+* `from`: `0xDeaDDEaDDeAdDeAdDEAdDEaddeAddEAdDEAd0001` (Depositer Account) 
+* `to`: `0x420000000000000000000000000000000000000F` (Gas Price Oracle Proxy) 
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `90,000`
+* `data`: `0x291b0383`
+* `sourceHash`: `0x3ddf4b1302548dd92939826e970f260ba36167f4c25f18390a5e8b194b295319` (
+  &quot;Upgrade-deposited&quot; タイプを使用し、&#96;intent = &quot;Isthmus: Gas Price Oracle Set Isthmus&quot; で計算) 
+
+データの検証：
+
+```bash Terminal
+cast sig "setIsthmus()"
+0x8e98b106
+```
+
+`sourceHash` を検証します：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Isthmus: Gas Price Oracle Set Isthmus"))
+# 0x3ddf4b1302548dd92939826e970f260ba36167f4c25f18390a5e8b194b295319
+```
+
+## EIP-2935 コントラクトのデプロイ {#eip-2935-contract-deployment}
+
+[EIP-2935](https://eips.ethereum.org/EIPS/eip-2935) では、コントラクトをデプロイする必要があります。このコントラクトをデプロイするため、
+EIP に準拠した以下の属性を持つデポジットトランザクションが作成されます:
+
+* `from`: `0x3462413Af4609098e1E27A490f554f260213D685`
+* `to`: `null`
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `250,000`
+* `data`: `0x60538060095f395ff33373fffffffffffffffffffffffffffffffffffffffe14604657602036036042575f35600143038111604257611fff81430311604257611fff9006545f5260205ff35b5f5ffd5b5f35611fff60014303065500`
+* `sourceHash`: `0xbfb734dae514c5974ddf803e54c1bc43d5cdb4a48ae27e1d9b875a5a150b553a`
+  &quot;Upgrade-deposited&quot; タイプと &#96;intent = &quot;Isthmus: EIP-2935 Contract Deployment&quot; を使用して計算
+
+これにより、EIP-2935 コントラクトが `0x0000F90827F1C53a10cb7A02335B175320002935` にデプロイされます。検証方法は以下のとおりです:
+
+```bash Terminal
+cast compute-address --nonce=0 0x3462413Af4609098e1E27A490f554f260213D685
+Computed Address: 0x0000F90827F1C53a10cb7A02335B175320002935
+```
+
+`sourceHash` を検証します：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Isthmus: EIP-2935 Contract Deployment"))
+# 0xbfb734dae514c5974ddf803e54c1bc43d5cdb4a48ae27e1d9b875a5a150b553a
+```
+
+このトランザクションは、次のコードハッシュを持つコントラクトをデプロイしなければなりません (MUST) ：
+`0x6e49e66782037c0555897870e29fa5e552daf4719552131a0abce779daec0a5d`。
+
+## スパンバッチの更新 {#span-batch-updates}
+
+[スパンバッチ](../delta/span-batches)とは、連続する L2 ブロックの範囲をまとめてバッチとして送信するものです。
+
+スパンバッチには、その範囲の L2 ブロックを含めて投稿される L1 トランザクションとそのトランザクションタイプが含まれます。
+[EIP-7702] では新しいトランザクションタイプが導入されるため、スパンバッチを更新して [EIP-7702]
+トランザクションをサポートする必要があります。
+
+これに伴い、[Delta スパンバッチ仕様](../delta/span-batches)で規定されている `tx_datas` リストの RLP エンコーディングが新しくなり、
+次のトランザクションタイプが追加されます:
+
+トランザクションタイプ `4`([EIP-7702] `SetCode`):
+`0x04 ++ rlp_encode(value, max_priority_fee_per_gas, max_fee_per_gas, data, access_list, authorization_list)`
+
+[EIP-7702] トランザクションは、[EIP-1559] を拡張して新たに `authorization_list` フィールドを追加したものです。
+`authorization_list` は、認可タプルを RLP エンコードしたリストです。
+[EIP-7702] トランザクションのフォーマットは以下のとおりです。
+
+* `value`: トランザクションの値(`u256`)。
+* `max_priority_fee_per_gas`: ガスあたりの最大優先手数料の許容値(`u256`)。
+* `max_fee_per_gas`: ガスあたりの最大手数料(`u256`)。
+* `data`: トランザクションのデータバイト。
+* `access_list`: [EIP-2930] のアクセスリスト。
+* `authorization_list`: [EIP-7702] の署名済み認可リスト。
+
+## 有効化 {#activation}
+
+タイプ `4` のトランザクションを含むシングラーバッチは、そのバッチのタイムスタンプ時点で Isthmus が有効である場合にのみ受け入れなければなりません。Isthmus の有効化前にシングラーバッチにタイプ `4` のトランザクションが含まれている場合、そのバッチは *破棄* されなければなりません。なお、Holocene が有効な場合は、これにより残りのスパンバッチと、それを含んでいたチャネルも破棄されます。
+
+また、このチェックはスパンバッチ全体ではなく、スパンバッチから導出される個々のバッチ単位で行わなければならない点にも注意してください。具体的には、スパンバッチが Isthmus の有効化タイムスタンプをまたぎ、タイムスタンプが Isthmus の有効化時刻以降であるシングラーバッチ内に SetCode トランザクションを含むことは許可されます。これは、スパンバッチ自体のタイムスタンプが Isthmus の有効化時刻より前であっても同様です。
+
+[EIP-1559]: https://eips.ethereum.org/EIPS/eip-1559
+
+[EIP-7702]: https://eips.ethereum.org/EIPS/eip-7702
+
+[EIP-2930]: https://eips.ethereum.org/EIPS/eip-2930

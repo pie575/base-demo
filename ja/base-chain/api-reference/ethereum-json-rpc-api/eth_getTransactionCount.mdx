@@ -1,0 +1,63 @@
+---
+title: 'eth_getTransactionCount'
+sidebarTitle: 'eth_getTransactionCount'
+description: 'アドレスから送信されたトランザクションの数（nonce）を返します。pre-confirmed の nonce を取得するには pending を使用します。'
+---
+
+アドレスから送信されたトランザクションの数を返します。この値はアカウントの現在の nonce で、次のトランザクションを構築する際に `nonce` として指定する値です。
+
+<Tip>
+  **Flashblocks:** `https://mainnet.base.org` に `"pending"` を指定してクエリすると、pre-confirmed のトランザクションをすべて反映した nonce を取得できます。この値は約 200ms ごとに更新されます。高頻度でトランザクションを送信するエージェントにとって、nonce の欠番を防ぐうえで欠かせない機能です。
+</Tip>
+
+## パラメーター {#parameters}
+
+<ParamField body="address" type="string" required>
+  照会対象の20バイトのアドレス。
+</ParamField>
+
+<ParamField body="block" type="string" required>
+  16進数のブロック番号、または `"latest"`、`"pending"`、`"safe"`、`"finalized"`、`"earliest"` のいずれか。pre-confirmed のトランザクションをすべて nonce のカウントに含めるには、`"pending"` を指定します。
+</ParamField>
+
+## 戻り値 {#returns}
+
+<ResponseField name="result" type="string">
+  トランザクション数 (nonce) を表す16進数文字列。
+</ResponseField>
+
+## 例 {#example}
+
+<CodeGroup>
+  ```bash 標準（最新の確定済み） lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_getTransactionCount",
+      "params": ["0x742d35Cc6634C0532925a3b8D4C9dD0b4f3BaEa", "latest"],
+      "id": 1
+    }'
+  ```
+
+  ```bash Flashblocks（pending の nonce、約200ms） lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_getTransactionCount",
+      "params": ["0x742d35Cc6634C0532925a3b8D4C9dD0b4f3BaEa", "pending"],
+      "id": 1
+    }'
+  ```
+
+  ```json レスポンス
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x4d2"
+  }
+  ```
+</CodeGroup>

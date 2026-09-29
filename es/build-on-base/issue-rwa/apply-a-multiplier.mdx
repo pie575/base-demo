@@ -1,0 +1,200 @@
+---
+title: "Aplicar un multiplicador"
+description: "Programa una actualización del multiplicador de un B20 Asset para que las cantidades de unidades mostradas cambien más adelante sin reescribir los saldos brutos. Un desdoblamiento de acciones (stock split) es un ejemplo de ello."
+keywords: ["multiplicador de token de activo", "multiplicador B20", "saldo de token escalado", "desdoblamiento de acciones", "updateUIMultiplier", "ERC-8056"]
+---
+
+import { AssetDemo } from "/snippets/AssetDemo.jsx"
+import RwaDisclaimer from "/snippets/es/RwaDisclaimer.mdx"
+
+Un multiplicador reescala lo que ven los titulares sin alterar lo que poseen. En el momento acordado, todos los saldos mostrados cambian en el mismo factor, mientras que los valores sin procesar de `balanceOf` y `totalSupply`, así como los importes de las transferencias, no varían, de modo que las aplicaciones DeFi que leen unidades sin procesar siguen funcionando. Los exchanges, custodios, billeteras y sistemas contables necesitan conocer ese momento con antelación, por lo que la actualización se programa onchain de antemano mediante `updateUIMultiplier` ([ERC-8056](https://eips.ethereum.org/EIPS/eip-8056)). Esta guía toma como ejemplo práctico un desdoblamiento de acciones de 2 por 1; un contrasplit o una distribución reinvertida siguen el mismo procedimiento con otro valor.
+
+<RwaDisclaimer />
+
+<Warning>
+  El procedimiento habitual es `updateUIMultiplier`. La función obsoleta `updateMultiplier` aplica un valor de inmediato y cancela cualquier actualización pendiente. Úsala solo como mecanismo de anulación de emergencia.
+</Warning>
+
+## Demostración {#demo}
+
+<AssetDemo flow="split" />
+
+<Tip>
+  La demostración usa una cuenta local generada en el navegador para enviar transacciones reales en **Base Vibenet**. Si Vibenet o sus funciones de B20 no están disponibles, cambia automáticamente a una versión ilustrativa sin conexión.
+</Tip>
+
+<Note>
+  ¿Es la primera vez que usas B20? Consulta el [Estándar de tokens B20](/es/build-on-base/issue-rwa/create-an-asset-token) para conocer los conceptos y seguir una guía completa de lanzamiento. Estos ejemplos están pensados para `base-std@1505323`, `viem@2.55.11` y Base Foundry `v1.1.1`.
+</Note>
+
+## Antes de empezar {#before-you-start}
+
+Necesitas todo lo siguiente:
+
+* Un B20 Asset que administres, con `DEFAULT_ADMIN_ROLE` para poder otorgar `OPERATOR_ROLE`.
+* Una cuenta que llamará a los setters del multiplicador (el operador). `updateUIMultiplier`, `cancelUIMultiplierUpdate` y el obsoleto `updateMultiplier` requieren `OPERATOR_ROLE`. El token creado en [Crear un token de activo](/es/build-on-base/issue-rwa/create-an-asset-token) se lo otorga a quien lo despliega.
+* Una marca de tiempo `effectiveAt` en el futuro y un `newMultiplier` dentro de `(0, MAX_UI_MULTIPLIER]`.
+
+Esta funcionalidad solo existe en **B20 Asset**. Stablecoin no tiene multiplicador. La pausa no afecta a los setters: `PausableFeature` solo congela `TRANSFER`, `MINT`, `BURN` y `SEIZE`.
+
+### Qué cambia un multiplicador {#what-a-multiplier-changes}
+
+Un multiplicador no altera el `balanceOf` sin procesar. Solo lo aplican las vistas derivadas para la interfaz de usuario:
+
+| Lectura                                             | Fórmula                                      |
+| --------------------------------------------------- | -------------------------------------------- |
+| `uiMultiplier()` / `multiplier()`                   | Multiplicador efectivo en `block.timestamp`  |
+| `balanceOfUI(account)` / `scaledBalanceOf(account)` | `balanceOf(account) * uiMultiplier() / 1e18` |
+| `totalSupplyUI()`                                   | `totalSupply() * uiMultiplier() / 1e18`      |
+| `toUIAmount(raw)` / `fromUIAmount(ui)`              | Convierten con el multiplicador efectivo     |
+
+El multiplicador es un WAD de 18 decimales: `1e18` equivale a `1.0`. Un desdoblamiento (split) de 2 por 1 usa `2e18`, y un contrasplit de 1 por 2 usa `5e17`. La división entera redondea hacia abajo, así que la pérdida por redondeo se limita a la vista escalada y nunca supera una unidad de la cantidad escalada. En cambio, al hacer un recorrido de ida y vuelta con `fromUIAmount`, la diferencia en el valor sin procesar puede ser mayor cuando el multiplicador es inferior a `1e18`. Para minimizar ese efecto, conviene usar 18 decimales en los tokens de acciones.
+
+### Ciclo de vida de una programación {#how-a-schedule-lives}
+
+El activo permite **un único** multiplicador pendiente a la vez.
+
+1. **Programación.** `updateUIMultiplier(newMultiplier, effectiveAt)` almacena el par pendiente. `effectiveAt` debe ser estrictamente mayor que `block.timestamp`.
+2. **Pendiente activa.** Mientras `effectiveAt() > block.timestamp`, `uiMultiplier()` sigue devolviendo el valor actual, `newUIMultiplier()` devuelve el valor programado y `effectiveAt()` devuelve el momento del cambio. Una segunda programación revierte con `UIMultiplierUpdateExists`.
+3. **Vencimiento.** Cuando `block.timestamp >= effectiveAt`, las lecturas devuelven el nuevo multiplicador. El vencimiento no escribe en el almacenamiento ni emite ningún evento.
+4. **Tras el vencimiento.** Hasta que se produzca otra actualización, `newUIMultiplier()` refleja el valor de `uiMultiplier()` y `effectiveAt()` conserva la marca de tiempo ya pasada. Para detectar una actualización pendiente activa, usa `effectiveAt() > block.timestamp`, nunca `effectiveAt() == 0`.
+
+## Programar y verificar la actualización del multiplicador {#schedule-and-verify-the-multiplier-update}
+
+Otorga el rol `OPERATOR_ROLE` una vez por token si el operador aún no lo tiene:
+
+```solidity Grant OPERATOR_ROLE
+asset.grantRole(asset.OPERATOR_ROLE(), operator);
+```
+
+A continuación, programa la actualización. Este ejemplo programa un desdoblamiento de 2 por 1 para mañana:
+
+<CodeGroup>
+  {/* sample: stock-split-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={8}
+  import { type Address } from "viem";
+  import { publicClient } from "../../shared/clients.js";
+  import { assetAbi } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function scheduleTwoForOneSplit(token: Address) {
+    const effectiveAt = BigInt(Math.floor(Date.now() / 1000) + 86_400);
+    await sendContract({ address: token, abi: assetAbi, functionName: "updateUIMultiplier", args: [2n * 10n ** 18n, effectiveAt] });
+    const pending = await publicClient.readContract({ address: token, abi: assetAbi, functionName: "newUIMultiplier" });
+    if (pending !== 2n * 10n ** 18n) throw new Error("Split was not scheduled");
+    return effectiveAt;
+  }
+  ```
+
+  {/* sample: stock-split-solidity */}
+
+  ```solidity Solidity lines wrap expandable highlight={3}
+  function scheduleSplit(address token) public returns (uint256 effectiveAt) {
+      effectiveAt = block.timestamp + 1 days;
+      IB20Asset(token).updateUIMultiplier(2e18, effectiveAt);
+      require(IB20Asset(token).newUIMultiplier() == 2e18, "split not scheduled");
+      require(IB20Asset(token).effectiveAt() == effectiveAt, "effectiveAt mismatch");
+  }
+  ```
+
+  {/* sample: stock-split-cli */}
+
+  ```bash CLI lines wrap expandable highlight={2}
+  EFFECTIVE_AT=$(( $(date +%s) + 86400 ))
+  base-cast send "$TOKEN_ADDRESS" "updateUIMultiplier(uint256,uint256)" 2000000000000000000 "$EFFECTIVE_AT" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  base-cast call "$TOKEN_ADDRESS" "newUIMultiplier()(uint256)" --rpc-url "$RPC_URL"
+  ```
+</CodeGroup>
+
+Si la operación se completa correctamente, el activo emite `UIMultiplierUpdated(oldMultiplier, newMultiplier, effectiveAtTimestamp)`. Este evento se emite en el momento en que se registra la actualización, no cuando el multiplicador entra en vigor. Consulta `MAX_UI_MULTIPLIER()` si necesitas conocer el valor máximo permitido sin provocar `InvalidMultiplier`.
+
+### Leer el estado pendiente en tiempo real {#read-the-live-pending-state}
+
+```solidity Read the pending state
+asset.uiMultiplier();     // sigue siendo el multiplicador actual
+asset.newUIMultiplier();  // valor objetivo programado
+asset.effectiveAt();      // marca de tiempo en que se aplica el cambio
+```
+
+Una segunda llamada a `updateUIMultiplier` mientras hay una actualización pendiente en curso revierte con `UIMultiplierUpdateExists`. Para reemplazar una actualización pendiente, primero cancélala y luego vuelve a programarla.
+
+### Confirmar después del momento de entrada en vigor {#confirm-after-the-effective-time}
+
+Cuando `block.timestamp >= effectiveAt`, `uiMultiplier()` devuelve el nuevo multiplicador. La entrada en vigor no emite ningún evento. No esperes un segundo evento en el momento del cambio.
+
+<Check>
+  `UIMultiplierUpdated` aparece en la transacción de programación. Mientras el cambio está pendiente, `uiMultiplier()` es igual al valor anterior y `newUIMultiplier()` es igual a `2e18`. A partir de `effectiveAt`, `uiMultiplier()` devuelve `2e18`, el `balanceOf` sin procesar no cambia y `balanceOfUI` se duplica.
+</Check>
+
+Para comunicar la programación a los titulares e indexadores en la misma transacción, envuelve la llamada en `announce`; consulta [Anunciar un cambio a los titulares](/es/build-on-base/issue-rwa/announce-a-distribution).
+
+## Cancelar una actualización pendiente {#cancel-a-pending-update}
+
+Usa esta opción cuando una actualización pendiente no deba entrar en vigor: el multiplicador o la marca de tiempo son incorrectos, o la acción se ha retrasado. Llámala antes de `effectiveAt`:
+
+```solidity Cancel the pending update
+asset.cancelUIMultiplierUpdate();
+```
+
+Emite `UIMultiplierUpdateCancelled(cancelledMultiplier, cancelledEffectiveAt)`. `uiMultiplier()` conserva el valor anterior. Si se llama cuando no hay ninguna actualización pendiente activa, incluso después de que haya vencido, revierte con `UIMultiplierUpdateDoesNotExist`.
+
+Para cancelar y reprogramar de forma atómica, envuelve ambas llamadas en `announce`:
+
+```solidity Cancel and reschedule in one announcement wrap
+bytes[] memory calls = new bytes[](2);
+calls[0] = abi.encodeCall(IB20Asset.cancelUIMultiplierUpdate, ());
+calls[1] = abi.encodeCall(IB20Asset.updateUIMultiplier, (secondMultiplier, secondEffectiveAt));
+asset.announce(calls, "2026-multiplier-02", "Rescheduled multiplier update", "https://example.com/announcements/2026-multiplier-02");
+```
+
+<Note>
+  Es posible pausar `TRANSFER` durante una actualización del multiplicador, pero no se recomienda para actualizaciones rutinarias. Detiene todas las transferencias de los titulares durante ese intervalo, lo cual es más drástico de lo que requiere la mayoría de los cambios, y exige `PAUSE_ROLE` y `UNPAUSE_ROLE` además del rol de operador. Es preferible recurrir a la programación y dejar que las billeteras y los custodios se coordinen a partir del estado pendiente.
+</Note>
+
+## Anulación de emergencia {#emergency-override}
+
+Usa `updateMultiplier(newMultiplier)` solo cuando una actualización pendiente sea incorrecta y no puedas esperar a `effectiveAt`. Esta función aplica el valor de inmediato y elimina cualquier actualización pendiente. Si puedes esperar, es preferible cancelar; si la corrección también debe aplicarse en una marca de tiempo futura, cancela y vuelve a programarla.
+
+| Situación                                                        | Eventos (en orden)                                                                                                            |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Actualización pendiente activa (`effectiveAt > block.timestamp`) | `UIMultiplierUpdateCancelled`, luego `MultiplierUpdated(new)` y, por último, `UIMultiplierUpdated(old, new, block.timestamp)` |
+| Actualización vencida o sin actualización pendiente              | `MultiplierUpdated(new)` y luego `UIMultiplierUpdated(old, new, block.timestamp)`                                             |
+
+`MultiplierUpdated` está obsoleto. Procesa únicamente `UIMultiplierUpdated` para no gestionar la misma actualización dos veces.
+
+## Reglas para integradores {#integrator-rules}
+
+* Escuche el evento `UIMultiplierUpdated`, no el obsoleto `MultiplierUpdated`.
+* Si `effectiveAtTimestamp > block.timestamp`, considere la actualización como pendiente hasta ese momento.
+* La maduración no emite ningún evento. No espere un segundo evento cuando se produzca el cambio.
+* Al recibir `UIMultiplierUpdateCancelled`, descarte la actualización pendiente.
+* Para detectar una actualización pendiente activa, use `effectiveAt() > block.timestamp`. No compruebe `effectiveAt() == 0`.
+
+## Errores comunes {#common-errors}
+
+Estos errores siguen el orden en que `updateUIMultiplier` los comprueba. A continuación aparecen los errores de cancelación y de `announce`.
+
+| Error                                                     | Causa                                                                                                                     | Solución                                                             |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `AccessControlUnauthorizedAccount(caller, OPERATOR_ROLE)` | El llamador no tiene `OPERATOR_ROLE`.                                                                                     | Otorga `OPERATOR_ROLE` al operador.                                  |
+| `InvalidMultiplier()`                                     | `newMultiplier` es cero o supera `MAX_UI_MULTIPLIER`.                                                                     | Pasa un valor en `(0, MAX_UI_MULTIPLIER]`.                           |
+| `EffectiveAtInPast(effectiveAt)`                          | `effectiveAt <= block.timestamp`.                                                                                         | Pasa una marca de tiempo estrictamente futura.                       |
+| `EffectiveAtTooFar(effectiveAt)`                          | `effectiveAt > type(uint64).max`.                                                                                         | Pasa una marca de tiempo que quepa en `uint64`.                      |
+| `UIMultiplierUpdateExists(effectiveAt)`                   | Ya existe una actualización pendiente activa.                                                                             | Cancélala primero, o cancélala y reprográmala en un solo `announce`. |
+| `UIMultiplierUpdateDoesNotExist()`                        | Se llamó a `cancelUIMultiplierUpdate` sin ninguna actualización pendiente activa, también después de su entrada en vigor. | Llámala solo mientras `effectiveAt() > block.timestamp`.             |
+| `AnnouncementIdAlreadyUsed(id)`                           | `announce` reutilizó un `id`.                                                                                             | Elige un `id` nuevo de un solo uso.                                  |
+| `InternalCallFailed(call)`                                | Una llamada interna de `announce` se revirtió.                                                                            | Corrige el calldata codificado y vuelve a intentarlo.                |
+
+## Consulta también {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="Anunciar un cambio a los titulares" icon="bullhorn" href="/es/build-on-base/issue-rwa/announce-a-distribution">
+    Comunica la actualización a los titulares y a los indexadores en la misma transacción.
+  </Card>
+
+  <Card title="Pausar las transferencias" icon="circle-pause" href="/es/build-on-base/issue-rwa/pause-transfers">
+    Detén las transferencias en caso de emergencia.
+  </Card>
+</CardGroup>

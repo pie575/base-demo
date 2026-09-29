@@ -1,0 +1,79 @@
+---
+title: "概述"
+description: "Azul 是 Base 的首次独立网络升级，旨在提升安全性与去中心化程度、加速迈向 1 gigagas/s 的目标，并改善开发者体验。"
+---
+
+|         | 状态  | 日期              |
+| ------- | --- | --------------- |
+| Sepolia | 已上线 | 2026 年 4 月 20 日 |
+| 主网      | 已上线 | 2026 年 5 月 28 日 |
+
+## 功能 {#features}
+
+<AccordionGroup>
+  <Accordion title="EIP-7823：MODEXP 输入上限">
+    **EIP** · 执行
+
+    将 MODEXP 预编译合约的每个输入字段限制为最多 1024 字节。输入超出此限制的调用将被拒绝。
+  </Accordion>
+
+  <Accordion title="EIP-7825：交易 Gas 上限">
+    **EIP** · 执行
+
+    在协议层面将单笔交易的 gas 上限设为 16,777,216 (2^24) 。超过该上限的交易会在验证阶段被拒绝。Base 采用与 L1 相同的上限，以最大程度保持与 Ethereum 的等效性。
+  </Accordion>
+
+  <Accordion title="EIP-7883：MODEXP Gas 成本上调">
+    **EIP** · 执行
+
+    将 MODEXP 预编译合约的最低 gas 成本从 200 提高到 500，并将常规成本的计算结果提高至三倍。
+  </Accordion>
+
+  <Accordion title="EIP-7939：CLZ 操作码">
+    **EIP** · 执行
+
+    新增 CLZ 操作码，用于统计 256 位字中前导零位的个数；若输入为零，则返回 256。
+  </Accordion>
+
+  <Accordion title="EIP-7951：secp256r1 预编译合约">
+    **EIP** · 执行
+
+    规定 secp256r1 预编译合约位于地址 0×100。自 Azul 起，其 gas 成本提高到 6,900，与 EIP-7951 中规定的 L1 gas 成本保持一致。
+  </Accordion>
+
+  <Accordion title="EIP-7642：eth/69">
+    **EIP** · 网络
+
+    将 Ethereum 线路协议升级至第 69 版，移除 Status 消息中的旧版字段，并简化握手流程。
+  </Accordion>
+
+  <Accordion title="移除账户余额与收据">
+    **Base** · 网络
+
+    从 Flashblocks WebSocket 格式中移除 new&#95;account&#95;balances 和 receipts，以精简 FlashblocksMetadata 负载。
+  </Accordion>
+
+  <Accordion title="discv5 使用 basev0 协议 ID">
+    **Base** · 网络
+
+    执行层节点发现改为使用 basev0 作为协议 ID，使 Base 节点能够更快地发现彼此，这一点在 Sepolia 等规模较小的网络上尤为明显。
+  </Accordion>
+
+  <Accordion title="EIP-7910：eth_config RPC 方法">
+    **EIP** · RPC
+
+    引入 eth&#95;config JSON-RPC 方法，用于返回链配置参数，例如各分叉的激活时间戳。
+  </Accordion>
+
+  <Accordion title="Engine API 用法">
+    **Base** · RPC
+
+    自 Azul 激活起，区块生产和导入将使用以下 Engine API 方法：engine&#95;forkchoiceUpdatedV3 用于启动区块构建和分叉选择同步，engine&#95;getPayloadV5 用于获取已构建的负载。
+  </Accordion>
+
+  <Accordion title="多重证明">
+    **Base** · 证明
+
+    证明系统为 L2 检查点引入了多重证明机制：在提款依赖某个提案之前，AggregateVerifier 可针对该提案验证一个或两个证明。
+  </Accordion>
+</AccordionGroup>

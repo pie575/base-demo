@@ -1,0 +1,200 @@
+---
+title: "乗数を適用する"
+description: "B20 Asset の乗数更新をスケジュールすると、生の残高を書き換えずに、表示上の単位数を将来の指定した時点で変更できます。株式分割はその一例です。"
+keywords: ["asset token multiplier", "B20 multiplier", "scaled token balance", "stock split", "updateUIMultiplier", "ERC-8056"]
+---
+
+import { AssetDemo } from "/snippets/AssetDemo.jsx"
+import RwaDisclaimer from "/snippets/ja/RwaDisclaimer.mdx"
+
+乗数を使うと、保有者が実際に保有している量はそのままに、保有者に表示される量だけをスケーリングできます。合意された時刻になると、表示されるすべての残高が同じ係数で変化しますが、生の `balanceOf`、`totalSupply`、および送金額は変わりません。そのため、生の単位を読み取る DeFi は引き続き正常に動作します。取引所、カストディアン、ウォレット、会計システムはその時刻を事前に把握しておく必要があるため、`updateUIMultiplier` ([ERC-8056](https://eips.ethereum.org/EIPS/eip-8056)) を使って、あらかじめオンチェーンで更新をスケジュールしておきます。このガイドでは、1 株を 2 株にする株式分割を例に説明します。株式併合や再投資型の分配も、値が異なるだけで手順は同じです。
+
+<RwaDisclaimer />
+
+<Warning>
+  通常は `updateUIMultiplier` を使用します。非推奨の `updateMultiplier` は値を即座に適用し、保留中の更新をすべて破棄します。緊急時のオーバーライドとしてのみ使用してください。
+</Warning>
+
+## デモ {#demo}
+
+<AssetDemo flow="split" />
+
+<Tip>
+  このデモでは、ブラウザ上でローカルに生成したアカウントを使用して、**Base Vibenet** 上で実際のトランザクションを送信します。Vibenet またはその B20 機能が利用できない場合は、説明用のオフライン版に自動的に切り替わります。
+</Tip>
+
+<Note>
+  B20 を初めて使う場合は、[B20 トークン標準](/ja/build-on-base/issue-rwa/create-an-asset-token)で基本概念とローンチまでの詳しい手順をご確認ください。これらのサンプルは `base-std@1505323`、`viem@2.55.11`、Base Foundry `v1.1.1` を対象としています。
+</Note>
+
+## 始める前に {#before-you-start}
+
+以下のすべてが必要です。
+
+* 自身が管理する B20 Asset。`OPERATOR_ROLE` を付与するために `DEFAULT_ADMIN_ROLE` を保有している必要があります。
+* 乗数のセッターを呼び出すアカウント (オペレーター) 。`updateUIMultiplier`、`cancelUIMultiplierUpdate`、および非推奨の `updateMultiplier` は、いずれも `OPERATOR_ROLE` が必要です。[Create an Asset Token](/ja/build-on-base/issue-rwa/create-an-asset-token) で作成したトークンでは、このロールがデプロイヤーに付与されます。
+* 将来の時刻を指定した `effectiveAt` タイムスタンプと、`(0, MAX_UI_MULTIPLIER]` の範囲内の `newMultiplier`。
+
+この機能は **B20 Asset** でのみ提供されます。Stablecoin には乗数はありません。また、一時停止中でもセッターは制限されません。`PausableFeature` によって凍結されるのは `TRANSFER`、`MINT`、`BURN`、`SEIZE` のみです。
+
+### 乗数によって変わるもの {#what-a-multiplier-changes}
+
+生の `balanceOf` は乗数の影響を受けません。乗数が適用されるのは、派生した UI ビューのみです。
+
+| 読み取り                                                | 計算式                                          |
+| --------------------------------------------------- | -------------------------------------------- |
+| `uiMultiplier()` / `multiplier()`                   | `block.timestamp` 時点での実効乗数                   |
+| `balanceOfUI(account)` / `scaledBalanceOf(account)` | `balanceOf(account) * uiMultiplier() / 1e18` |
+| `totalSupplyUI()`                                   | `totalSupply() * uiMultiplier() / 1e18`      |
+| `toUIAmount(raw)` / `fromUIAmount(ui)`              | 実効乗数で変換                                      |
+
+乗数は小数点以下の桁数が 18 の WAD 値で、`1e18` が `1.0` を表します。1 株を 2 株にする株式分割では `2e18` を、2 株を 1 株にする株式併合では `5e17` を使用します。整数除算では端数が切り捨てられるため、丸め誤差はスケール後のビューにとどまり、最大でもスケール後の数量の 1 単位です。ただし、乗数が `1e18` 未満の場合、`fromUIAmount` で往復変換した際の生の値側の差は、これより大きくなることがあります。この影響を小さく抑えるため、株式トークンでは小数点以下の桁数を 18 にすることを推奨します。
+
+### スケジュールのライフサイクル {#how-a-schedule-lives}
+
+アセットが一度に保持できる保留中の乗数は、**1つ**だけです。
+
+1. **スケジュール。** `updateUIMultiplier(newMultiplier, effectiveAt)` は保留中のペアを保存します。`effectiveAt` は `block.timestamp` より真に大きくなければなりません。
+2. **保留中 (有効) 。** `effectiveAt() > block.timestamp` の間、`uiMultiplier()` は引き続き現在の値を返し、`newUIMultiplier()` はスケジュールされた値を、`effectiveAt()` は切り替え時刻を返します。この状態で2回目のスケジュールを行うと、`UIMultiplierUpdateExists` でリバートします。
+3. **発効。** `block.timestamp >= effectiveAt` になると、読み取り時に新しい乗数が返されます。発効時にはストレージへの書き込みもイベントの発行も行われません。
+4. **発効後。** 次の更新が行われるまで、`newUIMultiplier()` は `uiMultiplier()` と同じ値を返し、`effectiveAt()` は過去のタイムスタンプを保持し続けます。有効な保留中の更新は、必ず `effectiveAt() > block.timestamp` で検出してください。`effectiveAt() == 0` による判定は使用しないでください。
+
+## 乗数更新のスケジュール設定と検証 {#schedule-and-verify-the-multiplier-update}
+
+オペレーターがまだ `OPERATOR_ROLE` を保持していない場合は、トークンごとに一度だけ付与します。
+
+```solidity Grant OPERATOR_ROLE
+asset.grantRole(asset.OPERATOR_ROLE(), operator);
+```
+
+次に、更新をスケジュールします。この例では、1株を2株に分割する株式分割を明日実行するようスケジュールします。
+
+<CodeGroup>
+  {/* sample: stock-split-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={8}
+  import { type Address } from "viem";
+  import { publicClient } from "../../shared/clients.js";
+  import { assetAbi } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function scheduleTwoForOneSplit(token: Address) {
+    const effectiveAt = BigInt(Math.floor(Date.now() / 1000) + 86_400);
+    await sendContract({ address: token, abi: assetAbi, functionName: "updateUIMultiplier", args: [2n * 10n ** 18n, effectiveAt] });
+    const pending = await publicClient.readContract({ address: token, abi: assetAbi, functionName: "newUIMultiplier" });
+    if (pending !== 2n * 10n ** 18n) throw new Error("Split was not scheduled");
+    return effectiveAt;
+  }
+  ```
+
+  {/* sample: stock-split-solidity */}
+
+  ```solidity Solidity lines wrap expandable highlight={3}
+  function scheduleSplit(address token) public returns (uint256 effectiveAt) {
+      effectiveAt = block.timestamp + 1 days;
+      IB20Asset(token).updateUIMultiplier(2e18, effectiveAt);
+      require(IB20Asset(token).newUIMultiplier() == 2e18, "split not scheduled");
+      require(IB20Asset(token).effectiveAt() == effectiveAt, "effectiveAt mismatch");
+  }
+  ```
+
+  {/* sample: stock-split-cli */}
+
+  ```bash CLI lines wrap expandable highlight={2}
+  EFFECTIVE_AT=$(( $(date +%s) + 86400 ))
+  base-cast send "$TOKEN_ADDRESS" "updateUIMultiplier(uint256,uint256)" 2000000000000000000 "$EFFECTIVE_AT" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  base-cast call "$TOKEN_ADDRESS" "newUIMultiplier()(uint256)" --rpc-url "$RPC_URL"
+  ```
+</CodeGroup>
+
+成功すると、アセットは `UIMultiplierUpdated(oldMultiplier, newMultiplier, effectiveAtTimestamp)` を発行します。このイベントが発行されるのは更新が記録された時点であり、乗数が有効になった時点ではない点に注意してください。`InvalidMultiplier` を発生させずに上限値を確認するには、`MAX_UI_MULTIPLIER()` を読み取ります。
+
+### 現在の保留中の状態を読み取る {#read-the-live-pending-state}
+
+```solidity Read the pending state
+asset.uiMultiplier();     // 現行の乗数のまま
+asset.newUIMultiplier();  // 予定されている新しい値
+asset.effectiveAt();      // 切り替え時刻のタイムスタンプ
+```
+
+保留中の更新が有効な間に `updateUIMultiplier` を再度呼び出すと、`UIMultiplierUpdateExists` でリバートします。保留中の更新を置き換える場合は、先にキャンセルしてから再度スケジュールしてください。
+
+### 発効時刻以降に確認する {#confirm-after-the-effective-time}
+
+`block.timestamp >= effectiveAt` になると、`uiMultiplier()` は新しい乗数を返します。発効時にはイベントは発行されません。切り替わりのタイミングで2つ目のイベントを待たないでください。
+
+<Check>
+  `UIMultiplierUpdated` はスケジュール設定トランザクションで発行されます。発効待ちの間は、`uiMultiplier()` は古い値のままで、`newUIMultiplier()` は `2e18` になります。`effectiveAt` 以降は、`uiMultiplier()` が `2e18` を返し、生の `balanceOf` は変わらず、`balanceOfUI` が2倍になります。
+</Check>
+
+同じトランザクション内で保有者やインデクサーにスケジュールを公開するには、呼び出しを `announce` でラップします。詳しくは[保有者への変更の告知](/ja/build-on-base/issue-rwa/announce-a-distribution)を参照してください。
+
+## 保留中の更新をキャンセルする {#cancel-a-pending-update}
+
+保留中の更新を反映させるべきでない場合 (乗数やタイムスタンプが誤っている、アクションが延期されたなど) に使用します。`effectiveAt` より前に呼び出してください。
+
+```solidity Cancel the pending update
+asset.cancelUIMultiplierUpdate();
+```
+
+`UIMultiplierUpdateCancelled(cancelledMultiplier, cancelledEffectiveAt)` を発行します。`uiMultiplier()` は元の値のまま変わりません。有効な保留中の更新がない状態で呼び出すと (有効日時の到来後を含む) 、`UIMultiplierUpdateDoesNotExist` でリバートします。
+
+キャンセルと再スケジュールをアトミックに実行するには、両方の呼び出しを `announce` でラップします。
+
+```solidity Cancel and reschedule in one announcement wrap
+bytes[] memory calls = new bytes[](2);
+calls[0] = abi.encodeCall(IB20Asset.cancelUIMultiplierUpdate, ());
+calls[1] = abi.encodeCall(IB20Asset.updateUIMultiplier, (secondMultiplier, secondEffectiveAt));
+asset.announce(calls, "2026-multiplier-02", "Rescheduled multiplier update", "https://example.com/announcements/2026-multiplier-02");
+```
+
+<Note>
+  乗数の更新前後に `TRANSFER` を一時停止することも可能ですが、定常的な更新には推奨されません。一時停止中はすべての保有者の転送が停止するため、ほとんどの変更には過剰な措置です。また、オペレーターに加えて `PAUSE_ROLE` と `UNPAUSE_ROLE` も必要になります。代わりにスケジュールを利用し、ウォレットやカストディアンが保留中の状態に基づいて対応を調整できるようにしてください。
+</Note>
+
+## 緊急オーバーライド {#emergency-override}
+
+`updateMultiplier(newMultiplier)` は、保留中の更新に誤りがあり、かつ `effectiveAt` まで待てない場合にのみ使用してください。この関数は値を即座に適用し、保留中の更新をすべてクリアします。待っても問題ない場合はキャンセルを、修正後の値も将来のタイムスタンプで適用する場合はキャンセルしてから再スケジュールする方法を優先してください。
+
+| 状況                                              | イベント (発生順)                                                                                                  |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| 未発効の保留中の更新あり (`effectiveAt > block.timestamp`)  | `UIMultiplierUpdateCancelled` → `MultiplierUpdated(new)` → `UIMultiplierUpdated(old, new, block.timestamp)` |
+| 保留中の更新が発効済み、または保留中の更新なし                         | `MultiplierUpdated(new)` → `UIMultiplierUpdated(old, new, block.timestamp)`                                 |
+
+`MultiplierUpdated` は非推奨です。同じ更新を二重に処理しないよう、`UIMultiplierUpdated` のみを処理してください。
+
+## インテグレーター向けのルール {#integrator-rules}
+
+* 非推奨の `MultiplierUpdated` ではなく、`UIMultiplierUpdated` をリッスンしてください。
+* `effectiveAtTimestamp > block.timestamp` の場合、その時刻になるまでは更新を保留中として扱ってください。
+* 更新が有効になる時点ではイベントは発行されません。切り替わりのタイミングで 2 つ目のイベントを待たないでください。
+* `UIMultiplierUpdateCancelled` を受け取ったら、保留中の更新を破棄してください。
+* 有効な保留中の更新があるかどうかは、`effectiveAt() > block.timestamp` で判定してください。`effectiveAt() == 0` で判定しないでください。
+
+## よくあるエラー {#common-errors}
+
+以下のエラーは、`updateUIMultiplier` がチェックする順に並んでいます。その後に、キャンセルおよび announce に関するエラーを記載しています。
+
+| エラー                                                       | 原因                                                              | 対処法                                                 |
+| --------------------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------- |
+| `AccessControlUnauthorizedAccount(caller, OPERATOR_ROLE)` | 呼び出し元が `OPERATOR_ROLE` を持っていません。                                | オペレーターに `OPERATOR_ROLE` を付与します。                     |
+| `InvalidMultiplier()`                                     | `newMultiplier` がゼロであるか、`MAX_UI_MULTIPLIER` を超えています。            | `(0, MAX_UI_MULTIPLIER]` の範囲内の値を渡します。               |
+| `EffectiveAtInPast(effectiveAt)`                          | `effectiveAt <= block.timestamp` です。                            | 現在より厳密に後のタイムスタンプを渡します。                              |
+| `EffectiveAtTooFar(effectiveAt)`                          | `effectiveAt > type(uint64).max` です。                            | `uint64` に収まるタイムスタンプを渡します。                          |
+| `UIMultiplierUpdateExists(effectiveAt)`                   | 有効な保留中の更新がすでに存在します。                                             | 先にキャンセルするか、1 回の `announce` でキャンセルと再スケジュールをまとめて行います。 |
+| `UIMultiplierUpdateDoesNotExist()`                        | 有効な保留中の更新がない状態 (発効後を含む) で `cancelUIMultiplierUpdate` が呼び出されました。 | `effectiveAt() > block.timestamp` である間にのみ呼び出します。    |
+| `AnnouncementIdAlreadyUsed(id)`                           | `announce` で `id` が再利用されました。                                    | 未使用の新しい `id` を指定します (各 `id` は 1 回のみ使用可能) 。          |
+| `InternalCallFailed(call)`                                | `announce` 内の内部呼び出しがリバートしました。                                   | エンコードされた calldata を修正して再試行します。                      |
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="保有者への変更の告知" icon="bullhorn" href="/ja/build-on-base/issue-rwa/announce-a-distribution">
+    同じトランザクション内で、保有者とインデクサーに更新内容を開示します。
+  </Card>
+
+  <Card title="移転の一時停止" icon="circle-pause" href="/ja/build-on-base/issue-rwa/pause-transfers">
+    緊急時にトークンの移転を停止します。
+  </Card>
+</CardGroup>

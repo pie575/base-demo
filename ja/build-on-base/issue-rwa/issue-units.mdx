@@ -1,0 +1,88 @@
+---
+title: "保有者へのユニットの発行"
+description: "承認済みの複数の保有者に B20 Asset のユニットを一括で配布します。"
+keywords: ["トークン化ユニットの発行", "B20 batchMint", "アセットトークンの配布", "Base のキャップテーブル"]
+---
+
+import { AssetDemo } from "/snippets/AssetDemo.jsx"
+import RwaDisclaimer from "/snippets/ja/RwaDisclaimer.mdx"
+
+B20 Asset の `batchMint` を使用すると、1 回のトランザクションで複数の保有者に株式を一括配布できます。このトランザクションはオールオアナッシング方式で実行されます。すべての受取人がトークンのミント受取人ポリシーを満たす必要があり、発行量の合計は供給上限を下回る必要があります。
+
+<RwaDisclaimer />
+
+## デモ {#demo}
+
+<AssetDemo flow="issue" />
+
+<Tip>
+  このデモでは、ブラウザ上でローカルに生成したアカウントを使って、**Base Vibenet** に実際のトランザクションを送信します。Vibenet またはその B20 機能が利用できない場合は、説明用のオフライン版に自動で切り替わります。
+</Tip>
+
+<Note>
+  B20 を初めて使う方は、[B20 トークン標準](/ja/build-on-base/issue-rwa/create-an-asset-token)で基本概念とローンチまでの一連の手順を確認してください。これらのサンプルは `base-std@1505323`、`viem@2.55.11`、Base Foundry `v1.1.1` を対象としています。
+</Note>
+
+## 株式を発行して検証する {#issue-and-verify-the-shares}
+
+<CodeGroup>
+  {/* sample: stock-issue-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={8}
+  import { parseUnits, type Address } from "viem";
+  import { publicClient } from "../../shared/clients.js";
+  import { assetAbi, b20Abi } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function issueShares(token: Address, holders: [Address, Address]) {
+    const amounts = [parseUnits("600", 6), parseUnits("400", 6)] as const;
+    await sendContract({ address: token, abi: assetAbi, functionName: "batchMint", args: [holders, amounts] });
+    const balances = await Promise.all(holders.map((holder) => publicClient.readContract({ address: token, abi: b20Abi, functionName: "balanceOf", args: [holder] })));
+    if (balances[0] !== amounts[0] || balances[1] !== amounts[1]) throw new Error("Unexpected issuance balances");
+  }
+  ```
+
+  {/* sample: stock-issue-solidity */}
+
+  ```solidity Solidity lines wrap expandable highlight={8}
+      function issueShares(address token, address alice, address bob) public {
+          address[] memory recipients = new address[](2);
+          recipients[0] = alice;
+          recipients[1] = bob;
+          uint256[] memory amounts = new uint256[](2);
+          amounts[0] = 600e6;
+          amounts[1] = 400e6;
+          IB20Asset(token).batchMint(recipients, amounts);
+      }
+  ```
+
+  {/* sample: stock-issue-cli */}
+
+  ```bash CLI lines wrap expandable highlight={1}
+  base-cast send "$TOKEN_ADDRESS" "batchMint(address[],uint256[])" \
+    "[$ALICE,$BOB]" "[600000000,400000000]" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  base-cast call "$TOKEN_ADDRESS" "balanceOf(address)(uint256)" "$ALICE" --rpc-url "$RPC_URL"
+  ```
+</CodeGroup>
+
+インターフェース、ロール、ポリシーの詳細については、[B20 トークン標準](/ja/build-on-base/issue-rwa/create-an-asset-token)を参照してください。
+
+<Check>
+  オールオアナッシングのバッチ処理が完了すると、Alice は 600 EXM、Bob は 400 EXM を保有しています。
+</Check>
+
+<Warning>
+  配列の長さが一致しない場合、受取人がポリシーの条件を満たさない場合、または総供給量が上限を超える場合は、バッチ全体がリバートされます。
+</Warning>
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="保有資格者を制限する" icon="user-check" href="/ja/build-on-base/issue-rwa/restrict-eligible-holders">
+    ポリシーを使用して、トークンを保有できるユーザーを制限します。
+  </Card>
+
+  <Card title="保有者に変更を通知する" icon="bullhorn" href="/ja/build-on-base/issue-rwa/announce-a-distribution">
+    追加発行など、保有者に影響する変更をオンチェーンで開示します。
+  </Card>
+</CardGroup>

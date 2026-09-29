@@ -1,0 +1,150 @@
+---
+title: 'Base RPC 概览'
+sidebarTitle: '概览'
+description: 'Base 节点上所有可用 JSON-RPC 和 Flashblocks 方法的完整参考。'
+---
+
+Base 提供一套完全兼容 EVM 的统一 JSON-RPC API，并分为两个性能层级。只需更换一个 URL 和一个区块标签，即可从 2 秒的区块确认切换到 200ms 的预确认。
+
+## 网络 {#networks}
+
+有关网络详情、RPC 端点和钱包设置，请参阅[连接到 Base](/base-chain/quickstart/connecting-to-base)。
+
+<Note>
+  Base 公共端点**仅支持 HTTP**，不支持 WebSocket RPC 连接 (`eth_subscribe`、`newHeads`、`logs`) 。如需使用 WebSocket，请从 [Builder Stack](/zh/get-started/builder-stack) 中选择支持 WebSocket 的提供商。
+</Note>
+
+## Flashblocks {#flashblocks}
+
+所有 Base 公共端点均已启用 Flashblocks。所有标准 `eth_` 方法的用法完全不变，而 `pending` 区块标签对应的是当前**正在构建的预确认区块**。该区块约每 200ms 更新一次，每次都会加入一批由排序器排好序的新交易。
+
+`eth_getBalance`、`eth_getStorageAt` 和 `eth_call` 等调用基于真实的排序器状态执行，最多可在区块封块前 1.8 秒获取结果，延迟低于一秒。
+
+## API 参考 {#api-reference}
+
+### Ethereum JSON-RPC API {#ethereum-json-rpc-api}
+
+以太坊核心协议方法，涵盖账户查询、区块与交易数据、gas 估算以及日志过滤。
+
+<Info>
+  标记 ✓ 的方法支持 `"pending"` 区块标签，该标签对应当前正在构建中的预确认 Flashblock。
+</Info>
+
+| 方法                                                                                                                                     | 说明              | Flashblocks `pending` |
+| :------------------------------------------------------------------------------------------------------------------------------------- | :-------------- | :-------------------- |
+| [eth&#95;blockNumber](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_blockNumber)                                                 | 当前区块号           | —                     |
+| [eth&#95;getBalance](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_getBalance)                                                   | 账户 ETH 余额       | ✓                     |
+| [eth&#95;getTransactionCount](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionCount)                                 | 账户 nonce / 交易数量 | ✓                     |
+| [eth&#95;getCode](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_getCode)                                                         | 已部署合约的字节码       | ✓                     |
+| [eth&#95;getStorageAt](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_getStorageAt)                                               | 合约存储槽的值         | ✓                     |
+| [eth&#95;call](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_call)                                                               | 执行只读调用          | ✓                     |
+| [eth&#95;getBlockByNumber](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_getBlockByNumber)                                       | 按区块号获取区块数据      | ✓                     |
+| [eth&#95;getBlockByHash](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_getBlockByHash)                                           | 按哈希获取区块数据       | —                     |
+| [eth&#95;getBlockReceipts](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_getBlockReceipts)                                       | 区块内的所有收据        | ✓                     |
+| [eth&#95;getBlockTransactionCountByNumber](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_getBlockTransactionCountByNumber)       | 按区块号获取交易数量      | ✓                     |
+| [eth&#95;getBlockTransactionCountByHash](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_getBlockTransactionCountByHash)           | 按区块哈希获取交易数量     | —                     |
+| [eth&#95;getTransactionByHash](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionByHash)                               | 按哈希获取交易数据       | —                     |
+| [eth&#95;getTransactionByBlockHashAndIndex](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionByBlockHashAndIndex)     | 按区块哈希和索引获取交易    | —                     |
+| [eth&#95;getTransactionByBlockNumberAndIndex](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionByBlockNumberAndIndex) | 按区块号和索引获取交易     | —                     |
+| [eth&#95;getTransactionReceipt](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionReceipt)                             | 已上链交易的收据        | —                     |
+| [eth&#95;sendRawTransaction](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_sendRawTransaction)                                   | 提交已签名交易         | —                     |
+| [eth&#95;gasPrice](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_gasPrice)                                                       | 当前 gas 价格       | —                     |
+| [eth&#95;maxPriorityFeePerGas](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_maxPriorityFeePerGas)                               | 最大优先费估算值        | —                     |
+| [eth&#95;feeHistory](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_feeHistory)                                                   | 历史基础费用与奖励       | —                     |
+| [eth&#95;estimateGas](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_estimateGas)                                                 | 估算交易所需 gas      | ✓                     |
+| [eth&#95;getLogs](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_getLogs)                                                         | 按过滤条件查询事件日志     | ✓                     |
+| [eth&#95;chainId](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_chainId)                                                         | 网络链 ID          | —                     |
+| [eth&#95;syncing](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_syncing)                                                         | 节点同步状态          | —                     |
+| [net&#95;version](/zh/base-chain/api-reference/ethereum-json-rpc-api/net_version)                                                         | 网络版本 ID         | —                     |
+| [web3&#95;clientVersion](/zh/base-chain/api-reference/ethereum-json-rpc-api/web3_clientVersion)                                           | 客户端版本字符串        | —                     |
+| [eth&#95;subscribe](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_subscribe)                                                     | 订阅事件 (WSS)      | ✓                     |
+| [eth&#95;unsubscribe](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_unsubscribe)                                                 | 取消订阅 (WSS)      | —                     |
+
+### Flashblocks API {#flashblocks-api}
+
+用于在 Base 上获取亚秒级交易信号的预确认方法。借助这些方法，你可以在区块封块前最多约 1.8 秒读取状态、模拟交易包并以流式方式接收事件。
+
+| 方法                                                                                               | 描述                   |
+| ------------------------------------------------------------------------------------------------ | -------------------- |
+| [eth&#95;simulateV1](/zh/base-chain/api-reference/flashblocks-api/eth_simulateV1)                   | 基于预确认状态模拟交易包         |
+| [base&#95;transactionStatus](/zh/base-chain/api-reference/flashblocks-api/base_transactionStatus)   | 检查交易是否已被内存池接收        |
+| [newFlashblockTransactions](/zh/base-chain/api-reference/flashblocks-api/newFlashblockTransactions) | 订阅单笔预确认交易            |
+| [pendingLogs](/zh/base-chain/api-reference/flashblocks-api/pendingLogs)                             | 订阅预确认交易中经过筛选的日志      |
+| [newFlashblocks](/zh/base-chain/api-reference/flashblocks-api/newFlashblocks)                       | 订阅完整的 Flashblock 负载流 |
+
+### Debug API {#debug-api}
+
+用于深度检查交易和重放区块的开发与调试工具。Debug 方法会重放交易，计算开销较大；[Builder Stack](/zh/get-started/builder-stack) 中各服务商对这些方法的支持情况和速率限制不尽相同。
+
+| 方法                                                                                           | 描述                    |
+| -------------------------------------------------------------------------------------------- | --------------------- |
+| [debug&#95;traceTransaction](/zh/base-chain/api-reference/debug-api/debug_traceTransaction)     | 获取交易的完整 EVM 执行追踪      |
+| [debug&#95;traceBlockByHash](/zh/base-chain/api-reference/debug-api/debug_traceBlockByHash)     | 按哈希获取区块内所有交易的 EVM 追踪  |
+| [debug&#95;traceBlockByNumber](/zh/base-chain/api-reference/debug-api/debug_traceBlockByNumber) | 按区块号获取区块内所有交易的 EVM 追踪 |
+
+## 请求与响应格式 {#request-response-format}
+
+所有请求均使用 HTTP POST 方法，并设置 `Content-Type: application/json`。
+
+| 字段        | 类型     | 说明          |              |
+| :-------- | :----- | :---------- | ------------ |
+| `jsonrpc` | string | 固定为 `"2.0"` |              |
+| `method`  | string | RPC 方法名     |              |
+| `params`  | array  | 按顺序排列的方法参数  |              |
+| `id`      | number | string      | 标识符，响应中会原样返回 |
+
+**请求：**
+
+```json Request
+{
+  "jsonrpc": "2.0",
+  "method": "eth_getBalance",
+  "params": ["0x742d35Cc6634C0532925a3b8D4C9dD0b4f3BaEa", "pending"],
+  "id": 1
+}
+```
+
+**成功响应：**
+
+```json Success Response
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": "0x1a055690d9db80000"
+}
+```
+
+**错误响应：**
+
+```json Error Response lines wrap expandable
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "error": {
+    "code": -32602,
+    "message": "Invalid params"
+  }
+}
+```
+
+## 错误码 {#error-codes}
+
+| 代码       | 名称    | 描述                    |
+| -------- | ----- | --------------------- |
+| `-32700` | 解析错误  | JSON 无效               |
+| `-32600` | 无效请求  | 不是有效的 JSON-RPC 2.0 对象 |
+| `-32601` | 方法未找到 | 方法不存在或不可用             |
+| `-32602` | 无效参数  | 方法参数无效                |
+| `-32603` | 内部错误  | JSON-RPC 内部错误         |
+| `-32000` | 服务器错误 | 节点特有的错误 (详见错误消息)      |
+
+## 区块参数 {#block-parameters}
+
+| 值             | 标准        | Flashblocks                               |
+| ------------- | --------- | ----------------------------------------- |
+| `"latest"`    | 最近封装的区块   | 最近封装的区块                                   |
+| `"pending"`   | 未打包交易池状态  | **当前正在构建的 Flashblock (约 200ms 粒度)&#x20;**&#x20;|
+| `"safe"`      | 最新的安全区块   | 最新的安全区块                                   |
+| `"finalized"` | 最新的已终结区块  | 最新的已终结区块                                  |
+| `"earliest"`  | 创世区块      | 创世区块                                      |
+| `"0x<n>"`     | 按区块号指定的区块 | 按区块号指定的区块                                 |

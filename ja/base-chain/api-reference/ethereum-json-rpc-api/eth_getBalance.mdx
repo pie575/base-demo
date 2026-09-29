@@ -1,0 +1,63 @@
+---
+title: 'eth_getBalance'
+sidebarTitle: 'eth_getBalance'
+description: '指定したブロック時点でのアカウントのETH残高を返します。200ms単位のプレコンファームされた残高を取得するには、pendingタグを使用します。'
+---
+
+指定したブロック時点でのアドレスのETH残高を返します。
+
+<Tip>
+  **Flashblocks:** `https://mainnet.base.org` に `"pending"` を指定してクエリすると、ブロックが確定する前の段階で、約200msごとに更新される残高を取得できます。
+</Tip>
+
+## パラメーター {#parameters}
+
+<ParamField body="address" type="string" required>
+  照会対象の20バイトのアドレス。
+</ParamField>
+
+<ParamField body="block" type="string" required>
+  16進数のブロック番号、または `"latest"`、`"pending"`、`"safe"`、`"finalized"`、`"earliest"` のいずれか。プレコンファームされた残高を取得するには `"pending"` を指定します。
+</ParamField>
+
+## 戻り値 {#returns}
+
+<ResponseField name="result" type="string">
+  wei単位の残高を表す16進数文字列。
+</ResponseField>
+
+## 例 {#example}
+
+<CodeGroup>
+  ```bash 標準 (latest) lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_getBalance",
+      "params": ["0x742d35Cc6634C0532925a3b8D4C9dD0b4f3BaEa", "latest"],
+      "id": 1
+    }'
+  ```
+
+  ```bash Flashblocks (pending, ~200ms) lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_getBalance",
+      "params": ["0x742d35Cc6634C0532925a3b8D4C9dD0b4f3BaEa", "pending"],
+      "id": 1
+    }'
+  ```
+
+  ```json レスポンス
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x1a055690d9db80000"
+  }
+  ```
+</CodeGroup>

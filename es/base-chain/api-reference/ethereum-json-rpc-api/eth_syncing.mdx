@@ -1,0 +1,44 @@
+---
+title: 'eth_syncing'
+sidebarTitle: 'eth_syncing'
+description: 'Devuelve el estado de sincronización del nodo.'
+---
+
+Devuelve el estado de sincronización del nodo. Si el nodo está completamente sincronizado, devuelve `false`.
+
+## Parámetros {#parameters}
+
+Sin parámetros.
+
+## Valor de retorno {#returns}
+
+<ResponseField name="result" type="object | boolean">
+  `false` si el nodo está completamente sincronizado. De lo contrario, un objeto con el estado de la sincronización.
+
+  <Expandable title="Campos del estado de sincronización (durante la sincronización)">
+    <ResponseField name="startingBlock" type="string">Bloque en el que comenzó la sincronización (hex).</ResponseField>
+    <ResponseField name="currentBlock" type="string">Bloque que se está procesando actualmente (hex).</ResponseField>
+    <ResponseField name="highestBlock" type="string">Bloque más alto estimado (hex).</ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Ejemplo {#example}
+
+<CodeGroup>
+  ```json Solicitud
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_syncing",
+    "params": [],
+    "id": 1
+  }
+  ```
+
+  ```json Respuesta (sincronizado)
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": false
+  }
+  ```
+</CodeGroup>

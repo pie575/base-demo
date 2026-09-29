@@ -1,0 +1,163 @@
+---
+title: "ネイティブアカウント抽象化"
+sidebarTitle: "ネイティブアカウント抽象化"
+description: "Base における EIP-8130 のリファレンス：vibenet のチェーン詳細、クライアントのセットアップ、トランザクション構造、アカウント設定、オーセンティケーター、ペイヤー。"
+tag: "Vibenet"
+---
+
+このページは、Base における EIP-8130 の技術リファレンスです。ネイティブアカウント抽象化の概要と、プロトコルでこれを実装する理由については、まず「ネイティブアカウント抽象化」をご覧ください。
+
+[EIP-8130](https://eip.tools/eip/8130) は、アカウント抽象化をプロトコルレベルで組み込みます。各アカウントは、自身に代わって操作できる主体と、自身の署名の検証方法を、オンチェーンのシステムコントラクトに登録します。チェーンはこの設定に基づいて各トランザクションを検証するため、スマートアカウントはバンドラーやリレー、専用のメモリプールを必要とせずに動作します。
+
+<Warning>
+  EIP-8130 は実験的な機能であり、現在は [vibenet devnet](https://chain.base.org/vibenet) 上でのみ稼働しています。詳しくは [vibenet への接続](/base-chain/quickstart/connecting-to-base#vibenet)に関するガイドをご覧ください。
+</Warning>
+
+## ネットワークの詳細 {#network-details}
+
+| 項目      | 値                                                         |
+| ------- | --------------------------------------------------------- |
+| ネットワーク  | vibenet devnet                                            |
+| チェーン ID | `84538453`                                                |
+| RPC     | `https://rpc.vibes.base.org`                              |
+| フォーセット  | `POST https://api.vibes.base.org/api/vibenet/faucet/drip` |
+
+## クライアントのセットアップ {#client-setup}
+
+クライアント側のサポートは、viem の実験的なフォークで提供されています：
+
+```bash Terminal
+bun add "viem@github:chunter-cb/viem#feat/eip-8130"
+```
+
+## アカウントを作成してバッチを送信する {#create-an-account-and-send-a-batch}
+
+以下の例では、次の一連のフローを実行します。
+
+1. アカウントを作成します。
+2. フォーセットからアカウントに資金を入金します。
+3. 全体として成功するか、まとめてリバートされる呼び出しのバッチを送信します。
+4. すべてのフェーズが成功したことを確認します。
+
+```ts create-and-send.ts lines wrap expandable highlight={19,30-40,43-44}
+import { createPublicClient, http, parseEther } from "viem";
+import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
+import {
+  newSmartAccount8130, sendCalls8130, estimateGas8130,
+  encodeWalletCalls, waitForTransactionReceipt8130, allPhasesSucceeded,
+} from "viem/experimental/eip8130";
+
+const RPC_URL = "https://rpc.vibes.base.org";
+const chain = {
+  id: 84538453,
+  name: "vibenet",
+  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: { default: { http: [RPC_URL] } },
+};
+const client = createPublicClient({ chain, transport: http(RPC_URL) });
+
+// アカウントアドレスは決定論的に算出され、デプロイ前から存在する
+const signer = privateKeyToAccount(generatePrivateKey());
+const account = newSmartAccount8130({ signer });
+
+// vibenet のフォーセットから資金を入金する
+await fetch("https://api.vibes.base.org/api/vibenet/faucet/drip", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ address: account.address }),
+});
+
+// ガスを見積もってからバッチを送信する。アカウント作成も同じトランザクションにまとめて実行される
+const calls = [{ to: "0x…recipient", value: parseEther("0.001") }];
+const gas = await estimateGas8130(client, {
+  sender: account.address,
+  accountChanges: [account.createChange],
+  calls: encodeWalletCalls({ account: account.address, calls: [calls] }),
+});
+const hash = await sendCalls8130(client, {
+  account,
+  accountChanges: [account.createChange],
+  calls,
+  gas: (gas * 120n) / 100n,
+});
+
+// 8130 のレシートにはフェーズごとの結果が含まれるため、すべて確認する
+const receipt = await waitForTransactionReceipt8130(client, { hash });
+if (!allPhasesSucceeded(receipt)) throw new Error("a phase reverted");
+```
+
+1 つのトランザクションで、アカウントの作成、バッチの実行、ガス代の支払いをすべて行います。
+
+## トランザクションの構造 {#transaction-structure}
+
+8130トランザクションは、送信者アカウントを指定し、送信者がそのアカウントのために操作することを認可されていることを証明するとともに、呼び出しのバッチを保持します。
+
+| フィールド            | 用途                            |
+| ---------------- | ----------------------------- |
+| `sender`         | トランザクションの操作対象となるアカウント。        |
+| `accountChanges` | 実行前に適用される設定変更 (アカウントの作成を含む) 。 |
+| `calls`          | アトミックに実行される呼び出しのバッチ。           |
+| `payer`          | 送信者に代わってガス代を負担するアカウント (任意) 。  |
+
+レシートは単一のステータスではなくフェーズごとに結果を報告します。そのため、個々のフェーズがリバートしても、トランザクションレベルでは成功となる場合があります。必ずすべてのフェーズを確認してください。リファレンスクライアントでは、`allPhasesSucceeded` でこの確認を行えます。
+
+## アカウント {#accounts}
+
+アカウントアドレスは `CREATE2` で導出されるため、クライアントがローカルで計算でき、デプロイ前の時点でアドレスが確定しています。`account.address` をすぐに利用でき、`account.createChange` を最初のトランザクションに含めて送信できるのはこのためです。
+
+各アカウントは、共有の実装コントラクトに呼び出しを転送する小さなプロキシコントラクトです。
+
+| 実装               | 備考                                                      |
+| ---------------- | ------------------------------------------------------- |
+| `DefaultAccount` | 最小構成の基本コンポーネントです。EIP-7702 でアップグレードされた EOA の基盤としても使われます。 |
+| 高レート版            | 実行中は外部への ETH 送金をロックする代わりに、より高いメモリプールのレート制限が適用されます。      |
+
+## アカウント設定 {#account-configuration}
+
+認可は `AccountConfiguration` システムコントラクトで管理されます。このコントラクトには、アカウントが認可した**アクター**が記録されます。アクターとは、署名者の認可が最終的に対応付けられるオンチェーン上のアイデンティティです。アカウントは複数のアクターを認可でき、それぞれを個別に取り消せます。
+
+各アクターのエントリには、次の要素が含まれます。
+
+| 要素          | 目的                                                           |
+| ----------- | ------------------------------------------------------------ |
+| スコープフラグ     | `SCOPE_NONCE` と `SCOPE_POLICY` によって、アクターが実行できる操作の範囲を制限します。   |
+| ポリシーバインディング | 任意で設定するオンチェーンポリシーです。トークンごとの支出上限や、呼び出しを許可するコントラクトおよび関数を指定します。 |
+| オーセンティケーター    | このアクターの署名を検証するコントラクトです。                                      |
+
+アクターをポリシーにバインドする仕組みが、ネイティブのセッションキーモデルです。アプリには必要な権限だけを持つアクターが付与され、このアクターはいつでも取り消せます。
+
+## オーセンティケーター {#authenticators}
+
+署名検証はプラグイン方式で差し替え可能です。オーセンティケーター コントラクトは次のインターフェースを実装します：
+
+```solidity IAuthenticator.sol
+interface IAuthenticator {
+    function authenticate(bytes32 hash, bytes calldata data) external view returns (bool);
+}
+```
+
+リファレンスセットでは、以下をサポートしています。
+
+| オーセンティケーター | 鍵                  |
+| ------------- | ------------------ |
+| secp256k1     | 標準的な EVM 鍵         |
+| P-256         | NIST P-256         |
+| WebAuthn      | パスキーおよびプラットフォーム認証器 |
+
+そのため、パスキーはラッパーコントラクトを介さず、プロトコルレベルで検証されます。
+
+## ペイヤー {#payers}
+
+トランザクションでは、送信者に代わってガス代を負担する**ペイヤー** (payer) を指定できます。paymaster コントラクトを介する必要はありません。ドラフト段階の [ERC-8168](https://eip.tools/eip/8168) は、ペイヤーサービスのフロー、つまりアプリがペイヤーを見つけてスポンサーシップをリクエストする方法を標準化するものです。
+
+## さらに詳しく {#go-deeper}
+
+<CardGroup cols={2}>
+  <Card title="リファレンスコントラクト" href="https://github.com/base/eip-8130" icon="github">
+    `AccountConfiguration`、アカウント実装、オーセンティケーター (Foundry テスト付き) 。
+  </Card>
+
+  <Card title="仕様" href="https://eip.tools/eip/8130" icon="file-lines">
+    EIP-8130 のドラフトと、ペイヤーサービス向けの関連ドラフト [ERC-8168](https://eip.tools/eip/8168)。
+  </Card>
+</CardGroup>

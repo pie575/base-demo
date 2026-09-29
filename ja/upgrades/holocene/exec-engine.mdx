@@ -1,0 +1,98 @@
+---
+title: "L2 実行エンジン"
+description: "Holocene アップグレードにおける実行エンジンの変更点。ブロックヘッダーにエンコードされ、SystemConfig で設定される動的な EIP-1559 パラメータに対応します。"
+---
+
+## 概要 {#overview}
+
+EIP-1559 のパラメータはブロックヘッダーの `extraData` フィールドにエンコードされ、
+`SystemConfig` を介して動的に設定できます。
+
+## タイムスタンプによる有効化 {#timestamp-activation}
+
+Holocene は、他のネットワークアップグレードと同様に、特定のタイムスタンプで有効化されます。L2 ブロックの実行ルールに対する変更は、
+`L2 Timestamp >= activation time` を満たした時点で適用されます。
+
+## 動的な EIP-1559 パラメータ {#dynamic-eip-1559-parameters}
+
+### ブロックヘッダー内の EIP-1559 パラメータ {#eip-1559-parameters-in-block-header}
+
+Holocene アップグレード以降、各ブロックの `extraData` ヘッダーフィールドは次の形式でなければなりません。
+
+| 名前            | 型                  | バイトオフセット |
+| ------------- | ------------------ | -------- |
+| `version`     | `u8`               | `[0, 1)` |
+| `denominator` | `u32 (big-endian)` | `[1, 5)` |
+| `elasticity`  | `u32 (big-endian)` | `[5, 9)` |
+
+さらに、以下の条件を満たす必要があります。
+
+* `version` は `0` でなければならない。
+* `denominator` と `elasticity` は 0 以外でなければならない。
+* これら 9 バイトを超える追加データは存在しない。
+
+なお、`extraData` の最大容量は (L1 ビーコンチェーンの `extraData` データ型に収まるよう) 32 バイトであり、その
+形式は将来のアップグレードで変更・拡張される可能性があります。
+
+また、チェーンのジェネシスが Holocene 適用済みである場合、ジェネシスブロックには、チェーンが使用する初期パラメータを表す上記形式の `extraData` が
+含まれていなければなりません。
+
+### `PayloadAttributesV3` における EIP-1559 パラメータ {#eip-1559-parameters-in-payloadattributesv3}
+
+[`PayloadAttributesV3`](https://github.com/ethereum/execution-apis/blob/cea7eeb642052f4c2e03449dc48296def4aafc24/src/engine/cancun.md#payloadattributesv3)
+型は拡張され、新たに値 `eip1559Params` が追加されます：
+
+```rs Extended PayloadAttributesV3 lines wrap expandable
+PayloadAttributesV3: {
+    timestamp: QUANTITY
+    prevRandao: DATA (32 bytes)
+    suggestedFeeRecipient: DATA (20 bytes)
+    withdrawals: array of WithdrawalV1
+    parentBeaconBlockRoot: DATA (32 bytes)
+    transactions: array of DATA
+    noTxPool: bool
+    gasLimit: QUANTITY or null
+    eip1559Params: DATA (8 bytes) or null
+}
+```
+
+#### エンコーディング {#encoding}
+
+Holocene の有効化以降、`PayloadAttributeV3` の `eip1559Parameters` は、次の形式に従う厳密に 8 バイトの値でなければなりません (MUST) 。
+
+| 名前            | 型                  | バイトオフセット |
+| ------------- | ------------------ | -------- |
+| `denominator` | `u32 (big-endian)` | `[0, 4)` |
+| `elasticity`  | `u32 (big-endian)` | `[4, 8)` |
+
+#### PayloadID の計算 {#payloadid-computation}
+
+`eip1559Params != null` の場合、`eip1559Params` は `PayloadID` のハッシャーに `gasLimit`
+フィールドの直後に入力されます。
+
+### 実行 {#execution}
+
+#### ペイロード属性の処理 {#payload-attributes-processing}
+
+Holocene の有効化前は、`PayloadAttributesV3` 内の `eip1559Parameters` は null でなければならず、null でない場合は無効とみなされます。
+
+Holocene の有効化時点およびそれ以降は、`PayloadAttributesV3` に対応するすべての `ExecutionPayload` は、[ヘッダー値](#eip-1559-parameters-in-block-header)の形式に従った `extraData` を含まなければなりません。この `extraData` 内の `denominator` および `elasticity`
+の値は、両方が 0 である場合を除き、`eip1559Parameters` 内の値と一致しなければなりません。両方が 0 の場合は、代わりに
+[従来の EIP-1559 定数](/ja/specifications/base-protocol/execution/l2-execution-engine#1559-parameters)を使用して `extraData` を設定しなければなりません。
+
+#### ベースフィーの計算 {#base-fee-computation}
+
+Holocene アップグレード以前は、ブロックのベースフィーの計算に使用される EIP-1559 の denominator (分母) および elasticity (弾力性) パラメータは[定数](/ja/specifications/base-protocol/execution/l2-execution-engine#1559-parameters)でした。
+
+Holocene アップグレード以降は、これらのパラメータが次のように決定されます。
+
+* `parent_header.timestamp` の時点で Holocene が有効でない場合は、[従来の EIP-1559
+  定数](/ja/specifications/base-protocol/execution/l2-execution-engine#1559-parameters)が使用されます。なお、Holocene 以前の `parent_header.extraData` は空です (ただし、ジェネシスブロックは例外となる場合があります) 。
+* `parent_header.timestamp` の時点で Holocene が有効な場合は、`parent_header.extraData` に含まれるパラメータが使用されます。
+
+### 設計根拠 {#rationale}
+
+EIP-1559 パラメータを L2 ブロックヘッダー内に配置することで、親ブロックヘッダーから次のブロックのベースフィーを算出する関数を純粋関数に保ったまま、
+これらのパラメータを動的に設定できます。動的な
+設定は `gasLimit` と同様の方法で行われ、導出パイプラインが `PayloadAttributesV3` パラメータを介して、適切な `SystemConfig`
+コントラクトの値をブロックビルダーに渡します。

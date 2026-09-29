@@ -1,0 +1,75 @@
+---
+title: "Base プロトコル"
+keywords: ["Base protocol", "Base chain reference", "Base network details", "Base native primitives", "Base node operators"]
+description: "チェーンとしての Base について解説します。ネットワークへの接続、ネイティブプリミティブの利用、トランザクションとネットワークシステムの仕組み、インフラストラクチャの運用について学びましょう。"
+---
+
+Base は EVM 互換のチェーンであり、独自のネイティブプリミティブ、トランザクションパイプライン、ネットワーク構成、プロトコル仕様を備えています。Base プロトコルのセクションでは、チェーンへの接続方法やその仕組みを理解し、Base 向けのインフラストラクチャを運用する方法を確認できます。
+
+## Base を使い始める {#start-using-base}
+
+<CardGroup cols={2}>
+  <Card title="Base プロトコルの概要" icon="link" href="/ja/specifications/overview">
+    アプリ、ウォレット、コントラクト、ブリッジ、インフラサービスを Base と統合する際の実践的な出発点を紹介します。
+  </Card>
+
+  <Card title="Base に接続する" icon="plug" href="/base-chain/quickstart/connecting-to-base">
+    ウォレット、アプリ、開発環境に Base Mainnet、Base Sepolia、または Vibenet を設定します。
+  </Card>
+
+  <Card title="テストネット用の資金を入手する" icon="faucet-drip" href="/base-chain/network-information/network-faucets">
+    Base Sepolia のアドレスに、テストネット ETH と対応するテストトークンを入金します。
+  </Card>
+
+  <Card title="Base へブリッジする" icon="bridge" href="/ja/base-chain/network-information/ecosystem-bridges">
+    対応するルートを使って、Base との間で資産を移動します。
+  </Card>
+</CardGroup>
+
+## チェーンネイティブなプリミティブを活用する {#use-chain-native-primitives}
+
+<CardGroup cols={2}>
+  <Card title="B20 トークン標準" icon="coins" href="/ja/build-on-base/issue-rwa/create-an-asset-token">
+    Base のネイティブトークン標準を使えば、低コストな送金、組み込みの制御機能、メモ、アセットバリアントを利用できます。
+  </Card>
+
+  <Card title="ネイティブアカウント抽象化" icon="user-gear" href="/ja/specifications/native-account-abstraction">
+    専用のバンドラーインフラを用意せずに、通常の Base トランザクションを送信できるスマートアカウントについて解説します。
+  </Card>
+
+  <Card title="ネットワーク手数料" icon="gas-pump" href="/ja/specifications/transactions/network-fees">
+    Base における実行手数料と Ethereum セキュリティ手数料の計算方法を説明します。
+  </Card>
+
+  <Card title="トランザクションの順序付け" icon="arrow-down-1-9" href="/ja/specifications/transactions/transaction-ordering">
+    優先手数料、ブロック内の順序付け、200 ms 間隔の Flashblock 事前承認について解説します。
+  </Card>
+
+  <Card title="トランザクションのファイナリティ" icon="circle-check" href="/ja/specifications/transactions/transaction-finality">
+    アプリケーションのセキュリティ要件に応じて、適切な承認段階を選択しましょう。
+  </Card>
+
+  <Card title="コントラクトアドレス" icon="file-contract" href="/ja/specifications/reference/base-contracts">
+    Base Mainnet および Base Sepolia のシステムコントラクトアドレスを確認できます。
+  </Card>
+</CardGroup>
+
+## ネットワークを理解して運用する {#understand-and-operate-the-network}
+
+<CardGroup cols={2}>
+  <Card title="プロトコル仕様" icon="file-lines" href="/ja/specifications/base-protocol/overview">
+    Base のコンセンサス、実行、ブリッジ、証明、ネットワークシステムに関する仕様を確認できます。
+  </Card>
+
+  <Card title="スループットと制限" icon="gauge-high" href="/ja/specifications/transactions/throughput-and-limits">
+    トランザクションのガス上限、ブロック容量、RPC エンドポイントの制限を考慮して設計できます。
+  </Card>
+
+  <Card title="Base ノードを実行する" icon="server" href="/ja/specifications/node-operators/run-a-node">
+    Base ノードインフラのインストール、設定、チューニング、トラブルシューティングの方法を説明します。
+  </Card>
+
+  <Card title="トランザクションのトラブルシューティング" icon="screwdriver-wrench" href="/ja/specifications/transactions/troubleshooting-transactions">
+    保留中、拒否された、失敗した、または処理が遅いトランザクションの原因を特定します。
+  </Card>
+</CardGroup>

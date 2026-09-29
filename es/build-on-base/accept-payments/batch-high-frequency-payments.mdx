@@ -1,0 +1,85 @@
+---
+title: "Pagos de alta frecuencia por lotes"
+keywords: ["liquidación por lotes x402", "API de canal de pago", "pagos de agentes de alta frecuencia", "vales x402"]
+description: "Verifica vales x402 acumulativos en cada solicitud y liquida por lotes el uso de API de alta frecuencia."
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+Usa `batch-settlement` cuando un agente realiza muchas solicitudes pequeñas y liquidar cada una por separado encarecería demasiado el costo total. Cada solicitud actualiza un vale acumulativo; más adelante, tu gestor de canales reclama, liquida o reembolsa el estado más reciente.
+
+## Demostración {#demo}
+
+<PaymentsDemo flow="x402Batch" />
+
+<Tip>
+  La demostración anterior es solo una simulación. Si quieres ver demostraciones onchain en Vibenet, visita [demostraciones de la cadena Base](https://chain.base.org/demos).
+</Tip>
+
+## Fijar el precio de una ruta de alta frecuencia {#price-a-high-frequency-route}
+
+<CodeGroup>
+  {/* sample: x402-batch-ts */}
+
+  ```typescript TypeScript · Express lines wrap expandable highlight={1,3,9}
+  app.use(paymentMiddleware({
+    "GET /stream": {
+      accepts: [{ scheme: "batch-settlement", price: "$0.01", network, payTo }],
+      description: "High-frequency price tick",
+      mimeType: "application/json",
+    },
+  }, resourceServer));
+  app.get("/stream", (_request, response) => {
+    setSettlementOverrides(response, { amount: "50%" });
+    response.json({ asset: "ETH", price: "3200.00" });
+  });
+  ```
+
+  {/* sample: x402-batch-go */}
+
+  ```go Go · net/http lines wrap expandable highlight={2,6}
+  routes["GET /stream"] = x402http.RouteConfig{
+  	Accepts: x402http.PaymentOptions{{Scheme: batchsettlement.SchemeBatched, Price: "$0.01", Network: network, PayTo: payTo}},
+  	Description: "High-frequency price tick", MimeType: "application/json",
+  }
+  mux.HandleFunc("GET /stream", func(w http.ResponseWriter, _ *http.Request) {
+  	nethttpmw.SetSettlementOverrides(w, &x402.SettlementOverrides{Amount: "50%"})
+  	_ = json.NewEncoder(w).Encode(map[string]string{"asset": "ETH", "price": "3200.00"})
+  })
+  ```
+
+  {/* sample: x402-batch-python */}
+
+  ```python Python · FastAPI lines wrap expandable highlight={2,10}
+  routes["GET /stream"] = RouteConfig(
+      accepts=[PaymentOption(scheme=SCHEME_BATCH_SETTLEMENT, price="$0.01", network=network, pay_to=pay_to)],
+      description="High-frequency price tick",
+      mime_type="application/json",
+  )
+
+
+  @app.get("/stream")
+  async def stream(response: Response) -> dict[str, str]:
+      set_settlement_overrides(response, {"amount": "50%"})
+      return {"asset": "ETH", "price": "3200.00"}
+  ```
+</CodeGroup>
+
+<Check>
+  Cada solicitud aceptada actualiza el vale acumulativo almacenado, y las transacciones onchain solo se producen cuando el canal se reclama, se liquida o se reembolsa.
+</Check>
+
+<Note>
+  Los fixtures completos configuran una `RECEIVER_AUTHORIZER_PRIVATE_KEY` específica para firmar las reclamaciones y los reembolsos del canal. Mantenla separada de la billetera receptora y guárdala en un gestor de claves del lado del servidor.
+</Note>
+
+<Warning>
+  Los ejemplos usan almacenamiento basado en archivos para un solo proceso. En despliegues serverless o con varias instancias, usa Redis, Valkey o una base de datos transaccional con actualizaciones atómicas.
+</Warning>
+
+## Consulta también {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="Cobra por el uso de una API" icon="server" href="/es/build-on-base/accept-payments/charge-for-an-api">Usa la liquidación exacta por solicitud cuando el tráfico sea de baja frecuencia.</Card>
+  <Card title="Llama a un servicio de pago" icon="robot" href="/es/build-on-base/accept-payments/call-a-paid-service">Configura el comprador para que admita la liquidación por lotes.</Card>
+</CardGroup>

@@ -1,0 +1,242 @@
+---
+title: "Builder Codes para desarrolladores de aplicaciones"
+sidebarTitle: "Para desarrolladores de aplicaciones"
+description: "Integra los Builder Codes en tu aplicación con Wagmi o Viem para atribuir la actividad onchain."
+---
+
+## Atribución automática en Base {#automatic-attribution-on-base}
+
+Una vez que tu aplicación esté registrada en [base.dev](http://base.dev/), la Base App añadirá automáticamente tu Builder Code a las transacciones que sus usuarios realicen en tu aplicación (por ejemplo, directamente desde tu aplicación o a través del navegador de la Base App). Esto alimenta tus analíticas onchain en [base.dev](http://base.dev/) y te permite optar a posibles recompensas futuras.
+
+## Integración fuera de la Base App {#integrating-outside-the-base-app}
+
+Si los usuarios también acceden a tu aplicación desde la web o a través de otros clientes, deberás integrar el parámetro `dataSuffix` para registrar esa actividad.
+
+Al registrarte en [base.dev](https://base.dev/), recibirás un **Builder Code**: una cadena aleatoria (p. ej., `bc_b7k3p9da`) que usarás para generar tu sufijo de atribución. Lo recomendable es configurar `dataSuffix` a nivel de cliente, de modo que tu Builder Code se añada a todas las transacciones.
+
+<Tip>
+  Puedes consultar tu código en cualquier momento en **Settings** → **Builder Code**.
+</Tip>
+
+## Configuración rápida con Wagmi {#quick-setup-with-wagmi}
+
+<Steps>
+  <Step title="Instalar las dependencias">
+    Instala los paquetes necesarios. Se requiere viem `2.45.0` o una versión posterior.
+
+    ```bash Install Wagmi attribution dependencies
+    npm i ox wagmi viem
+    ```
+  </Step>
+
+  <Step title="Configurar tu cliente de Wagmi">
+    Agrega la opción `dataSuffix` a tu configuración de Wagmi. Así, tu Builder Code se añadirá automáticamente a todas las transacciones.
+
+    ```typescript config.ts lines expandable wrap
+    import { createConfig, http } from "wagmi";
+    import { base } from "wagmi/chains";
+    import { Attribution } from "ox/erc8021";
+
+    // Obtén tu Builder Code en base.dev > Settings > Builder Codes
+    const DATA_SUFFIX = Attribution.toDataSuffix({
+      codes: ["YOUR-BUILDER-CODE"],
+    });
+
+    export const config = createConfig({
+      chains: [base],
+      transports: {
+        [base.id]: http(),
+      },
+      dataSuffix: DATA_SUFFIX,
+    });
+    ```
+  </Step>
+
+  <Step title="Usar los hooks de Wagmi como siempre">
+    Una vez definida la configuración, todas las transacciones incluirán automáticamente tu Builder Code, sin necesidad de modificar tus hooks ni tus componentes. Funciona tanto con `useSendTransaction` como con `useSendCalls`.
+
+    ```tsx App.tsx lines expandable wrap
+    import { useSendTransaction } from "wagmi";
+    import { parseEther } from "viem";
+
+    function SendButton() {
+      const { sendTransaction } = useSendTransaction();
+
+      return (
+        <button
+          onClick={() =>
+            sendTransaction({
+              to: "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+              value: parseEther("0.01"),
+            })
+          }
+        >
+          Send ETH
+        </button>
+      );
+    }
+    ```
+  </Step>
+</Steps>
+
+## Configuración rápida con Viem {#quick-setup-with-viem}
+
+<Steps>
+  <Step title="Instalar dependencias">
+    Instala los paquetes necesarios. Se requiere viem `2.45.0` o una versión posterior.
+
+    ```bash Install Viem attribution dependencies
+    npm i ox viem
+    ```
+  </Step>
+
+  <Step title="Configurar tu cliente de billetera">
+    Agrega la opción `dataSuffix` al crear tu cliente de billetera. Consulta la [documentación del cliente de billetera de viem](https://viem.sh/docs/clients/wallet) para ver más opciones de configuración.
+
+    ```typescript client.ts lines expandable wrap
+    import { createWalletClient, http } from "viem";
+    import { base } from "viem/chains";
+    import { Attribution } from "ox/erc8021";
+
+    // Obtén tu Builder Code en base.dev > Settings > Builder Codes
+    const DATA_SUFFIX = Attribution.toDataSuffix({
+      codes: ["YOUR-BUILDER-CODE"],
+    });
+
+    export const walletClient = createWalletClient({
+      chain: base,
+      transport: http(),
+      dataSuffix: DATA_SUFFIX,
+    });
+    ```
+  </Step>
+
+  <Step title="Enviar transacciones como siempre">
+    Todas las transacciones que envíes a través de este cliente incluirán automáticamente tu Builder Code.
+
+    ```typescript send-transaction.ts lines expandable wrap
+    import { parseEther } from "viem";
+    import { walletClient } from "./client";
+
+    const hash = await walletClient.sendTransaction({
+      to: "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+      value: parseEther("0.01"),
+    });
+    ```
+  </Step>
+</Steps>
+
+## Uso de CDP Wallets {#using-cdp-wallets}
+
+[Coinbase Developer Platform (CDP) Wallets](https://docs.cdp.coinbase.com/wallets/non-custodial-wallets/overview) admite Builder Codes en las operaciones de usuario (user operations) enviadas desde cuentas inteligentes. Pasa `dataSuffix` al enviar una operación de usuario para que se añada tu Builder Code, sin necesidad de modificar los contratos. Esto funciona tanto con los hooks de React (`useSendUserOperation`) como con los SDK de Node (TypeScript) y Python.
+
+Consulta [Builder Codes](https://docs.cdp.coinbase.com/wallets/using-wallets/smart-accounts#builder-codes) en la documentación de CDP Wallets para ver las instrucciones de configuración, incluido cómo generar el sufijo con `Attribution.toDataSuffix` de `ox/erc8021`.
+
+## Uso de Privy {#using-privy}
+
+Privy ofrece un plugin `dataSuffix` que añade automáticamente tu Builder Code a todas las transacciones, tanto a las transacciones de EOA como a las operaciones de usuario de smart wallets ERC-4337.
+
+Consulta la [guía de integración de Builder Codes de Privy](https://docs.privy.io/recipes/evm/base-builder-codes) para ver las instrucciones de configuración.
+
+## Legacy: enfoque por transacción {#legacy-per-transaction-approach}
+
+<Accordion title="Añadir dataSuffix por transacción">
+  Si necesitas añadir el sufijo en cada transacción en lugar de configurarlo a nivel de cliente, puedes pasar `dataSuffix` directamente a la transacción.
+
+  <Tabs>
+    <Tab title="useSendTransaction">
+      ```tsx App.tsx lines expandable wrap
+      import { useSendTransaction } from "wagmi";
+      import { parseEther } from "viem";
+      import { Attribution } from "ox/erc8021";
+
+      const DATA_SUFFIX = Attribution.toDataSuffix({
+        codes: ["YOUR-BUILDER-CODE"],
+      });
+
+      function App() {
+        const { sendTransaction } = useSendTransaction();
+
+        return (
+          <button
+            onClick={() =>
+              sendTransaction({
+                to: "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+                value: parseEther("0.01"),
+                dataSuffix: DATA_SUFFIX,
+              })
+            }
+          >
+            Send ETH
+          </button>
+        );
+      }
+      ```
+    </Tab>
+
+    <Tab title="useSendCalls">
+      Si usas `useSendCalls`, pasa el sufijo a través del objeto `capabilities`. Para ello, la billetera conectada debe admitir la capacidad `dataSuffix`.
+
+      ```tsx App.tsx lines expandable wrap
+      import { useSendCalls } from "wagmi";
+      import { parseEther } from "viem";
+      import { Attribution } from "ox/erc8021";
+
+      const DATA_SUFFIX = Attribution.toDataSuffix({
+        codes: ["YOUR-BUILDER-CODE"],
+      });
+
+      function App() {
+        const { sendCalls } = useSendCalls();
+
+        return (
+          <button
+            onClick={() =>
+              sendCalls({
+                calls: [
+                  {
+                    to: "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+                    value: parseEther("1"),
+                  },
+                ],
+                capabilities: {
+                  dataSuffix: {
+                    value: DATA_SUFFIX,
+                    optional: true,
+                  },
+                },
+              })
+            }
+          >
+            Send calls
+          </button>
+        );
+      }
+      ```
+    </Tab>
+  </Tabs>
+</Accordion>
+
+## Verificar la atribución {#verify-attribution}
+
+Para confirmar que tu Builder Code se está añadiendo correctamente:
+
+**1. Consulta base.dev**
+
+* Visita [base.dev](https://base.dev)
+* Selecciona **Onchain** en el menú desplegable de tipo de transacción
+* En la sección Total Transactions, el recuento de atribuciones aumenta a medida que se procesan transacciones con tu código
+
+**2. Usa un explorador de bloques (Basescan, Etherscan, etc.)**
+
+* Busca el hash de tu transacción
+* Revisa el campo de datos de entrada (input data)
+* Comprueba que los últimos 16 bytes sean `8021` repetido
+* Decodifica el sufijo para confirmar que incluye tu Builder Code
+
+**3. Herramientas de código abierto**
+
+* Usa la herramienta [Builder Code Validation](https://builder-code-checker.vercel.app/)
+* Selecciona el tipo de transacción
+* Introduce el hash de la transacción o de la UserOperation
+* Haz clic en el botón **Check Attribution**

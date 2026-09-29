@@ -1,0 +1,199 @@
+---
+title: "List Tokenized Stocks"
+description: "Coinbase が発行するトークン化株式を、ユーザーがアプリ上で取引できるようにします。"
+---
+
+Base 上のトークン化株式は、Base ネイティブのトークン標準である [B20](/ja/build-on-base/issue-rwa/create-an-asset-token) をベースに構築されています。B20 は ERC-20 トークン標準を拡張したもので、特定の資産に依存しない設計になっています。トークン化株式は、想定される複数のユースケースの一つにすぎません。
+
+Base 上のトークン化株式に関する製品固有の詳細については、[coinbase.com/tokenize](https://coinbase.com/tokenize) を参照してください。
+
+<Tip>
+  公開されている [Tokenized Stocks API](/ja/sdks/tokenized-stocks/overview) を使うと、API で現在公開されているトークン化株式のレコード (コントラクトアドレス、正規化されたトークン供給量、乗数、Chainlink ベースの NAV/参照値など) を、読み取り専用のリクエスト 1 回で取得できます。API キーは不要です。
+</Tip>
+
+## トークン情報とリスティング {#token-information-and-listings}
+
+トークン化株式は、他の ERC-20 トークンと同様にローンチされます。名前、シンボル、アイコンは通常の情報源から取得できますが、B20 特有の注意点がいくつかあります。標準の ERC-20 メソッドとイベントはネイティブでサポートされています。
+
+* **オンチェーン:** [`name`](/specifications/b20/reference/interfaces/ib20/name)、[`symbol`](/specifications/b20/reference/interfaces/ib20/symbol)、[`decimals`](/specifications/b20/reference/interfaces/ib20/decimals)、[`contractURI`](/specifications/b20/reference/interfaces/ib20/contract-uri) ([ERC-7572](https://eips.ethereum.org/EIPS/eip-7572) メタデータ) 。
+* **オフチェーン:** ロゴは、正規のトークンリストや市場データアグリゲーターからも取得できます。
+* **API:** [List Tokenized Stocks](/ja/sdks/tokenized-stocks/api-reference/list-tokenized-stocks) エンドポイントは、各トークンのコントラクトアドレス、シンボル、名前、小数点以下の桁数、アイコン URL、ISIN を返します。
+
+B20 特有の注意点:
+
+* トークンはティッカーやシンボルではなく、アドレスで識別してください。メタデータはオンチェーンで変更される可能性があるため、それを前提にインデックスを作成してください。
+* 新しいトークンは、[`B20Created`](/specifications/b20/reference/interfaces/ib20-factory) イベントを監視することで検出できます。
+
+## B20 トークンの機能 {#b20-token-features}
+
+### 乗数 {#multipliers}
+
+裏付けとなる現実資産では、B20トークンの償還比率が変わるイベントが発生することがあります。トークン化株式の場合、こうしたイベントには配当や株式分割が含まれ、これらはB20トークン化株式のオンチェーン保有者に反映されなければなりません。[乗数](/specifications/b20/reference/interfaces/ib20-asset/multiplier) 変数は、発生したコーポレートアクションに応じて、B20トークンの償還比率を即座に更新します。
+
+<Warning>
+  1 B20トークンが常に1株に相当するとは限りません。トークン単位と裏付け株式数を換算する際は、必ず現在の乗数を適用してください。
+</Warning>
+
+資産レベルのイベントは、乗数の更新によって反映されます。たとえば、トークン化株式で配当が行われると乗数は `1.02` に増加し、1 B20トークンを当該株式1.02株と償還できることを示します。
+
+現時点では、トークン化株式の現金配当はB20保有者に現金で分配されるのではなく、裏付け株式に転換されたうえで乗数の更新によって反映されます。これにより、B20トークンの残高を変えることなく、コーポレートアクションがB20保有者の残高に自動的に反映されます。
+
+乗数の更新には2つの形式があります。
+
+* **スケジュール型 (ERC-8056) :** [`updateUIMultiplier`](/specifications/b20/reference/interfaces/ib20-asset/update-ui-multiplier) で将来の日付の変更を設定します。これによりオンチェーンで事前に通知されます。定例のコーポレートアクションにはこちらを使用してください。
+* **即時型 (非推奨) :** [`updateMultiplier`](/specifications/b20/reference/interfaces/ib20-asset/update-multiplier) は即座に適用され、保留中のスケジュール済み変更をすべてクリアします。緊急時のフェイルセーフとして残されているものなので、通常はスケジュール型を使用してください。
+* **キャンセル:** [`cancelUIMultiplierUpdate`](/specifications/b20/reference/interfaces/ib20-asset/cancel-ui-multiplier-update) で、保留中のスケジュール済み更新をクリアします。
+
+B20コントラクトには、よく使う計算のためのヘルパー関数がいくつか用意されています。ここで `raw` はB20の単位数、`scaled` は償還可能な株式数を表します。
+
+| 関数                                                                                                  | 説明                  |
+| --------------------------------------------------------------------------------------------------- | ------------------- |
+| [`scaledBalanceOf(account)`](/specifications/b20/reference/interfaces/ib20-asset/scaled-balance-of) | raw 残高 × 乗数 |
+| [`toScaledBalance(raw)`](/specifications/b20/reference/interfaces/ib20-asset/to-scaled-balance)     | raw の数量を scaled に変換 |
+| [`toRawBalance(scaled)`](/specifications/b20/reference/interfaces/ib20-asset/to-raw-balance)        | scaled の数量を raw に変換 |
+
+### ポリシー {#policies}
+
+資産ごとに適用される規制要件に対応するため、許可リストやブロックリストを管理する[ポリシー](/specifications/b20/reference/interfaces/i-policy-registry)を実装できます。ポリシーは、送金を許可するか拒否するかを決定します。
+
+B20 コントラクトには [`isAuthorized(policyID, account)`](/specifications/b20/reference/interfaces/i-policy-registry/is-authorized) 関数が用意されており、特定のアカウントが資金の送金を認可されているかどうかを判定できます。
+
+<Note>
+  標準の [`approve()`](/specifications/b20/reference/interfaces/ib20/approve) 関数には、ポリシーによる制御は適用されません。一定量の資金の送金が承認されていることを確認しても、その資金がポリシーによってブロックされていないとは限りません。
+</Note>
+
+### 一時停止 {#pauses}
+
+オンチェーンでの[一時停止](/specifications/b20/reference/interfaces/ib20/pause)が実施されることはまれですが、B20 ではコントラクト内の特定の関数を一時停止できる点に留意してください。任意の時点で資金を送金できるかどうかを正確に把握できるよう、一時停止の状態を監視してください。
+
+### アナウンス {#announcements}
+
+機密性の高い操作は、オンチェーンの[アナウンスイベント](/specifications/b20/reference/interfaces/ib20-asset/announce)で前後を囲まれます。[`announce`](/specifications/b20/reference/interfaces/ib20-asset/announce) がまず [`Announcement (id, description, uri)`](/specifications/b20/reference/interfaces/ib20-asset) を発行し、その後 [`EndAnnouncement`](/specifications/b20/reference/interfaces/ib20-asset) を発行します。インテグレーターはこれらのイベントをインデックス化することで、コーポレートアクションを実行と同時に捕捉できます。
+
+設計上のポイントは次の2点です。
+
+* アナウンスは、その対象となるトークンの変更 (たとえば株式分割に伴う乗数の更新) とアトミックにまとめて実行できるため、オンチェーンの記録を整然と保てます。
+* 公開報告要件に対応できるよう、説明文はあえてオンチェーン上で人が読める形式にしています。
+
+**管理者アクション:** 管理者操作および `updateMultiplier` ([`OPERATOR_ROLE`](/specifications/b20/reference/interfaces/ib20-asset/operator-role)) は、ロール保有者が呼び出した時点で即座に実行されます。B20 標準にはタイムロックが組み込まれていません。`Announcement` イベントと `EndAnnouncement` イベントは公開通知であり、実行を強制的に遅延させるものではありません。タイムロックやマルチシグを導入する場合は、発行者がガバナンスレイヤーで適用します。
+
+### 追加メタデータ {#extra-metadata}
+
+発行者は、[`extraMetadata(key)`](/specifications/b20/reference/interfaces/ib20-asset/extra-metadata) を使用して、任意のキーと値のデータ (ISIN や CUSIP などの証券識別子など) をオンチェーンに保存できます。
+
+### 名前とシンボル {#name-and-symbol}
+
+名前とシンボルはオンチェーンで更新できます ([`updateName`](/specifications/b20/reference/interfaces/ib20/update-name)、[`updateSymbol`](/specifications/b20/reference/interfaces/ib20/update-symbol)) 。そのため、裏付け資産にオフチェーンで変更があった場合でも、トークンを再デプロイせずに反映できます。
+
+### メモ {#memos}
+
+[`transferWithMemo`](/specifications/b20/reference/interfaces/ib20/transfer-with-memo) と [`transferFromWithMemo`](/specifications/b20/reference/interfaces/ib20/transfer-from-with-memo) は、個々の送金に `bytes32` の参照値を付加します (`Memo` イベントとして発行されます) 。これにより、照合やレポート作成に使うオフチェーンデータを送金に紐付けることができます。
+
+### 供給上限 {#supply-cap}
+
+任意で供給上限を設定すると総供給量が制限され、運用上のミスや侵害による過剰なミントを抑止できます。
+
+## コンプライアンス {#compliance}
+
+セカンダリーマーケットでの保有および取引はパーミッションレスです。KYC が実施されるのは、認可参加者 (Authorized Participants、AP) が行うミントおよび償還のフローに限られます。
+
+* オンチェーンのポリシーにより、制裁対象アドレスなど特定のアドレスをブロックできます。ブロックされた送金はリバートします (上記の[ポリシー](#policies)を参照) 。
+* 原株のミントおよび償還は AP のみに制限されているため、これとは別の、制限付きの発行体フローとなります。
+
+**セキュリティと監査:** トークン化株式は B20 のネイティブプリコンパイルであり、個別にデプロイされたコントラクトではありません。そのため、資産ごとのコントラクトは存在せず、Basescan 上にアドレスごとの検証済みコントラクトもありません (プリコンパイルはバイトコードを持たないため) 。B20 は、Base と Spearbit による監査を受けたコードで Base の Beryl アップグレードにおいてリリースされました。また、Cantina (スマートコントラクト) および HackerOne (オフチェーンおよびインフラストラクチャ) のバグバウンティプログラムの対象として継続的にカバーされています。すべてのトークンが、同一の監査済み実装を共有しています。
+
+## 価格フィード {#price-feeds}
+
+トークン化株式の価格は、オンチェーンとオフチェーンのどちらのソースからも取得できます。いずれの場合も、価格は同じ関係式に基づいて算出されます。すなわち、原資産である株式の市場価格にトークンの乗数を掛けた値です。
+
+```text Token price formula
+トークン価格 = 原株式の市場価格 × 乗数
+```
+
+乗数はトークンごとに取得され、WAD スケール (小数点以下の桁数が 18 の固定小数点数) で表されます。実際の係数を求めるには、オンチェーンの値をこのスケールで割ります。スケールは [`WAD_PRECISION()`](/specifications/b20/reference/interfaces/ib20-asset/wad-precision) を呼び出して取得できます (戻り値は `1e18` です) 。
+
+### オンチェーン {#onchain}
+
+ローンチ時点で利用できるオンチェーンの価格オプションは Chainlink です。各トークン化株式には Chainlink フィードが用意されており、24時間週5日稼働し、週末と祝日には直近の終値を保持し、コーポレートアクション中は凍結されます。フィードは標準の Chainlink V3 アグリゲーターインターフェースを実装しており、暗号資産の価格フィードとまったく同じようにプロキシ経由で読み取ります。最新値は `latestRoundData()` で取得してください。
+
+[Tokenized Stocks API](/ja/sdks/tokenized-stocks/api-reference/list-tokenized-stocks) からも、各トークンについて直近に公開された Chainlink ベースの NAV/参照値である `nav_price` が、`nav_price_updated_at` および現在の `multiplier` とともに返されます。`nav_price` はリアルタイムの買気配/売気配や約定価格ではありません。利用する前に `nav_price_updated_at` を確認し、`updatedAt` と同じ鮮度の許容範囲を適用してください。
+
+標準的な市場レートのフィードとは異なり、Coinbase のフィードは生の株価ではなく **トータルリターン値** を報告します。そのため価格には、コーポレートアクションによる調整を含む原資産のトータルリターンが反映されます。Chainlink は、[Ondo や Robinhood](https://docs.chain.link/data-feeds/tokenized-equity-feeds/providers) など他のトークン化株式の発行体にも同じ手法を採用しています。原資産の価格は、トークンのオンチェーン取引や DEX 取引ではなく、Chainlink の株価フィード (従来の市場データ) から取得されます。トークンの DEX 価格がオラクルに反映されることはありません。
+
+フィードは、Coinbase のオンチェーンオラクルレジストリから乗数と一時停止フラグを読み取ります。このレジストリは (トークンとは別の) 単一のコントラクトで、1回の呼び出しでトークンの両方の値を返します。
+
+* **通常時 (`paused = false`) ：** フィードは原資産価格 × 乗数を公開します。
+* **一時停止時 (`paused = true`) ：** フィードは公開を停止し、最後に確認された正常な値を保持します。
+
+<Warning>
+  取引時間中、フィードは価格が 0.5% 乖離したとき、または少なくとも24時間ごと (ハートビート) に更新されます。取引時間外 (夜間、週末、祝日、コーポレートアクションによる一時停止中) は更新が止まり最後の値が保持されるため、コントラクトは引き続き呼び出せても `updatedAt` は進みません。価格を利用する前には必ず `updatedAt` を確認し、鮮度の許容範囲を適用してください。凍結されたフィードに基づいて決済や清算を行ってはいけません。
+</Warning>
+
+コーポレートアクション中の動作は次のとおりです。
+
+* ミントと償還はオフチェーンで一時停止されますが、トークン自体はオンチェーンで一時停止されないため、送金はブロックされません。
+* フィードは凍結され (レジストリの一時停止フラグが設定され) 、価格は古いままになります。
+* フィードはトータルリターンベースのため、価格の不連続は生じません。乗数と原資産価格が逆方向に動いて相殺されます (10:1 の株式分割では価格が約10分の1になり、乗数が約10倍になります) 。
+* **フェイルセーフ：** フィードは、原資産価格と乗数の両方が新しい値を反映していることを Coinbase が確認して初めて再開されます。一方だけが先に更新された場合、中途半端に適用された値は公開されず、フィードは一時停止前の価格で凍結されたままになります。
+
+**Base 上の Chainlink データフィード。** 各フィードは、以下のプロキシアドレスで `latestRoundData()` を呼び出して読み取ります。すべてのフィードは小数点以下の桁数が 8 桁の値を返し、米国株式 (24時間週5日の取引時間) を対象とし、0.5% の価格乖離または24時間のハートビートで更新されます。値はトータルリターンのため、上記の一時停止および鮮度に関する処理を適用してください。
+
+| フィード           | アドレス                                         |
+| -------------- | -------------------------------------------- |
+| Coinbase AAPL  | `0x787f13dEa48Db0897CbCDD985de77809D837F988` |
+| Coinbase AMZN  | `0x06A8E4b3aBB3B7543d8396FB2B763d22820cB295` |
+| Coinbase GOOGL | `0x5bF49E0ffA937CE2FfF033c739aD7C634c4D34F2` |
+| Coinbase META  | `0x6526aE6797A76123638b863AeE4dD27Ba4E4b27D` |
+| Coinbase MSFT  | `0xeB10A6c9aa7E537aEd766C08c35Dae35B321b18c` |
+| Coinbase MSTR  | `0xB3cE282CD188b35DA0E38D8Bc7d58e33173D202a` |
+| Coinbase NVDA  | `0x04689a41629776563E6822F76f2e57D148d28513` |
+| Coinbase SNDK  | `0x388b0dC46C0Fb05A74BeE0994fa5b02c6Fcca2eA` |
+| Coinbase SPCX  | `0x6A634B235903C4ad6376892180d6fF8612e3Fa68` |
+| Coinbase TSLA  | `0xFaf869185383a24F8cb00e27BdA6b63B9905DCb4` |
+
+### オフチェーン {#offchain}
+
+オフチェーンの価格データは、CoinGecko、CoinMarketCap、RWA などのプロバイダーから取得できます。これらのアグリゲーターは、B20 が取引されている DEX 上のトークンのリアルタイム市場価格を追跡しており、セカンダリーマーケットが稼働している限り 24 時間 365 日更新されます。
+
+価値の算出には、一般的に次の 2 つのパターンが用いられます。
+
+* B20 アセットを追跡しているプロバイダーから、トークンの市場価格を直接読み取る。
+* 基礎となる参照価格を読み取り、乗数による計算を手動で適用する。
+
+### 過去データ {#historical-data}
+
+過去の OHLC データや時系列データを取得するには、市場データプロバイダーを利用するか、`roundId` を指定して Chainlink のラウンド履歴を照会してください。
+
+価格はトータルリターン (乗数調整済み) です。そのため、生の株価から系列を再構築する場合は、乗数の履歴 ([`MultiplierUpdated`](/specifications/b20/reference/interfaces/ib20-asset) イベント。予定された乗数変更と即時の乗数変更のいずれでも発行されます) を適用し、一貫性のある系列を再構築してください。
+
+## コントラクトアドレス {#contract-addresses}
+
+これらのアドレスをプログラムで取得するには、トークンコントラクトの場合は [List Tokenized Stocks](/ja/sdks/tokenized-stocks/api-reference/list-tokenized-stocks) エンドポイントを、プロトコルコントラクトの場合は [List Protocol Contract Addresses](/ja/sdks/tokenized-stocks/api-reference/list-protocol-contract-addresses) エンドポイントを使用してください。
+
+| ティッカー            | コントラクトアドレス                                   |
+| ---------------- | -------------------------------------------- |
+| Onchain Registry | `0x3f3E8cf41cdd3b1D118c16471aB0113DfDDd5CaD` |
+| AAPLc            | `0xb200000000000000000000C2e324d24d7eEcd1fb` |
+| AMZNc            | `0xb200000000000000000000d9192b6B456483C2E8` |
+| GOOGLc           | `0xb2000000000000000000002D0BA3164cc74f58B7` |
+| METAc            | `0xb2000000000000000000008bC8786B856E61707C` |
+| MSFTc            | `0xB200000000000000000000Ab99cFa739E253872B` |
+| MSTRc            | `0xb2000000000000000000004884b426556b92883d` |
+| NVDAc            | `0xb20000000000000000000078ee7ce2fE4908108C` |
+| SNDKc            | `0xb200000000000000000000397293Cb8cda9a10c5` |
+| SPCXc            | `0xb2000000000000000000007b9fcbd005511aCBd5` |
+| TSLAc            | `0xb2000000000000000000001e800a7f5189430cD0` |
+
+## 関連リソース {#additional-resources}
+
+* [Tokenized Stocks API](/ja/sdks/tokenized-stocks/overview)
+* [B20 標準](/ja/specifications/b20)
+* [Base 標準ライブラリ](https://github.com/base/base-std/tree/main)
+
+## 免責事項 {#disclaimer}
+
+<p style={{ fontSize: "0.85rem", fontStyle: "italic" }}>Coinbase のトークン化株式は、米国外の対象法域に所在する方のみご利用いただけます。</p>
+
+<p style={{ fontSize: "0.85rem", fontStyle: "italic" }}>サードパーティのプロトコルや取引所の掲載は、開発者向けの参考情報にすぎず、推奨、提携、または保証を意味するものではありません。統合する前に、アドレス、フィード、およびトークンリストを公式の情報源で必ず確認してください。</p>
+
+<p style={{ fontSize: "0.85rem", fontStyle: "italic" }}>Base は、オープンソースかつパーミッションレスなブロックチェーンインフラストラクチャです。各 B20 トークンは発行者によってデプロイおよび設定され、すべてのトークンパラメータと管理権限は発行者が設定・管理します。Base は、プロトコル上にデプロイされたトークンの設定、管理、制御のいずれも行いません。</p>

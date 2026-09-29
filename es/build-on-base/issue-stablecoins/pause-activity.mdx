@@ -1,0 +1,90 @@
+---
+title: "Pausar la actividad"
+keywords: ["pausar stablecoin", "pausa de B20", "detener transferencias en Base", "respuesta a incidentes de stablecoin"]
+description: "Detén por separado las transferencias, las acuñaciones o las quemas de tu stablecoin durante un incidente y reanúdalas una vez resuelto."
+---
+
+import { StablecoinDemo } from "/snippets/StablecoinDemo.jsx"
+
+Si algo sale mal, detén la actividad cuanto antes. La pausa de B20 es **granular**: puedes detener las transferencias, las acuñaciones o las quemas de forma independiente. `PAUSE_ROLE` y `UNPAUSE_ROLE` son roles distintos, así que la capacidad de detener el token puede asignarse a más cuentas que la de reanudarlo.
+
+Las cuatro funcionalidades que se pueden pausar son `TRANSFER`, `MINT`, `BURN` y `SEIZE` (valores de enum del `0` al `3`). Cada una es independiente: si pausas `MINT` y `BURN`, `TRANSFER` sigue activa. Aunque un llamante tenga `MINT_ROLE`, no podrá acuñar mientras `MINT` esté en pausa.
+
+## Demostración {#demo}
+
+<StablecoinDemo flow="pause" />
+
+<Tip>
+  La demostración usa una cuenta local generada en el navegador para enviar transacciones reales en **Base Vibenet**. Si Vibenet o sus funciones de B20 no están disponibles, cambia automáticamente a una versión ilustrativa sin conexión.
+</Tip>
+
+<Note>
+  ¿Es la primera vez que usas B20? Consulta el [Estándar de tokens B20](/es/specifications/b20) para conocer los conceptos y ver una guía completa de lanzamiento. Estos ejemplos están pensados para `base-std@1505323`, `viem@2.55.11` y Base Foundry `v1.1.1`.
+</Note>
+
+## Pausar y reanudar transferencias {#pause-and-resume-transfers}
+
+<CodeGroup>
+  {/* sample: stablecoin-pause-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={7}
+  import { type Address } from "viem";
+  import { publicClient } from "../../shared/clients.js";
+  import { b20Abi } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function setTransfersPaused(token: Address, paused: boolean) {
+    await sendContract({
+      address: token,
+      abi: b20Abi,
+      functionName: paused ? "pause" : "unpause",
+      args: [[0]],
+    });
+    const current = await publicClient.readContract({ address: token, abi: b20Abi, functionName: "isPaused", args: [0] });
+    if (current !== paused) throw new Error("Pause state did not change");
+  }
+  ```
+
+  {/* sample: stablecoin-pause-cli */}
+
+  ```bash CLI lines wrap expandable highlight={1,4}
+  base-cast send "$TOKEN_ADDRESS" "pause(uint8[])" "[0]" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  base-cast call "$TOKEN_ADDRESS" "isPaused(uint8)(bool)" 0 --rpc-url "$RPC_URL"
+  base-cast send "$TOKEN_ADDRESS" "unpause(uint8[])" "[0]" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  ```
+</CodeGroup>
+
+Consulta el [estándar de tokens B20](/es/specifications/b20) para ver la interfaz completa, los roles y las políticas.
+
+<Check>
+  `isPaused(0)` devuelve `true` tras pausar y `false` tras reanudar.
+</Check>
+
+<Warning>
+  `pause` y `unpause` aceptan un array `PausableFeature[]`. Si se pasa un array vacío, la llamada revierte con `EmptyFeatureSet`. La transferencia corresponde al valor de enum `0`; nunca pases un hash como `keccak256("TRANSFER")`. Si una funcionalidad ya está en el estado solicitado, la operación no tiene ningún efecto y la llamada no revierte.
+</Warning>
+
+## Funcionalidades pausables {#pausable-features}
+
+| Funcionalidad | Valor del enum | Controla                                            |
+| ------------- | -------------- | --------------------------------------------------- |
+| `TRANSFER`    | `0`            | `transfer`, `transferFrom` y sus variantes con memo |
+| `MINT`        | `1`            | `mint` y `mintWithMemo`                             |
+| `BURN`        | `2`            | `burn`, `burnWithMemo`, `burnBlocked`               |
+| `SEIZE`       | `3`            | `seizeWithMemo`                                     |
+
+Cuando una funcionalidad pausada bloquea una llamada, la transacción se revierte con `ContractPaused(feature)`. El error indica únicamente la funcionalidad que bloqueó la llamada.
+
+## Consulta también {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="Bloquear una cuenta" icon="user-lock" href="/es/build-on-base/issue-stablecoins/block-an-account">
+    Bloquea una dirección específica.
+  </Card>
+
+  <Card title="Pausa (estándar B20)" icon="book" href="/es/specifications/b20/concepts/roles-and-pause#3-pause">
+    Controles de pausa del estándar B20.
+  </Card>
+</CardGroup>

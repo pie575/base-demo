@@ -1,0 +1,102 @@
+---
+title: "封禁账户"
+keywords: ["封禁地址 稳定币", "B20 封禁列表", "合规冻结 稳定币", "停止账户转账 Base"]
+description: "在需要执行合规冻结时，禁止特定地址转移你的稳定币，且不影响其他持有者。"
+---
+
+import { StablecoinDemo } from "/snippets/StablecoinDemo.jsx"
+
+有时你需要禁止某个地址转移你的稳定币，比如出于合规冻结或处理支持请求。**封禁列表** (blocklist) 只会拦截你列出的地址，其他持有者均不受影响。将其绑定到发送方作用域 (sender scope) ，被拉黑的账户就无法发送代币。
+
+## 演示 {#demo}
+
+<StablecoinDemo flow="block" />
+
+<Tip>
+  本演示使用浏览器本地生成的账户，在 **Base Vibenet** 上提交真实交易。如果 Vibenet 或其 B20 功能不可用，演示将自动切换为离线示意版本。
+</Tip>
+
+<Note>
+  初次接触 B20？请参阅 [B20 代币标准](/zh/specifications/b20)，了解相关概念及完整的发行流程。这些示例基于 `base-std@1505323`、`viem@2.55.11` 和 Base Foundry `v1.1.1` 编写。
+</Note>
+
+## 封禁并验证账户 {#block-and-verify-an-account}
+
+<CodeGroup>
+  {/* sample: stablecoin-block-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={7,10}
+  import { type Address } from "viem";
+  import { publicClient } from "../../shared/clients.js";
+  import { POLICY_REGISTRY, policyRegistryAbi } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function setBlocked(policyId: bigint, holder: Address, blocked: boolean) {
+    await sendContract({
+      address: POLICY_REGISTRY,
+      abi: policyRegistryAbi,
+      functionName: "updateBlocklist",
+      args: [policyId, blocked, [holder]],
+    });
+    const authorized = await publicClient.readContract({
+      address: POLICY_REGISTRY,
+      abi: policyRegistryAbi,
+      functionName: "isAuthorized",
+      args: [policyId, holder],
+    });
+    if (authorized === blocked) throw new Error("Unexpected blocklist state");
+  }
+  ```
+
+  {/* sample: stablecoin-block-solidity */}
+
+  ```solidity Solidity lines wrap expandable highlight={4}
+      function setBlocked(uint64 policyId, address holder, bool blocked) public {
+          address[] memory accounts = new address[](1);
+          accounts[0] = holder;
+          StdPrecompiles.POLICY_REGISTRY.updateBlocklist(policyId, blocked, accounts);
+          require(StdPrecompiles.POLICY_REGISTRY.isAuthorized(policyId, holder) != blocked, "wrong policy state");
+      }
+  ```
+
+  {/* sample: stablecoin-block-cli */}
+
+  ```bash CLI lines wrap expandable highlight={1}
+  base-cast send "$POLICY_REGISTRY" "updateBlocklist(uint64,bool,address[])" \
+    "$BLOCKLIST_ID" true "[$ACCOUNT]" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  base-cast call "$POLICY_REGISTRY" "isAuthorized(uint64,address)(bool)" \
+    "$BLOCKLIST_ID" "$ACCOUNT" --rpc-url "$RPC_URL"
+  ```
+</CodeGroup>
+
+完整的接口、角色和策略说明，请参阅 [B20 代币标准](/zh/specifications/b20)。
+
+<Check>
+  账户处于封禁状态期间，`isAuthorized(policyId, account)` 返回 `false`。
+</Check>
+
+<Warning>
+  只有当封禁列表绑定到 `TRANSFER_SENDER_POLICY` 时，此操作才会阻止该账户转出资产。如需解除封禁，请调用同一函数并传入 `false`。
+</Warning>
+
+## 使被封禁账户可追回 {#make-a-blocked-account-recoverable}
+
+在 `TRANSFER_SENDER_POLICY` 下封禁账户会冻结该账户的所有转出操作，但仅靠这一步，你还无法将其余额转移出来。Seize (扣押) 读取的是另一个独立的作用域 `SEIZE_EXEMPT_POLICY`，其检查逻辑恰好相反：在所附加的策略下**未**获授权的账户可被扣押。在该作用域上附加同一个封禁列表，这样只需一次冻结，就能既冻结账户，又使其余额可被追回：
+
+```solidity Attach the blocklist to the seize scope
+token.updatePolicy(token.SEIZE_EXEMPT_POLICY(), blocklistId);
+```
+
+请为 `SEIZE_EXEMPT_POLICY` 附加封禁列表 (blocklist) ，切勿附加允许列表 (allowlist) ：空的允许列表不会授权任何人，这会导致所有持有者的资金都可被扣押。有关扣押操作本身，请参阅[追回资金](/zh/build-on-base/issue-stablecoins/recover-funds)。
+
+## 另请参阅 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="追回资金" icon="rotate-left" href="/zh/build-on-base/issue-stablecoins/recover-funds">
+    使用 seizeWithMemo 将已被封禁的余额转移至安全托管地址。
+  </Card>
+
+  <Card title="暂停活动" icon="circle-pause" href="/zh/build-on-base/issue-stablecoins/pause-activity">
+    冻结所有代币活动。
+  </Card>
+</CardGroup>

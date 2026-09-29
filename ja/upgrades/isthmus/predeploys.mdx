@@ -1,0 +1,35 @@
+---
+title: "プリデプロイ"
+description: "Isthmus アップグレードにおけるプリデプロイの変更点。L1Block の更新や、新たに追加された OperatorFeeVault コントラクトについて説明します。"
+---
+
+## 概要 {#overview}
+
+### L1Block {#l1block}
+
+#### インターフェース {#interface}
+
+##### `setIsthmus` {#setisthmus}
+
+この関数は、Isthmus ネットワークアップグレードの有効化ブロックで一度だけ呼び出されることを想定しています。
+この関数は `DEPOSITOR_ACCOUNT` のみが、一度だけ呼び出せるものでなければなりません (MUST) 。呼び出された際には、
+ネットワーク固有の設定に関する各ゲッターを呼び出し、その returndata をストレージに保存しなければなりません (MUST) 。
+
+### GasPriceOracle {#gaspriceoracle}
+
+Isthmus アップグレードでは、新しいメソッド `getOperatorFee(uint256)` が導入されます。このメソッドは、
+指定された `gasUsed` に対するオペレーター手数料を返します。オペレーター手数料は、実行エンジン仕様の
+[オペレーター手数料](./exec-engine#operator-fee)セクションに記載された式に従って計算されます。
+
+`getOperatorFee(uint256)` が返す値は、`U256` の最大値が上限となります。
+
+### OperatorFeeVault {#operatorfeevault}
+
+このボールトは、`BaseFeeVault`、`SequencerFeeVault`、`L1FeeVault` と同様に `FeeVault` を実装します。
+資金の入金や引き出しに特別なロジックは必要ありません。
+
+アドレスは `0x420000000000000000000000000000000000001b` になります。
+
+[Fee Vaults](./exec-engine#fee-vaults) も参照してください。
+
+## セキュリティに関する考慮事項 {#security-considerations}

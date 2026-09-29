@@ -1,0 +1,40 @@
+---
+title: "Isthmus"
+sidebarTitle: "概述"
+description: "Isthmus 硬分叉概述：该硬分叉纳入了以太坊 Pectra 升级中的 EIP，并引入了为 sequencer 带来收入的运营方费用机制。"
+---
+
+## 激活时间戳 {#activation-timestamps}
+
+| 网络        | 激活时间戳                                   |
+| --------- | --------------------------------------- |
+| `mainnet` | `1746806401` (2025-05-09 16:00:01 UTC)  |
+| `sepolia` | `1744905600` (2025-04-17 16:00:00 UTC)  |
+
+## 执行层 {#execution-layer}
+
+* [Pectra](https://eips.ethereum.org/EIPS/eip-7600) (执行层) ：
+  * [EIP-7702](https://eips.ethereum.org/EIPS/eip-7702)
+    * [Span batch 更新](/zh/upgrades/isthmus/derivation#span-batch-updates)
+  * [EIP-2537](https://eips.ethereum.org/EIPS/eip-2537)
+  * [EIP-2935](https://eips.ethereum.org/EIPS/eip-2935)
+    * [EIP-2935 合约部署](/zh/upgrades/isthmus/derivation#eip-2935-contract-deployment)
+  * [EIP-7002](https://eips.ethereum.org/EIPS/eip-7002)
+    * Base 未采用 EIP-7002 的预部署合约和系统调用。
+  * [EIP-7251](https://eips.ethereum.org/EIPS/eip-7251)
+    * Base 未采用 EIP-7251 的预部署合约和系统调用。
+  * [EIP-7623](https://eips.ethereum.org/EIPS/eip-7623)
+  * [EIP-6110](https://eips.ethereum.org/EIPS/eip-6110)
+  * [EIP-7685](https://eips.ethereum.org/EIPS/eip-7685)
+* [区块头中的 L2ToL1MessagePasser 存储根](/zh/upgrades/isthmus/exec-engine#l2tol1messagepasser-storage-root-in-header)
+* [运营方费用](/zh/upgrades/isthmus/exec-engine#operator-fee)
+
+## 共识层 {#consensus-layer}
+
+* [Isthmus 推导](/zh/upgrades/isthmus/derivation)
+
+## 智能合约 {#smart-contracts}
+
+* [预部署合约](/zh/upgrades/isthmus/predeploys)
+* [L1 区块属性](/zh/upgrades/isthmus/l1-attributes)
+* [系统配置](/zh/upgrades/isthmus/system-config)

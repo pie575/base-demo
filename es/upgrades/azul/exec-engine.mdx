@@ -1,0 +1,135 @@
+---
+title: "Motor de ejecución"
+description: "Cambios del motor de ejecución en el hardfork Azul, incluido el límite máximo de gas por transacción de EIP-7825 y la actualización de costos del precompilado secp256r1."
+---
+
+## Cambios en la EVM {#evm-changes}
+
+### Límite máximo de gas por transacción {#transaction-gas-limit-cap}
+
+[EIP-7825](https://eips.ethereum.org/EIPS/eip-7825) introduce un límite máximo de gas a nivel de protocolo
+de 16.777.216 (2^24) por transacción. Las transacciones que superan este límite se rechazan durante la validación.
+
+Base adopta el mismo límite que L1 para maximizar la equivalencia con Ethereum.
+
+<Note>
+  Las transacciones de depósito estarán exentas del límite máximo de gas por transacción. Ya están limitadas a [20.000.000 de gas][gas-market], ya que es la cantidad máxima de gas que cabe en un bloque de L1.
+</Note>
+
+[gas-market]: /specifications/base-protocol/bridging/deposits#default-values
+
+### Límite superior para MODEXP {#upper-bound-modexp}
+
+[EIP-7823](https://eips.ethereum.org/EIPS/eip-7823) limita las entradas del precompilado MODEXP a un máximo de
+1024 bytes por campo. Las llamadas con entradas de mayor tamaño se rechazan.
+
+### Aumento del costo de gas de MODEXP {#modexp-gas-cost-increase}
+
+[EIP-7883](https://eips.ethereum.org/EIPS/eip-7883) aumenta el costo mínimo de gas del precompilado MODEXP
+de 200 a 500 y triplica el costo resultante del cálculo general.
+
+### Opcode CLZ {#clz-opcode}
+
+[EIP-7939](https://eips.ethereum.org/EIPS/eip-7939) añade un nuevo opcode `CLZ` que cuenta el número
+de bits a cero iniciales en una palabra de 256 bits y devuelve 256 si la entrada es cero.
+
+### Costo de gas del precompilado secp256r1 {#secp256r1-precompile-gas-cost}
+
+[EIP-7951](https://eips.ethereum.org/EIPS/eip-7951) especifica el precompilado secp256r1 en la dirección `0x100`
+con un costo de gas de 3450.
+
+Base ya cuenta con el precompilado `p256Verify` en esa misma dirección (incorporado en Fjord mediante
+[RIP-7212](https://github.com/ethereum/RIPs/blob/master/RIPS/rip-7212.md)) con un costo de gas de 3450.
+A partir de Azul, el costo de gas sube a 6900 para igualar el costo de gas de L1 especificado en EIP-7951, de modo que se mantiene
+una equivalencia estricta con los precios de los precompilados de L1.
+
+## Cambios en la capa de red {#networking-changes}
+
+### eth/69 {#eth69}
+
+[EIP-7642](https://eips.ethereum.org/EIPS/eip-7642) actualiza el protocolo de red (wire protocol) de Ethereum a la versión 69,
+elimina campos heredados del mensaje `Status` y simplifica el *handshake*.
+
+### El protocolo de descubrimiento ahora usa el ID de protocolo `basev0` {#discovery-protocol-now-uses-basev0-protocol-id}
+
+El protocolo de descubrimiento de la capa de ejecución ahora usa `basev0` como ID de protocolo. Esto permite que los nodos de Base se descubran entre sí con mayor rapidez, sobre todo en redes con pocos nodos, como Sepolia.
+
+### Eliminación de saldos de cuentas y recibos {#remove-account-balances-receipts}
+
+El payload `FlashblocksMetadata` que se transmite a través del WebSocket de Flashblocks se simplifica en Azul.
+Se eliminan los campos `new_account_balances` y `receipts`. El campo `access_list` se mantiene, pero
+no se rellenará en Azul.
+
+**Antes:**
+
+```json FlashblocksMetadata Before Azul lines wrap expandable
+{
+  "block_number": 43403718,
+  "new_account_balances": {
+    "0x4200000000000000000000000000000000000006": "0x35277a9715c6df1c99de"
+  },
+  "receipts": {
+    "0x1ef9be45b3f7d44de9d98767ddb7c0e330b21777b67a3c79d469be9ffab091dd": {
+      "cumulativeGasUsed": "0x177d7bd",
+      "logs": [],
+      "status": "0x1",
+      "type": "0x2"
+    }
+  },
+  "access_list": null
+}
+```
+
+**Después:**
+
+```json FlashblocksMetadata After Azul
+{
+  "block_number": 43403718,
+  "access_list": null
+}
+```
+
+## Cambios en RPC {#rpc-changes}
+
+### Uso de la Engine API {#engine-api-usage}
+
+A partir de la activación de Azul, la producción y la importación de bloques utilizan los siguientes métodos de la Engine API:
+
+* `engine_forkchoiceUpdatedV3` para iniciar la construcción de bloques y sincronizar el forkchoice.
+* `engine_getPayloadV5` para obtener los payloads construidos.
+* `engine_newPayloadV4` para importar payloads en el motor de ejecución.
+
+`engine_getPayloadV5` devuelve un sobre V5, pero el payload de ejecución que contiene sigue teniendo la estructura de V4.
+Por ello, la inserción de payloads sigue realizándose mediante `engine_newPayloadV4` (los clientes de Base Azul no utilizan ninguna ruta `engine_newPayloadV5`).
+
+Restricciones de Azul para este flujo:
+
+* Las entradas de la Engine API relacionadas con blobs se limitan a valores vacíos:
+  * `expectedBlobVersionedHashes` MUST ser un array vacío.
+  * Se espera que `blobsBundle` esté vacío en las respuestas de `engine_getPayloadV5`.
+* `executionRequests` en `engine_newPayloadV4` MUST ser un array vacío.
+
+### Método RPC eth_config {#eth_config-rpc-method}
+
+[EIP-7910](https://eips.ethereum.org/EIPS/eip-7910) introduce el método JSON-RPC `eth_config`,
+que devuelve parámetros de configuración de la cadena, como las marcas de tiempo de activación de cada fork.
+
+Base Azul expone `eth_config` con el esquema de respuesta estándar de EIP-7910.
+
+El comportamiento específico de Base es el siguiente:
+
+* `blobSchedule` siempre se devuelve con valores a cero para `current`, `next` y `last`.
+  Base no admite transacciones blob nativas, por lo que no debe anunciar valores predeterminados sintéticos
+  del calendario de blobs de Ethereum.
+* `precompiles` refleja el conjunto de precompilados de la EVM activos en ese fork. Incluye los precompilados
+  estándar de Ethereum, además de cualquier incorporación activa en Base documentada en la
+  [especificación de precompilados](/es/specifications/base-protocol/execution/precompiles).
+* `systemContracts` se limita a los contratos que puede representar EIP-7910. En Base, esto significa que:
+  * `BEACON_ROOTS_ADDRESS` se incluye a partir de la activación de Ecotone.
+  * `HISTORY_STORAGE_ADDRESS` se incluye a partir de la activación de Isthmus.
+  * `DEPOSIT_CONTRACT_ADDRESS`, `CONSOLIDATION_REQUEST_PREDEPLOY_ADDRESS` y
+    `WITHDRAWAL_REQUEST_PREDEPLOY_ADDRESS` se omiten.
+
+Los predeploys específicos de Base y otros contratos de sistema de Base documentados en la
+[especificación de predeploys](/es/specifications/base-protocol/execution/predeploys) no se serializan en
+`eth_config`, salvo que formen parte del esquema de EIP-7910.

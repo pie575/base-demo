@@ -1,0 +1,376 @@
+---
+title: "span batch"
+description: "Delta 升级引入的 span batch 规范。span batch 是一种新的批次格式，可对连续的 L2 区块进行压缩，从而更高效地向 L1 发布数据。"
+---
+
+[g-deposit-tx-type]: /specifications/reference/glossary#deposited-transaction-type
+
+[derivation]: /specifications/base-protocol/consensus/derivation
+
+[channel-format]: /specifications/base-protocol/consensus/derivation#channel-format
+
+[batch-format]: /specifications/base-protocol/consensus/derivation#batch-format
+
+[frame-format]: /specifications/base-protocol/consensus/derivation#frame-format
+
+[batch-queue]: /specifications/base-protocol/consensus/derivation#batch-queue
+
+[batcher]: /specifications/base-protocol/batcher
+
+## 简介 {#introduction}
+
+Span-batch 是在 [Delta](./overview) 网络升级中引入的一种新批处理规范，
+旨在降低开销。
+
+它以更高效的方式表示一段
+连续的 L2 区块，从而降低开销，
+同时保留与常规批次数据相同的一致性检查。
+
+请注意，[channel][channel-format] 和
+[frame][frame-format] 格式保持不变：
+数据切片、打包和多交易传输已经过充分优化。
+
+[V0 批次格式][derivation]的开销主要来自以下几个方面：
+
+* 每个 L2 区块都会重复携带元数据属性，而这些属性大多已可隐式推断：
+  * 父哈希 (32 字节)
+  * L1 epoch：区块哈希 (32 字节) 和区块号 (约 4 字节)
+  * 时间戳 (约 4 字节)
+* 区块数据的组织方式效率不高：
+  * 相似的属性彼此相距较远，难以实现有效压缩。
+  * 哈希等随机数据夹杂在更易压缩的应用数据之间。
+* 数据的 RLP 编码带来了不必要的开销
+  * 属性已知，外层列表无需进行长度编码
+  * 定长属性无需任何编码
+  * 批次格式是静态的，可以进一步优化
+* 用于一致性检查的其余元数据还可进一步优化：
+  * 元数据只需满足一致性检查所需的安全性即可。例如，取哈希的 20 个字节可能就已足够。
+
+Span-batch 通过引入新的批次格式版本，解决了上述低效问题。
+
+## Span Batch 格式 {#span-batch-format}
+
+[span-batch-format]: #span-batch-format
+
+请注意，与之前的单一批次不同，span-batch
+会同时编码&#95;一段连续的&#95; L2 区块。
+
+在 [batch-format][batch-format] 表中新增版本 `1`：
+
+| `batch_version` | `content`           |
+| --------------- | ------------------- |
+| 1               | `prefix ++ payload` |
+
+符号说明：
+
+* `++`：字节串拼接
+* `span_start`：span 中的第一个 L2 区块
+* `span_end`：span 中的最后一个 L2 区块
+* `uvarint`：无符号 Base128 varint，定义见 [protobuf spec]
+* `rlp_encode`：按照 RLP 格式对批次进行编码的函数，
+  `[x, y, z]` 表示包含 `x`、`y` 和 `z` 三项的列表
+
+[protobuf spec]: https://protobuf.dev/programming-guides/encoding/#varints
+
+在 span-batch 中，标准位列表编码为大端序整数，
+并在左侧补零，使其位数达到 8 的整数倍。
+
+其中：
+
+* `prefix = rel_timestamp ++ l1_origin_num ++ parent_check ++ l1_origin_check`
+  * `rel_timestamp`：自 L2 创世以来的相对时间戳 (`uvarint`) ，
+    即 `span_start.timestamp - config.genesis.timestamp`。
+  * `l1_origin_num`：最后一个 L1 origin 的区块编号 (`uvarint`) ，即 `span_end.l1_origin.number`
+  * `parent_check`：父哈希的前 20 字节。为提高效率，哈希被截断为 20 字节，
+    即 `span_start.parent_hash[:20]`。
+  * `l1_origin_check`：最后一个 L1 origin 的区块哈希。
+    为提高效率，哈希被截断为 20 字节，即 `span_end.l1_origin.hash[:20]`。
+* `payload = block_count ++ origin_bits ++ block_tx_counts ++ txs`：
+  * `block_count`：L2 区块数量 (`uvarint`) 。该值至少为 1，空的 span batch 无效。
+  * `origin_bits`：长度为 `block_count` 位的标准位列表：
+    每个 L2 区块占 1 位，表示该 L2 区块的 L1 origin 是否发生变化。
+  * `block_tx_counts`：每个区块的 `len(block.transactions)`，以 `uvarint` 表示。
+  * `txs`：按下述方式重组并编码的 L2 交易。
+* `txs = contract_creation_bits ++ y_parity_bits ++
+  tx_sigs ++ tx_tos ++ tx_datas ++ tx_nonces ++ tx_gases ++ protected_bits`
+  * `contract_creation_bits`：长度为 `sum(block_tx_counts)` 位的标准位列表：
+    每笔 L2 交易占 1 位，表示该交易是否为合约创建交易。
+  * `y_parity_bits`：长度为 `sum(block_tx_counts)` 位的标准位列表：
+    每笔 L2 交易占 1 位，表示恢复交易发送方地址时所用的 y 奇偶值。
+  * `tx_sigs`：交易签名的拼接列表
+    * `r` 编码为大端序 `uint256`
+    * `s` 编码为大端序 `uint256`
+  * `tx_tos`：`to` 字段的拼接列表。合约创建交易中的 `to` 字段为 `nil`，将被忽略。
+  * `tx_datas`：可变长度 RLP 编码数据的拼接列表，
+    其字段编码方式与对应 `TransactionType` 的 [EIP-2718] 格式一致。
+    * `legacy`：`rlp_encode(value, gasPrice, data)`
+    * `1`：([EIP-2930])：`0x01 ++ rlp_encode(value, gasPrice, data, accessList)`
+    * `2`：([EIP-1559])：`0x02 ++ rlp_encode(value, max_priority_fee_per_gas, max_fee_per_gas, data, access_list)`
+  * `tx_nonces`：`nonce` 字段的 `uvarint` 值拼接列表。
+  * `tx_gases`：gas 上限的 `uvarint` 值拼接列表。
+    * `legacy`：`gasLimit`
+    * `1`：([EIP-2930])：`gasLimit`
+    * `2`：([EIP-1559])：`gas_limit`
+  * `protected_bits`：长度等于 legacy 交易数量的标准位列表：
+    每笔 L2 legacy 交易占 1 位，表示该交易是否受保护 ([EIP-155]) 。
+
+[EIP-2718]: https://eips.ethereum.org/EIPS/eip-2718
+
+[EIP-2930]: https://eips.ethereum.org/EIPS/eip-2930
+
+[EIP-1559]: https://eips.ethereum.org/EIPS/eip-1559
+
+[EIP-155]: https://eips.ethereum.org/EIPS/eip-155
+
+### Span Batch 大小限制 {#span-batch-size-limits}
+
+编码后的 span batch 总大小不得超过 `MAX_RLP_BYTES_PER_CHANNEL`，该参数定义于
+[协议参数表](/zh/specifications/base-protocol/consensus/derivation#protocol-parameters)。
+该限制在 channel 层面执行，而非在 span batch 层面执行。
+
+除字节限制外，区块数量和交易总数也不得超过 `MAX_SPAN_BATCH_ELEMENT_COUNT`。
+这意味着每个区块的最大交易数同样为 `MAX_SPAN_BATCH_ELEMENT_COUNT`。
+`MAX_SPAN_BATCH_ELEMENT_COUNT` 定义于[协议参数表](/zh/specifications/base-protocol/consensus/derivation#protocol-parameters)。
+
+### 未来的批次格式扩展 {#future-batch-format-extension}
+
+这是 span-batch 格式的一项实验性扩展，尚未随 Delta 升级激活。
+
+在 [batch-format][batch-format] 表中新增版本 `2`：
+
+| `batch_version` | `content`           |
+| --------------- | ------------------- |
+| 2               | `prefix ++ payload` |
+
+其中：
+
+* `prefix = rel_timestamp ++ l1_origin_num ++ parent_check ++ l1_origin_check`：
+  * 与 `batch_version` 1 相同
+* `payload = block_count ++ origin_bits ++ block_tx_counts ++ txs ++ fee_recipients`：
+  * 空的 span-batch (即 `block_count == 0`) 无效，不得处理。
+  * 除新增 `fee_recipients` 以支持更去中心化的排序外，
+    其余各字段的定义均与 `batch_version` 1 相同。
+  * `fee_recipients = fee_recipients_idxs + fee_recipients_set`
+    * `fee_recipients_set`：由各不相同的 L2 费用接收方地址拼接而成的列表。
+    * `fee_recipients_idxs`：每个区块对应一个
+      `uvarint` 编码的索引号，用于从 `fee_recipients_set` 中解码费用接收方地址。
+
+## Span Batch 激活规则 {#span-batch-activation-rule}
+
+span batch 升级按时间戳激活。
+
+激活规则：`upgradeTime != null && span_start.l1_origin.timestamp >= upgradeTime`
+
+`span_start.l1_origin.timestamp` 是 span batch 中第一个区块的 L1 origin 区块时间戳。
+该规则确保与此 span batch 相关的所有链上活动都发生在硬分叉之后，
+即 span 中的每个区块都是在硬分叉之后创建、提交到 L1 并从 L1 派生的。
+
+## 优化策略 {#optimization-strategies}
+
+### 截断信息，仅存储必要数据 {#truncating-information-and-storing-only-necessary-data}
+
+以下字段存储的是截断后的数据：
+
+* `rel_timestamp`：存储 `rel_timestamp` 而非完整的 `span_start.timestamp`，可节省两个字节。
+* `parent_check` 和 `l1_origin_check`：将完整哈希截去十二个字节，可节省十二个字节，
+  同时仍能保证足够的安全性。
+
+### 从初始规范中移除 `tx_data_headers` {#tx_data_headers-removal-from-initial-specs}
+
+即使 `tx_datas` 的元素长度可变，也无需为每个元素单独存储长度，
+因为这些元素本身已经过 RLP 编码，其长度已记录在 RLP 前缀中。
+
+### 从初始规范中移除 `Chain ID` {#chain-id-removal-from-initial-specs}
+
+每笔交易都带有 chain id。span batch 中无需包含 chain id，因为 L2 本身已知其 chain id，
+并会在推导过程中使用自身的 chain id 来处理 span batch。
+
+### 定长交易字段的重组 {#reorganization-of-constant-length-transaction-fields}
+
+`signature`、`nonce`、`gaslimit`、`to` 字段均为固定长度，因此将它们完全拆分，
+分别归入独立的数组。
+这虽然增加了复杂度，但能将数据模式相似的数据归为一组，从而优化数据组织、提升压缩效果。
+
+### 仅对变长字段使用 RLP 编码 {#rlp-encoding-for-only-variable-length-fields}
+
+对变长字段 (例如 `access_list`) 进行打包，可以进一步压缩大小。
+然而，这样做引入的代码复杂度远超缩减大小所带来的收益。
+
+我们的目标是在代码复杂度与 span batch 大小之间找到最佳平衡点。
+我认为对所有变长字段统一使用 RLP 是最佳方案，
+以免繁琐复杂的自定义编码/解码实现给代码库带来风险。
+
+### 存储 `y_parity` 和 `protected_bit` 而非 `v` {#store-y_parity-and-protected_bit-instead-of-v}
+
+只有传统 (legacy) 类型的交易可以选择是否启用保护。若启用保护 ([EIP-155]) ，则 `v = 2 * ChainID + 35 + y_parity`；
+否则 `v = 27 + y_parity`。对于其他类型的交易，`v = y_parity`。
+我们存储 `y_parity`，每笔 L2 交易占用一个比特。
+我们存储 `protected_bit`，每笔 L2 传统类型交易占用一个比特，用于标识该交易是否受保护。
+
+在不计存款交易的交易总数中，传统类型交易占比越高，此项优化的收益就越大。
+存款交易不包含在批次中，也从不写入 L1，因此分析时不予计入。
+
+### 调整 `txs` 数据布局以提升压缩效果 {#adjust-txs-data-layout-for-better-compression}
+
+`txs` 各字段的排列顺序共有 (8 choose 2) * 6! = 20160 种。之所以不是 8!，
+是因为必须先解码 `contract_creation_bits`，才能解码 `tx_tos`。我们
+尝试了多种数据布局，发现将随机数据 (`tx_sigs`、
+`tx_tos`、`tx_datas`) 与其余数据分开存放，对 zlib 压缩率的提升最为显著。
+
+### `fee_recipients` 编码方案 {#fee_recipients-encoding-scheme}
+
+设 `K` := 每个 span batch 中不同费用接收方的数量 (基数) 。设 `N` := L2 区块的数量。
+如果采用朴素方式，将所有费用接收方逐一拼接进行编码，则需要 `20 * N` 字节。
+如果分别维护 `fee_recipients_idxs` 和 `fee_recipients_set`，则二者最多分别需要 `max uvarint size * N = 8 * N` 字节和
+`20 * K` 字节。若 `20 * N > 8 * N + 20 * K`，则维护费用接收方索引能够减小数据大小。
+
+我们认为 sequencer 轮换并不频繁，因此假设 `K` 远小于 `N`。
+在此假设下，上述不等式成立。因此，我们决定分别维护 `fee_recipients_idxs` 和
+`fee_recipients_set`。这样做虽然增加了复杂度，但减少了数据量。
+
+## 基于 Span Batch 的推导原理 {#how-derivation-works-with-span-batches}
+
+* 区块时间戳
+  * 第一个 L2 区块的区块时间戳为 `rel_timestamp + L2Genesis.Timestamp`。
+  * 随后依次累加 L2 出块时间，即可推导出其余区块的时间戳。
+* L1 origin 编号
+  * 第一个 L2 区块的父区块的 L1 origin 编号为 `l1_origin_num - sum(origin_bits)`
+  * 随后可通过 `origin_bits` 推导出其余区块的 L1 origin 编号
+    * `i-th block's L1 origin number = (i-1)th block's L1 origin number + (origin_bits[i] ? 1 : 0)`
+* L1 origin 哈希
+  * 只需要 `l1_origin_check`，即 Span Batch 中最后一个 L2 区块的截断 L1 origin 哈希。
+  * 如果最后一个区块以规范 L1 链作为其起源，
+    即可确保其余所有区块的起源均与规范 L1 链一致。
+* 父哈希
+  * 在 V0 Batch 规范中，需要借助批次的父哈希来验证该批次的父区块是否与当前 L2 安全头一致。
+  * 但对于 Span Batch，由于其跨度内包含的是连续的 L2 区块，
+    因此除第一个区块外，无需验证其余区块的父哈希。
+* 交易
+  * 存款交易可从其 L1 origin 推导得出，与 V0 批次相同。
+  * 用户交易可按以下方式推导：
+    * 按照优化策略中所述，根据 `y_parity_bits` 和 L2 链 ID 恢复交易签名的 `V` 值。
+    * 解析 `tx_tos` 时，通过 `contract_creation_bits` 判断交易是否包含 `to` 值。
+
+## 集成 {#integration}
+
+### Channel Reader (批次解码) {#channel-reader-batch-decoding}
+
+Channel Reader 按照 [span-batch 格式](#span-batch-format)中的说明对 span-batch 进行解码。
+
+按上文所述计算出一组派生属性，然后将其与解码结果一并缓存：
+
+### Batch Queue {#batch-queue}
+
+span-batch 会作为单个大型批次进行缓冲，
+并按其起始时间戳 (经转换的 `rel_timestamp`) 排序。
+
+span-batch 与 v0 批次共用同一个队列：所有批次均按 L1 包含顺序处理。
+
+span-batch 适用一组修改后的验证规则。
+
+这些规则在执行时沿用 v0-batch 验证的[上下文定义][batch-queue]：
+`epoch`、`inclusion_block_number`、`next_timestamp`
+
+定义：
+
+* `batch` 的定义见 [Span batch 格式章节][span-batch-format]。
+* `prev_l2_block` 是当前安全链中时间戳为 `span_start.timestamp - l2_block_time` 的
+  L2 区块
+
+span-batch 规则 (按验证顺序排列) ：
+
+* `batch_origin` 的确定方式与单一批次 (singular batch) 相同：
+  * `batch.epoch_num == epoch.number+1`：
+    * 如果 `next_epoch` 未知 -&gt; `undecided`：
+      即在获取 L1 origin 数据之前，无法处理会改变 L1 origin 的批次。
+    * 如果已知，则将 `batch_origin` 定义为 `next_epoch`
+* `batch_origin.timestamp < span_batch_upgrade_timestamp` -&gt; `drop`：
+  即强制执行 [span batch 升级激活规则](#span-batch-activation-rule)。
+* `span_start.timestamp > next_timestamp` -&gt; `future`：即该批次必须已可供处理，
+  但不必恰好从 `next_timestamp` 开始，因为它可以与先前已处理的区块重叠；
+* `span_end.timestamp < next_timestamp` -&gt; `drop`：即该批次必须至少包含一个待处理的新区块。
+* 如果当前安全链中不存在 `prev_l2_block` -&gt; `drop`：即时间戳必须对齐。
+* `batch.parent_check != prev_l2_block.hash[:20]` -&gt; `drop`：
+  即父哈希中被校验的部分必须与对应 L2 区块哈希的相应部分一致。
+* 排序窗口检查：
+  * 注意：排序窗口是针对*整个批次*强制执行的：
+    如果改为允许批次部分无效，则会丢弃最早的 L2 区块，
+    从而导致后续的 L2 区块无效。
+  * 变量：
+    * `origin_changed_bit = origin_bits[0]`：如果第一个 L2 区块更改了其 L1 origin，则为 `true`，否则为 `false`。
+    * `start_epoch_num = batch.l1_origin_num - sum(origin_bits) + (origin_changed_bit ? 1 : 0)`
+    * `end_epoch_num = batch.l1_origin_num`
+  * 规则：
+    * `start_epoch_num + sequence_window_size < inclusion_block_number` -&gt; `drop`：
+      即批次必须及时被打包上链。
+    * `start_epoch_num > prev_l2_block.l1_origin.number + 1` -&gt; `drop`：
+      即每个 L2 区块的 L1 origin 最多只能前进一个 L1 区块。
+    * 如果 `batch.l1_origin_check` 与 `end_epoch_num` 处的规范 L1 链不匹配 -&gt; `drop`：
+      用于验证该批次确实是针对此 L1 链的。
+      * 通过上述 `l1_origin_check` 检查后，基于以下不变量，无需再检查 origin
+        是否晚于 `inclusion_block_number`。
+      * 不变量：当且仅当 L1 epoch 哈希正确时，批次中的 epoch 编号始终小于包含区块号。
+    * `start_epoch_num < prev_l2_block.l1_origin.number` -&gt; `drop`：
+      epoch 编号不能早于父区块的 origin
+* 最大排序器时间漂移及其他 L1 origin 检查：
+  * 注意：最大时间漂移是针对*整个批次*强制执行的，以尽量减少可能的输出变体。
+  * 变量：
+    * `block_input`：span-batch 中的一个 L2 区块，
+      其 L1 origin 根据 `origin_bits` 以及当前已确立的规范 L1 链推导得出。
+    * `next_epoch`：`block_input.origin` 的下一个 L1 区块。
+      它可能会延伸到该 span 的 L1 origin 范围之外的下一个 origin。
+  * 规则：
+    * 对于每个时间戳大于 `safe_head.timestamp` 的 `block_input`：
+      * `block_input.l1_origin.number < safe_head.l1_origin.number` -&gt; `drop`：强制要求 L1 origin 递增。
+      * `block_input.timestamp < block_input.origin.time` -&gt; `drop`：强制执行最小 L2 时间戳规则。
+      * `block_input.timestamp > block_input.origin.time + max_sequencer_drift`：强制执行 L2 时间戳漂移规则，
+        但为保持上述最小 L2 时间戳不变量，存在以下例外：
+        * `len(block_input.transactions) == 0`：
+          * `origin_bits[i] == 0`：`i` 是 `block_input` 在 span batch 中的索引。
+            这意味着该 block&#95;input 没有推进 L1 origin，
+            因此必须对照 `next_epoch` 进行检查。
+            * 如果 `next_epoch` 未知 -&gt; `undecided`：
+              缺少下一个 L1 origin 时，尚无法判断时间不变量是否本可以保持。
+            * 如果 `block_input.timestamp >= next_epoch.time` -&gt; `drop`：
+              该批次本可以在不破坏 `L2 time >= L1 time` 不变量的前提下采用下一个 L1 origin。
+        * `len(block_input.transactions) > 0`：-&gt; `drop`：
+          一旦超出 sequencer 时间漂移，绝不允许 sequencer 打包交易。
+* 此外，对于所有交易：
+  * 如果 `batch.tx_datas` 列表中包含无效交易，或包含只能通过其他方式派生的交易，则 `drop`：
+    * 任何空交易 (`tx_data` 长度为零)
+    * 任何[存款交易][g-deposit-tx-type] (通过 `tx_data` 中的交易类型前缀字节识别)
+    * 任何类型 &gt; 2 的未来类型交易 (注意，
+      [Isthmus 新增了对](../isthmus/derivation#activation)
+      类型 4 的 `SetCode` 交易的支持)
+* 重叠区块检查：
+  * 注意：如果 span batch 与当前 L2 安全链重叠，则必须验证所有重叠的区块。
+  * 变量：
+    * `block_input`：从 span batch 派生出的 L2 区块。
+    * `safe_block`：当前 L2 安全链中与 `block_input` 时间戳相同的 L2 区块
+  * 规则：
+    * 对于每个时间戳小于 `next_timestamp` 的 `block_input`：
+      * `block_input.l1_origin.number != safe_block.l1_origin.number` -&gt; `drop`
+      * `block_input.transactions != safe_block.transactions` -&gt; `drop`
+        * 比较时不包括存款交易
+
+验证通过后，batch-queue 会为 span-batch 中包含的每个区块分别发出一个区块输入 (block-input) 。
+因此，下一个推导阶段只会看到单个的区块输入，这与之前的 V0 批次类似，
+尽管严格来说它已不再是“v0 批次”。
+
+### Batcher {#batcher}
+
+不再将 L2 区块转换为批次，
+而是将这些区块缓冲起来，以构成 span-batch。
+
+理想情况下，L2 区块应以区块输入 (block-inputs) 的形式缓冲，从而最大化 span-batch 所覆盖的区块跨度：
+仅包含单个 L2 区块的 span-batch 对效率的提升，远不及跨度更大的 span-batch。
+
+这意味着需要修改 `(c *channelBuilder) AddBlock` 函数，
+使其不再直接调用 `(co *ChannelOut) AddBatch`，而是等到至少缓冲了最少数量的区块之后再调用。
+
+在 span-batch 写入 channel 之前，无法估算已排队区块的输出大小。
+当区块数量超过给定值后，可以先将 channel 写入以进行估算；如果有更多区块到达，再重新写入。
+
+除此之外，[batcher 功能][batcher]保持不变：unsafe 区块被转换为批次，
+编码到压缩 channel 中，然后拆分为帧提交到 L1。
+各 Batcher 实现可以采用不同的启发式策略和重试机制，以构建 gas 效率最高的数据交易 (data-txs) 。

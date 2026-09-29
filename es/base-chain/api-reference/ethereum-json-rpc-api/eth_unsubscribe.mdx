@@ -1,0 +1,48 @@
+---
+title: 'eth_unsubscribe'
+sidebarTitle: 'eth_unsubscribe'
+description: 'Cancela una suscripción WebSocket activa.'
+---
+
+Cancela una suscripción creada con [`eth_subscribe`](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_subscribe). Tras esta llamada, el ID de la suscripción deja de ser válido.
+
+## Parámetros {#parameters}
+
+<ParamField body="subscriptionId" type="string" required>
+  El ID de suscripción que devuelve `eth_subscribe`.
+</ParamField>
+
+## Valor de retorno {#returns}
+
+<ResponseField name="result" type="boolean">
+  `true` si la suscripción se canceló correctamente; `false` si no se encontró el ID de la suscripción.
+</ResponseField>
+
+## Ejemplo {#example}
+
+<CodeGroup>
+  ```json Solicitud
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "eth_unsubscribe",
+    "params": ["0x1887ec8b9589ccad00000000000532da"]
+  }
+  ```
+
+  ```json Respuesta (éxito)
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": true
+  }
+  ```
+
+  ```json Respuesta (no encontrado)
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": false
+  }
+  ```
+</CodeGroup>

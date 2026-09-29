@@ -1,0 +1,357 @@
+---
+title: "Base-Solana ブリッジ"
+description: "Base と Solana Mainnet の間でトークンとメッセージをブリッジします"
+---
+
+import { GithubRepoCard } from "/snippets/ja/GithubRepoCard.mdx"
+
+Base-Solana ブリッジは、Base と
+Solana ネットワーク間での双方向のトークン転送とメッセージパッシングを実現します。このブリッジでは、次のことが可能です。
+
+* Base と Solana 間で**トークンを転送する**
+* **任意のクロスチェーンメッセージを送信する**
+* **両方のフローを組み合わせる (任意の呼び出しを伴う転送)&#x20;**
+* いずれかのチェーン上に**ラップトークンをデプロイする**
+
+このガイドでは、ブリッジのアーキテクチャ、本番環境のアドレス、および実践的な実装
+パターンについて説明します。
+
+## 仕組み {#how-it-works}
+
+### Base 側 {#on-base}
+
+Base のブリッジコントラクトは、Solana へトークンを送信する際にはトークンをロックまたはバーンし、Solana からトークンを受け取る際にはトークンをミントまたはアンロックします。Bridge コントラクト自体が、送信メッセージから Merkle ツリーを構築します。バリデーターはファイナライズされたブロック約 300 個ごとに Merkle ルートを検証し、Solana へリレーします。その後、ユーザーがツリー内にメッセージが存在することを証明すると、Solana 上での転送が完了します。
+
+<Info>
+  Solana へブリッジする際、Base ネイティブのトークンはロックされ、Solana ネイティブのトークンはバーンされます。
+  Base へブリッジする際、Solana ネイティブのトークンはミントされ、Base ネイティブのトークンはアンロックされます。
+</Info>
+
+**主要なスマートコントラクト:**
+
+* [**Bridge Contract**](https://github.com/base/bridge/blob/main/base/src/Bridge.sol): 送信方向の転送を処理します
+* [**CrossChainERC20**](https://github.com/base/bridge/blob/main/base/src/CrossChainERC20.sol): クロスチェーン転送用のミント・バーン可能なトークン
+* [**BridgeValidator**](https://github.com/base/bridge/blob/main/base/src/BridgeValidator.sol): オラクルの署名を用いてメッセージを検証します
+* [**Twin Contract**](https://github.com/base/bridge/blob/main/base/src/Twin.sol): Solana からの呼び出しを実行するための、Base 上のユーザー専用スマートコントラクト
+
+<Tip>
+  **Twin Contract とは？**
+  各 Solana ウォレットは、Base 上の Twin コントラクトに決定論的に対応付けられます。ブリッジメッセージにコントラクト呼び出しを添付すると、その呼び出しはこの Twin コントラクトから実行されます。つまり、Base 上では Twin が `msg.sender` になります。
+</Tip>
+
+### Solana側 {#on-solana}
+
+Solanaのブリッジプログラムは、トークンをロックまたはバーンしてイベントを発行することで、トークン転送を処理します。
+メッセージングの場合は、バリデーターがこれらのイベントをBaseに中継し、Base上でTwin
+コントラクトを通じて実行されます。
+
+**主要なプログラム (Solana Mainnet-Beta) ：**
+
+* [**Bridge Program**](https://github.com/base/bridge/blob/main/solana/programs/bridge)：送信側の転送とメッセージのコミットメントを処理します。
+* [**Base Relayer Program**](https://github.com/base/bridge/blob/main/solana/programs/base_relayer)：Base上のガス代を前払いできる、オプションのリレイヤーです。
+
+<Info>
+  リレイヤープログラムはコアブリッジには含まれません。Solana → Baseの方向で、Solanaユーザーに代わって
+  Baseのガス代を支払える、オプションの補助レイヤーです。
+
+  ただし、ガス代自体はユーザーがSolanaトランザクションに`PayForRelay`を追加して支払う必要があります。
+  `PayForRelay`が追加されていない場合、リレイヤープログラムはガス代を支払いません。
+</Info>
+
+リポジトリ全体は以下から参照できます：
+
+<GithubRepoCard title="Base Bridge - 公式リポジトリ" githubUrl="https://github.com/base/bridge" />
+
+## ブリッジのフロー {#bridging-flows}
+
+<CardGroup cols={3}>
+  <Card title="Solana → Base" icon="arrow-right" href="#solana-to-base">
+    プッシュ型。オプションのリレイヤーを使えば Base 上で即時実行が可能
+  </Card>
+
+  <Card title="Base → Solana" icon="arrow-left" href="#base-to-solana">
+    証明ベースのバーンとアンロックで、資産を完全に自己管理
+  </Card>
+
+  <Card title="Terminally Onchain" icon="command-line" href="#terminally-onchain-example">
+    ブリッジとコントラクト呼び出しに対応した本番運用向けターミナル UI
+  </Card>
+</CardGroup>
+
+## Solana から Base へ {#solana-to-base}
+
+**フロー:** SOL/SPL をロック →  (任意) リレー料金を支払う → バリデーターが承認 → Base 上でミント + 実行
+
+Solana から Base へのブリッジはプル型モデルを採用しており、次の 3 つのステップで行います。
+
+1. **Solana 上でブリッジを開始する** - SOL またはネイティブ SPL トークンを Solana のボールトにロックします
+2. **バリデーターによるメッセージの事前承認を待つ** - バリデーターがブリッジメッセージを検証して承認します
+3. **Base 上でメッセージを実行する** - 承認されたメッセージが Base 上で実行され、SOL がミントされるとともに、追加の任意の呼び出しも実行されます
+
+<Info>
+  Solana から Base へブリッジすると、ネイティブの SOL/SPL がロックされ、Base 上で ERC20 の SOL がミントされます。
+</Info>
+
+<Warning>
+  Solana → Base のメッセージに実行する呼び出しを含める場合は、
+  ABI エンコードされた呼び出しが **Base 上で実行可能** であることを必ず確認してください。Base 上で実行できない呼び出しは
+  **元に戻せません**。同じトランザクションでトークンをブリッジしていた場合、
+  それらのトークンは **ロックされたまま** になります。
+</Warning>
+
+リファレンススクリプト (自動リレー、トークンのラップ、CLI ユーティリティ) は、公式リポジトリの `scripts/` ディレクトリにあります。
+
+<GithubRepoCard title="Solana → Base CLI スクリプト" githubUrl="https://github.com/base/bridge/tree/main/scripts/src/commands/sol/bridge" />
+
+### 自動リレーの例 {#auto-relay-example}
+
+自動リレーを使用して SOL をブリッジする方法を示すサンプルスクリプトです
+
+```typescript solToBaseWithAutoRelay/index.ts lines wrap expandable
+// 設定
+const TO = "0x8c1a617bdb47342f9c17ac8750e0b070c372c721"; // Baseのアドレス
+const AMOUNT = 0.001; // SOLの数量
+
+// 自動リレーを使用してSOLをブリッジ
+const ixs = [
+  getBridgeSolInstruction({
+    payer,
+    from: payer,
+    solVault: solVaultAddress,
+    bridge: bridgeAccountAddress,
+    outgoingMessage,
+    to: toBytes(TO),
+    remoteToken: toBytes("0xC5b9112382f3c87AFE8e1A28fa52452aF81085AD"), // Base上のSOL
+    amount: BigInt(AMOUNT * 10**9),
+  }),
+  await buildPayForRelayIx(RELAYER_PROGRAM_ID, outgoingMessage, payer)
+];
+
+await buildAndSendTransaction(SOLANA_RPC_URL, ixs, payer);
+```
+
+詳細については、[Solana to Base Relay Script](https://github.com/base/bridge/blob/main/scripts/src/commands/sol/bridge/solana-to-base/bridge-sol.handler.ts)を参照してください。
+
+### カスタム SPL トークンのラップ {#wrap-custom-spl-tokens}
+
+上記の例では、ネイティブ SOL を Base にブリッジする方法を紹介しました。
+カスタム SPL トークンをブリッジするには、
+CrossChainERC20Factory を使用して、Base 上にそのトークンを表すラップ済み ERC20 トークンを作成する必要があります。
+
+<GithubRepoCard title="トークンラップの例" githubUrl="https://github.com/base/bridge/blob/main/scripts/src/commands/sol/bridge/solana-to-base/wrap-token.handler.ts" />
+
+```typescript wrapSolTokenOnBase/index.ts lines wrap expandable
+// Base 上にラップトークンをデプロイ
+const mintBytes32 = getBase58Codec().encode(SOLANA_SPL_MINT_ADDRESS).toHex();
+
+await client.writeContract({
+  address: "0x58207331CBF8Af87BB6453b610E6579D9878e4EA", // ファクトリー
+  abi: TokenFactory,
+  functionName: "deploy",
+  args: [`0x${mintBytes32}`, "Token Name", "SYMBOL", 9],
+});
+```
+
+## Base から Solana へ {#base-to-solana}
+
+**フロー:** Base 上で ERC20 SOL をバーン → ファイナライズを待機 → Merkle 証明を生成 → Solana 上で実行
+
+Base 上でラップトークンをバーンし、メッセージが証明可能になるのを待ってから、
+Solana 上で証明を実行してネイティブ資産をアンロックします。この方式では資産を完全に自己管理できますが、プルーバーが必要です。
+
+<GithubRepoCard title="Base → Solana のサンプル" githubUrl="https://github.com/base/bridge/blob/main/scripts/src/internal/sol/base.ts" />
+
+```typescript bridgeSolFromBaseToSolana/index.ts lines wrap expandable
+// ステップ 1: Base 上で SOL をバーンする
+const transfer = {
+  localToken: "0xC5b9112382f3c87AFE8e1A28fa52452aF81085AD", // SOL（Base 上）
+  remoteToken: pubkeyToBytes32(SOL_ADDRESS),
+  to: pubkeyToBytes32(solanaAddress),
+  remoteAmount: BigInt(AMOUNT * 10**9),
+};
+
+const txHash = await client.writeContract({
+  address: "0xB2068ECCDb908902C76E3f965c1712a9cF64171E", // Bridge コントラクト
+  abi: Bridge,
+  functionName: "bridgeToken",
+  args: [transfer, []],
+});
+
+// ステップ 2: ファイナライズを待機する
+const isProvable = await isBridgeMessageProvable(txHash);
+
+// ステップ 3: 証明を生成する
+const { event, rawProof } = await generateProof(txHash, baseBlockNumber);
+
+// ステップ 4: Solana 上で実行する
+const proveIx = getProveMessageInstruction({
+  nonce: event.message.nonce,
+  sender: toBytes(event.message.sender),
+  data: toBytes(event.message.data),
+  proof: rawProof.map(e => toBytes(e)),
+  messageHash: toBytes(event.messageHash),
+});
+
+const relayIx = getRelayMessageInstruction({ message: messagePda });
+await buildAndSendTransaction(SOLANA_RPC_URL, [proveIx, relayIx], payer);
+```
+
+<Warning>
+  **Base → Solana** 方向でユーザーに代わって Solana トランザクションに署名・送信するリレイヤーを運用している場合、
+  リレイヤーの公開鍵を署名者として要求するトランザクションには**署名しないでください**。
+
+  悪意のあるユーザーは、リレイヤーの公開鍵を必須の署名者として含むトランザクションをエンコードできます。こうした
+  トランザクションに署名して送信すると、任意の命令 (リレイヤーの資金を盗み出す命令を含む) を意図せず承認してしまうおそれがあります。
+  最低限の緩和策として、自身の公開鍵を署名者として指定しているトランザクションはすべて無視してください。
+</Warning>
+
+## ユーティリティ {#utilities}
+
+このリポジトリには、Solana と Base のアドレス形式の相互変換、
+トランザクション署名用の Solana CLI キーペアの取得、
+Solana トランザクションの構築と送信を行うためのユーティリティが含まれています。
+
+<GithubRepoCard title="Base Bridge サンプル - ユーティリティ" githubUrl="https://github.com/base/bridge/tree/main/scripts/src/commands" />
+
+### アドレス変換 {#address-conversion}
+
+Solana の公開鍵を、Base コントラクトで使用する bytes32 に変換します。
+
+```typescript example.ts
+// Base コントラクトで使用するため、Solana の公開鍵を bytes32 に変換
+import { pubkeyToBytes32 } from "./utils/pubkeyToBytes32";
+
+const bytes32Address = pubkeyToBytes32(solanaAddress);
+```
+
+### キーペアの管理 {#keypair-management}
+
+トランザクションの署名に使用する Solana CLI のキーペアを取得します。
+
+```typescript example.ts
+import { getSolanaCliConfigKeypairSigner } from "./utils/keypair";
+
+const payer = await getSolanaCliConfigKeypairSigner();
+```
+
+### トランザクションの構築 {#transaction-building}
+
+Solana トランザクションを構築して送信します。
+
+```typescript example.ts
+import { buildAndSendTransaction } from "./utils/buildAndSendTransaction";
+
+const signature = await buildAndSendTransaction(SOLANA_RPC_URL, ixs, payer);
+```
+
+## Terminally Onchain の例 {#terminally-onchain-example}
+
+<GithubRepoCard title="Terminally Onchain" githubUrl="https://github.com/base/sol2base" />
+
+[Terminally Onchain](https://terminallyonchain.com/) は、コマンドターミナル形式の UI からブリッジを利用できる、本番環境で稼働中の Next.js アプリです。
+ユーザーは Solana ウォレットを接続してコマンドを入力するだけで、ブリッジの実行や Base 上のコントラクトの呼び出しを行えます。
+
+```bash Terminal
+bridge 0.0001 sol 0xYourTwin --call-contract 0x311935Cd80B76769bF2ecC9D8Ab7635b2139cf82 \
+  --call-selector "transfer(address,uint256)" \
+  --call-args 0x0000000000000000000000000000000000000000 100000000000000
+```
+
+ワークフロー:
+
+1. **コマンドの解析:** ターミナルパーサーが、アセット、送信先、およびオプションの Base 呼び出し (セレクター + 引数 + 値) を解決します。
+2. **ブリッジのステージング:** `queueBridge` が SPL のオーバーライドを検証し、`encodeFunctionData` で Base 呼び出しを ABI エンコードしたうえで、リレーのオーバーライドをステージングします。
+3. **実行:** `solanaBridge.bridge()` が送信先 (ENS/Basename) を解決して残高を確認し、`realBridgeImplementation` を呼び出して Solana トランザクションに署名・送信します。
+4. **リレー + 呼び出し:** リレーのガス代が前払いされている場合、ERC20 SOL がミントされた直後に、Base Relayer がユーザーの Twin コントラクトから添付の呼び出しを実行します。
+
+主な実装の参照先:
+
+* `src/lib/bridge.ts`: アセットの解決 (ミントアドレスにも対応) 、環境に応じた RPC 接続、呼び出しの添付機能を提供します。
+* `src/lib/realBridgeImplementation.ts`: 環境ごとの PDA とガス代の受取先を使って、`PayForRelay` + `bridge_sol`/`bridge_spl` 命令を含む Solana トランザクションを構築します。
+* `src/components/MainContent.tsx`: コマンドのステージング、ログビューア、任意の Base 呼び出しの ABI エンコード機能を備えたターミナル UI です。
+* `src/components/WalletConnection.tsx`: 接続中の Solana ウォレットに対応する、Base Mainnet/Sepolia 上の決定論的な Twin アドレスを取得します。
+
+### ターミナルを実行する {#running-the-terminal}
+
+```bash Terminal lines wrap expandable
+git clone https://github.com/base/sol2base.git
+cd sol2base
+npm install --legacy-peer-deps
+
+# 環境変数を設定（RPC URL、リレイヤーアドレス、CDP API キーなど）
+cp env.template .env.local
+
+npm run dev   # デフォルトでは http://localhost:3000 で起動
+```
+
+<Tip>
+  このターミナルでは、Base Sepolia ↔ Solana Devnet と Base Mainnet ↔ Solana Mainnet の両方を利用できます。ネットワークを切り替えるには、UI の
+  ネットワークドロップダウンを使用してください。
+
+  フォーセットを利用するには、`.env` ファイルに `CDP_API_KEY` を設定してください。
+</Tip>
+
+## コントラクトアドレス {#contract-addresses}
+
+### Base Mainnet {#base-mainnet}
+
+```json Base Mainnet Addresses
+{
+  "Bridge": "0x3eff766C76a1be2Ce1aCF2B69c78bCae257D5188",
+  "BridgeValidator": "0xAF24c1c24Ff3BF1e6D882518120fC25442d6794B",
+  "CrossChainERC20Factory": "0xDD56781d0509650f8C2981231B6C917f2d5d7dF2",
+  "SOL": "0x311935Cd80B76769bF2ecC9D8Ab7635b2139cf82"
+}
+```
+
+### Solana Mainnet {#solana-mainnet}
+
+```json Solana Mainnet Addresses
+{
+  "BridgeProgram": "HNCne2FkVaNghhjKXapxJzPaBvAKDG1Ge3gqhZyfVWLM",
+  "BaseRelayerProgram": "g1et5VenhfJHJwsdJsDbxWZuotD5H4iELNG61kS4fb9"
+}
+```
+
+### Base Sepolia {#base-sepolia}
+
+```json Base Sepolia Addresses lines wrap expandable
+{
+  "Bridge": "0x01824a90d32A69022DdAEcC6C5C14Ed08dB4EB9B",
+  "BridgeValidator": "0xa80C07DF38fB1A5b3E6a4f4FAAB71E7a056a4EC7",
+  "CrossChainERC20Factory": "0x488EB7F7cb2568e31595D48cb26F63963Cc7565D",
+  "SOL": "0xCace0c896714DaF7098FFD8CC54aFCFe0338b4BC",
+  "FLYWHEEL_ADDRESS": "0x00000F14AD09382841DB481403D1775ADeE1179F",
+  "BRIDGE_CAMPAIGN_ADDRESS": "0xE2AD1C34382410C30d826B019A0B3700F5c4e6c9"
+}
+```
+
+### Solana Devnet {#solana-devnet}
+
+```json Solana Devnet Addresses
+{
+  "BridgeProgram": "7c6mteAcTXaQ1MFBCrnuzoZVTTAEfZwa6wgy4bqX3KXC",
+  "BaseRelayerProgram": "56MBBEYAtQAdjT4e1NzHD8XaoyRSTvfgbSVVcEcHj51H",
+  "GasFeeReceiver": "AFs1LCbodhvwpgX3u3URLsud6R1XMSaMiQ5LtXw4GKYT"
+}
+```
+
+## リソース {#resources}
+
+<CardGroup cols={2}>
+  <Card title="Base Bridge リポジトリ" icon="github" href="https://github.com/base/bridge">
+    ソースコード、コントラクト、プログラム、スクリプト
+  </Card>
+
+  <Card title="Solana Explorer" icon="magnifying-glass" href="https://explorer.solana.com/">
+    Solana mainnet-beta のトランザクションを確認
+  </Card>
+
+  <Card title="Base Explorer" icon="magnifying-glass" href="https://basescan.org/">
+    Base Mainnet のトランザクションを確認
+  </Card>
+
+  <Card title="Discord サポート" icon="discord" href="https://base.org/discord">
+    Base コミュニティでサポートを受ける
+  </Card>
+</CardGroup>

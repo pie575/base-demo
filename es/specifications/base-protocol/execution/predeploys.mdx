@@ -1,0 +1,339 @@
+---
+title: "Predeploys"
+description: "Especificación de los contratos inteligentes predesplegados en Base, incluidos los contratos del sistema desplegados en direcciones predeterminadas en el estado de génesis."
+---
+
+## Descripción general {#overview}
+
+Los [contratos inteligentes predesplegados](/es/specifications/reference/glossary#predeployed-contract-predeploy) existen en Base
+en direcciones predeterminadas del estado génesis. Son similares a los precompilados, pero, en lugar de ejecutar código nativo fuera de la EVM,
+se ejecutan directamente en la EVM.
+
+Se usan predeploys en lugar de precompilados para facilitar las implementaciones
+multicliente y para permitir una mayor integración con el forking de redes
+de hardhat/foundry.
+
+Las direcciones de los predeploys se encuentran en un espacio de nombres con el prefijo `0x4200000000000000000000000000000000000xxx`.
+Hay proxies configurados en las primeras 2048 direcciones del espacio de nombres, salvo en la dirección reservada para el
+predeploy `WETH`.
+
+El predeploy `LegacyERC20ETH` se encuentra en una dirección especial, `0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000`,
+y no hay ningún proxy desplegado en esa cuenta.
+
+La siguiente tabla recoge todos los predeploys. La versión del sistema
+indica cuándo se introdujo cada predeploy. Los valores posibles son `Legacy`,
+`Bedrock` o `Canyon`. No se deben usar los contratos obsoletos.
+
+| Nombre                        | Dirección                                  | Introducido en | Obsoleto | Con proxy |
+| ----------------------------- | ------------------------------------------ | -------------- | -------- | --------- |
+| LegacyMessagePasser           | 0x4200000000000000000000000000000000000000 | Legacy         | Sí       | Sí        |
+| DeployerWhitelist             | 0x4200000000000000000000000000000000000002 | Legacy         | Sí       | Sí        |
+| LegacyERC20ETH                | 0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000 | Legacy         | Sí       | No        |
+| WETH9                         | 0x4200000000000000000000000000000000000006 | Legacy         | No       | No        |
+| L2CrossDomainMessenger        | 0x4200000000000000000000000000000000000007 | Legacy         | No       | Sí        |
+| L2StandardBridge              | 0x4200000000000000000000000000000000000010 | Legacy         | No       | Sí        |
+| SequencerFeeVault             | 0x4200000000000000000000000000000000000011 | Legacy         | No       | Sí        |
+| OptimismMintableERC20Factory  | 0x4200000000000000000000000000000000000012 | Legacy         | No       | Sí        |
+| L1BlockNumber                 | 0x4200000000000000000000000000000000000013 | Legacy         | Sí       | Sí        |
+| GasPriceOracle                | 0x420000000000000000000000000000000000000F | Legacy         | No       | Sí        |
+| L1Block                       | 0x4200000000000000000000000000000000000015 | Bedrock        | No       | Sí        |
+| L2ToL1MessagePasser           | 0x4200000000000000000000000000000000000016 | Bedrock        | No       | Sí        |
+| L2ERC721Bridge                | 0x4200000000000000000000000000000000000014 | Legacy         | No       | Sí        |
+| OptimismMintableERC721Factory | 0x4200000000000000000000000000000000000017 | Bedrock        | No       | Sí        |
+| ProxyAdmin                    | 0x4200000000000000000000000000000000000018 | Bedrock        | No       | Sí        |
+| BaseFeeVault                  | 0x4200000000000000000000000000000000000019 | Bedrock        | No       | Sí        |
+| L1FeeVault                    | 0x420000000000000000000000000000000000001a | Bedrock        | No       | Sí        |
+| SchemaRegistry                | 0x4200000000000000000000000000000000000020 | Bedrock        | No       | Sí        |
+| EAS                           | 0x4200000000000000000000000000000000000021 | Bedrock        | No       | Sí        |
+| BeaconBlockRoot               | 0x000F3df6D732807Ef1319fB7B8bB8522d0Beac02 | Ecotone        | No       | No        |
+| OperatorFeeVault              | 0x420000000000000000000000000000000000001B | Isthmus        | No       | Sí        |
+
+## LegacyMessagePasser {#legacymessagepasser}
+
+[Implementación](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/legacy/LegacyMessagePasser.sol)
+
+Dirección: `0x4200000000000000000000000000000000000000`
+
+El contrato `LegacyMessagePasser` almacena los compromisos de las transacciones
+de retiro anteriores a la actualización Bedrock. Como parte de la transacción de
+retiro en L1, se utiliza una prueba de Merkle de un slot de almacenamiento
+concreto que contiene el compromiso con la transacción de retiro. La cuenta
+esperada que incluye dicho slot de almacenamiento está codificada de forma fija
+en la lógica de L1. Tras la actualización Bedrock, se utiliza en su lugar el
+`L2ToL1MessagePasser`. Después de Bedrock, ya no se admite la finalización de
+retiros desde este contrato, que solo se conserva para dar cabida a puentes
+alternativos que puedan depender de él. Este contrato no reenvía llamadas al
+`L2ToL1MessagePasser`, y llamarlo se considera una operación sin efecto (no-op)
+en el contexto de los retiros realizados a través del sistema `CrossDomainMessenger`.
+
+Todos los retiros pendientes que no se hayan finalizado se migran al
+`L2ToL1MessagePasser` como parte de la actualización, para que puedan
+finalizarse igualmente.
+
+## L2ToL1MessagePasser {#l2tol1messagepasser}
+
+[Implementación](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/L2ToL1MessagePasser.sol)
+
+Dirección: `0x4200000000000000000000000000000000000016`
+
+El `L2ToL1MessagePasser` almacena compromisos de las transacciones de retiro.
+Cuando un usuario envía la transacción de retiro en L1, aporta una
+prueba de que la transacción de retiro que realizó en L2 se encuentra en el mapeo
+`sentMessages` de este contrato.
+
+Todo el ETH retirado se acumula en este contrato en L2 y cualquiera puede
+eliminarlo del suministro de L2, sin necesidad de permisos, llamando a la función `burn()`.
+
+## DeployerWhitelist {#deployerwhitelist}
+
+[Implementación](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/legacy/DeployerWhitelist.sol)
+
+Dirección: `0x4200000000000000000000000000000000000002`
+
+`DeployerWhitelist` es un predeploy que se utilizó para ofrecer mayor seguridad
+durante las fases iniciales de Optimism.
+Anteriormente definía qué cuentas estaban autorizadas para desplegar contratos en la red.
+
+Más adelante se habilitó el despliegue arbitrario de contratos, que no se puede
+desactivar. En el sistema legacy, este contrato estaba integrado en `CREATE` y
+`CREATE2` para comprobar que el desplegador figurara en la lista de permitidos.
+
+En el sistema Bedrock, este contrato dejará de utilizarse como parte de la ruta de código
+de `CREATE`.
+
+Este contrato está obsoleto y debe evitarse su uso.
+
+## LegacyERC20ETH {#legacyerc20eth}
+
+[Implementación](https://github.com/ethereum-optimism/optimism/blob/a4524ac152b4c9e8eb80beadc9cd772b96243aa2/packages/contracts-bedrock/src/legacy/LegacyERC20ETH.sol)
+
+Dirección: `0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000`
+
+El predeploy `LegacyERC20ETH` representa todo el ether que existía en el sistema antes de la
+actualización Bedrock. Todo el ETH se representaba como un token ERC20, y los usuarios podían elegir
+entre la interfaz ERC20 o la interfaz nativa de ETH.
+
+La actualización a Bedrock migra todo el ether fuera de este contrato y lo lleva a
+su representación nativa. Todos los métodos con estado de este contrato revertirán
+tras la actualización Bedrock.
+
+Este contrato está obsoleto y debe evitarse su uso.
+
+## WETH9 {#weth9}
+
+[Implementación](https://github.com/ethereum-optimism/optimism/blob/2b1c99b39744579cc226077d356ae9e5f162db4a/packages/contracts-bedrock/src/vendor/WETH9.sol)
+
+Dirección: `0x4200000000000000000000000000000000000006`
+
+`WETH9` es la implementación estándar de Wrapped Ether en Base. Al ser un
+contrato de uso habitual, se incluye como predeploy para que esté en una
+dirección determinista en todas las redes de Base.
+
+## L2CrossDomainMessenger {#l2crossdomainmessenger}
+
+[Implementación](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/L2CrossDomainMessenger.sol)
+
+Dirección: `0x4200000000000000000000000000000000000007`
+
+El `L2CrossDomainMessenger` ofrece una API de más alto nivel para enviar mensajes
+entre dominios que la llamada directa al `L2ToL1MessagePasser`.
+Mantiene un mapeo de los mensajes de L1 que se han retransmitido a L2
+para evitar ataques de repetición y, además, permite volver a ejecutarlos si la transacción
+de L1 a L2 se revierte en L2.
+
+Todas las llamadas al `L1CrossDomainMessenger` en L1 se serializan de forma que
+pasen por el `L2CrossDomainMessenger` en L2.
+
+La función `relayMessage` ejecuta una transacción procedente del dominio remoto, mientras
+que la función `sendMessage` envía una transacción para que se ejecute en el dominio
+remoto a través de la función `relayMessage` de dicho dominio.
+
+## L2StandardBridge {#l2standardbridge}
+
+[Implementación](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/L2StandardBridge.sol)
+
+Dirección: `0x4200000000000000000000000000000000000010`
+
+El `L2StandardBridge` es una API de más alto nivel construida sobre el
+`L2CrossDomainMessenger` que ofrece una interfaz estándar para enviar ETH o
+tokens ERC20 entre dominios.
+
+Para depositar un token de L1 a L2, el `L1StandardBridge` bloquea el token y
+envía un mensaje entre dominios al `L2StandardBridge`, que a continuación acuña el
+token en la cuenta especificada.
+
+Para retirar un token de L2 a L1, el usuario quema el token en L2 y el
+`L2StandardBridge` envía un mensaje al `L1StandardBridge`, que desbloquea
+el token subyacente y lo transfiere a la cuenta especificada.
+
+El `OptimismMintableERC20Factory` permite crear, en un dominio remoto, un contrato de token ERC20
+que se corresponde con un contrato de token ERC20 del dominio local,
+desde el cual se pueden depositar tokens en el dominio remoto. Despliega un
+`OptimismMintableERC20`, cuya interfaz es compatible con el
+`StandardBridge`.
+
+Este contrato también puede desplegarse en L1 para que los tokens nativos de L2 puedan
+retirarse a L1.
+
+## L1BlockNumber {#l1blocknumber}
+
+[Implementación](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/legacy/L1BlockNumber.sol)
+
+Dirección: `0x4200000000000000000000000000000000000013`
+
+`L1BlockNumber` devuelve el último número de bloque de L1 conocido. Este contrato se
+introdujo en el sistema legacy y debería mantener la retrocompatibilidad, ya que internamente
+llama al contrato `L1Block`.
+
+Se recomienda usar el contrato `L1Block` para obtener información de
+L1 desde L2.
+
+## GasPriceOracle {#gaspriceoracle}
+
+[Implementación](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/GasPriceOracle.sol)
+
+Dirección: `0x420000000000000000000000000000000000000F`
+
+En el sistema legacy, el `GasPriceOracle` era un contrato con permisos
+al que un actor offchain enviaba la tarifa base de L1 y el precio del gas de L2.
+El actor offchain observa los encabezados de bloque de L1 para obtener la
+tarifa base de L1, así como el uso de gas en L2, para calcular cuál debería ser el precio del gas de L2
+según un algoritmo de control de congestión.
+
+A partir de Bedrock, el `GasPriceOracle` ya no es un contrato con permisos
+y solo existe para mantener la API de estimación de gas offchain. La
+función `getL1Fee(bytes)` acepta una transacción RLP sin firmar y devuelve
+la parte de L1 de la tarifa. Esta tarifa cubre el uso de L1 como capa de disponibilidad
+de datos y debe sumarse a la parte de L2 de la tarifa, que cubre la
+ejecución, para obtener la tarifa total de la transacción.
+
+Antes de la actualización Ecotone, los valores utilizados para calcular la parte de L1 de la tarifa son:
+
+* scalar
+* overhead
+* decimals
+
+Tras la actualización Bedrock, estos valores pasan a gestionarse desde el
+contrato `SystemConfig` en L1. Los valores `scalar` y `overhead`
+se envían al contrato `L1Block` en cada bloque, y el valor `decimals`
+está fijado en el código en 6.
+
+Tras la actualización Ecotone, los valores utilizados para calcular la tarifa de L1 son:
+
+* baseFeeScalar
+* blobBaseFeeScalar
+* decimals
+
+[ecotone-scalars]: /specifications/reference/glossary#post-ecotone-parameters
+
+El contrato `SystemConfig` en L1 gestiona estos nuevos valores escalares mediante un
+[esquema de codificación versionado][ecotone-scalars] retrocompatible de su slot de almacenamiento `scalars`.
+El valor `decimals` sigue fijado en el código en 6, y el valor `overhead` se ignora.
+
+## L1Block {#l1block}
+
+[Implementación](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/L1Block.sol)
+
+Dirección: `0x4200000000000000000000000000000000000015`
+
+[l1-block-predeploy]: /specifications/reference/glossary#l1-attributes-predeployed-contract
+
+El contrato [L1Block][l1-block-predeploy] se introdujo en Bedrock y se encarga de
+mantener el contexto de L1 en L2, lo que permite acceder al estado de L1 desde L2.
+
+## ProxyAdmin {#proxyadmin}
+
+[ProxyAdmin](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/universal/ProxyAdmin.sol)
+Dirección: `0x4200000000000000000000000000000000000018`
+
+El `ProxyAdmin` es el propietario de todos los contratos proxy configurados en los
+predeploys. A su vez, él mismo se encuentra detrás de un proxy. El propietario del `ProxyAdmin`
+podrá actualizar cualquiera de los demás contratos predeploy.
+
+## SequencerFeeVault {#sequencerfeevault}
+
+[Implementación](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/SequencerFeeVault.sol)
+
+Dirección: `0x4200000000000000000000000000000000000011`
+
+El `SequencerFeeVault` acumula todas las tarifas de prioridad de las transacciones y es el valor de
+`block.coinbase`.
+Cuando se acumulan suficientes tarifas en esta cuenta, pueden retirarse a una dirección inmutable de L1.
+
+Para cambiar la dirección de L1 a la que se retiran las tarifas, es necesario
+actualizar el contrato modificando la clave de implementación de su proxy.
+
+## OptimismMintableERC20Factory {#optimismmintableerc20factory}
+
+[Implementación](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/universal/OptimismMintableERC20Factory.sol)
+
+Dirección: `0x4200000000000000000000000000000000000012`
+
+El `OptimismMintableERC20Factory` se encarga de crear contratos ERC20 en L2 en los que
+se pueden depositar tokens nativos de L1. Cualquiera puede crear estos contratos ERC20 sin necesidad de permisos,
+y todos implementan la interfaz que requiere el `StandardBridge` para funcionar directamente con depósitos y retiros.
+
+Cada contrato ERC20 creado por el `OptimismMintableERC20Factory` permite que el `L2StandardBridge` acuñe
+y queme tokens, según el usuario esté depositando de L1 a L2 o retirando de L2 a L1.
+
+## OptimismMintableERC721Factory {#optimismmintableerc721factory}
+
+[Implementación](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/OptimismMintableERC721Factory.sol)
+
+Dirección: `0x4200000000000000000000000000000000000017`
+
+El `OptimismMintableERC721Factory` se encarga de crear en L2 contratos ERC721 en los que se pueden
+depositar NFT nativos de L1.
+
+## BaseFeeVault {#basefeevault}
+
+[Implementación](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/BaseFeeVault.sol)
+
+Dirección: `0x4200000000000000000000000000000000000019`
+
+El predeploy `BaseFeeVault` recibe las tarifas base en L2. A diferencia de lo que ocurre en L1, la tarifa base no se
+quema en L2. Cuando el contrato ha acumulado cierta cantidad
+de tarifas, el ETH puede retirarse a una dirección inmutable en
+L1.
+
+## L1FeeVault {#l1feevault}
+
+[Implementación](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/L1FeeVault.sol)
+
+Dirección: `0x420000000000000000000000000000000000001a`
+
+El predeploy `L1FeeVault` recibe la parte de L1 de las tarifas de transacción.
+Una vez que el contrato ha acumulado una determinada cantidad de tarifas, el ETH puede
+retirarse a una dirección inmutable en L1.
+
+## SchemaRegistry {#schemaregistry}
+
+[Implementación](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/vendor/eas/SchemaRegistry.sol)
+
+Dirección: `0x4200000000000000000000000000000000000020`
+
+El predeploy `SchemaRegistry` implementa los esquemas de atestación globales del protocolo
+`Ethereum Attestation Service`.
+
+## EAS {#eas}
+
+[Implementación](https://github.com/ethereum-optimism/optimism/tree/develop/packages/contracts-bedrock/src/vendor/eas)
+
+Dirección: `0x4200000000000000000000000000000000000021`
+
+El predeploy `EAS` implementa el protocolo `Ethereum Attestation Service`.
+
+## Beacon Block Root {#beacon-block-root}
+
+Dirección: `0x000F3df6D732807Ef1319fB7B8bB8522d0Beac02`
+
+El predeploy `BeaconBlockRoot` permite acceder a las raíces de bloques de la beacon chain de L1. Se incorporó en la
+actualización de red Ecotone y se especifica en [EIP-4788](https://eips.ethereum.org/EIPS/eip-4788).
+
+## Operator Fee Vault {#operator-fee-vault}
+
+[Implementación](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/OperatorFeeVault.sol)
+
+Dirección: `0x420000000000000000000000000000000000001B`
+
+Consulta la especificación de [Operator Fee Vault](/es/upgrades/isthmus/predeploys#operatorfeevault).

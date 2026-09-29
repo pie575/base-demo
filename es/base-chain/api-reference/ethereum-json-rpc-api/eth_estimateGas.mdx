@@ -1,0 +1,111 @@
+---
+title: 'eth_estimateGas'
+sidebarTitle: 'eth_estimateGas'
+description: 'Estima el gas necesario para una transacción. Usa pending para estimar a partir del estado preconfirmado.'
+---
+
+Devuelve una estimación de la cantidad de gas necesaria para ejecutar una transacción. La estimación puede ser superior al gas que realmente se consume durante la ejecución.
+
+<Tip>
+  **Flashblocks:** Consulta `https://mainnet.base.org` con `"pending"` para estimar el gas a partir del estado preconfirmado actual. Resulta útil cuando una transacción depende de otra anterior ya preconfirmada.
+</Tip>
+
+## Parámetros {#parameters}
+
+<ParamField body="transaction" type="object" required>
+  Objeto de transacción cuyo gas se va a estimar.
+
+  <Expandable title="Campos de la transacción">
+    <ParamField body="from" type="string">
+      Dirección desde la que se envía la transacción. Opcional.
+    </ParamField>
+
+    <ParamField body="to" type="string">
+      Dirección a la que se envía la transacción. Opcional en despliegues de contratos.
+    </ParamField>
+
+    <ParamField body="gas" type="string">
+      Límite de gas. Opcional; si se omite, se usa un valor predeterminado alto.
+    </ParamField>
+
+    <ParamField body="gasPrice" type="string">
+      Precio del gas en wei para transacciones legacy. Opcional.
+    </ParamField>
+
+    <ParamField body="maxFeePerGas" type="string">
+      Tarifa total máxima por unidad de gas (EIP-1559). Opcional.
+    </ParamField>
+
+    <ParamField body="maxPriorityFeePerGas" type="string">
+      Tarifa de prioridad máxima por unidad de gas (EIP-1559). Opcional.
+    </ParamField>
+
+    <ParamField body="value" type="string">
+      Valor que se va a transferir, en wei. Opcional.
+    </ParamField>
+
+    <ParamField body="data" type="string">
+      Datos de llamada codificados en ABI. Opcional.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="block" type="string">
+  Bloque sobre el que se realiza la estimación. Opcional; el valor predeterminado es `"latest"`. Usa `"pending"` para estimar sobre el estado preconfirmado.
+</ParamField>
+
+## Valor devuelto {#returns}
+
+<ResponseField name="result" type="string">
+  La cantidad estimada de gas, expresada como un entero hexadecimal.
+</ResponseField>
+
+## Códigos de error {#error-codes}
+
+| Código   | Mensaje            | Descripción                                                                                      |
+| -------- | ------------------ | ------------------------------------------------------------------------------------------------ |
+| `-32000` | execution reverted | La transacción se revertiría. El campo `data` del error puede incluir el motivo de la reversión. |
+
+## Ejemplo {#example}
+
+<CodeGroup>
+  ```bash Estándar lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_estimateGas",
+      "params": [{
+        "from": "0xd3CdA913deB6f4967b2Ef66ae97DE114a83bcc01",
+        "to": "0x4200000000000000000000000000000000000006",
+        "value": "0x2c68af0bb14000"
+      }],
+      "id": 1
+    }'
+  ```
+
+  ```bash Flashblocks (estado pending) lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_estimateGas",
+      "params": [{
+        "from": "0xd3CdA913deB6f4967b2Ef66ae97DE114a83bcc01",
+        "to": "0x4200000000000000000000000000000000000006",
+        "value": "0x2c68af0bb14000"
+      }, "pending"],
+      "id": 1
+    }'
+  ```
+
+  ```json Respuesta
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x5208"
+  }
+  ```
+</CodeGroup>

@@ -1,0 +1,268 @@
+---
+title: "B20 原生代币标准"
+description: "了解 Base 的原生代币标准 B20 如何服务于稳定币发行方、现实世界资产（RWA）与股权发行方，以及长尾代币创建者。"
+---
+
+B20 是 Base 生态系统专属的 [ERC-20](https://eips.ethereum.org/EIPS/eip-20) 版本，内置一整套合规工具：转账策略、冻结与重新发行控制、基于角色的访问控制、Memo 以及供应上限。已发布的 Beryl 接口可在 [Base Standard Library v1.0.0](https://github.com/base/base-std/tree/v1.0.0) 中获取。
+
+如需部署你的第一个 B20 代币，请参阅[发行 B20 代币](/zh/build-on-base/issue-rwa/create-an-asset-token)快速入门。
+
+<Warning>
+  部署前，请先[确认激活注册表已启用](/zh/build-on-base/issue-rwa/create-an-asset-token)。
+</Warning>
+
+B20 支持两种变体：
+
+| 变体             | 小数位数        | 附加功能           |
+| -------------- | ----------- | -------------- |
+| **Asset**      | 6–18 (可配置)  | 变基乘数、链上公告、批量发行 |
+| **Stablecoin** | 6 (固定)      | 自行声明的法币代码      |
+
+## ERC-20 兼容性 {#erc-20-compatibility}
+
+B20 代币以 **Rust 预编译合约**的形式实现，而非 EVM 智能合约，因此速度更快、成本更低，与链的原生结合也更紧密。所有代币均通过单例 B20Factory 预编译合约部署。
+
+<Check>
+  B20 是 ERC-20 的超集。所有 ERC-20 调用 (`transfer`、`transferFrom`、`approve`、`balanceOf`、`allowance` 以及标准事件) 的行为均与标准规定完全一致，因此现有的 ERC-20 工具和集成无需任何改动即可直接用于 B20。
+</Check>
+
+B20 新增了 ERC-20 所没有的方法：memo、铸造/销毁、策略管控、细粒度暂停以及 ERC-2612 `permit`。这些方法在不改动 ERC-20 的前提下对其进行扩展：每个 ERC-20 方法在 B20 上都有，但反过来并不成立。完整的 Beryl ABI 请参阅 [v1.0.0 接口定义](https://github.com/base/base-std/tree/v1.0.0/src/interfaces)。
+
+## 角色模型 {#roles-model}
+
+B20 基于角色的访问控制在 OpenZeppelin `AccessControl` 的基础上进行了扩展：采用一组固定的角色，并对管理员放弃角色的行为做了一项重写。
+
+| 角色                   | 管控的操作                                           |
+| -------------------- | ----------------------------------------------- |
+| `DEFAULT_ADMIN_ROLE` | 所有管理操作：授予角色、更新策略、变更供应上限                         |
+| `MINT_ROLE`          | `mint`、`mintWithMemo`                           |
+| `BURN_ROLE`          | 调用方销毁自身代币：`burn`、`burnWithMemo`                 |
+| `BURN_BLOCKED_ROLE`  | 由第三方销毁被策略封禁账户的代币：`burnBlocked`                  |
+| `PAUSE_ROLE`         | `pause`                                         |
+| `UNPAUSE_ROLE`       | `unpause`                                       |
+| `METADATA_ROLE`      | `updateName`、`updateSymbol`、`updateContractURI` |
+
+可通过 `setRoleAdmin` 和 `grantRole` 创建用户自定义角色。这类角色不具备任何内置效果——B20 仅对上述七个基础角色执行权限管控。Asset 变体额外新增了第八个角色 `OPERATOR_ROLE` (参见[变体](#variants)) 。
+
+### 放弃管理员权限 {#admin-renunciation}
+
+最后一个 `DEFAULT_ADMIN_ROLE` 持有者无法通过 `renounceRole` 或 `revokeRole` 移除 (两者都会回滚并抛出 `LastAdminCannotRenounce`) 。要将代币永久转为无管理员状态，唯一的途径是调用专用的 `renounceLastAdmin()`。
+
+如果代币打算从一开始就以无管理员状态发行，可在创建时传入 `initialAdmin == address(0)`，这样该角色永远不会被授予，也就完全无需执行 `renounceLastAdmin` 步骤。
+
+调用 `renounceLastAdmin()` 之后 (或对于以 `initialAdmin == address(0)` 部署的代币) ：
+
+* 受 `DEFAULT_ADMIN_ROLE` 限制的操作将永久无法调用。
+* 已授予其他地址的角色 (`MINT_ROLE`、`BURN_ROLE` 等) 仍可继续独立运作。
+* 管理员无法恢复：即使调用者持有自定义角色，`grantRole`、`revokeRole` 和 `setRoleAdmin` 也都会回滚并抛出 `AccessControlUnauthorizedAccount`。
+
+## 策略注册表 {#policy-registry}
+
+PolicyRegistry 是一个单例预编译合约，负责管理允许列表和阻止列表。B20 代币通过 `uint64` ID 引用策略。任何调用者都可以创建策略并指定其管理员。
+
+<Note>
+  PolicyRegistry 上修改状态的函数受 ActivationRegistry 管控，后者负责跟踪哪些 Base 功能已上线。读取函数 (`isAuthorized`、`policyExists`、`policyAdmin`、`pendingPolicyAdmin`) 则始终可以调用。
+</Note>
+
+### 策略类型 {#policy-types}
+
+| 类型          | 默认状态 | 行为                       |
+| ----------- | ---- | ------------------------ |
+| `BLOCKLIST` | 授权   | 默认授权所有账户；明确列入名单的账户将被拒绝。  |
+| `ALLOWLIST` | 拒绝   | 默认拒绝所有账户；明确列入名单的账户将获得授权。 |
+
+### 策略 ID {#policy-ids}
+
+策略 ID 为 `uint64` 值。最高字节编码 `PolicyType`；低 56 位是从 `2` 开始递增的全局计数器。
+
+以下两个内置 ID 无需创建即可使用：
+
+| 常量             | ID                               | 行为                         |
+| -------------- | -------------------------------- | -------------------------- |
+| `ALWAYS_ALLOW` | `0`                              | 无条件授权所有账户。新 B20 代币的默认作用域值。 |
+| `ALWAYS_BLOCK` | `(uint64(ALLOWLIST) << 56) \| 1` | 无条件拒绝所有账户。                 |
+
+即使策略 ID 不存在，`isAuthorized` 也绝不会回滚，而是退化为空成员集语义 (不存在的 `BLOCKLIST` 授权所有人；不存在的 `ALLOWLIST` 拒绝所有人) 。
+
+<Warning>
+  写入策略 ID 的调用方 (例如 `updatePolicy`) MUST 在写入时校验 `policyExists(policyId)`，以免在不知情的情况下绑定到非预期的空集策略。
+</Warning>
+
+### 管理员模型 {#admin-model}
+
+每个策略只有一个管理员。管理员转移分两步完成：先由当前管理员调用 `stageUpdateAdmin(policyId, newAdmin)`，再由待接任的管理员调用 `finalizeUpdateAdmin(policyId)`。调用 `renounceAdmin(policyId)` 会永久冻结该策略，此后其成员资格将永远无法再更改。
+
+### 创建和管理策略 {#creating-and-managing-policies}
+
+```solidity Policy Management Example lines wrap expandable
+// 创建策略（参数依次为管理员、类型）
+uint64 policyId = policyRegistry.createPolicy(adminAddress, PolicyType.BLOCKLIST);
+// 或者在一次调用中同时设置初始成员：
+// uint64 policyId = policyRegistry.createPolicyWithAccounts(adminAddress, PolicyType.BLOCKLIST, accounts);
+
+// 批量更新成员。不同策略类型使用不同的 setter；bool 参数用于设置成员状态。
+policyRegistry.updateBlocklist(policyId, true, accounts);   // 封禁这些账户
+policyRegistry.updateBlocklist(policyId, false, accounts);  // 解封这些账户
+// ALLOWLIST 策略使用： policyRegistry.updateAllowlist(policyId, allowed, accounts)
+```
+
+### 读取接口 {#read-interface}
+
+| 方法                                | 描述                                                |
+| --------------------------------- | ------------------------------------------------- |
+| `isAuthorized(policyId, account)` | 判断 `account` 在 `policyId` 下是否已获授权。永不回滚 (revert) 。 |
+| `policyExists(policyId)`          | 判断是否已创建该 ID 对应的策略。                                |
+| `policyAdmin(policyId)`           | 当前管理员地址。                                          |
+| `pendingPolicyAdmin(policyId)`    | 两步移交过程中的待接任管理员。                                   |
+
+## 策略集成 {#policy-integration}
+
+B20 声明了一组固定的策略作用域。每个作用域存储一个 `uint64` 策略 ID，指向 PolicyRegistry 中的对应策略。每次执行受管控的操作时，B20 都会针对相关作用域调用 `isAuthorized`；若账户未获授权，则以 `PolicyForbids` 回滚。
+
+| 作用域                        | 管控对象                                                                |
+| -------------------------- | ------------------------------------------------------------------- |
+| `TRANSFER_SENDER_POLICY`   | `transfer` / `transferFrom` 的 `from`                                |
+| `TRANSFER_RECEIVER_POLICY` | `transfer` / `transferFrom` 的 `to`                                  |
+| `TRANSFER_EXECUTOR_POLICY` | `transferFrom` 的 `msg.sender` (仅当其与 `from` 不同时检查；`transfer` 不做此检查)  |
+| `MINT_RECEIVER_POLICY`     | `mint` 的 `to`                                                       |
+
+`approve` 不受策略管控——只有通过 `transfer` / `transferFrom` 实际发生的余额变动才会受到检查。
+
+<Warning>
+  除非在引导阶段的 `initCalls` 中另行覆盖，否则代币创建时所有作用域均默认为 `ALWAYS_ALLOW`。未经配置的 B20 部署是完全开放的——必须有意识地对代币行为加以约束。
+</Warning>
+
+作用域通过 `policyId(scope)` 读取，通过 `updatePolicy(scope, policyId)` 写入。`updatePolicy` 仅限管理员调用，若作用域无法识别则会回滚。
+
+## 铸造 (Mint) {#mint}
+
+新增供应量通过 `mint` / `mintWithMemo` 铸造，调用方须持有 `MINT_ROLE`。接收方须通过 `MINT_RECEIVER_POLICY` 的策略检查。若该操作会导致 `totalSupply` 超出供应上限，交易将回滚并抛出 `SupplyCapExceeded`。
+
+## 销毁 (Burn) {#burn}
+
+销毁有两种路径：
+
+* **`burn` / `burnWithMemo`** - 调用者销毁自身余额中的代币，需具备 `BURN_ROLE` 权限。
+* **`burnBlocked`** - 销毁第三方余额中的代币，需具备 `BURN_BLOCKED_ROLE` 权限。目标账户 MUST 已被 `TRANSFER_SENDER_POLICY` 拒绝——这是供受监管发行方使用的“冻结并没收”路径。
+
+## 供应上限 {#supply-cap}
+
+供应上限为可选设置。哨兵值 `type(uint128).max` 表示不设上限 (即创建时的默认值) ；它同时也是允许设置的最大上限，因此 `totalSupply` 永远不会超过该值。`updateSupplyCap(newCap)` 仅限管理员调用，并会触发 `SupplyCapUpdated` 事件。若 `newCap` 小于当前的 `totalSupply` 或大于 `type(uint128).max`，调用将回滚并抛出 `InvalidSupplyCap`。
+
+## Memo {#memos}
+
+Memo 是附加在代币操作上的可选 `bytes32` 数据，供链下引用。每个会触发 Memo 的操作都会在其主事件之后紧接着发出 `Memo(address indexed caller, bytes32 indexed memo)` 事件。索引器通过 `(transactionHash, logIndex − 1)` 将二者关联起来。
+
+会触发 Memo 的入口函数：`transferWithMemo`、`transferFromWithMemo`、`mintWithMemo`、`burnWithMemo`。
+
+## 暂停 {#pause}
+
+暂停机制是细粒度的：`PausableFeature` 枚举将代币的功能面划分为可独立暂停的操作——`TRANSFER`、`MINT` 和 `BURN`。该枚举只能追加新值。`pause(features)` 和 `unpause(features)` 在设计上分别由不同的角色 (`PAUSE_ROLE` 和 `UNPAUSE_ROLE`) 控制。
+
+## ERC-2612 Permit / EIP-712 {#erc-2612-permit-eip-712}
+
+B20 实现了 ERC-2612 (签名授权) ，所用 EIP-712 域的结构为 `(name, version, chainId, verifyingContract)`，其中 `version` 固定为 `"1"`。调用 `updateName` 会更新域分隔符，并触发 `EIP712DomainChanged` 事件 (ERC-5267) 。不接受 ERC-1271 合约签名，仅支持 ECDSA 签名。
+
+## 合约 URI (ERC-7572) {#contract-uri-erc-7572}
+
+`contractURI()` 遵循 ERC-7572 标准，返回一个指向链下元数据的字符串。只有拥有 `METADATA_ROLE` 角色的账户才能调用 `updateContractURI(newUri)`。
+
+## 元数据更新 {#metadata-updates}
+
+`METADATA_ROLE` 负责管控以下操作：
+
+* `updateName(newName)` - 更新 `name`，并轮换 EIP-712 域分隔符。触发 `NameUpdated` 和 `EIP712DomainChanged` 事件。
+* `updateSymbol(newSymbol)` - 仅更新 `symbol`。触发 `SymbolUpdated` 事件。
+
+## 工厂 {#factory}
+
+所有 B20 代币均通过单例 B20Factory 预编译合约的 `createB20(variant, salt, params, initCalls)` 创建。在 `base-std` 中，该合约以 `StdPrecompiles.B20_FACTORY` 的形式公开。
+
+| 参数          | 描述                                                     |
+| ----------- | ------------------------------------------------------ |
+| `variant`   | `ASSET` 或 `STABLECOIN`                                 |
+| `salt`      | 由调用者选定、用于派生地址的熵                                        |
+| `params`    | 经 ABI 编码、因变体而异的创建结构体 (以首字节标识版本)                        |
+| `initCalls` | 可选的 ABI 编码调用数组，在创建完成后依次分派；在此期间，由工厂发起的调用可绕过角色门控和转账侧策略门控 |
+
+如果所请求变体对应的功能尚未在该链上激活，`createB20` 会以 `IActivationRegistry.FeatureNotActivated` 回滚。
+
+### 地址派生 {#address-derivation}
+
+B20 地址是确定性生成的，并直接在地址中编码了变体类型：
+
+```text Address Derivation
+[10 字节 B20 前缀][1 字节变体][9 字节 keccak256(deployer, salt)]
+```
+
+无需发起 RPC 调用，仅凭地址本身即可确定变体——检查第 10 个字节 (从零开始计数) 即可识别代币类型。工厂合约提供了辅助函数 `getB20Address(variant, deployer, salt)`、`isB20(addr)` 和 `isB20Initialized(addr)`。
+
+### initCalls 语义 {#initcalls-semantics}
+
+`initCalls` 在代币创建后分派执行。在这一引导窗口期内，由工厂发起的调用可绕过代币的角色门控及其转账侧策略门控 (`TRANSFER_SENDER_POLICY`、`TRANSFER_RECEIVER_POLICY`、`TRANSFER_EXECUTOR_POLICY`) ，从而能够在部署所在的同一笔交易中完成需要管理员权限的配置 (例如设置策略、授予角色) 以及引导转账。不过，这种绕过刻意设计为有限度的：
+
+* 即使在 `initCalls` 期间，`MINT_RECEIVER_POLICY` 也始终强制执行。
+* 暂停状态始终不会被绕过。
+* 代币不变量 (供应上限等) 始终不会被绕过。
+
+## 变体 {#variants}
+
+每种变体都由一个 1 字节的值来标识，该值直接编码在代币地址中 (参见[地址派生](#address-derivation)) ：
+
+| 变体           | 字节     |
+| ------------ | ------ |
+| `ASSET`      | `0x00` |
+| `STABLECOIN` | `0x01` |
+
+### Asset {#asset}
+
+适用于各类资产的通用变体。小数位数可在部署时于 6 到 18 之间配置，创建后不可更改。
+
+在基础 B20 接口之上，Asset 代币还提供了多项额外功能：新增的 `OPERATOR_ROLE` 负责管控乘数和公告；批量铸造和额外元数据则分别沿用现有的 `MINT_ROLE` 和 `METADATA_ROLE`。
+
+#### Multiplier {#multiplier}
+
+一个 WAD 精度的变基乘数，作用于所有余额读取操作。原始余额按原样存储，乘数仅对返回给调用方的余额视图进行缩放。
+
+| 方法                                | 描述                          |
+| --------------------------------- | --------------------------- |
+| `multiplier()`                    | 当前的 WAD 精度乘数                |
+| `scaledBalanceOf(account)`        | 原始余额 × 乘数                   |
+| `toScaledBalance(raw)`            | 将原始数额转换为缩放后的数额              |
+| `toRawBalance(scaled)`            | 将缩放后的数额转换为原始数额              |
+| `updateMultiplier(newMultiplier)` | 更新乘数。仅限 `OPERATOR_ROLE` 调用。 |
+
+#### 公告 {#announcements}
+
+链上披露机制，用于将敏感操作 (例如批量铸造、乘数更新) 包裹在前后两个公告之间，并设置公开通知期。仅限 `OPERATOR_ROLE` 调用。
+
+`announce(internalCalls, id, description, uri)` 会先触发 `Announcement` 事件，然后执行 `internalCalls`，最后触发 `EndAnnouncement`。`id` 必须唯一，且该约束永久有效。内部调用发生回滚时，会被包装为 `InternalCallFailed`。
+
+#### 批量铸造 {#batch-mint}
+
+`batchMint(recipients, amounts)` 可在单次调用中向多个接收方铸造代币。仅持有 `MINT_ROLE` 的账户可以调用。为确保透明，应将其包装在 `announce()` 中调用。
+
+#### 额外元数据 {#extra-metadata}
+
+通用键值存储，用于保存由发行方自定义的链上元数据。
+
+| 方法                                | 描述                                             |
+| --------------------------------- | ---------------------------------------------- |
+| `extraMetadata(key)`              | 按键读取值                                          |
+| `updateExtraMetadata(key, value)` | 写入值。仅限拥有 `METADATA_ROLE` 角色的账户调用。将值设为空即可删除该条目。 |
+
+### Stablecoin {#stablecoin}
+
+固定小数位数、以法币为支撑的专用变体。小数位数硬编码为 `6`，不可配置。
+
+新增 `currency()` 方法，返回 ISO 风格的货币代码字符串 (例如 `"USD"`、`"EUR"`) 。该代码在创建时通过 `B20StablecoinCreateParams.currency` 一次性设定，仅允许使用 `A`-`Z` 字符。该代码由发行方自行声明，不会与任何外部注册表进行核验。
+
+## 预编译合约地址 {#precompile-addresses}
+
+在所有已启用 B20 的网络上 (主网、Base Sepolia、Vibenet 以及本地 `base-anvil`) ，这些地址均完全相同。
+
+| 预编译合约                                        | 地址                                           |
+| -------------------------------------------- | -------------------------------------------- |
+| [B20Factory](#factory)                       | `0xB20f000000000000000000000000000000000000` |
+| 激活注册表 (Activation Registry)                  | `0x8453000000000000000000000000000000000001` |
+| [策略注册表 (Policy Registry) ](#policy-registry) | `0x8453000000000000000000000000000000000002` |

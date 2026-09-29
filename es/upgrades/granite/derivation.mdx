@@ -1,0 +1,17 @@
+---
+title: "Cambios en la derivación de la cadena L2 en Granite"
+description: "Cambios en la derivación introducidos por la actualización Granite, que modifica el parámetro de protocolo CHANNEL_TIMEOUT."
+---
+
+## Cambios en los parámetros del protocolo {#protocol-parameter-changes}
+
+En la siguiente tabla se resumen los cambios en los parámetros.
+
+| Parámetro         | Valor previo a Granite (predeterminado) | Valor en Granite | Notas                                 |
+| ----------------- | --------------------------------------- | ---------------- | ------------------------------------- |
+| `CHANNEL_TIMEOUT` | 300                                     | 50               | Se reduce la constante del protocolo. |
+
+## Reducción del tiempo de espera del canal {#reduce-channel-timeout}
+
+Con Granite, `CHANNEL_TIMEOUT` se reduce de 300 a 50 bloques de L1.
+La marca de tiempo de activación de la nueva regla se basa en el tiempo del bloque de L1 en el que se incluye la trama del canal.

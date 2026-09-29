@@ -1,0 +1,216 @@
+---
+title: "Preinstalaciones"
+description: "Especificación de los contratos inteligentes preinstalados en Base, incluidos los contratos utilitarios desplegados en el estado génesis que se ejecutan directamente en la EVM."
+---
+
+## Descripción general {#overview}
+
+Los [contratos inteligentes preinstalados](/es/specifications/reference/glossary#preinstalled-contract-preinstall) existen en Base
+en direcciones predeterminadas del estado génesis. Son similares a los precompilados, pero se ejecutan
+directamente en la EVM en lugar de ejecutar código nativo fuera de ella, y los desarrollan terceros
+no afiliados a Base.
+
+Estos contratos preinstalados son contratos inteligentes de uso común que se incluyen en el génesis por comodidad.
+Es importante tener en cuenta que no ofrecen las mismas garantías de seguridad
+que los [contratos inteligentes predesplegados](/es/specifications/reference/glossary#predeployed-contract-predeploy).
+
+En la siguiente tabla se enumeran todos los contratos preinstalados.
+
+| Nombre                                        | Dirección                                  |
+| --------------------------------------------- | ------------------------------------------ |
+| Safe                                          | 0x69f4D1788e39c87893C980c06EdF4b7f686e2938 |
+| SafeL2                                        | 0xfb1bffC9d739B8D520DaF37dF666da4C687191EA |
+| MultiSend                                     | 0x998739BFdAAdde7C933B942a68053933098f9EDa |
+| MultiSendCallOnly                             | 0xA1dabEF33b3B82c7814B6D82A79e50F4AC44102B |
+| SafeSingletonFactory                          | 0x914d7Fec6aaC8cd542e72Bca78B30650d45643d7 |
+| Multicall3                                    | 0xcA11bde05977b3631167028862bE2a173976CA11 |
+| Create2Deployer                               | 0x13b0D85CcB8bf860b6b79AF3029fCA081AE9beF2 |
+| CreateX                                       | 0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed |
+| Arachnid&#39;s Deterministic Deployment Proxy | 0x4e59b44847b379578588920cA78FbF26c0B4956C |
+| Permit2                                       | 0x000000000022D473030F116dDEE9F6B43aC78BA3 |
+| ERC-4337 v0.6.0 EntryPoint                    | 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789 |
+| ERC-4337 v0.6.0 SenderCreator                 | 0x7fc98430eaedbb6070b35b39d798725049088348 |
+| ERC-4337 v0.7.0 EntryPoint                    | 0x0000000071727De22E5E9d8BAf0edAc6f37da032 |
+| ERC-4337 v0.7.0 SenderCreator                 | 0xEFC2c1444eBCC4Db75e7613d20C6a62fF67A167C |
+
+## Safe {#safe}
+
+[Implementación](https://github.com/safe-global/safe-contracts/blob/v1.3.0/contracts/GnosisSafe.sol)
+
+Dirección: `0x69f4D1788e39c87893C980c06EdF4b7f686e2938`
+
+Una billetera multifirma que admite confirmaciones mediante mensajes firmados basados en ERC191.
+A diferencia de [SafeL2](#safel2), no emite eventos para ahorrar gas.
+
+## SafeL2 {#safel2}
+
+[Implementación](https://github.com/safe-global/safe-contracts/blob/v1.3.0/contracts/GnosisSafeL2.sol)
+
+Dirección: `0xfb1bffC9d739B8D520DaF37dF666da4C687191EA`
+
+Una billetera multifirma que admite confirmaciones mediante mensajes firmados basados en ERC191.
+Se diferencia de [Safe](#safe) en que emite eventos.
+
+## MultiSend {#multisend}
+
+[Implementación](https://github.com/safe-global/safe-contracts/blob/v1.3.0/contracts/libraries/MultiSend.sol)
+
+Dirección: `0x998739BFdAAdde7C933B942a68053933098f9EDa`
+
+Permite agrupar varias transacciones en una sola.
+
+## MultiSendCallOnly {#multisendcallonly}
+
+[Implementación](https://github.com/safe-global/safe-contracts/blob/v1.3.0/contracts/libraries/MultiSendCallOnly.sol)
+
+Dirección: `0xA1dabEF33b3B82c7814B6D82A79e50F4AC44102B`
+
+Permite agrupar varias transacciones en una sola, aunque únicamente llamadas.
+
+## SafeSingletonFactory {#safesingletonfactory}
+
+[Implementación](https://github.com/safe-global/safe-singleton-factory/blob/v1.0.17/source/deterministic-deployment-proxy.yul)
+
+Dirección: `0x914d7Fec6aaC8cd542e72Bca78B30650d45643d7`
+
+Fábrica singleton que utilizan los contratos relacionados con Safe, basada en
+[Arachnid&#39;s Deterministic Deployment Proxy](#arachnids-deterministic-deployment-proxy).
+
+La biblioteca original utilizaba una transacción prefirmada sin ID de cadena para poder desplegarse en distintas cadenas.
+Algunas cadenas no permiten enviar este tipo de transacciones; por ello, este contrato ofrece la misma fábrica,
+que puede desplegarse mediante una transacción prefirmada que sí incluye el ID de cadena. La clave con la que se firma está
+controlada por el equipo de Safe.
+
+## Multicall3 {#multicall3}
+
+[Implementación](https://github.com/mds1/multicall/blob/v3.1.0/src/Multicall3.sol)
+
+Dirección: `0xcA11bde05977b3631167028862bE2a173976CA11`
+
+`Multicall3` tiene dos casos de uso principales:
+
+* Agrupar los resultados de varias lecturas de contratos en una sola solicitud JSON-RPC.
+* Ejecutar varias llamadas que modifican el estado en una sola transacción.
+
+## Create2Deployer {#create2deployer}
+
+[Implementación](https://github.com/mdehoog/create2deployer/blob/69b9a8e112b15f9257ce8c62b70a09914e7be29c/contracts/Create2Deployer.sol)
+
+El `create2Deployer` es un práctico wrapper de Solidity para el opcode CREATE2. Expone la siguiente ABI.
+
+```solidity Create2Deployer.sol lines wrap expandable
+    /**
+     * @dev Despliega un contrato mediante `CREATE2`. La dirección en la que se
+     * desplegará el contrato puede conocerse de antemano con {computeAddress}.
+     *
+     * El bytecode de un contrato se puede obtener en Solidity con
+     * `type(contractName).creationCode`.
+     *
+     * Requisitos:
+     * - `bytecode` no debe estar vacío.
+     * - `salt` no debe haberse usado previamente para `bytecode`.
+     * - la fábrica debe tener un saldo de al menos `value`.
+     * - si `value` no es cero, `bytecode` debe tener un constructor `payable`.
+     */
+    function deploy(uint256 value, bytes32 salt, bytes memory code) public;
+    /**
+     * @dev Despliegue del {ERC1820Implementer}.
+     * Más información: https://eips.ethereum.org/EIPS/eip-1820
+     */
+    function deployERC1820Implementer(uint256 value, bytes32 salt);
+    /**
+     * @dev Devuelve la dirección en la que se almacenará un contrato si se despliega mediante {deploy}.
+     * Cualquier cambio en `bytecodeHash` o en `salt` generará una dirección de destino distinta.
+     */
+    function computeAddress(bytes32 salt, bytes32 codeHash) public view returns (address);
+    /**
+     * @dev Devuelve la dirección en la que se almacenará un contrato si se despliega mediante {deploy} desde un
+     * contrato ubicado en `deployer`. Si `deployer` es la dirección de este contrato, devuelve el
+     * mismo valor que {computeAddress}.
+     */
+    function computeAddressWithDeployer(
+        bytes32 salt,
+        bytes32 codeHash,
+        address deployer
+    ) public pure returns (address);
+```
+
+Dirección: `0x13b0D85CcB8bf860b6b79AF3029fCA081AE9beF2`
+
+Cuando se activa Canyon, el código del contrato en `0x13b0D85CcB8bf860b6b79AF3029fCA081AE9beF2` se establece en
+`0x6080604052600436106100435760003560e01c8063076c37b21461004f578063481286e61461007157806356299481146100ba57806366cfa057146100da57600080fd5b3661004a57005b600080fd5b34801561005b57600080fd5b5061006f61006a366004610327565b6100fa565b005b34801561007d57600080fd5b5061009161008c366004610327565b61014a565b60405173ffffffffffffffffffffffffffffffffffffffff909116815260200160405180910390f35b3480156100c657600080fd5b506100916100d5366004610349565b61015d565b3480156100e657600080fd5b5061006f6100f53660046103ca565b610172565b61014582826040518060200161010f9061031a565b7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe082820381018352601f90910116604052610183565b505050565b600061015683836102e7565b9392505050565b600061016a8484846102f0565b949350505050565b61017d838383610183565b50505050565b6000834710156101f4576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820152601d60248201527f437265617465323a20696e73756666696369656e742062616c616e636500000060448201526064015b60405180910390fd5b815160000361025f576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820181905260248201527f437265617465323a2062797465636f6465206c656e677468206973207a65726f60448201526064016101eb565b8282516020840186f5905073ffffffffffffffffffffffffffffffffffffffff8116610156576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820152601960248201527f437265617465323a204661696c6564206f6e206465706c6f790000000000000060448201526064016101eb565b60006101568383305b6000604051836040820152846020820152828152600b8101905060ff815360559020949350505050565b61014e806104ad83390190565b6000806040838503121561033a57600080fd5b50508035926020909101359150565b60008060006060848603121561035e57600080fd5b8335925060208401359150604084013573ffffffffffffffffffffffffffffffffffffffff8116811461039057600080fd5b809150509250925092565b7f4e487b7100000000000000000000000000000000000000000000000000000000600052604160045260246000fd5b6000806000606084860312156103df57600080fd5b8335925060208401359150604084013567ffffffffffffffff8082111561040557600080fd5b818601915086601f83011261041957600080fd5b81358181111561042b5761042b61039b565b604051601f82017fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe0908116603f011681019083821181831017156104715761047161039b565b8160405282815289602084870101111561048a57600080fd5b826020860160208301376000602084830101528095505050505050925092509256fe608060405234801561001057600080fd5b5061012e806100206000396000f3fe6080604052348015600f57600080fd5b506004361060285760003560e01c8063249cb3fa14602d575b600080fd5b603c603836600460b1565b604e565b60405190815260200160405180910390f35b60008281526020818152604080832073ffffffffffffffffffffffffffffffffffffffff8516845290915281205460ff16608857600060aa565b7fa2ef4600d742022d532d4747cb3547474667d6f13804902513b2ec01c848f4b45b9392505050565b6000806040838503121560c357600080fd5b82359150602083013573ffffffffffffffffffffffffffffffffffffffff8116811460ed57600080fd5b80915050925092905056fea26469706673582212205ffd4e6cede7d06a5daf93d48d0541fc68189eeb16608c1999a82063b666eb1164736f6c63430008130033a2646970667358221220fdc4a0fe96e3b21c108ca155438d37c9143fb01278a3c1d274948bad89c564ba64736f6c63430008130033`.
+
+## CreateX {#createx}
+
+[Implementación](https://github.com/pcaversaccio/createx/blob/main/src/CreateX.sol)
+
+Dirección: `0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed`
+
+CreateX incorpora lógica adicional para desplegar contratos mediante `CREATE`, `CREATE2` y `CREATE3`.
+Añade [protección del salt](https://github.com/pcaversaccio/createx#special-features) por remitente y por chainID
+e incluye un conjunto de funciones auxiliares.
+
+El hash `keccak256` del bytecode de CreateX es `0xbd8a7ea8cfca7b4e5f5041d7d4b17bc317c5ce42cfbc42066a00cf26b43eb53f`.
+
+## Arachnid&#39;s Deterministic Deployment Proxy {#arachnids-deterministic-deployment-proxy}
+
+[Implementación](https://github.com/Arachnid/deterministic-deployment-proxy/blob/v1.0.0/source/deterministic-deployment-proxy.yul)
+
+Dirección: `0x4e59b44847b379578588920cA78FbF26c0B4956C`
+
+Este contrato puede desplegar otros contratos con una dirección determinista en cualquier cadena mediante `CREATE2`. La llamada `CREATE2`
+despliega un contrato (igual que el opcode `CREATE`), pero, en lugar de calcular la dirección como
+`keccak256(rlp([deployer_address, nonce]))`, utiliza el hash del bytecode del contrato y un salt.
+Esto significa que una misma dirección de desplegador desplegará el
+mismo código en la misma dirección, sin importar cuándo ni dónde se realice el despliegue. El desplegador se despliega
+con una cuenta de un solo uso, por lo que su dirección siempre será la misma, independientemente de la cadena en la que se encuentre. Por tanto,
+las únicas variables que determinan la dirección de tu contrato son el hash de su bytecode y el salt proporcionado.
+
+Gracias a la combinación del opcode `CREATE2` y la cuenta de un solo uso del desplegador, este contrato garantiza
+que un contrato determinado existirá exactamente en la misma dirección en todas las cadenas, sin necesidad de usar
+el mismo precio ni los mismos límites de gas cada vez.
+
+## Permit2 {#permit2}
+
+[Implementación](https://github.com/Uniswap/permit2/blob/0x000000000022D473030F116dDEE9F6B43aC78BA3/src/Permit2.sol)
+
+Dirección: `0x000000000022D473030F116dDEE9F6B43aC78BA3`
+
+Permit2 introduce un sistema de aprobación de tokens y metatransacciones de nueva generación y bajo costo operativo que hace que las aprobaciones de tokens sean más sencillas,
+más seguras y más coherentes entre aplicaciones.
+
+## ERC-4337 v0.6.0 EntryPoint {#erc-4337-v060-entrypoint}
+
+[Implementación](https://github.com/eth-infinitism/account-abstraction/blob/v0.6.0/contracts/core/EntryPoint.sol)
+
+Dirección: `0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789`
+
+Este contrato verifica y ejecuta los bundles de
+[UserOperations](https://www.erc4337.io/docs/understanding-ERC-4337/user-operation) de ERC-4337 v0.6.0 que recibe.
+
+## ERC-4337 v0.6.0 SenderCreator {#erc-4337-v060-sendercreator}
+
+[Implementación](https://github.com/eth-infinitism/account-abstraction/blob/v0.6.0/contracts/core/SenderCreator.sol)
+
+Dirección: `0x7fc98430eaedbb6070b35b39d798725049088348`
+
+Contrato auxiliar de EntryPoint v0.6.0 que permite llamar a `userOp.initCode` desde una dirección «neutral»,
+que explícitamente no es la del propio `EntryPoint`.
+
+## ERC-4337 v0.7.0 EntryPoint {#erc-4337-v070-entrypoint}
+
+[Implementación](https://github.com/eth-infinitism/account-abstraction/blob/v0.7.0/contracts/core/EntryPoint.sol)
+
+Dirección: `0x0000000071727De22E5E9d8BAf0edAc6f37da032`
+
+Este contrato verifica y ejecuta los bundles de
+[UserOperations](https://www.erc4337.io/docs/understanding-ERC-4337/user-operation) de ERC-4337 v0.7.0 que recibe.
+
+## ERC-4337 v0.7.0 SenderCreator {#erc-4337-v070-sendercreator}
+
+[Implementación](https://github.com/eth-infinitism/account-abstraction/blob/v0.7.0/contracts/core/SenderCreator.sol)
+
+Dirección: `0xEFC2c1444eBCC4Db75e7613d20C6a62fF67A167C`
+
+Contrato auxiliar de EntryPoint v0.7.0 que permite llamar a `userOp.initCode` desde una dirección «neutral»,
+que explícitamente no es la del propio `EntryPoint`.

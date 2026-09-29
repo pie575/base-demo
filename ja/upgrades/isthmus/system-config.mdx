@@ -1,0 +1,71 @@
+---
+title: "Isthmus: システム設定"
+description: "Isthmus アップグレードにおける SystemConfig の変更点。設定変数 operatorFeeScalar と operatorFeeConstant が追加されます。"
+---
+
+## オペレーター手数料パラメーターの設定 {#operator-fee-parameter-configuration}
+
+Isthmus では、オペレーター手数料パラメーターを制御するための設定変数 `operatorFeeScalar` (`uint32`) 
+と `operatorFeeConstant` (`uint64`) が `SystemConfig` に追加されます。
+
+### `ConfigUpdate` {#configupdate}
+
+`CONFIG_VERSION` が `uint256(0)` の場合、以下の `ConfigUpdate` イベントが定義されます。
+
+| 名前                    | 値          | 定義                                                                                | 用途                                         |
+| --------------------- | ---------- | --------------------------------------------------------------------------------- | ------------------------------------------ |
+| `BATCHER`             | `uint8(0)` | `abi.encode(address)`                                                             | safe チェーンを進める権限を持つアカウントを変更します              |
+| `FEE_SCALARS`         | `uint8(1)` | `(uint256(0x01) << 248) \| (uint256(_blobbasefeeScalar) << 32) \| _basefeeScalar` | 手数料スカラーを変更します                              |
+| `GAS_LIMIT`           | `uint8(2)` | `abi.encode(uint64 _gasLimit)`                                                    | L2 のガスリミットを変更します                           |
+| `UNSAFE_BLOCK_SIGNER` | `uint8(3)` | `abi.encode(address)`                                                             | unsafe チェーンを進める権限を持つアカウントを変更します            |
+| `EIP_1559_PARAMS`     | `uint8(4)` | `uint256(uint64(uint32(_denominator))) << 32 \| uint64(uint32(_elasticity))`      | EIP-1559 の denominator と elasticity を変更します |
+| `OPERATOR_FEE_PARAMS` | `uint8(5)` | `uint256(_operatorFeeScalar) << 64 \| _operatorFeeConstant`                       | オペレーター手数料のスカラーと定数を変更します                    |
+
+### 初期化 {#initialization}
+
+`SystemConfig` の初期化時には、以下のアクションを実行するべきです (SHOULD) 。
+
+* `emit ConfigUpdate.BATCHER`
+* `emit ConfigUpdate.FEE_SCALARS`
+* `emit ConfigUpdate.GAS_LIMIT`
+* `emit ConfigUpdate.UNSAFE_BLOCK_SIGNER`
+* `emit ConfigUpdate.EIP_1559_PARAMS`
+
+これらのアクションは、値に差分がある場合にのみトリガーしてもかまいません (MAY) 。
+
+`operatorFeeScalar` と `operatorFeeConstant` は 0 に初期化されます。
+
+### オペレーター手数料パラメーターの変更 {#modifying-operator-fee-parameters}
+
+`SystemConfig` に新しい `UpdateType` が導入され、`SystemConfig` のオーナーが
+`operatorFeeScalar` と `operatorFeeConstant` を変更できるようになります。
+
+### インターフェース {#interface}
+
+#### オペレーター手数料パラメーター {#operator-fee-parameters}
+
+##### `operatorFeeScalar` {#operatorfeescalar}
+
+この関数は、現在設定されているオペレーター手数料スカラーを返します。
+
+```solidity SystemConfig.sol
+function operatorFeeScalar()(uint32)
+```
+
+##### `operatorFeeConstant` {#operatorfeeconstant}
+
+この関数は、現在設定されているオペレーター手数料定数を返します。
+
+```solidity SystemConfig.sol
+function operatorFeeConstant()(uint64)
+```
+
+##### `setOperatorFeeScalars` {#setoperatorfeescalars}
+
+この関数は `operatorFeeScalar` と `operatorFeeConstant` を設定します。
+
+この関数は、`SystemConfig` のオーナーのみが呼び出せるようにしなければなりません (MUST) 。
+
+```solidity SystemConfig.sol
+function setOperatorFeeScalar(uint32 _operatorFeeScalar, uint64 _operatorFeeConstant)
+```

@@ -1,0 +1,331 @@
+---
+title: "预部署合约"
+description: "Base 预部署智能合约规范，涵盖在创世状态中部署于预定地址的系统合约。"
+---
+
+## 概述 {#overview}
+
+[预部署智能合约](/zh/specifications/reference/glossary#predeployed-contract-predeploy)位于 Base 创世状态中的
+预定地址上。它们与预编译合约类似，区别在于它们直接在 EVM 中运行，
+而不是在 EVM 之外运行原生代码。
+
+之所以采用预部署合约而非预编译合约，是为了简化多客户端
+实现，同时也能更好地与 hardhat/foundry
+的网络分叉功能集成。
+
+预部署合约地址位于带前缀的命名空间 `0x4200000000000000000000000000000000000xxx` 中。
+该命名空间的前 2048 个地址均设置了代理合约，但为
+`WETH` 预部署合约保留的地址除外。
+
+`LegacyERC20ETH` 预部署合约位于特殊地址 `0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000`，
+且该账户上未部署代理合约。
+
+下表列出了所有预部署合约。系统版本
+表示该预部署合约是在哪个版本中引入的，可能的取值为 `Legacy`、
+`Bedrock` 或 `Canyon`。不应使用已弃用的合约。
+
+| 名称                            | 地址                                         | 引入版本    | 已弃用 | 使用代理 |
+| ----------------------------- | ------------------------------------------ | ------- | --- | ---- |
+| LegacyMessagePasser           | 0x4200000000000000000000000000000000000000 | Legacy  | 是   | 是    |
+| DeployerWhitelist             | 0x4200000000000000000000000000000000000002 | Legacy  | 是   | 是    |
+| LegacyERC20ETH                | 0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000 | Legacy  | 是   | 否    |
+| WETH9                         | 0x4200000000000000000000000000000000000006 | Legacy  | 否   | 否    |
+| L2CrossDomainMessenger        | 0x4200000000000000000000000000000000000007 | Legacy  | 否   | 是    |
+| L2StandardBridge              | 0x4200000000000000000000000000000000000010 | Legacy  | 否   | 是    |
+| SequencerFeeVault             | 0x4200000000000000000000000000000000000011 | Legacy  | 否   | 是    |
+| OptimismMintableERC20Factory  | 0x4200000000000000000000000000000000000012 | Legacy  | 否   | 是    |
+| L1BlockNumber                 | 0x4200000000000000000000000000000000000013 | Legacy  | 是   | 是    |
+| GasPriceOracle                | 0x420000000000000000000000000000000000000F | Legacy  | 否   | 是    |
+| L1Block                       | 0x4200000000000000000000000000000000000015 | Bedrock | 否   | 是    |
+| L2ToL1MessagePasser           | 0x4200000000000000000000000000000000000016 | Bedrock | 否   | 是    |
+| L2ERC721Bridge                | 0x4200000000000000000000000000000000000014 | Legacy  | 否   | 是    |
+| OptimismMintableERC721Factory | 0x4200000000000000000000000000000000000017 | Bedrock | 否   | 是    |
+| ProxyAdmin                    | 0x4200000000000000000000000000000000000018 | Bedrock | 否   | 是    |
+| BaseFeeVault                  | 0x4200000000000000000000000000000000000019 | Bedrock | 否   | 是    |
+| L1FeeVault                    | 0x420000000000000000000000000000000000001a | Bedrock | 否   | 是    |
+| SchemaRegistry                | 0x4200000000000000000000000000000000000020 | Bedrock | 否   | 是    |
+| EAS                           | 0x4200000000000000000000000000000000000021 | Bedrock | 否   | 是    |
+| BeaconBlockRoot               | 0x000F3df6D732807Ef1319fB7B8bB8522d0Beac02 | Ecotone | 否   | 否    |
+| OperatorFeeVault              | 0x420000000000000000000000000000000000001B | Isthmus | 否   | 是    |
+
+## LegacyMessagePasser {#legacymessagepasser}
+
+[实现](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/legacy/LegacyMessagePasser.sol)
+
+地址：`0x4200000000000000000000000000000000000000`
+
+`LegacyMessagePasser` 合约用于存储 Bedrock 升级之前的提款交易承诺。
+在 L1 上执行提款交易时，需要提供一份默克尔证明，证明某个特定存储槽
+承诺了该笔提款交易。包含该存储槽的预期账户
+硬编码在 L1 逻辑中。Bedrock 升级之后，
+改用 `L2ToL1MessagePasser`。Bedrock 升级后，将不再支持通过该
+合约最终确定提款；保留该合约仅是为了
+兼容可能依赖它的其他跨链桥。该合约
+不会将调用转发给 `L2ToL1MessagePasser`，在通过 `CrossDomainMessenger`
+系统进行提款时，调用该合约被视为空操作 (no-op) 。
+
+所有尚未最终确定的待处理提款都会在升级过程中迁移至
+`L2ToL1MessagePasser`，确保它们仍能
+被最终确定。
+
+## L2ToL1MessagePasser {#l2tol1messagepasser}
+
+[实现](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/L2ToL1MessagePasser.sol)
+
+地址：`0x4200000000000000000000000000000000000016`
+
+`L2ToL1MessagePasser` 用于存储提款交易的承诺 (commitment) 。
+用户在 L1 上提交提款交易时，需要提供
+证明，表明其在 L2 上发起的提款交易已记录在该合约的 `sentMessages`
+映射中。
+
+所有提取的 ETH 都会在 L2 上累积到该合约中，任何人都可以
+无需许可地调用 `burn()` 函数，将这些 ETH 从 L2 供应量中移除。
+
+## DeployerWhitelist {#deployerwhitelist}
+
+[实现](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/legacy/DeployerWhitelist.sol)
+
+地址：`0x4200000000000000000000000000000000000002`
+
+`DeployerWhitelist` 是一个预部署合约 (predeploy) ，曾在 Optimism 早期阶段用于提供额外的安全保障。
+它此前用于规定哪些账户可以向网络部署合约。
+
+此后，网络开放了任意合约部署，且该功能无法关闭。在旧版 (legacy) 系统中，该合约挂接在 `CREATE` 和
+`CREATE2` 上，用于确保部署者在允许列表中。
+
+在 Bedrock 系统中，该合约将不再参与
+`CREATE` 代码路径。
+
+该合约已弃用，应避免使用。
+
+## LegacyERC20ETH {#legacyerc20eth}
+
+[实现](https://github.com/ethereum-optimism/optimism/blob/a4524ac152b4c9e8eb80beadc9cd772b96243aa2/packages/contracts-bedrock/src/legacy/LegacyERC20ETH.sol)
+
+地址：`0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000`
+
+`LegacyERC20ETH` 预部署合约代表 Bedrock 升级前系统中的全部以太币。
+当时所有 ETH 均以 ERC20 代币的形式表示，用户可以自行选择
+使用 ERC20 接口或原生 ETH 接口。
+
+Bedrock 升级会将所有以太币从该合约中迁出，转换为
+原生表示形式。Bedrock 升级后，调用该合约中任何修改状态的方法都会
+回滚 (revert) 。
+
+该合约已弃用，应避免使用。
+
+## WETH9 {#weth9}
+
+[实现](https://github.com/ethereum-optimism/optimism/blob/2b1c99b39744579cc226077d356ae9e5f162db4a/packages/contracts-bedrock/src/vendor/WETH9.sol)
+
+地址：`0x4200000000000000000000000000000000000006`
+
+`WETH9` 是 Base 上 Wrapped Ether (WETH) 的标准实现。由于这是一个常用合约，
+因此将其作为预部署合约 (predeploy) 部署，使其在各个 Base 网络中都拥有
+确定的地址。
+
+## L2CrossDomainMessenger {#l2crossdomainmessenger}
+
+[实现](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/L2CrossDomainMessenger.sol)
+
+地址：`0x4200000000000000000000000000000000000007`
+
+与直接调用 `L2ToL1MessagePasser` 相比，`L2CrossDomainMessenger` 为发送跨域消息
+提供了更高层级的 API。
+它维护一个映射，记录已中继到 L2 的 L1 消息，
+以防范重放攻击；同时，若 L1 到 L2 的交易在 L2 上回滚，
+还可以重新执行该消息。
+
+在 L1 上对 `L1CrossDomainMessenger` 的所有调用都会经过序列化，
+以便通过 L2 上的 `L2CrossDomainMessenger` 进行处理。
+
+`relayMessage` 函数用于执行来自远程域的交易，
+而 `sendMessage` 函数用于发送一笔交易，该交易将通过远程域的 `relayMessage` 函数
+在远程域上执行。
+
+## L2StandardBridge {#l2standardbridge}
+
+[实现](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/L2StandardBridge.sol)
+
+地址：`0x4200000000000000000000000000000000000010`
+
+`L2StandardBridge` 是构建在
+`L2CrossDomainMessenger` 之上的更高层级 API，为跨域发送 ETH 或
+ERC20 代币提供了标准接口。
+
+将代币从 L1 存入 L2 时，`L1StandardBridge` 会锁定该代币，并
+向 `L2StandardBridge` 发送一条跨域消息，随后由 `L2StandardBridge` 将
+代币铸造到指定账户。
+
+将代币从 L2 提取到 L1 时，用户需在 L2 上销毁该代币，随后
+`L2StandardBridge` 会向 `L1StandardBridge` 发送一条消息，由后者
+解锁底层代币并将其转入指定账户。
+
+`OptimismMintableERC20Factory` 可用于在远程域上创建 ERC20 代币合约，
+使其映射到本地域上的 ERC20 代币合约，从而支持将代币存入远程域。
+它会部署一个 `OptimismMintableERC20` 合约，其接口可与
+`StandardBridge` 配合使用。
+
+该合约也可以部署在 L1 上，以支持将 L2 原生代币
+提取到 L1。
+
+## L1BlockNumber {#l1blocknumber}
+
+[实现](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/legacy/L1BlockNumber.sol)
+
+地址：`0x4200000000000000000000000000000000000013`
+
+`L1BlockNumber` 返回最新已知的 L1 区块号。该合约
+最初在旧版系统中引入，底层通过调用 `L1Block` 合约
+来保持向后兼容。
+
+建议在 L2 上使用 `L1Block` 合约获取
+L1 的相关信息。
+
+## GasPriceOracle {#gaspriceoracle}
+
+[实现](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/GasPriceOracle.sol)
+
+地址：`0x420000000000000000000000000000000000000F`
+
+在旧版系统中，`GasPriceOracle` 是一个需要许可的合约，
+由链下参与者向其推送 L1 基础费用和 L2 gas 价格。
+该链下参与者通过观察 L1 区块 header 获取
+L1 基础费用，并结合 L2 上的 gas 使用情况，依据拥塞控制算法计算出
+合适的 L2 gas 价格。
+
+Bedrock 之后，`GasPriceOracle` 不再是需要许可的合约，
+其存在仅是为了保留供链下 gas 估算使用的 API。
+函数 `getL1Fee(bytes)` 接受一笔未签名的 RLP 交易，并返回
+费用中的 L1 部分。这部分费用用于支付将 L1 用作数据可用性
+层的开销；将其与支付执行开销的 L2 部分费用相加，
+即可得出交易总费用。
+
+在 Ecotone 升级之前，用于计算 L1 部分费用的值为：
+
+* scalar
+* overhead
+* decimals
+
+Bedrock 升级之后，这些值改由 L1 上的
+`SystemConfig` 合约管理。`scalar` 和 `overhead` 值
+会在每个区块发送到 `L1Block` 合约，而 `decimals` 值
+则被硬编码为 6。
+
+Ecotone 升级之后，用于计算 L1 fee 的值为：
+
+* baseFeeScalar
+* blobBaseFeeScalar
+* decimals
+
+[ecotone-scalars]: /specifications/reference/glossary#post-ecotone-parameters
+
+这些新的 scalar 值由 L1 上的 `SystemConfig` 合约管理，具体做法是为其 `scalars` 存储
+槽引入一种向后兼容的[版本化编码方案][ecotone-scalars]。`decimals` 仍硬编码为 6，`overhead` 值则会被忽略。
+
+## L1Block {#l1block}
+
+[实现](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/L1Block.sol)
+
+地址：`0x4200000000000000000000000000000000000015`
+
+[l1-block-predeploy]: /specifications/reference/glossary#l1-attributes-predeployed-contract
+
+[L1Block][l1-block-predeploy] 于 Bedrock 中引入，负责在 L2 上维护 L1 上下文，
+使 L2 能够访问 L1 状态。
+
+## ProxyAdmin {#proxyadmin}
+
+[ProxyAdmin](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/universal/ProxyAdmin.sol)
+地址：`0x4200000000000000000000000000000000000018`
+
+`ProxyAdmin` 是所有预部署合约 (predeploy) 地址上所设代理合约的所有者，其自身也部署在代理之后。`ProxyAdmin` 的所有者
+可以升级任何其他预部署合约。
+
+## SequencerFeeVault {#sequencerfeevault}
+
+[实现](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/SequencerFeeVault.sol)
+
+地址：`0x4200000000000000000000000000000000000011`
+
+`SequencerFeeVault` 用于归集所有交易的优先费，其地址即为
+`block.coinbase` 的值。
+当该账户中累积的费用足够多时，可将其提取到一个不可变的 L1 地址。
+
+若要更改费用提取的目标 L1 地址，必须通过修改该合约代理的实现键 (implementation key) 来
+升级合约。
+
+## OptimismMintableERC20Factory {#optimismmintableerc20factory}
+
+[实现](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/universal/OptimismMintableERC20Factory.sol)
+
+地址：`0x4200000000000000000000000000000000000012`
+
+`OptimismMintableERC20Factory` 负责在 L2 上创建 ERC20 合约，用于接收存入的原生 L1 代币。任何人都可以无需许可地创建这些 ERC20 合约，
+它们实现了 `StandardBridge` 所需的接口，因此可直接用于存款和提款，无需额外配置。
+
+由 `OptimismMintableERC20Factory` 创建的每个 ERC20 合约都允许 `L2StandardBridge` 铸造和销毁代币，
+具体取决于用户是从 L1 存款到 L2，还是从 L2 提款到 L1。
+
+## OptimismMintableERC721Factory {#optimismmintableerc721factory}
+
+[实现](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/OptimismMintableERC721Factory.sol)
+
+地址：`0x4200000000000000000000000000000000000017`
+
+`OptimismMintableERC721Factory` 负责在 L2 上创建 ERC721 合约，
+用于接收存入的 L1 原生 NFT。
+
+## BaseFeeVault {#basefeevault}
+
+[实现](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/BaseFeeVault.sol)
+
+地址：`0x4200000000000000000000000000000000000019`
+
+`BaseFeeVault` 预部署合约负责接收 L2 上的基础费用。与 L1 不同，L2 上的基础费用不会被
+销毁。当该合约累计收取的费用达到一定数额后，
+其中的 ETH 可提取至 L1 上的一个不可变
+地址。
+
+## L1FeeVault {#l1feevault}
+
+[实现](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/L1FeeVault.sol)
+
+地址：`0x420000000000000000000000000000000000001a`
+
+`L1FeeVault` 预部署合约负责接收交易费用中的 L1 部分。
+当该合约累计收取的费用达到一定数额后，即可将其中的 ETH
+提取到 L1 上的一个不可变地址。
+
+## SchemaRegistry {#schemaregistry}
+
+[实现](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/vendor/eas/SchemaRegistry.sol)
+
+地址：`0x4200000000000000000000000000000000000020`
+
+`SchemaRegistry` 预部署合约为 `Ethereum Attestation Service`
+协议实现了全局证明 schema。
+
+## EAS {#eas}
+
+[实现](https://github.com/ethereum-optimism/optimism/tree/develop/packages/contracts-bedrock/src/vendor/eas)
+
+地址：`0x4200000000000000000000000000000000000021`
+
+`EAS` 预部署合约实现了 `Ethereum Attestation Service` 协议。
+
+## 信标区块根 {#beacon-block-root}
+
+地址：`0x000F3df6D732807Ef1319fB7B8bB8522d0Beac02`
+
+`BeaconBlockRoot` 预部署合约用于访问 L1 信标区块根。该合约在
+Ecotone 网络升级中引入，规范见 [EIP-4788](https://eips.ethereum.org/EIPS/eip-4788)。
+
+## Operator Fee Vault {#operator-fee-vault}
+
+[实现](https://github.com/ethereum-optimism/optimism/blob/develop/packages/contracts-bedrock/src/L2/OperatorFeeVault.sol)
+
+地址：`0x420000000000000000000000000000000000001B`
+
+请参阅 [Operator Fee Vault](/zh/upgrades/isthmus/predeploys#operatorfeevault) 规范。

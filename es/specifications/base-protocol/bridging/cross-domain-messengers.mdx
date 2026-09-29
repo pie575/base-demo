@@ -1,0 +1,120 @@
+---
+title: "Mensajeros entre dominios"
+description: "Especificación de los contratos mensajeros entre dominios, que ofrecen una API de alto nivel para enviar mensajes entre L1 y L2 en Base."
+---
+
+## Descripción general {#overview}
+
+Los mensajeros entre dominios se encargan de proporcionar una API de nivel superior para
+los desarrolladores que quieran enviar mensajes entre dominios. Permiten
+volver a ejecutar mensajes entre dominios y se sitúan directamente sobre los contratos
+de sistema de nivel inferior responsables de la mensajería entre dominios en L1 y L2.
+
+El `CrossDomainMessenger` se extiende para crear tanto un
+`L1CrossDomainMessenger` como un `L2CrossDomainMessenger`.
+A su vez, estos contratos se extienden con sus API heredadas para mantener
+la retrocompatibilidad con las aplicaciones que se integraron antes de la actualización
+del sistema Bedrock.
+
+El `L2CrossDomainMessenger` es un contrato predeploy ubicado en
+`0x4200000000000000000000000000000000000007`.
+
+La interfaz base de `CrossDomainMessenger` es:
+
+```solidity CrossDomainMessenger.sol lines wrap expandable
+interface CrossDomainMessenger {
+    event FailedRelayedMessage(bytes32 indexed msgHash);
+    event RelayedMessage(bytes32 indexed msgHash);
+    event SentMessage(address indexed target, address sender, bytes message, uint256 messageNonce, uint256 gasLimit);
+    event SentMessageExtension1(address indexed sender, uint256 value);
+
+    function MESSAGE_VERSION() external view returns (uint16);
+    function MIN_GAS_CALLDATA_OVERHEAD() external view returns (uint64);
+    function MIN_GAS_CONSTANT_OVERHEAD() external view returns (uint64);
+    function MIN_GAS_DYNAMIC_OVERHEAD_DENOMINATOR() external view returns (uint64);
+    function MIN_GAS_DYNAMIC_OVERHEAD_NUMERATOR() external view returns (uint64);
+    function OTHER_MESSENGER() external view returns (address);
+    function baseGas(bytes memory _message, uint32 _minGasLimit) external pure returns (uint64);
+    function failedMessages(bytes32) external view returns (bool);
+    function messageNonce() external view returns (uint256);
+    function relayMessage(
+        uint256 _nonce,
+        address _sender,
+        address _target,
+        uint256 _value,
+        uint256 _minGasLimit,
+        bytes memory _message
+    ) external payable returns (bytes memory returnData_);
+    function sendMessage(address _target, bytes memory _message, uint32 _minGasLimit) external payable;
+    function successfulMessages(bytes32) external view returns (bool);
+    function xDomainMessageSender() external view returns (address);
+}
+```
+
+## Paso de mensajes {#message-passing}
+
+La función `sendMessage` se utiliza para enviar un mensaje entre dominios. Para activar
+la ejecución en el otro lado, se llama a la función `relayMessage`.
+El hash de los mensajes exitosos se almacena en el mapping `successfulMessages`,
+mientras que el de los mensajes fallidos se almacena en el mapping `failedMessages`.
+
+La experiencia de usuario al enviar de L1 a L2 es algo distinta a la de
+enviar una transacción de L2 a L1. Al pasar de L1 a L2, el usuario no
+necesita llamar él mismo a `relayMessage` en L2. El usuario paga el gas de L2 en L1
+y la transacción se incorpora automáticamente a L2, donde se ejecuta.
+Al pasar de L2 a L1, el usuario prueba su retiro en OptimismPortal,
+espera a que transcurra la ventana de finalización y, por último, finaliza el retiro
+en OptimismPortal, que llama a `relayMessage` en el
+`L1CrossDomainMessenger` para completar el retiro.
+
+## Capacidad de actualización {#upgradability}
+
+Los mensajeros entre dominios de L1 y L2 deben desplegarse detrás de proxies
+actualizables. Esto permitirá actualizar la versión del mensaje.
+
+## Versionado de mensajes {#message-versioning}
+
+Los mensajes se versionan en función de los primeros 2 bytes de su nonce. Según
+la versión, los mensajes pueden tener distintos esquemas de serialización y de hash.
+Los dos primeros bytes del nonce se reservan para metadatos de versión porque,
+en un principio, los mensajes no incluían un campo de versión, pero
+un nonce `uint256` es tan grande que resulta muy sencillo empaquetar datos adicionales
+en ese campo.
+
+### Versión 0 del mensaje {#message-version-0}
+
+```solidity Message Version 0 Encoding
+abi.encodeWithSignature(
+    "relayMessage(address,address,bytes,uint256)",
+    _target,
+    _sender,
+    _message,
+    _messageNonce
+);
+```
+
+### Versión 1 del mensaje {#message-version-1}
+
+```solidity Message Version 1 Encoding lines wrap expandable
+abi.encodeWithSignature(
+    "relayMessage(uint256,address,address,uint256,uint256,bytes)",
+    _nonce,
+    _sender,
+    _target,
+    _value,
+    _gasLimit,
+    _data
+);
+```
+
+## Notas de compatibilidad con versiones anteriores {#backwards-compatibility-notes}
+
+Una versión anterior de los contratos de mensajería incluía el concepto de mensajes bloqueados
+mediante un mapping `blockedMessages`. Esta funcionalidad se eliminó de los
+contratos de mensajería porque un atacante hábil podía eludir cualquier intento de
+bloquear mensajes. Además, así se ahorra gas al finalizar los retiros.
+
+Se eliminaron el concepto de «relay id» y el mapping `relayedMessages`.
+Se habían diseñado para poder financiar a terceros que retransmitían mensajes
+en nombre de los usuarios, pero su implementación era incorrecta, ya que era imposible
+saber si el mensaje retransmitido se había ejecutado realmente con éxito.

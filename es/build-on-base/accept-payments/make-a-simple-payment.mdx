@@ -1,0 +1,59 @@
+---
+title: "Realizar un pago sencillo"
+keywords: ["enviar USDC en Base", "transferencia de USDC", "pago sencillo en Base", "transferencia ERC-20"]
+description: "Envía USDC directamente de una billetera a otra en Base."
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+Envía USDC directamente de una billetera a otra mediante una transferencia ERC-20 estándar. El remitente envía la transacción y paga la comisión de red; una vez confirmada, el destinatario pasa a tener el control de los USDC.
+
+## Demostración {#demo}
+
+<PaymentsDemo flow="simple" />
+
+<Tip>
+  La demostración anterior es solo una simulación. Si quieres ver demostraciones onchain en Vibenet, visita [Demostraciones de la cadena Base](https://chain.base.org/demos).
+</Tip>
+
+## Enviar USDC {#send-usdc}
+
+Indica la dirección del destinatario y el importe, simula la llamada y, luego, envía la transacción desde la billetera del remitente. En este ejemplo se usa USDC en Base Sepolia.
+
+{/* sample: simple-usdc-transfer-ts */}
+
+```typescript TypeScript lines wrap expandable highlight={6,10-11}
+export async function makeSimplePayment(recipient: Address, amount: string) {
+  const simulation = await publicClient.simulateContract({
+    account,
+    address: USDC,
+    abi: usdcAbi,
+    functionName: "transfer",
+    args: [recipient, parseUnits(amount, 6)],
+  });
+  const hash = await walletClient.writeContract(simulation.request);
+  const receipt = await publicClient.waitForTransactionReceipt({ hash, confirmations: 2 });
+  if (receipt.status !== "success") throw new Error("USDC transfer reverted");
+  return hash;
+}
+```
+
+<Check>
+  Antes de dar el pago por completado, confirma que el recibo indica que la transacción se ejecutó correctamente y que su evento `Transfer` de USDC coincide con el remitente, el destinatario y el importe esperados.
+</Check>
+
+<Warning>
+  Verifica la red y la dirección del destinatario antes de firmar. Una transferencia directa de USDC no cuenta con depósito en garantía (escrow), autorización ni un flujo de reembolso gestionado por el protocolo.
+</Warning>
+
+## Consulta también {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="Solicitar un pago" icon="money-bill-transfer" href="/es/build-on-base/accept-payments/request-a-payment">
+    Añade condiciones de pago, verificación de la liquidación y contabilización de reembolsos.
+  </Card>
+
+  <Card title="Verificar un pago" icon="shield-check" href="/es/build-on-base/accept-payments/verify-a-payment">
+    Verifica las liquidaciones del Commerce Payments Protocol antes de gestionar el pedido.
+  </Card>
+</CardGroup>

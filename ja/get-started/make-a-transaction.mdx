@@ -1,0 +1,50 @@
+---
+title: "トランザクションを実行する"
+keywords: ["send transaction Base", "Base viem example", "first transaction Base", "Base transaction fees"]
+description: "viem を使って Base で最初のトランザクションを送信しましょう。接続から署名、確認までわずか数秒、手数料は 1 セント未満です。"
+---
+
+Base は Ethereum と同じトランザクションモデルを採用しているため、どの EVM ライブラリでも利用できます。ここでは [viem](https://viem.sh) を使った最小限の送信例を紹介します。
+
+## トランザクションを送信する {#send-a-transaction}
+
+```ts send.ts lines wrap expandable
+import { createWalletClient, http, parseEther } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+import { base } from 'viem/chains';
+
+const account = privateKeyToAccount('0xYourPrivateKey');
+
+const client = createWalletClient({
+  account,
+  chain: base,
+  transport: http('https://mainnet.base.org'),
+});
+
+const hash = await client.sendTransaction({
+  to: '0xRecipientAddress',
+  value: parseEther('0.001'),
+});
+
+console.log(`Sent, view at https://basescan.org/tx/${hash}`);
+```
+
+<Warning>
+  秘密鍵は絶対にハードコードしたり公開したりしないでください。`'0xYourPrivateKey'` はプレースホルダーです。鍵は環境変数またはシークレットマネージャーから読み込み、サーバー側で保持してください。また、ソース管理には決してコミットしないでください。
+</Warning>
+
+<Tip>
+  Base では [Flashblocks](/ja/specifications/transactions/transaction-ordering#flashblocks) により、トランザクションは 1 秒未満で承認されます。ガス代も通常は 1 セントに満たないわずかな額です。
+</Tip>
+
+## 次のステップ {#next-steps}
+
+<CardGroup cols={2}>
+  <Card title="Stablecoin を発行する" icon="coins" href="/ja/get-started/issue-stablecoins">
+    法定通貨に裏付けられたトークンを 1 回の呼び出しでローンチできます。
+  </Card>
+
+  <Card title="決済を導入する" icon="credit-card" href="/ja/get-started/accept-payments">
+    ワンタップのチェックアウトで USDC による支払いを受け付けられます。
+  </Card>
+</CardGroup>

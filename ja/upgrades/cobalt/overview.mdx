@@ -1,0 +1,37 @@
+---
+title: "概要"
+description: "Cobalt では、B20 トークン標準の改善、バリディティトランザクションの追加、ノードの動的アップグレードの導入を行うとともに、TEE 署名者の登録をオンチェーンでのアテステーション検証に移行します。"
+---
+
+|         | ステータス  | 日付         |
+| ------- | ------ | ---------- |
+| Sepolia | 稼働中    | 2026年9月23日 |
+| Mainnet | リリース予定 | 2026年9月30日 |
+
+## 機能 {#features}
+
+<AccordionGroup>
+  <Accordion title="B20 の改善">
+    **Base** · プリコンパイル
+
+    Cobalt では、B20 トークン標準にいくつかの改善が加えられます。具体的には、B20 でのトランザクション手数料の支払い、乗数更新のスケジュール設定、転送ブロックの簡素化、新しい Union ポリシーと Intersect ポリシーの追加です。
+  </Accordion>
+
+  <Accordion title="バリディティトランザクション">
+    **Base** · トランザクション
+
+    Cobalt では、バリディティトランザクションが導入されます。これは、オンチェーンの条件 (残高、ストレージ、ブロック番号、Flashblock インデックスの各述語) を満たす場合にのみ Base がブロックに取り込む署名済みトランザクションです。条件付きスワップや出金など、状態に依存する操作に利用できます。仕様の詳細については [Validity Transactions](/ja/specifications/build-transaction/validity-transactions) を参照してください。
+  </Accordion>
+
+  <Accordion title="動的アップグレード">
+    **Base** · RPC
+
+    動的アップグレードでは、Base ノード向けのアップグレードタイムスタンプを保存する Ethereum スマートコントラクトが導入されます。ノードはこのコントラクトを参照することで、稼働したまま変更を適用できます。Mainnet では当面メトリクス専用モードで展開し、アップグレードが問題なく機能することを検証するためのデータを収集します。
+  </Accordion>
+
+  <Accordion title="TEE 登録の移行">
+    **Base** · インフラストラクチャ
+
+    Cobalt では、新しい Trusted Execution Environment (TEE) 署名者の登録方法が変わります。これまでの RISC Zero および Boundless による証明フローに代わり、AWS Nitro のアテステーションを、検証済みの P-384 ヒントを用いて完全にオンチェーンかつトラストレスに検証します。これにより登録が高速化され、外部のオフチェーン証明サービスへの依存もなくなります。エンクレーブの鍵生成、PCR0 イメージの選択、証明の検証に変更はありません。仕様の詳細については [Registrar](/ja/specifications/base-protocol/proofs/registrar) を参照してください。
+  </Accordion>
+</AccordionGroup>

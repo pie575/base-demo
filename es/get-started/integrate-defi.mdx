@@ -1,0 +1,37 @@
+---
+title: "Integrar DeFi"
+description: "Añade a tu aplicación trading, préstamos directos, préstamos con garantía o un producto de rendimiento basado en bóvedas mediante protocolos de terceros en Base."
+keywords: ["integrar DeFi Base", "0x Swap API Base", "Morpho Base", "Aave Base", "producto de rendimiento onchain"]
+---
+
+import { DeFiDemo } from "/snippets/DeFiDemo.jsx"
+
+Conecta tu aplicación a protocolos DeFi de terceros en Base. Permite que los usuarios intercambien tokens, gestionen posiciones de préstamo directo, tomen préstamos con garantía o hagan un único depósito en un producto de rendimiento basado en bóvedas, y todo ello firmando cada transacción desde su propia billetera.
+
+## Demostración {#demo}
+
+<DeFiDemo />
+
+<Tip>
+  La demostración anterior es solo una simulación. Si quieres ver demostraciones onchain en Vibenet, visita [demostraciones de la cadena Base](https://chain.base.org/demos).
+</Tip>
+
+## Guías {#guides}
+
+<CardGroup cols={2}>
+  <Card title="Integrar trading" icon="arrows-rotate" href="/es/build-on-base/integrate-defi/integrate-trading">
+    Añade intercambios de tokens con rutas ejecutables obtenidas de la 0x Swap API.
+  </Card>
+
+  <Card title="Integrar préstamos (lending)" icon="arrow-trend-up" href="/es/build-on-base/integrate-defi/integrate-lending">
+    Deposita USDC en un mercado monetario y gestiona la posición directamente.
+  </Card>
+
+  <Card title="Integrar la toma de préstamos (borrowing)" icon="scale-balanced" href="/es/build-on-base/integrate-defi/integrate-borrowing">
+    Pide prestado USDC con WETH como garantía y supervisa el riesgo de liquidación.
+  </Card>
+
+  <Card title="Integrar un producto de rendimiento" icon="vault" href="/es/build-on-base/integrate-defi/integrate-earn-product">
+    Ofrece a los usuarios una bóveda en la que basta un único depósito para obtener rendimiento onchain variable.
+  </Card>
+</CardGroup>

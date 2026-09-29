@@ -1,0 +1,46 @@
+---
+title: 'eth_chainId'
+sidebarTitle: 'eth_chainId'
+description: '返回当前网络的链 ID。'
+---
+
+按照 [EIP-695](https://eips.ethereum.org/EIPS/eip-695) 的规定，返回当前网络的链 ID。
+
+## 参数 {#parameters}
+
+无参数。
+
+## 返回值 {#returns}
+
+<ResponseField name="result" type="string">
+  十六进制字符串形式的链 ID。Base Mainnet 为 `"0x2105"` (8453) ，Base Sepolia 为 `"0x14a34"` (84532) 。
+</ResponseField>
+
+## 示例 {#example}
+
+<CodeGroup>
+  ```json Request
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_chainId",
+    "params": [],
+    "id": 1
+  }
+  ```
+
+  ```json Response (Base Mainnet)
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x2105"
+  }
+  ```
+
+  ```json Response (Base Sepolia)
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x14a34"
+  }
+  ```
+</CodeGroup>

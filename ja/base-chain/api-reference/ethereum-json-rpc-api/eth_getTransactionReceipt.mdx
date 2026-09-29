@@ -1,0 +1,110 @@
+---
+title: 'eth_getTransactionReceipt'
+sidebarTitle: 'eth_getTransactionReceipt'
+description: 'マイニング済みトランザクションのレシートを返します。レシートは、トランザクションがブロックに取り込まれた後でなければ取得できません。'
+---
+
+トランザクションハッシュを指定して、そのトランザクションのレシートを返します。保留中 (pending) のトランザクションや、まだマイニングされていないトランザクションの場合は `null` を返します。
+
+<Note>
+  レシートを取得できるのはマイニング済みのトランザクションのみです。トランザクションがシールされる前に監視したい場合は、[`base_transactionStatus`](/ja/base-chain/api-reference/flashblocks-api/base_transactionStatus) でメモリプールに存在することを確認するか、[`newFlashblockTransactions`](/ja/base-chain/api-reference/flashblocks-api/newFlashblockTransactions) をサブスクライブして Flashblock 内での事前承認を検出してください。
+</Note>
+
+## パラメーター {#parameters}
+
+<ParamField body="transactionHash" type="string" required>
+  32 バイトのトランザクションハッシュ。
+</ParamField>
+
+## 戻り値 {#returns}
+
+<ResponseField name="result" type="object | null">
+  トランザクションレシートオブジェクト。トランザクションがまだマイニングされていない場合は `null` です。
+
+  <Expandable title="レシートのフィールド">
+    <ResponseField name="transactionHash" type="string">32 バイトのトランザクションハッシュ。</ResponseField>
+    <ResponseField name="transactionIndex" type="string">ブロック内でのトランザクションのインデックス (16 進数) 。</ResponseField>
+    <ResponseField name="blockHash" type="string">このトランザクションを含むブロックの 32 バイトのハッシュ。</ResponseField>
+    <ResponseField name="blockNumber" type="string">ブロック番号 (16 進数) 。</ResponseField>
+    <ResponseField name="from" type="string">20 バイトの送信者アドレス。</ResponseField>
+    <ResponseField name="to" type="string">20 バイトの受信者アドレス。コントラクトのデプロイの場合は `null` です。</ResponseField>
+    <ResponseField name="cumulativeGasUsed" type="string">ブロック内で、このトランザクションを含むそれまでのトランザクションが使用したガスの合計 (16 進数) 。</ResponseField>
+    <ResponseField name="effectiveGasPrice" type="string">このトランザクションで実際に支払われた、ガス 1 単位あたりの価格 (16 進数) 。</ResponseField>
+    <ResponseField name="gasUsed" type="string">このトランザクション単体で使用されたガス (16 進数) 。</ResponseField>
+    <ResponseField name="contractAddress" type="string | null">作成されたコントラクトのアドレス。デプロイでない場合は `null` です。</ResponseField>
+    <ResponseField name="logs" type="array">このトランザクションが発行したログオブジェクトの配列。</ResponseField>
+    <ResponseField name="logsBloom" type="string">このレシートに含まれるログの 256 バイトのブルームフィルター。</ResponseField>
+    <ResponseField name="type" type="string">トランザクションタイプ：`"0x0"` Legacy、`"0x1"` Access List、`"0x2"` EIP-1559、`"0x7e"` Deposit (L1→L2) 。</ResponseField>
+    <ResponseField name="status" type="string">成功の場合は `"0x1"`、失敗 (リバート) の場合は `"0x0"`。</ResponseField>
+    <ResponseField name="blobGasUsed" type="string">このトランザクションで消費された blob ガス (EIP-4844) 。blob を含まないトランザクションでは `null` です。</ResponseField>
+    <ResponseField name="l1Fee" type="string">このトランザクションで支払われた L1 データ手数料の合計 (16 進数) 。Base L2 固有のフィールドです。</ResponseField>
+    <ResponseField name="l1GasUsed" type="string">このトランザクションの L1 データ部分で使用された L1 ガスの量 (16 進数) 。Base L2 固有のフィールドです。</ResponseField>
+    <ResponseField name="l1GasPrice" type="string">ブロックに取り込まれた時点の L1 ガス価格 (16 進数) 。Base L2 固有のフィールドです。</ResponseField>
+    <ResponseField name="l1BlobBaseFee" type="string">ブロックに取り込まれた時点の L1 における blob 基本手数料 (16 進数) 。Base L2 固有のフィールドです。</ResponseField>
+    <ResponseField name="l1BlobBaseFeeScalar" type="string">L1 手数料の計算で blob 基本手数料に適用されるスカラー (16 進数) 。Base L2 固有のフィールドです。</ResponseField>
+    <ResponseField name="l1BaseFeeScalar" type="string">L1 手数料の計算で L1 基本手数料に適用されるスカラー (16 進数) 。Base L2 固有のフィールドです。</ResponseField>
+    <ResponseField name="daFootprintGasScalar" type="string">Base 固有の DA フットプリントスカラー (16 進数) 。</ResponseField>
+    <ResponseField name="depositNonce" type="string">デポジットトランザクションで使用された nonce (16 進数) 。タイプ `0x7e` のトランザクションにのみ含まれます。</ResponseField>
+    <ResponseField name="depositReceiptVersion" type="string">デポジットレシートのバージョン (16 進数) 。タイプ `0x7e` のトランザクションにのみ含まれます。</ResponseField>
+  </Expandable>
+</ResponseField>
+
+## エラーコード {#error-codes}
+
+| コード      | メッセージ                               | 説明                                                |
+| -------- | ----------------------------------- | ------------------------------------------------- |
+| `-32000` | transaction indexing is in progress | ノードはトランザクションのインデックスを作成中です。ノードの同期が完了してから再試行してください。 |
+
+## 例 {#example}
+
+<CodeGroup>
+  ```json Request
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_getTransactionReceipt",
+    "params": ["0xb903239f8543d04b5dc1ba6579132b143087c68db1b2168786408fcbce568238"],
+    "id": 1
+  }
+  ```
+
+  ```json Response (type 0x7e deposit) lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "blobGasUsed": null,
+      "blockHash": "0x491bca01d4bc076d60833dbd973fe031a74e7ae31866bf70d077619e09edb6ff",
+      "blockNumber": "0x2c31b0b",
+      "contractAddress": null,
+      "cumulativeGasUsed": "0xb48a",
+      "daFootprintGasScalar": "0x94",
+      "depositNonce": "0x2c31b0e",
+      "depositReceiptVersion": "0x1",
+      "effectiveGasPrice": "0x0",
+      "from": "0xdeaddeaddeaddeaddeaddeaddeaddeaddead0001",
+      "gasUsed": "0xb48a",
+      "l1BaseFeeScalar": "0x8dd",
+      "l1BlobBaseFee": "0x582765",
+      "l1BlobBaseFeeScalar": "0x101c12",
+      "l1Fee": "0x0",
+      "l1GasPrice": "0x6bdbf6f",
+      "l1GasUsed": "0x71d",
+      "logs": [],
+      "logsBloom": "0x000...000",
+      "status": "0x1",
+      "to": "0x4200000000000000000000000000000000000015",
+      "transactionHash": "0x03c8f106f18ad94190e763e21b584c5825b2f4c61f1274c0e8abe65b4476cd51",
+      "transactionIndex": "0x0",
+      "type": "0x7e"
+    }
+  }
+  ```
+
+  ```json Not Found
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": null
+  }
+  ```
+</CodeGroup>

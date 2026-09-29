@@ -1,0 +1,103 @@
+---
+title: "在 Vibenet 上测试"
+description: "在 Base 的实验性预览网络 Vibenet 上，基于 Base 最新的链级功能进行构建和测试，并通过 chain.base.org/vibenet 了解已上线的功能。"
+---
+
+Vibenet 是 Base 的实验性预览网络，也是一个开发网络 (devnet) 。新的链级功能会先在这里上线，之后再推广到 Sepolia 或 Mainnet。你可以借助它，率先基于 Base 的前沿功能进行构建。
+
+<Warning>
+  Vibenet 仅供实验使用，不适用于生产环境或面向用户的应用，其状态可能随时重置，恕不另行通知。
+</Warning>
+
+## 查看 Vibenet 上已上线的功能 {#see-whats-live-on-vibenet}
+
+[chain.base.org/vibenet](https://chain.base.org/vibenet) 是 Vibenet 的门户页面：你可以在这里及时了解最新上线的功能、使用区块浏览器，还可以通过水龙头领取测试网 ETH。
+
+<iframe src="https://chain.base.org/vibenet" title="Base Vibenet, chain.base.org" width="100%" height="640" style={{ border: "1px solid rgba(128,128,128,0.25)", borderRadius: "12px" }} loading="lazy" referrerpolicy="strict-origin-when-cross-origin" />
+
+<Note>
+  如果嵌入内容无法加载，请直接在新标签页中打开 [chain.base.org/vibenet](https://chain.base.org/vibenet)。
+</Note>
+
+## 网络详情 {#network-details}
+
+|                  |                                                                            |
+| :--------------- | :------------------------------------------------------------------------- |
+| **网络名称**         | Base Vibenet                                                               |
+| **RPC 端点**       | [rpc.vibes.base.org](https://rpc.vibes.base.org)                           |
+| **WebSocket 端点** | `wss://rpc.vibes.base.org/ws`                                              |
+| **链 ID**         | 84538453                                                                   |
+| **货币符号**         | ETH                                                                        |
+| **水龙头**          | [chain.base.org/vibenet/faucet](https://chain.base.org/vibenet/faucet)     |
+| **区块浏览器**        | [chain.base.org/vibenet/explorer](https://chain.base.org/vibenet/explorer) |
+
+如需将 Vibenet 添加到钱包，请参阅[连接到 Base](/base-chain/quickstart/connecting-to-base)。
+
+## 获取测试网 ETH {#get-testnet-eth}
+
+Vibenet 上的交易需要支付 gas。你可以从 [Vibenet 水龙头](https://chain.base.org/vibenet/faucet)领取测试网 ETH，也可以通过编程方式领取：
+
+```bash Terminal
+curl -X POST https://api.vibes.base.org/api/vibenet/faucet/drip \
+  -H "content-type: application/json" \
+  -d '{"address":"0xYourAddress"}'
+```
+
+## 使用 WebSocket 进行流式订阅 {#stream-with-websockets}
+
+Vibenet 提供公共 WebSocket 端点 `wss://rpc.vibes.base.org/ws`。通过 `eth_subscribe` 订阅即可接收推送更新，无需轮询：
+
+* **`newHeads`** — 每出一个区块推送一个新事件，用于跟踪链和区块状态。
+* **`logs`** — 按地址和索引主题过滤的合约事件，用于跟踪应用状态。
+
+```javascript newHeads subscription lines wrap expandable
+import WebSocket from "ws";
+
+const ws = new WebSocket("wss://rpc.vibes.base.org/ws");
+
+ws.on("open", () => {
+  ws.send(JSON.stringify({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "eth_subscribe",
+    params: ["newHeads"],
+  }));
+});
+
+ws.on("message", (data) => {
+  const msg = JSON.parse(data.toString());
+  if (msg.method === "eth_subscription") {
+    console.log("new head:", msg.params.result.number);
+  }
+});
+```
+
+在 200ms 出块的情况下，250–1000ms 的轮询间隔可能会漏掉多个区块，因此应以 WebSocket 推送作为主要数据来源。建议只维持少量长连接，在同一连接上复用订阅和普通 JSON-RPC 调用，轮询则仅用于对账 (余额、费用和健康检查) 。此外，请保留一条 HTTPS RPC 调用路径，以便在 socket 连接断开时作为回退方案。
+
+<Note>
+  此公共 WebSocket 仅适用于 Vibenet。Base 不为 Base Mainnet 或 Base Sepolia 提供免费的公共 WebSocket RPC 端点；这两个网络的公共端点仅支持 HTTP。如需在 Sepolia 或 Mainnet 上使用 WebSocket，请自行运行节点，或从 [Builder Stack](/zh/get-started/builder-stack) 中选择支持 WebSocket 的服务提供商。
+</Note>
+
+## 现已推出 {#whats-available-now}
+
+<CardGroup cols={2}>
+  <Card title="B20 代币标准" icon="coins" href="/zh/build-on-base/issue-rwa/create-an-asset-token">
+    Base 的原生代币标准：角色、供应上限、策略管控和 Memo 均在链上原生内置。
+  </Card>
+
+  <Card title="200ms 原生区块" icon="clock" href="/zh/upgrades/denim/200ms-blocks">
+    测试规范的 200ms 区块，并迁移现有的 Flashblocks 集成。
+  </Card>
+</CardGroup>
+
+## 后续步骤 {#next-steps}
+
+<CardGroup cols={2}>
+  <Card title="连接到 Base" icon="plug" href="/base-chain/quickstart/connecting-to-base">
+    将 Vibenet 添加到您的钱包和开发环境中。
+  </Card>
+
+  <Card title="发行 B20 代币" icon="rocket" href="/zh/build-on-base/issue-rwa/create-an-asset-token">
+    只需调用一次工厂合约，即可在 Vibenet 上部署代币。
+  </Card>
+</CardGroup>

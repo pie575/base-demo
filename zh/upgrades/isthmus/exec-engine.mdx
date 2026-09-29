@@ -1,0 +1,244 @@
+---
+title: "L2 执行引擎"
+description: "Isthmus 升级对执行引擎的变更，包括在区块头中加入 L2ToL1MessagePasser 存储根，以及收取运营方费用（operator fee）。"
+---
+
+[l2-to-l1-mp]: /specifications/base-protocol/execution/predeploys#L2ToL1MessagePasser
+
+[output-root]: /specifications/reference/glossary#l2-output-root
+
+## 概述 {#overview}
+
+`L2ToL1MessagePasser` 的存储根包含在区块头的
+`withdrawalRoot` 字段中。
+
+## 时间戳激活 {#timestamp-activation}
+
+与其他网络升级一样，Isthmus 在指定的时间戳激活。
+当 `L2 Timestamp >= activation time` 时，L2 区块执行规则的变更即开始生效。
+
+## 区块头中的 `L2ToL1MessagePasser` 存储根 {#l2tol1messagepasser-storage-root-in-header}
+
+Isthmus 硬分叉激活后，L2 区块头的 `withdrawalsRoot` 字段将由 32 字节的
+[`L2ToL1MessagePasser`][l2-to-l1-mp] 账户存储根构成，该存储根取自区块头中 stateRoot
+字段所标识的世界状态。该存储根应与在对应区块号下调用 `eth_getProof`
+所返回的根一致。
+
+### Header 有效性规则 {#header-validity-rules}
+
+在 Isthmus 激活之前：
+
+* L2 区块头的 `withdrawalsRoot` 字段必须满足：
+  * 若 Canyon 尚未激活，则为 `nil`。
+  * 若 Canyon 已激活，则为 `keccak256(rlp(empty_string_code))`。
+* L2 区块头中必须省略 `requestsHash` 字段。
+
+在 Isthmus 激活之后，当且仅当满足以下条件时，L2 区块头才有效：
+
+1. `withdrawalsRoot` 字段
+   1. 长度为 32 字节。
+   2. 与 [`L2ToL1MessagePasser`][l2-to-l1-mp] 账户的存储根一致，
+      即区块头中 `storageRoot` 所承诺的值。
+2. `requestsHash` 字段等于 `sha256('') = 0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`，
+   表示该区块中不包含任何请求。
+
+### 区块头 Withdrawals Root {#header-withdrawals-root}
+
+| 字节偏移      | 描述                                          |
+| --------- | ------------------------------------------- |
+| `[0, 32)` | [`L2ToL1MessagePasser`][l2-to-l1-mp] 账户的存储根 |
+
+#### 设计依据 {#rationale}
+
+目前，要为历史区块生成 [L2 输出根][output-root]，必须依赖归档节点。在引入故障证明之后，这会直接给系统用户带来负担，具体表现为：
+
+1. 提议者必须运行归档节点，才能在 safe head 处提议输出根。
+2. 证明提款的用户必须运行归档节点，才能验证其提款所依据的输出根确实有效，且已包含在 safe chain (安全链) 中。
+
+将 [`L2ToL1MessagePasser`][l2-to-l1-mp] 账户的存储根放入 `withdrawalsRoot` 字段，可以同时为用户和协议参与者减轻这一负担，使他们能够以更低的运营成本提交提议并验证他人的提议。
+
+#### 创世区块 {#genesis-block}
+
+如果 Isthmus 在创世区块即已激活，则创世区块头中的 `withdrawalsRoot` 设为
+[`L2ToL1MessagePasser`][l2-to-l1-mp] 账户的存储根。
+
+#### 状态处理 {#state-processing}
+
+进行状态处理时，其交易正在接受验证的区块 header 不应向 EVM/应用层暴露其 `withdrawalsRoot`。
+
+#### P2P {#p2p}
+
+在同步期间，我们预期区块体中的提款列表为空 (OP stack 不使用
+提款列表) ，因此提款列表的哈希应为空列表的 MPT 根。
+使用同步得到的最终 header 验证 header 链时，会根据 header 时间戳来
+判断 Isthmus 在该区块是否已激活。若已激活，则 header 中的 `withdrawalsRoot`
+MPT 哈希可以是任意非空值 (因为它应包含 `L2ToL1MessagePasser` 的存储根) 。
+
+#### 向后兼容性注意事项 {#backwards-compatibility-considerations}
+
+从 Canyon (包含对 Shanghai 硬分叉的支持) 开始，直到 Isthmus 激活之前，
+`withdrawalsRoot` 字段都被设置为空提款列表的 MPT 根，该值与空存储根
+相同。提款虽然记录在 L2 状态中，却不会反映在 `withdrawalsRoot` 中。因此，在 Isthmus 激活之前，
+即使区块头中存在 `withdrawalsRoot` 且包含 MPT 根，也不应使用该值。
+任何计算输出根的实现都应注意，不要使用区块头中的 `withdrawalsRoot`。
+
+请注意，[`L2ToL1MessagePasser`][l2-to-l1-mp] 中始终存在非零存储，
+因为它是一个[代理预部署合约](/zh/specifications/base-protocol/execution/predeploys)：自创世起，它就
+存储着实现地址和所有者地址。因此从 Isthmus 起，
+`withdrawalsRoot` 将始终为非 nil，且绝不会是空列表的 MPT 根。
+
+#### 前向兼容性考量 {#forwards-compatibility-considerations}
+
+目前，`withdrawalsRoot` 字段在 Base 的区块 header 共识格式中并未使用，且在现有规划中也不会被挪作他用。将该值设置为提款合约账户的存储根，既与 Base 直接契合，又能复用 L1 header 共识格式中的现有字段。
+
+#### 客户端实现注意事项 {#client-implementation-considerations}
+
+不同的 EL 客户端存储账户历史状态的方式各不相同。假设出现一种人为构造的极端情况：Base 长时间没有任何出站提款，
+那么节点可能无法获取 [`L2ToL1MessagePasser`][l2-to-l1-mp] 的账户存储根。此时，客户端将无法维持共识。不过，即使没有直接存储该信息，大多数现代
+客户端至少也能即时重建指定区块的账户存储根。
+
+##### 交易模拟 {#transaction-simulation}
+
+在响应 `eth_simulateV1` 等允许在一个或多个区块内模拟任意交易的 RPC 方法时，
+对于由此类模拟交易构成的区块，其区块头中应包含一个空的提款根 (withdrawals root) 。在无法直接获取实际提款根值的
+场景下，同样适用此规则。
+
+## 存款请求 {#deposit-requests}
+
+[EIP-6110] 将存款处理移至执行层，并引入了一种新的 [EIP-7685] 存款请求，其类型为 `DEPOSIT_REQUEST_TYPE`。此后，存款请求会出现在 [EIP-7685] 请求列表中，而 Base 需要忽略这些请求。因此，必须修改请求生成逻辑，将 [EIP-6110] 存款请求排除在外。请注意，[EIP-6110] 请求类型在 L1 的 Pectra 升级和 L2 的 Isthmus 硬分叉之前 *并不* 存在，这类存款请求始终可以直接排除，因此无需设置激活时间。
+
+[EIP-6110]: https://eips.ethereum.org/EIPS/eip-6110
+
+[EIP-7685]: https://eips.ethereum.org/EIPS/eip-7685
+
+## 区块体提款列表 {#block-body-withdrawals-list}
+
+区块体中的提款列表编码为空 RLP 列表。
+
+## EVM 变更 {#evm-changes}
+
+### BLS 预编译合约 {#bls-precompiles}
+
+与 [Granite 硬分叉](../granite/exec-engine)中的 `bn256Pairing` 预编译合约类似，
+[EIP-2537](https://eips.ethereum.org/EIPS/eip-2537) 引入的 BLS
+预编译合约也会在 EVM 中根据输入大小提前终止执行。
+
+各 BLS 预编译合约的输入大小限制如下：
+
+* G1 多标量乘法：`input_size <= 513760 bytes`
+* G2 多标量乘法：`input_size <= 488448 bytes`
+* 配对检查：`input_size <= 235008 bytes`
+
+其余 BLS 预编译合约均为固定大小的运算，gas 成本也是固定的。
+
+## 区块封装 {#block-sealing}
+
+在 Base 中，`EIP-7685` 被置为空操作 (no-op) ，`requestsHash` 始终设为 `sha256('')` (参见
+[区块头有效性规则](#header-validity-rules)) 。因此，[EIP-6110](https://eips.ethereum.org/EIPS/eip-6110)、
+[EIP-7002](https://eips.ethereum.org/EIPS/eip-7002) 和 [EIP-7251](https://eips.ethereum.org/EIPS/eip-7251) 同样未
+启用。Base 执行层必须确保在 Isthmus 激活后的区块封装过程中，*不会调用&#95;区块执行后对存款合约事件的过滤
+(EIP-6110) ，也&#95;不会调用* `EIP-7002` 和 `EIP-7251` 的系统调用。
+
+Base 用户仍可无需许可地部署这些智能合约，但 Base 执行层不会对其做任何特殊处理，
+也不会考虑 L1 Pectra 硬分叉引入的系统调用。
+
+## Engine API 更新 {#engine-api-updates}
+
+### `ExecutionPayload` 的更新 {#update-to-executionpayload}
+
+Isthmus 硬分叉之后，`ExecutionPayload` 将新增一个 `withdrawalsRoot` 字段。
+
+### `engine_newPayloadV4` API {#engine_newpayloadv4-api}
+
+Isthmus 升级之后，将使用 `engine_newPayloadV4`。
+
+`executionRequests` 参数必须 (MUST) 为空数组。
+
+## 费用 {#fees}
+
+新的 OP Stack 变体各有不同的资源消耗模式，因此需要更灵活的
+定价模型。为了支持更加可定制的费用结构，Isthmus 在费用
+计算中新增了一个组成部分：`operatorFee`，它由两个标量参数决定：`operatorFeeScalar`
+和 `operatorFeeConstant`。
+
+### 运营方费用 {#operator-fee}
+
+运营方费用直接集成在 EVM 中，与标准 gas 费用以及 Base 特有的 L1 数据
+费用并存。该费用与 EVM 中现有的各项费用遵循相同的语义[^1]，区别仅在于使用了一个新的费用受益账户。
+
+#### 费用公式 {#fee-formula}
+
+$$
+\text{operatorFee} = (\text{gas} \times \text{operatorFeeScalar} \div 10^6) + \text{operatorFeeConstant}
+$$
+
+其中：
+
+* `gas` 是交易使用的 gas 数量。计算交易开始时购买的 gas 数量时，该值应为 `gas_limit`；根据交易实际消耗了多少 `gas_limit`
+  来确定应退还的 gas 数量时，该值应为 `gas_used`。
+* `operatorFeeScalar` 是由链运营方设置的 `uint32` 标量，以 `1e6` 为缩放因子。
+* `operatorFeeConstant` 是由链运营方设置的 `uint64` 标量。
+
+请注意，运营方费用的最大值为 77 位，这可以根据各输入参数的最大值计算得出：
+
+```text Maximum Operator Fee
+operatorFee_max = (uint64_max * uint32_max / 10^6) + uint64_max ≈ 7.924660923989131 * 10^22
+```
+
+因此，只要实现使用 `uint256` 类型进行计算，就无需检查溢出。
+
+#### 存款交易的运营方费用 {#deposit-operator-fees}
+
+存款交易不收取运营方费用 (operator fee) 。对于所有存款交易，无论运营方费用参数如何配置，运营方费用都应为**零**。存款交易也不会获得运营方费用的 gas 退款，因为它们本来就不会购买运营方费用对应的 gas。
+
+#### EVM 费用语义 {#evm-fee-semantics}
+
+与 EVM 中的其他费用一样，运营方费用应按以下模式收取：
+
+1. 在执行前验证阶段，账户必须持有足够的 ETH，既能覆盖现有的最坏情况 gas + L1 数据费用，
+   *也能* 覆盖最坏情况下的运营方费用 (对于存款交易，最坏情况费用为 `0`) 。计算该值时，使用
+   [费用公式](#fee-formula)，将 `gas` 设为交易的 `gas_limit`，再将结果加到现有的
+   最坏情况交易费用上。
+2. 在执行前购买 gas 时，向账户收取最坏情况下的运营方费用。计算该值时，使用
+   [费用公式](#fee-formula)，将 `gas` 设为交易的 `gas_limit`。
+3. 执行完成后发放退款时，对于购买了运营方费用 gas 的交易，应退还其未使用的运营方费用
+   gas (即调用方只应支付 *实际生效的* 运营方费用) 。退款应按
+   $\text{opFeeRefund} = \text{opFeeWorstCase} - \text{opFeeActual}$ 计算，其中：
+   * $\text{opFeeWorstCase}$ 如第 1 条和第 2 条所述。
+   * $\text{opFeeActual}$ 是实际使用的运营方费用金额。该值使用
+     [费用公式](#fee-formula) 计算，其中 `gas` 设为 `gas_limit - gas_used + refunded_gas`。`refunded_gas` 的定义见
+     [EIP-3529](https://eips.ethereum.org/EIPS/eip-3529)。
+4. 执行完成后向费用受益方发放奖励时，将 *已花费的运营方费用* 发送至
+   [运营方费用金库](#fee-vaults)。该值即为上文所述的 $\text{opFeeActual}$。
+
+实现必须确保 ETH 不会因运营方费用而被铸造或销毁。
+
+#### 交易池变更 {#transaction-pool-changes}
+
+为了应对上文所述交易有效性判定中新增的这笔费用，交易池必须拒绝余额不足以支付最坏情况下交易费用的交易。
+交易的最坏情况成本现已包含最坏情况下的运营方费用 (operator fee) 。
+
+#### 配置运营方费用参数 {#configuring-operator-fee-parameters}
+
+`operatorFeeScalar` 和 `operatorFeeConstant` 的加载方式，与 [`L1Fee`](/zh/specifications/base-protocol/execution/l2-execution-engine#ecotone-l1-cost-fee-changes-eip-4844-da) 计算中使用的 `baseFeeScalar` 和
+`blobBaseFeeScalar` 类似。具体而言，可以通过以下两种可互换的方式访问这些参数：
+
+* 从当前 L2 区块已存入的 L1 属性 (`operatorFeeScalar` 和 `operatorFeeConstant`) 中读取
+* 从 L1 Block Info 合约 (`0x4200000000000000000000000000000000000015`) 中读取
+  * 使用相应的 Solidity getter 函数 (`operatorFeeScalar`、`operatorFeeConstant`)
+  * 直接读取存储：
+    * 运营方费用标量以大端序 `uint32` 形式存储在槽 `8` 的偏移量 `0` 处。
+    * 运营方费用常量以大端序 `uint64` 形式存储在槽 `8` 的偏移量 `4` 处。
+
+### 费用金库 {#fee-vaults}
+
+收取的这些费用会发送到一个专用于 `operatorFee` 的新金库：[`OperatorFeeVault`](./predeploys#operatorfeevault)。
+
+与现有金库一样，它是一个硬编码地址，指向一个预部署的代理合约。
+该代理背后是一个基于 `FeeVault` 部署的金库合约，用于将金库资金安全地转至 L1。
+
+### 收据 {#receipts}
+
+Isthmus 激活后，当且仅当 `operatorFeeScalar` 和 `operatorFeeConstant` 中至少有一个不为零时，交易收据中才会新增这两个字段。
+
+[^1]: Wood, G., &amp; Ethereum Contributors. (n.d.-a). Ethereum Yellow Paper. [https://ethereum.github.io/yellowpaper/paper.pdf](https://ethereum.github.io/yellowpaper/paper.pdf) 第 8 页，第 5 节：“Gas and Payment”

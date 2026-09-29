@@ -1,0 +1,56 @@
+---
+title: 'eth_sendRawTransaction'
+sidebarTitle: 'eth_sendRawTransaction'
+description: '将预签名交易提交到网络。所有 Base 端点均已启用 Flashblocks，可实现 200ms 预确认。'
+---
+
+将经过预签名和 RLP 编码的交易提交到网络，并返回交易哈希。
+
+<Tip>
+  **Flashblocks：** 将交易提交到 `https://mainnet.base.org`，即可使其有机会被纳入下一个 Flashblock (约 200ms) 。可使用 [`base_transactionStatus`](/zh/base-chain/api-reference/flashblocks-api/base_transactionStatus) 确认交易是否已进入 mempool，并订阅 [`newFlashblockTransactions`](/zh/base-chain/api-reference/flashblocks-api/newFlashblockTransactions) 来检测预确认。
+</Tip>
+
+## 参数 {#parameters}
+
+<ParamField body="data" type="string" required>
+  已签名的交易，格式为经过 RLP 编码的十六进制字符串。通常由 viem、ethers.js 或 web3.js 等钱包库生成。
+</ParamField>
+
+## 返回值 {#returns}
+
+<ResponseField name="result" type="string">
+  若交易已被接受进入 mempool，则返回 32 字节的交易哈希。
+</ResponseField>
+
+## 错误码 {#error-codes}
+
+| 代码       | 消息                                         | 描述                          |
+| -------- | ------------------------------------------ | --------------------------- |
+| `-32000` | nonce too low                              | 交易的 nonce 低于账户当前的 nonce。    |
+| `-32000` | insufficient funds for gas * price + value | 发送方余额不足以支付 gas 费用和转账金额。     |
+| `-32000` | already known                              | mempool 中已存在相同的交易。          |
+| `-32000` | replacement transaction underpriced        | 替换交易的 gas 价格必须比原交易至少高出 10%。 |
+
+## 示例 {#example}
+
+<CodeGroup>
+  ```bash 标准
+  curl https://mainnet.base.org \
+    -X POST -H "Content-Type: application/json" \
+    -d '{"jsonrpc":"2.0","method":"eth_sendRawTransaction","params":["0x02f86b82210501843b9aca008477359400825208944200000000000000000000000000000000000006872c68af0bb1400080c001a0..."],"id":1}'
+  ```
+
+  ```bash Flashblocks（预确认提交）
+  curl https://mainnet.base.org \
+    -X POST -H "Content-Type: application/json" \
+    -d '{"jsonrpc":"2.0","method":"eth_sendRawTransaction","params":["0x02f86b82210501843b9aca008477359400825208944200000000000000000000000000000000000006872c68af0bb1400080c001a0..."],"id":1}'
+  ```
+
+  ```json 响应
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0xb903239f8543d04b5dc1ba6579132b143087c68db1b2168786408fcbce568238"
+  }
+  ```
+</CodeGroup>

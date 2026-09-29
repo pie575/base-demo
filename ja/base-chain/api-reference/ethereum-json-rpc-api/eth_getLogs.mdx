@@ -1,0 +1,125 @@
+---
+title: 'eth_getLogs'
+sidebarTitle: 'eth_getLogs'
+description: 'フィルターに一致するログを返します。pending を指定すると、プレコンファーム済みトランザクションのログをクエリできます。'
+---
+
+指定したフィルターオブジェクトに一致するすべてのログを配列で返します。オンチェーンイベントのインデックス作成に特に便利です。
+
+<Warning>
+  広いブロック範囲にまたがるクエリや、アクティビティの多いコントラクトを対象とするクエリは、タイムアウトしたり拒否されたりすることがあります。安定した結果を得るには、`fromBlock` から `toBlock` までの範囲を 2,000 ブロック未満に抑えてください。また、ノードプロバイダーによっては独自の制限が設けられている場合があります。
+</Warning>
+
+<Tip>
+  **Flashblocks:** `"fromBlock": "pending"` と `"toBlock": "pending"` を指定すると、約 200ms ごとに更新されるプレコンファーム済みトランザクションのログをクエリできます。リアルタイムのストリームが必要な場合は、代わりに [`pendingLogs`](/ja/base-chain/api-reference/flashblocks-api/pendingLogs) WebSocket サブスクリプションの利用を検討してください。
+</Tip>
+
+## パラメーター {#parameters}
+
+<ParamField body="filter" type="object" required>
+  フィルターオプション。少なくとも 1 つの条件を指定してください。
+
+  <Expandable title="フィルターフィールド">
+    <ParamField body="fromBlock" type="string">
+      ブロック範囲の開始位置。16 進数のブロック番号またはブロックタグで指定します。プレコンファーム済みのログを含めるには `"pending"` を指定します。デフォルトは `"latest"` です。
+    </ParamField>
+
+    <ParamField body="toBlock" type="string">
+      ブロック範囲の終了位置。16 進数のブロック番号またはブロックタグで指定します。デフォルトは `"latest"` です。
+    </ParamField>
+
+    <ParamField body="address" type="string | array">
+      フィルター対象のコントラクトアドレス、またはアドレスの配列。省略可能です。
+    </ParamField>
+
+    <ParamField body="topics" type="array">
+      32 バイトのトピックフィルターの配列。各位置には、`null` (任意の値に一致) 、単一トピックの 16 進数文字列、または 16 進数文字列の配列 (配列内のいずれかに一致) を指定できます。通常、位置 0 はイベントシグネチャの `keccak256` ハッシュです。省略可能です。
+    </ParamField>
+
+    <ParamField body="blockHash" type="string">
+      このハッシュを持つブロックのログのみに絞り込みます。指定した場合、`fromBlock` と `toBlock` は無視されます。省略可能です。
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## 戻り値 {#returns}
+
+<ResponseField name="result" type="array">
+  フィルターに一致するログオブジェクトの配列。
+
+  <Expandable title="ログオブジェクトのフィールド">
+    <ResponseField name="address" type="string">ログを発行したコントラクトの20バイトのアドレス。</ResponseField>
+    <ResponseField name="topics" type="array">インデックス付きの32バイトのトピック (0〜4個) の配列。通常、トピック0はイベントシグネチャのハッシュです。</ResponseField>
+    <ResponseField name="data" type="string">インデックス化されていないイベントパラメータ (ABIエンコード済み) 。</ResponseField>
+    <ResponseField name="blockNumber" type="string">このログが発行されたブロックの番号 (16進数) 。</ResponseField>
+    <ResponseField name="blockTimestamp" type="string">このログを含むブロックのUnixタイムスタンプ (16進数文字列) 。標準のEthereumログスキーマに対するBase L2独自の拡張です。</ResponseField>
+    <ResponseField name="transactionHash" type="string">このログを発行したトランザクションの32バイトのハッシュ。</ResponseField>
+    <ResponseField name="transactionIndex" type="string">ブロック内でのトランザクションのインデックス (16進数) 。</ResponseField>
+    <ResponseField name="blockHash" type="string">ブロックの32バイトのハッシュ。</ResponseField>
+    <ResponseField name="logIndex" type="string">ブロック内でのログのインデックス位置 (16進数) 。</ResponseField>
+    <ResponseField name="removed" type="boolean">チェーンの再編成 (reorg) によってログが削除された場合は`true`。</ResponseField>
+  </Expandable>
+</ResponseField>
+
+## 例 {#example}
+
+<CodeGroup>
+  ```bash 標準（ブロック範囲） lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_getLogs",
+      "params": [{
+        "fromBlock": "0x12ced00",
+        "toBlock": "0x12ced28",
+        "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "topics": ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"]
+      }],
+      "id": 1
+    }'
+  ```
+
+  ```bash Flashblocks（pending、約200ms） lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_getLogs",
+      "params": [{
+        "fromBlock": "pending",
+        "toBlock": "pending",
+        "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "topics": ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"]
+      }],
+      "id": 1
+    }'
+  ```
+
+  ```json レスポンス lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": [
+      {
+        "address": "0x4200000000000000000000000000000000000006",
+        "blockHash": "0x89f4c9e23a2f706f0afa9ca8f770c4b7dcbcb73ba7e9b1c29c4a8c1b90c31d24",
+        "blockNumber": "0x2c31b0a",
+        "blockTimestamp": "0x6a1092f7",
+        "data": "0x00000000000000000000000000000000000000000000000080134424aad49d08",
+        "logIndex": "0x0",
+        "removed": false,
+        "topics": [
+          "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+          "0x000000000000000000000000b2cc224c1c9fee385f8ad6a55b4d94e92359dc59",
+          "0x00000000000000000000000051c72848c68a965f66fa7a88855f9f7784502a7f"
+        ],
+        "transactionHash": "0x2ca798df9d399b886fb3735414e8d35a20fec080e48eb5e2e75c0f6ec349a725",
+        "transactionIndex": "0x1"
+      }
+    ]
+  }
+  ```
+</CodeGroup>

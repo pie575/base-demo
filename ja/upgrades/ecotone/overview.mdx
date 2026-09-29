@@ -1,0 +1,44 @@
+---
+title: "Ecotone"
+sidebarTitle: "概要"
+description: "EIP-4844 の blobトランザクションや EIP-4788 のビーコンブロックルートなど、Ethereum Dencun の変更を取り込んだ Ecotone ハードフォークの概要です。"
+---
+
+## 有効化タイムスタンプ {#activation-timestamps}
+
+| ネットワーク    | 有効化タイムスタンプ                             |
+| --------- | -------------------------------------- |
+| `mainnet` | `1710374401` (2024-03-14 00:00:01 UTC) |
+| `sepolia` | `1708534800` (2024-02-21 17:00:00 UTC) |
+
+Ecotone アップグレードは L1 の Dencun アップグレードの内容を取り込んでおり、データ可用性の確保に EIP-4844 の blob を採用しています。
+
+## 実行レイヤー {#execution-layer}
+
+* Cancun (実行レイヤー) :
+  * [EIP-1153: Transient storage opcodes](https://eips.ethereum.org/EIPS/eip-1153)
+  * [EIP-4844: Shard Blob Transactions](https://eips.ethereum.org/EIPS/eip-4844)
+    * [Blob トランザクションは無効化されています](/ja/specifications/base-protocol/execution/l2-execution-engine#ecotone-disable-blob-transactions)
+  * [EIP-4788: Beacon block root in the EVM](https://eips.ethereum.org/EIPS/eip-4788)
+    * [L1 のビーコンブロックルートは L2 に埋め込まれます](/ja/specifications/base-protocol/execution/l2-execution-engine#ecotone-beacon-block-root)
+    * [Beacon roots コントラクトは自動的にデプロイされます](/ja/specifications/base-protocol/consensus/derivation#ecotone-beacon-block-roots-contract-deployment-eip-4788)
+  * [EIP-5656: MCOPY - Memory copying instruction](https://eips.ethereum.org/EIPS/eip-5656)
+  * [EIP-6780: SELFDESTRUCT only in same transaction](https://eips.ethereum.org/EIPS/eip-6780)
+  * [EIP-7516: BLOBBASEFEE opcode](https://eips.ethereum.org/EIPS/eip-7516)
+    * [BLOBBASEFEE は常にスタックに 1 をプッシュします](/ja/specifications/base-protocol/execution/l2-execution-engine#ecotone-disable-blob-transactions)
+* Deneb (コンセンサスレイヤー) : *L2 には適用されません*
+  * [EIP-7044: Perpetually Valid Signed Voluntary Exits](https://eips.ethereum.org/EIPS/eip-7044)
+  * [EIP-7045: Increase Max Attestation Inclusion Slot](https://eips.ethereum.org/EIPS/eip-7045)
+  * [EIP-7514: Add Max Epoch Churn Limit](https://eips.ethereum.org/EIPS/eip-7514)
+
+## コンセンサスレイヤー {#consensus-layer}
+
+[retrieval]: /specifications/base-protocol/consensus/derivation#ecotone-blob-retrieval
+
+[predeploy]: l1-attributes#ecotone-l1block-upgrade
+
+* Blobデータ可用性：[L1データ取得ステージ][retrieval]でblob DAをサポートします。
+* ロールアップ手数料の更新：
+  [L1データ手数料の計算](/ja/specifications/base-protocol/execution/l2-execution-engine#ecotone-l1-cost-fee-changes-eip-4844-da)でblob DAをサポートします。
+* [L1属性プリデプロイコントラクト][predeploy]
+  (`L1Block`プリデプロイとも呼ばれます) の自動アップグレードと拡張

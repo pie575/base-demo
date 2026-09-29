@@ -1,0 +1,38 @@
+---
+title: 'eth_gasPrice'
+sidebarTitle: 'eth_gasPrice'
+description: '返回当前的 gas 价格（以 wei 为单位）。'
+---
+
+返回当前的 gas 价格 (以 wei 为单位) 。如需发送 EIP-1559 交易，请改用 [`eth_maxPriorityFeePerGas`](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_maxPriorityFeePerGas) 和 [`eth_feeHistory`](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_feeHistory)。
+
+## 参数 {#parameters}
+
+无参数。
+
+## 返回值 {#returns}
+
+<ResponseField name="result" type="string">
+  以十六进制字符串表示的当前 gas 价格 (单位为 wei) 。
+</ResponseField>
+
+## 示例 {#example}
+
+<CodeGroup>
+  ```json Request
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_gasPrice",
+    "params": [],
+    "id": 1
+  }
+  ```
+
+  ```json Response
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x5b8d80"
+  }
+  ```
+</CodeGroup>

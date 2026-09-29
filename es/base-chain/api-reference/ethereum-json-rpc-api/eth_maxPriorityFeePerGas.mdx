@@ -1,0 +1,38 @@
+---
+title: 'eth_maxPriorityFeePerGas'
+sidebarTitle: 'eth_maxPriorityFeePerGas'
+description: 'Devuelve la tarifa de prioridad (propina) sugerida por unidad de gas según EIP-1559.'
+---
+
+Devuelve un valor sugerido de `maxPriorityFeePerGas` para usar en una transacción EIP-1559. Se trata de la propina que se paga al sequencer además de la tarifa base.
+
+## Parámetros {#parameters}
+
+Sin parámetros.
+
+## Valor devuelto {#returns}
+
+<ResponseField name="result" type="string">
+  La tarifa de prioridad sugerida por unidad de gas, expresada en wei como cadena hexadecimal.
+</ResponseField>
+
+## Ejemplo {#example}
+
+<CodeGroup>
+  ```json Request
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_maxPriorityFeePerGas",
+    "params": [],
+    "id": 1
+  }
+  ```
+
+  ```json Response
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0xf4240"
+  }
+  ```
+</CodeGroup>

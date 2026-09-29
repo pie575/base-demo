@@ -1,0 +1,69 @@
+---
+title: "Validity Transaction RPC"
+sidebarTitle: "Validity Transaction RPC"
+description: "有効性述語を付与して、署名済みの raw トランザクションを送信します。"
+---
+
+署名済みの legacy、EIP-2930、または EIP-1559 トランザクションを、Base がそのトランザクションをブロックに含められる条件を制御する述語とともに送信します。EIP-1559 の使用を推奨します。
+
+<Warning>
+  この実験的なメソッドは現在 Vibenet で利用できます。本番環境での API 仕様はまだ確定していません。
+</Warning>
+
+## パラメータ {#parameters}
+
+パラメータを2つ渡します。1つ目は署名およびシリアライズ済みのトランザクションです。2つ目は、空でない `validity` 配列を含むオブジェクトです。
+
+<RequestExample>
+  ```json Request lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "base_sendRawTransactionValidity",
+    "params": [
+      "0x<signed-raw-transaction>",
+      {
+        "validity": [
+          {
+            "type": "storage",
+            "params": {
+              "address": "0x8ba1f109551bD432803012645Ac136ddd64DBA72",
+              "slot": "0x8",
+              "mask": "0xff",
+              "op": "=",
+              "value": "0x2a"
+            }
+          }
+        ]
+      }
+    ]
+  }
+  ```
+</RequestExample>
+
+## 述語 {#predicates}
+
+| 型                  | パラメータ                                       |
+| ------------------ | ------------------------------------------- |
+| `balance`          | `address`、`op`、`value`                      |
+| `storage`          | `address`、`slot`、`op`、`value`、`mask` (省略可)  |
+| `block_number`     | `op`、`value`                                |
+| `flashblock_index` | `op`、`value`                                |
+
+サポートされている演算子は `<`、`<=`、`=`、`!=`、`>`、`>=` です。述語の値には `0x` プレフィックス付きの16進数文字列を使用します。`mask` のデフォルト値は、すべてのビットが1の値です。
+
+## 戻り値 {#returns}
+
+<ResponseField name="result" type="string">
+  送信されたトランザクションの32バイトのハッシュ。
+</ResponseField>
+
+ハッシュが返されたことは、トランザクションが受理されたことを示すものであり、ブロックに取り込まれたことを示すものではありません。
+
+## エラー {#errors}
+
+このメソッドは JSON-RPC エラーを返します。メソッドが利用できない場合、パラメータが無効な場合、トランザクションハッシュが存在しない場合のエラーを処理してください。
+
+エラーコードとメッセージは、まだ確定していません。
+
+評価ルールについては [Predicates and Safety](/ja/specifications/build-transaction/predicates-and-safety) を参照してください。トランザクションがブロックに取り込まれない場合は、[Troubleshooting](/ja/specifications/build-transaction/troubleshooting) を参照してください。

@@ -1,0 +1,94 @@
+---
+title: 网络费用
+description: 介绍 Base 网络费用的文档。本页详细说明由 L2 执行费用和 L1 安全费用两部分构成的费用体系，并解析费用变化的原因及节省成本的策略。
+---
+
+## Base 上的网络费用是如何计算的？ {#how-do-network-fees-on-base-work}
+
+每笔 Base 交易的费用都由两部分组成：L2 (执行) 费用和 L1
+(安全) 费用。L2 费用是在 L2 上执行交易的成本，
+L1 费用则是将交易发布到 L1 的预估成本。
+通常情况下，L1 安全费用高于 L2 执行费用。
+
+L1 费用会随 L1 上的交易量而变化。如果
+您的交易时间比较灵活，可以选择在 L1 gas 较低的时段
+提交交易以节省成本 (例如
+周末) 。
+
+同样，L2 费用也会随提交到 L2 的交易数量
+而上下浮动。该调整机制的实现方式与 L1
+相同，详情请参阅
+[Coinbase 的 EIP-1559 指南](https://help.coinbase.com/en/coinbase/getting-started/crypto-education/eip-1559)。
+
+有关 Base 费用计算的更多详情，请参阅
+[网络费用规范](/zh/specifications/base-protocol/execution/predeploys#gaspriceoracle)。
+
+## 最低基础费用 {#minimum-base-fee}
+
+作为 [Jovian upgrade] 的一部分，Base 引入了最低基础费用。该功能为 L2 基础费用设定了下限，防止其在网络活动较少时降至极低水平。
+
+Base Mainnet 的最低基础费用为 5,000,000 wei (0.005 gwei) 。随着我们持续收集其对链的影响数据，该数值可能会定期调整。作为参考，当 ETH 价格为 $2000 时，在 0.005 gwei 的最低基础费用下，一笔消耗 200,000 gas 的典型交易成本约为 $0.002。
+
+### 优势 {#benefits}
+
+* **交易打包更快**：以往，当网络活动较少、基础费用降至极低水平时，一旦需求激增，网络可能会长时间拥堵，直到费用涨到足以消化积压的交易为止。设置最低基础费用后，交易通常能更快被打包，用户无需手动调整优先费用。
+* **费用更可预测**：正常运行时，基础费用会保持在最低值或其附近；网络拥堵时，基础费用则会升至最低值以上。由此形成一种类似动态高峰定价、更可预测的费用结构。
+* **防范垃圾交易**：费用过低可能会助长对网络毫无价值的垃圾交易。最低基础费用可通过提高成本来抑制此类活动，同时确保正常使用的费用依然实惠。
+
+### 当前配置 {#current-configuration}
+
+| 网络           | 最低基础费用                      |
+| ------------ | --------------------------- |
+| Base Mainnet | 5,000,000 wei (0.005 gwei)  |
+| Base Sepolia | 5,000,000 wei (0.005 gwei)  |
+
+如需了解最低基础费用及其他网络参数的历史变更，请参阅[配置变更日志](/zh/base-chain/network-information/configuration-changelog)。
+
+## EIP-1559 费用参数 {#eip-1559-fee-parameters}
+
+Base 采用自有的 EIP-1559 实现，以此控制 L2 基础费用如何随网络需求变化而调整。这一行为由两个关键参数决定：
+
+### 弹性乘数 (Elasticity Multiplier) {#elasticity-multiplier}
+
+**弹性乘数 (Elasticity Multiplier)&#x20;**&#x20;决定了区块最大 gas 容量相对于目标 gas 用量的倍数。当弹性值为 6 时，区块最多可容纳 6 倍于目标值的 gas，使网络能够应对突发的需求高峰。
+
+### 基础费用变化分母 {#base-fee-change-denominator}
+
+**基础费用变化分母** (Base Fee Change Denominator) 决定了基础费用的调整速度。分母越大，费用变化越缓慢、越平缓。当分母设为 125 时，基础费用的变化会比取值较低时更加平滑。
+
+### 最大变化率 {#maximum-rate-of-change}
+
+每个区块基础费用的最大变化率按以下公式计算：
+
+**每个区块的最大增幅 = (弹性系数 - 1) / 分母**
+
+按当前参数 (弹性系数 = 6，分母 = 125) 计算：
+
+* 每个区块的最大增幅：(6 - 1) / 125 = **4%**
+* 基础费用翻倍所需的最短时间：18 个区块 × 2 秒 = **36 秒**
+
+这种渐进式调整既能在流量激增时避免费用剧烈波动，又能让网络及时响应持续的需求。
+
+### 当前配置 {#current-configuration-2}
+
+| 网络           | 弹性系数 | 分母  | 每区块最大变化幅度 |
+| ------------ | ---- | --- | --------- |
+| Base Mainnet | 6    | 125 | 4%        |
+| Base Sepolia | 6    | 125 | 4%        |
+
+## 查询 L1 费用 {#querying-the-l1-fee}
+
+**GasPriceOracle** 预部署合约位于 `0x420000000000000000000000000000000000000F` (见[合约地址](/zh/specifications/reference/base-contracts)) ，可让你在签名并提交交易之前，以编程方式估算其中的 L1 费用部分。
+
+| 方法                                   | 返回值                        |
+| ------------------------------------ | -------------------------- |
+| `getL1Fee(bytes)`                    | 完整序列化 (RLP 编码) 交易的精确 L1 费用 |
+| `getL1FeeUpperBound(uint256 txSize)` | 根据交易的近似字节长度估算的 L1 费用上限     |
+| `l1BaseFee()`                        | Base 所观测到的当前以太坊 L1 基础费用     |
+| `blobBaseFee()`                      | 当前 EIP-4844 blob 基础费用       |
+| `baseFeeScalar()`                    | 作用于 L1 基础费用部分的系数            |
+| `blobBaseFeeScalar()`                | 作用于 blob 基础费用部分的系数          |
+
+如需在交易尚未完整构建时快速估算，请使用 `getL1FeeUpperBound`。如需在签名前获得精确值，请将完整的序列化交易传入 `getL1Fee`。
+
+[Jovian upgrade]: /upgrades/jovian/overview

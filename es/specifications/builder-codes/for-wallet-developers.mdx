@@ -1,0 +1,79 @@
+---
+title: "Builder Codes para desarrolladores de billeteras"
+sidebarTitle: "Para desarrolladores de billeteras"
+description: "Implementa la capacidad dataSuffix en tu billetera para habilitar la atribución mediante Builder Codes."
+---
+
+## Descripción general {#overview}
+
+Los proveedores de billeteras deben admitir la capacidad `dataSuffix` para habilitar la atribución. Para ello, deben aceptar la capacidad y añadir el sufijo al final de los datos de llamada (calldata) antes de firmar.
+
+<Steps>
+  <Step title="Admitir la capacidad dataSuffix">
+    Tu billetera debe aceptar un objeto `dataSuffix` dentro del objeto `capabilities` de `wallet_sendCalls`.
+
+    ```typescript DataSuffix capability type
+    type DataSuffixCapability = {
+      value: `0x${string}`;  // bytes codificados en hexadecimal proporcionados por la aplicación
+      optional?: boolean;    // indica si la capacidad es opcional
+    }
+    ```
+  </Step>
+
+  <Step title="Añadir el sufijo a los datos de llamada">
+    Al construir la transacción o la User Operation, extrae el `dataSuffix` y añádelo al final de los datos de llamada.
+
+    <Tabs>
+      <Tab title="Transacciones de EOA">
+        Añádelo a `tx.data`.
+
+        ```typescript apply-eoa-suffix.ts lines expandable wrap
+        // Ejemplo mínimo para EOA
+        function applySuffixToEOA(tx, capabilities) {
+          const suffix = capabilities.dataSuffix?.value
+          if (!suffix) return tx
+
+          return {
+            ...tx,
+            // Añade los bytes del sufijo (elimina el prefijo 0x del sufijo si tx.data ya lo tiene)
+            data: tx.data + suffix.slice(2)
+          }
+        }
+        ```
+      </Tab>
+
+      <Tab title="User Operations de ERC-4337">
+        Añádelo a `userOp.callData` (no a los datos de llamada a nivel de transacción).
+
+        ```typescript apply-user-operation-suffix.ts lines expandable wrap
+        // Ejemplo mínimo para ERC-4337
+        function applySuffixToUserOp(userOp, capabilities) {
+          const suffix = capabilities.dataSuffix?.value
+          if (!suffix) return userOp
+
+          return {
+            ...userOp,
+            // Añade los bytes del sufijo al callData de la UserOp
+            callData: userOp.callData + suffix.slice(2)
+          }
+        }
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Añadir la atribución de la billetera (opcional)">
+    Las billeteras también pueden incluir su propio código de atribución (su propio sufijo ERC-8021) anteponiendo su sufijo al de la aplicación.
+
+    * **No requiere interacción con las aplicaciones:** la billetera lo gestiona de forma independiente.
+    * **Compatibilidad con varios códigos:** ERC-8021 admite de forma nativa múltiples códigos de atribución.
+
+    **Ejemplo:**
+
+    ```typescript Compose app and wallet attribution
+    finalSuffix = walletSuffix + appSuffix
+    ```
+
+    Así, tanto la aplicación como la billetera reciben atribución onchain.
+  </Step>
+</Steps>

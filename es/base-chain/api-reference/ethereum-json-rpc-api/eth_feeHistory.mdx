@@ -1,0 +1,84 @@
+---
+title: 'eth_feeHistory'
+sidebarTitle: 'eth_feeHistory'
+description: 'Devuelve las tarifas base históricas y los percentiles de las tarifas de prioridad de un rango de bloques.'
+---
+
+Devuelve información histórica de gas de un rango de bloques, incluidas las tarifas base y la distribución de las tarifas de prioridad. Resulta útil para diseñar estrategias de estimación de tarifas.
+
+## Parámetros {#parameters}
+
+<ParamField body="blockCount" type="string | number" required>
+  Número de bloques que se devolverán. Puede ser un entero decimal o hexadecimal. El máximo suele ser 1024.
+</ParamField>
+
+<ParamField body="newestBlock" type="string" required>
+  El bloque más alto que se incluirá, expresado como número de bloque en hexadecimal o como etiqueta de bloque (`"latest"`, `"pending"`, etc.).
+</ParamField>
+
+<ParamField body="rewardPercentiles" type="array" required>
+  Array de valores de percentil (0–100) con los que se muestrearán las tarifas de prioridad de cada bloque. Por ejemplo, `[25, 50, 75]` devuelve las tarifas de prioridad de los percentiles 25, 50 y 75.
+</ParamField>
+
+## Valores devueltos {#returns}
+
+<ResponseField name="result" type="object">
+  <Expandable title="Campos del historial de tarifas">
+    <ResponseField name="oldestBlock" type="string">Número del bloque más antiguo del conjunto de resultados (hex).</ResponseField>
+    <ResponseField name="baseFeePerGas" type="array">Array con la tarifa base por unidad de gas de cada bloque, más una entrada adicional para el siguiente bloque pendiente. Longitud = `blockCount + 1`.</ResponseField>
+    <ResponseField name="gasUsedRatio" type="array">Array con la proporción entre gas usado y límite de gas de cada bloque (de 0.0 a 1.0). Longitud = `blockCount`.</ResponseField>
+    <ResponseField name="baseFeePerBlobGas" type="array">Array con la tarifa base por unidad de gas de blob de cada bloque, más una entrada adicional para el siguiente bloque pendiente (EIP-4844). Actualmente, en Base siempre es `"0x1"`. Longitud = `blockCount + 1`.</ResponseField>
+    <ResponseField name="blobGasUsedRatio" type="array">Array con la proporción de gas de blob usado en cada bloque (de 0.0 a 1.0). Se utiliza para ajustar la tarifa base de blob (EIP-4844). Longitud = `blockCount`.</ResponseField>
+    <ResponseField name="reward" type="array">Array 2D con los percentiles de la tarifa de prioridad de cada bloque, que se corresponden con los valores de percentil solicitados.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Ejemplo {#example}
+
+<CodeGroup>
+  ```json Request
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_feeHistory",
+    "params": ["0xa", "latest", [25, 50, 75]],
+    "id": 1
+  }
+  ```
+
+  ```json Response lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "baseFeePerBlobGas": [
+        "0x1",
+        "0x1",
+        "0x1",
+        "0x1",
+        "0x3"
+      ],
+      "baseFeePerGas": [
+        "0x4c4b40",
+        "0x4c4b40",
+        "0x4c4b40",
+        "0x4c4b40",
+        "0x4c4b40"
+      ],
+      "blobGasUsedRatio": [0, 0, 0, 0],
+      "gasUsedRatio": [
+        0.1180706525,
+        0.1370935325,
+        0.120803475,
+        0.0968808
+      ],
+      "oldestBlock": "0x2c31b05",
+      "reward": [
+        ["0xf4240", "0x2191c0"],
+        ["0xf4240", "0x186a00"],
+        ["0x7a138", "0x4c4b40"],
+        ["0xf4240", "0x4c4b40"]
+      ]
+    }
+  }
+  ```
+</CodeGroup>

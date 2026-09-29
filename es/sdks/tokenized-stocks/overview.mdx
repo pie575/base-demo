@@ -1,0 +1,42 @@
+---
+title: "API de acciones tokenizadas"
+sidebarTitle: "Descripción general"
+description: "Consulta los registros de acciones tokenizadas emitidas por Coinbase, las direcciones de los contratos del protocolo y el suministro normalizado de los tokens en Base."
+---
+
+Usa la API pública de acciones tokenizadas para obtener datos de referencia sobre las [acciones tokenizadas emitidas por Coinbase en Base](/es/build-on-base/integrate-defi/list-tokenized-stocks). La API es de solo lectura y no requiere clave de API.
+
+<Note>
+  Las acciones tokenizadas de Coinbase solo están disponibles para personas ubicadas en jurisdicciones elegibles fuera de los Estados Unidos. Esta API proporciona exclusivamente datos de referencia de solo lectura; no ofrece funciones de negociación, ejecución, emisión, acuñación, rescate ni custodia. La disponibilidad de cualquier token o producto relacionado puede estar sujeta a requisitos jurisdiccionales, de elegibilidad y de cumplimiento normativo. Los integradores son responsables de aplicar las restricciones que correspondan.
+</Note>
+
+```text Base URL
+https://api.coinbase.com/v1/tokenized-stocks
+```
+
+[Consulta la referencia de la API](/es/sdks/tokenized-stocks/api-reference/list-tokenized-stocks) para ver los esquemas completos de solicitudes y respuestas, así como un generador interactivo de solicitudes.
+
+## Endpoints {#endpoints}
+
+| Método | Ruta                               | Descripción                                                                            |
+| ------ | ---------------------------------- | -------------------------------------------------------------------------------------- |
+| `GET`  | `/`                                | Enumera los registros de acciones tokenizadas que la API expone actualmente.           |
+| `GET`  | `/chains`                          | Enumera los contratos del protocolo de acciones tokenizadas en cada cadena compatible. |
+| `GET`  | `/total-supply/{contract_address}` | Obtiene el suministro total de un token, normalizado según sus decimales.              |
+
+## Listar acciones tokenizadas {#list-tokenized-stocks}
+
+```bash cURL
+curl https://api.coinbase.com/v1/tokenized-stocks
+```
+
+La respuesta incluye, para cada token, la dirección del contrato, el símbolo, el nombre, los decimales, la URL del icono, el suministro total, el ISIN, el multiplicador, las funciones en pausa y los datos de NAV/valor de referencia. Que un token aparezca en la respuesta no implica que esté disponible para negociar ni que cumpla los requisitos de elegibilidad.
+
+## Interpretación de los campos de la respuesta {#interpreting-response-fields}
+
+* **`total_supply`** es el suministro del token normalizado según sus decimales. Es una cantidad expresada en unidades del token, no el número de acciones subyacentes.
+* **`multiplier`** es el factor de escala actual entre las unidades del token y las acciones subyacentes. Puede cambiar a raíz de eventos corporativos, como dividendos o desdoblamientos de acciones, así que aplica siempre el valor vigente al convertir unidades del token en acciones.
+* **`nav_price`** es el valor NAV/de referencia basado en Chainlink publicado más recientemente para el token. No es un precio de compra/venta en tiempo real ni un precio de ejecución.
+* **`nav_price_updated_at`** indica cuándo se actualizó `nav_price` onchain por última vez. Los feeds solo se actualizan cuando el precio se desvía o cuando se cumple el heartbeat, y conservan su último valor fuera del horario de mercado. Por eso, comprueba esta marca de tiempo y aplica límites de antigüedad antes de confiar en `nav_price`.
+
+Para obtener orientación sobre la integración, detalles de los feeds de precios y las direcciones actuales de los contratos de los tokens, consulta [Listar acciones tokenizadas](/es/build-on-base/integrate-defi/list-tokenized-stocks).

@@ -1,0 +1,103 @@
+---
+title: "收款"
+keywords: ["Commerce Payments Protocol", "在 Base 上接收 USDC 付款", "Base 授权与扣款", "x402 智能体支付"]
+description: "为 Base 上的商户结账、智能体支付、对账、退款和付款发放选择合适的链上支付生命周期。"
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+在 Base 上收款，并按产品需求选择合适的支付生命周期。借助 [Commerce Payments Protocol](https://github.com/base/commerce-payments)，你可以立即扣款，也可以在履约前将资金预留至托管账户，随后在付款方批准的条款范围内进行请款 (capture) 、作废 (void) 、收回 (reclaim) 或退款 (refund) 。此解决方案还涵盖定期收款、对账、付款发放、分账以及 x402 API。
+
+## 演示 {#demo}
+
+<PaymentsDemo />
+
+<Tip>
+  以上演示仅为模拟效果。如需查看 Vibenet 上的链上演示，请前往 [Base 链演示](https://chain.base.org/demos)。
+</Tip>
+
+## 支付生命周期 {#payment-lifecycle}
+
+| 阶段              | 具体过程                        | 入门指南                                                               |
+| --------------- | --------------------------- | ------------------------------------------------------------------ |
+| 收款 (Charge)     | 运营方以原子方式完成一笔协议支付的收取与结算      | [发起支付请求](/zh/build-on-base/accept-payments/request-a-payment)         |
+| 授权 (Authorize)  | 运营方将付款方资金转入托管               | [授权支付](/zh/build-on-base/accept-payments/authorize-a-payment)         |
+| 请款 (Capture)    | 运营方结算全部或部分托管金额              | [对授权进行请款](/zh/build-on-base/accept-payments/capture-an-authorization) |
+| 确认 (Confirm)    | 你的后端验证已确认的协议事件，并确保每笔订单只认领一次 | [验证支付](/zh/build-on-base/accept-payments/verify-a-payment)            |
+| 退款或分账           | 你向付款方退款，或向下游收款方付款           | [退款](/zh/build-on-base/accept-payments/refund-a-payment)              |
+
+## 收取付款 {#take-a-payment}
+
+<CardGroup cols={2}>
+  <Card title="发起付款请求" icon="credit-card" href="/zh/build-on-base/accept-payments/request-a-payment">
+    在一笔交易中完成扣款并即时结算。
+  </Card>
+
+  <Card title="授权付款" icon="signature" href="/zh/build-on-base/accept-payments/authorize-a-payment">
+    按不可更改的付款条款，将资金预留在托管账户中。
+  </Card>
+
+  <Card title="请款（Capture）授权" icon="check" href="/zh/build-on-base/accept-payments/capture-an-authorization">
+    在授权到期前，结算全部或部分托管资金。
+  </Card>
+
+  <Card title="按计划扣款" icon="calendar" href="/zh/build-on-base/accept-payments/charge-on-a-schedule">
+    通过支出权限，每个计费周期创建一笔协议扣款。
+  </Card>
+</CardGroup>
+
+## 确认与对账 {#confirm-and-reconcile}
+
+<CardGroup cols={2}>
+  <Card title="验证付款" icon="shield-check" href="/zh/build-on-base/accept-payments/verify-a-payment">
+    校验结算事件，确保每笔付款只认领一次。
+  </Card>
+
+  <Card title="监听付款" icon="eye" href="/zh/build-on-base/accept-payments/watch-for-payments">
+    订阅托管事件，并回填已确认区块中的数据。
+  </Card>
+
+  <Card title="付款对账" icon="table" href="/zh/build-on-base/accept-payments/reconcile-payments">
+    导出扣款、请款、手续费、作废、收回和退款记录。
+  </Card>
+</CardGroup>
+
+## 退款与出款 {#refund-and-pay-out}
+
+<CardGroup cols={2}>
+  <Card title="退款" icon="rotate-left" href="/zh/build-on-base/accept-payments/refund-a-payment">
+    筹集退款所需的流动性，并将已扣款的金额退还给付款方。
+  </Card>
+
+  <Card title="撤销授权" icon="ban" href="/zh/build-on-base/accept-payments/void-an-authorization">
+    立即退还剩余金额，或让付款方在授权到期后自行取回。
+  </Card>
+
+  <Card title="发起出款" icon="money-bill-transfer" href="/zh/build-on-base/accept-payments/send-a-payout">
+    使用同一个参考标识，向数量受限的一批收款方付款。
+  </Card>
+
+  <Card title="分账" icon="divide" href="/zh/build-on-base/accept-payments/split-a-payment">
+    按精确的基点比例分配款项，不留下无法取用的零头。
+  </Card>
+</CardGroup>
+
+## 接收智能体支付 {#accept-agentic-payments}
+
+<CardGroup cols={2}>
+  <Card title="为 API 收费" icon="server" href="/zh/build-on-base/accept-payments/charge-for-an-api">
+    使用 x402 `exact` 保护固定价格的路由。
+  </Card>
+
+  <Card title="结算按用量计费的支付" icon="gauge" href="/zh/build-on-base/accept-payments/settle-usage-based-payments">
+    预先授权最高金额，再通过 `upto` 按实际用量结算。
+  </Card>
+
+  <Card title="批量处理高频支付" icon="layer-group" href="/zh/build-on-base/accept-payments/batch-high-frequency-payments">
+    每次请求时推进凭证，并批量结算 channel。
+  </Card>
+
+  <Card title="调用付费服务" icon="robot" href="/zh/build-on-base/accept-payments/call-a-paid-service">
+    在智能体签名前强制执行网络、资产和支出策略。
+  </Card>
+</CardGroup>

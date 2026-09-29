@@ -1,0 +1,97 @@
+---
+title: "エラー"
+description: "B20 のカスタムエラー、セレクター、およびそれらが発生する条件。"
+---
+
+*カスタムエラー、セレクター、およびそれぞれのエラーが発生する条件をすべて網羅した一覧です。セレクターはエラーシグネチャの `keccak256` ハッシュの先頭 4 バイトで、`cast sig "ErrorName(types...)"` で算出できます。列挙型のパラメーターは、基底型である `uint8` としてエンコードされます。*
+
+*注：一部のエラー名は複数のファイルで異なるパラメーター (またはパラメーターなし) で再利用されており、その場合はセレクターも異なります。`PolicyNotFound()` ([`IPolicyRegistry`](/specifications/b20/reference/interfaces/i-policy-registry)) と `PolicyNotFound(uint64)` ([`IB20`](/specifications/b20/reference/interfaces/ib20)) はセレクターの異なる無関係なエラーであり、`Unauthorized()` (`IB20` / `IPolicyRegistry`) と `Unauthorized(address)` ([`IActivationRegistry`](/specifications/b20/reference/interfaces/i-activation-registry)) も同様です。一方、`LengthMismatch(uint256,uint256)` は [`IB20Asset`](/specifications/b20/reference/interfaces/ib20-asset) と [`B20FactoryLib`](https://github.com/base/base-std/blob/main/src/lib/B20FactoryLib.sol) で同じセレクターを共有しています。両者はそれぞれ独立して宣言されていますが、シグネチャが同一であるためです。*
+
+## [`IB20`](/specifications/b20/reference/interfaces/ib20) {#ib20}
+
+| エラー                                                                         | セレクター        | 発生条件                                                                                            |
+| --------------------------------------------------------------------------- | ------------ | ----------------------------------------------------------------------------------------------- |
+| `NonPayable()`                                                              | `0x6fb1b0e9` | nonpayable なトークンセレクターを対象とする呼び出しに ETH が付与された。                                                    |
+| `AccessControlUnauthorizedAccount(address account, bytes32 neededRole)`     | `0xe2517d3f` | `account` が `neededRole` を保持していない。                                                              |
+| `Unauthorized()`                                                            | `0x82b42900` | 呼び出し元が、「ロール X を保持していない」という形では表現できない、位置に基づく認可チェックに失敗した。                                          |
+| `ContractPaused(uint8 feature)`                                             | `0xfd8c4245` | 当該操作を管轄する `PausableFeature` が現在一時停止中である。                                                        |
+| `InsufficientAllowance(address spender, uint256 allowance, uint256 needed)` | `0x192b9e4e` | 要求された `transferFrom` に対して、`spender` のアローワンスが `needed` に満たない。                                    |
+| `InsufficientBalance(address sender, uint256 balance, uint256 needed)`      | `0xdb42144d` | 要求された転送またはバーンに対して、`sender` の残高が `needed` に満たない。                                                 |
+| `InvalidSender(address sender)`                                             | `0x4c14f64c` | 転送元アドレスが無効である (通常は `address(0)`) 。                                                              |
+| `InvalidReceiver(address receiver)`                                         | `0x9cfea583` | 転送先アドレスが無効である (`address(0)`、または B20 プレフィックスを持つアドレス) 。                                           |
+| `InvalidApprover(address approver)`                                         | `0x8bc146c4` | 承認の `owner` アドレスが無効である (通常は `address(0)`) 。                                                     |
+| `InvalidSpender(address spender)`                                           | `0x4e15efda` | 承認の `spender` アドレスが無効である (通常は `address(0)`) 。                                                   |
+| `InvalidAmount()`                                                           | `0x2c5211c6` | 非ゼロの値が必要な箇所で、金額引数にゼロが指定された。ERC-20 の金額引数には使用されない。                                                |
+| `EmptyFeatureSet()`                                                         | `0x4861ff45` | 1 つ以上の要素を必要とする関数に空の配列が渡された。                                                                     |
+| `InvalidSupplyCap(uint256 currentSupply, uint256 proposedCap)`              | `0x0a3780ce` | 提案された供給上限が現在の `totalSupply` を下回っている、または `type(uint128).max` を上回っている。                            |
+| `SupplyCapExceeded(uint256 cap, uint256 attempted)`                         | `0x4b344b11` | ミントによって `totalSupply` が設定済みの上限を超える。                                                             |
+| `PolicyForbids(bytes32 policyScope, uint64 policyId)`                       | `0xa43fec12` | ポリシースロットによって操作が拒否された。                                                                           |
+| `PolicyNotFound(uint64 policyId)`                                           | `0xcccad523` | 指定されたポリシー ID がポリシーレジストリに存在しない。                                                                  |
+| `UnsupportedPolicyType(bytes32 policyScope)`                                | `0xcdd98a4a` | `policyScope` が、このトークン (またはそのバリアント) でサポートされていないスロットである。                                         |
+| `AccountNotSeizable(address account)`                                       | `0x91dbbc8d` | `SEIZE_EXEMPT_POLICY` のもとで差し押さえ免除 (引き続き認可済み) となっている `from` に対して `seizeWithMemo` が呼び出された。        |
+| `AccountNotBlocked(address account)`                                        | `0x64a5cb46` | 非推奨の `burnBlocked` が、現在 `TRANSFER_SENDER_POLICY` のもとで認可されている (つまりブロックされていない) `from` に対して呼び出された。 |
+| `ExpiredSignature(uint256 deadline)`                                        | `0xbd2a913c` | EIP-2612 の `permit` が、`block.timestamp` 未満の `deadline` を指定して送信された。                              |
+| `InvalidSigner(address signer, address owner)`                              | `0x7ba5ffb5` | EIP-2612 の `permit` に対する ECDSA リカバリーで返された `signer` が、主張された `owner` と一致しない。                      |
+| `LastAdminCannotRenounce()`                                                 | `0x361513e7` | 最後に残った唯一の管理者が `renounceRole(DEFAULT_ADMIN_ROLE, ...)` を呼び出した。                                   |
+| `NotSoleAdmin()`                                                            | `0x2a98e73b` | 他のアカウントも `DEFAULT_ADMIN_ROLE` を保持している状態で `renounceLastAdmin()` が呼び出された。                         |
+| `AccessControlBadConfirmation()`                                            | `0x6697b232` | `renounceRole` に渡された `callerConfirmation` 引数が `msg.sender` と一致しなかった。                            |
+
+## [`IB20Asset`](/specifications/b20/reference/interfaces/ib20-asset) {#ib20asset}
+
+| エラー                                                 | セレクター        | 発生条件                                                                                                                  |
+| --------------------------------------------------- | ------------ | --------------------------------------------------------------------------------------------------------------------- |
+| `AnnouncementIdAlreadyUsed(string id)`              | `0xd10b3c9e` | すでに使用済みの `id` を指定して `announce` が呼び出された場合。                                                                             |
+| `InvalidMetadataKey()`                              | `0x86ea3abb` | 空の `key` を指定して `updateExtraMetadata` が呼び出された場合。                                                                       |
+| `InvalidMultiplier()`                               | `0x6f12f3dc` | 乗数のセッター (`updateUIMultiplier` または非推奨の `updateMultiplier`) が、0 の乗数、または `type(uint128).max` のオーバーフローガードを超える乗数で呼び出された場合。 |
+| `EffectiveAtInPast(uint256 effectiveAt)`            | `0x14119cf6` | 未来ではない時刻の `effectiveAt` を指定して `updateUIMultiplier` が呼び出された場合。                                                         |
+| `EffectiveAtTooFar(uint256 effectiveAt)`            | `0x1ce214fa` | `type(uint64).max` を超える `effectiveAt` を指定して `updateUIMultiplier` が呼び出された場合。                                           |
+| `UIMultiplierUpdateExists(uint256 effectiveAt)`     | `0x4481a68e` | 有効な保留中の更新がすでに存在する状態で `updateUIMultiplier` が呼び出された場合。                                                                  |
+| `UIMultiplierUpdateDoesNotExist()`                  | `0xa7d6a5ca` | 有効な保留中の更新が存在しない状態で `cancelUIMultiplierUpdate` が呼び出された場合。                                                              |
+| `LengthMismatch(uint256 leftLen, uint256 rightLen)` | `0xab8b67c6` | バッチ関数が、長さの異なる並列配列を指定して呼び出された場合。                                                                                       |
+| `EmptyBatch()`                                      | `0xc2e5347d` | バッチ関数が空の配列を指定して呼び出された場合。                                                                                              |
+| `AnnouncementInProgress()`                          | `0x5c5f0829` | `announce` からディスパッチされた内部呼び出しが、`announce` を再度呼び出そうとした場合。                                                               |
+| `InternalCallMalformed(bytes call)`                 | `0x4e2f143e` | `announce` からディスパッチされた内部呼び出しの長さが 4 バイト未満だった場合。                                                                        |
+| `InternalCallFailed(bytes call)`                    | `0xb288a127` | `announce` からディスパッチされた内部呼び出しが通常のリバートで失敗した場合 (リバート理由は伝播されません) 。                                                        |
+
+## [`IB20Factory`](/specifications/b20/reference/interfaces/ib20-factory) {#ib20factory}
+
+| エラー                                                | セレクター        | 発生条件                                                                                             |
+| -------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------ |
+| `NonPayable()`                                     | `0x6fb1b0e9` | nonpayable なファクトリーセレクターを対象とする呼び出しに ETH が付与された。                                                   |
+| `TokenAlreadyExists(address token)`                | `0x15ef3a57` | `(variant, msg.sender, salt)` から導出される決定論的アドレスに、トークンがすでに存在する。                                     |
+| `InvalidVariant()`                                 | `0xf10e8e43` | `variant` が既知の `B20Variant` ではない。                                                                |
+| `UnsupportedVersion(uint8 version, uint8 variant)` | `0xc0d8b4e0` | `params` の先頭の `version` バイトが、要求されたバリアントの既知のエンコーディングのいずれとも一致しない。                                  |
+| `MissingRequiredField(string field)`               | `0x4a43ae87` | 必須の文字列引数が空文字列だった。                                                                                |
+| `InvalidCurrency(string code)`                     | `0x997c1de8` | Stablecoin の `currency` が空ではなく、かつ `A`-`Z` 以外のバイトを含んでいた。                                          |
+| `InvalidDecimals(uint8 decimals)`                  | `0xca950391` | アセットの `decimals` が `[B20Constants.MIN_ASSET_DECIMALS, B20Constants.MAX_ASSET_DECIMALS]` の範囲外だった。 |
+| `InitCallFailed(uint256 index)`                    | `0x4eae0860` | `initCalls` のいずれかが、リバート理由を伝播せずにリバートした。                                                           |
+
+## [`IPolicyRegistry`](/specifications/b20/reference/interfaces/i-policy-registry) {#ipolicyregistry}
+
+| エラー                                        | セレクター        | 発生条件                                                                                            |
+| ------------------------------------------ | ------------ | --------------------------------------------------------------------------------------------------- |
+| `NonPayable()`                             | `0x6fb1b0e9` | nonpayable なポリシーレジストリのセレクターを対象とする呼び出しに ETH が添付された。                                                  |
+| `Unauthorized()`                           | `0x82b42900` | 呼び出し元が、実行しようとした操作に必要な管理者ではない。                                                                       |
+| `PolicyNotFound()`                         | `0x720caa4f` | 参照されたポリシー ID が存在しない。                                                                                |
+| `IncompatiblePolicyType()`                 | `0xf1011ef5` | 操作がポリシーのタイプに対応していない。                                                                                |
+| `ZeroAddress()`                            | `0xd92e233d` | 必須のアドレス引数にゼロアドレスが指定された。                                                                             |
+| `BatchSizeTooLarge(uint256 maxBatchSize)`  | `0x083e2f67` | メンバーシップのバッチがレジストリの上限を超えた。                                                                           |
+| `NoPendingAdmin()`                         | `0xb4539afa` | 保留中の管理者が設定されていない状態で `finalizeUpdateAdmin` が呼び出された。                                                  |
+| `ChildPoliciesOutsideOfRange()`            | `0x697ec868` | 子ポリシーの数が `[MIN_COMPOSITE_CHILD_POLICIES, MAX_COMPOSITE_CHILD_POLICIES]` の範囲外の状態で、複合ポリシーが作成または更新された。 |
+| `InvalidChildPolicy(uint64 childPolicyId)` | `0x46508ef6` | 子ポリシーが、既存の単純ポリシー (ALLOWLIST/BLOCKLIST) ではない。                                                        |
+
+## [`IActivationRegistry`](/specifications/b20/reference/interfaces/i-activation-registry) {#iactivationregistry}
+
+| エラー                                    | セレクター        | 発生条件                                                                                    |
+| -------------------------------------- | ------------ | --------------------------------------------------------------------------------------- |
+| `Unauthorized(address caller)`         | `0x8e4a23d6` | 呼び出し元が有効化管理者ではない場合。                                                                     |
+| `AlreadyActivated(bytes32 feature)`    | `0x866b0041` | すでに有効化されている機能に対して `activate` が呼び出された場合。                                                 |
+| `FeatureNotActivated(bytes32 feature)` | `0xb9b2a425` | 有効化されていない機能に対して `checkActivated` が呼び出された場合、またはすでに無効化されている機能に対して `deactivate` が呼び出された場合。 |
+| `DelegateCallNotAllowed()`             | `0x0d89438e` | プリコンパイルが `DELEGATECALL` または `CALLCODE` 経由で呼び出された場合。                                     |
+| `StaticCallNotAllowed()`               | `0xbeaba5b7` | 状態を変更するエントリーポイントが `STATICCALL` フレームから呼び出された場合。                                          |
+
+## [`B20FactoryLib`](https://github.com/base/base-std/blob/main/src/lib/B20FactoryLib.sol) {#b20factorylib}
+
+| エラー                                                 | セレクター        | 発生条件                                  |
+| --------------------------------------------------- | ------------ | ------------------------------------- |
+| `LengthMismatch(uint256 leftLen, uint256 rightLen)` | `0xab8b67c6` | `build*` ヘルパーに渡された2つの並列配列の長さが一致しない場合。 |

@@ -1,0 +1,218 @@
+---
+title: "出金"
+description: "Base における出金の仕組み — 標準的な 3 ステップのフロー、7 日間のチャレンジ期間、より高速な出金手段、およびプロトコルの完全な仕様について説明します。"
+---
+
+[g-deposits]: /specifications/reference/glossary#deposits
+
+[g-withdrawal]: /specifications/reference/glossary#withdrawal
+
+[g-relayer]: /specifications/reference/glossary#withdrawals
+
+[g-execution-engine]: /specifications/reference/glossary#execution-engine
+
+標準出金とは、Base で開始され Ethereum でファイナライズされるクロスドメイントランザクションです。標準出金では、ETH の送金、サポート対象の ERC-20 トークンのブリッジ、または Base から L1 コントラクトへのメッセージ送信が可能です。フローは次の 3 段階で構成されます。
+
+1. **Base で開始:** Base 上で出金トランザクションを送信します。これにより、出金メッセージが `L2ToL1MessagePasser` コントラクトに記録されます。
+2. **Ethereum で証明:** 対象となる Base の状態が Ethereum に投稿されると、誰でも `OptimismPortal` コントラクトに証明を提出し、出金メッセージが Base 上に存在することを示せるようになります。
+3. **Ethereum でファイナライズ:** 7 日間のチャレンジ期間が経過すると、誰でも Ethereum 上で出金をファイナライズできます。ファイナライズにより、資産が解放されるか、メッセージが対象コントラクトへリレーされます。
+
+<Note>
+  Ethereum への標準出金は、ファイナライズ可能になるまで 7 日間待つ必要があります。Base はフォールトプルーフによって出金を保護しています。チャレンジ期間は、無効な出力ルートに依存する出金がファイナライズされる前に、ネットワーク参加者がその出力ルートに異議を申し立てられるよう設けられています。出金のファイナリティと通常の Base トランザクションのファイナリティの違いについては、[トランザクションのファイナリティ](/ja/specifications/transactions/transaction-finality#finality-for-withdrawal-transactions)を参照してください。
+</Note>
+
+一部のブリッジプロバイダーは、流動性、リレイヤー、またはマーケットメーカーを活用し、標準出金が完全にファイナライズされる前にユーザーへ資金を渡すことで、より高速な出金を実現しています。利用可能なルートについては、[Base へのブリッジ](/ja/base-chain/network-information/ecosystem-bridges)を参照してください。
+
+## 概要 {#overview}
+
+[出金][g-withdrawal]は、L2 で開始され、L1 で実行されるトランザクションによってファイナライズされるクロスドメイントランザクションです。特に、出金を利用すると、L2 アカウントから L1 コントラクトを呼び出したり、L2 アカウントから L1 アカウントへ ETH を送金したりできます。
+
+**用語に関する注記**: *出金* はプロセスのさまざまな段階にあるトランザクションを指すことがあるため、
+区別のためにより具体的な用語を導入します。
+
+* *出金開始トランザクション* は、特に Withdrawals プリデプロイに送信される L2 上のトランザクションを指します。
+* *出金証明トランザクション* は、特に出金が正しいこと (ルートが L1 上で参照可能な merkle
+  ツリーに含まれていること) を証明する L1
+  トランザクションを指します。
+* *出金ファイナライズトランザクション* は、特に出金をファイナライズしてリレーする L1 トランザクションを指します。
+
+出金は、L2 上で Message Passer プリデプロイコントラクトを呼び出すことで開始されます。このコントラクトは、メッセージの重要な
+プロパティをストレージに記録します。
+出金は、L1 上で `OptimismPortal` を呼び出すことで証明されます。これにより、この出金メッセージが含まれていることが証明されます。
+出金は、L1 上で `OptimismPortal` コントラクトを呼び出すことでファイナライズされます。
+このコントラクトは、出金メッセージの証明後にフォールトチャレンジ期間が経過していることを検証します。
+
+この点で、出金は、[実行エンジン][g-execution-engine]クライアントの特別なトランザクションタイプを利用する[入金][g-deposits]とは異なります。
+出金トランザクションは、ファイナライズに L1 上のスマートコントラクトを使用しなければなりません。
+
+## 出金フロー {#withdrawal-flow}
+
+まず、出金の開始からファイナライズまでのエンドツーエンドのフローを説明します。
+
+### L2上での処理 {#on-l2}
+
+L2アカウントが、出金メッセージ (場合によってはETHも併せて) を`L2ToL1MessagePasser`プリデプロイコントラクトに送信します。
+これは出金データのハッシュを保存するだけの、非常にシンプルなコントラクトです。
+
+### L1 上での処理 {#on-l1}
+
+1. [リレイヤー][g-relayer]が、必要な入力を含む出金証明トランザクションを
+   `OptimismPortal` コントラクトに送信します。
+   リレイヤーは、L2 上で出金を開始したエンティティと同一である必要はありません。
+   これらの入力には、出金トランザクションデータ、包含証明、およびブロック番号が含まれます。このブロック番号は、
+   L2 上で登録された出金をコミットする L2 出力ルートが存在するブロックの番号でなければなりません。
+2. `OptimismPortal` コントラクトは、`L2OutputOracle` の `getL2Output()` 関数から、指定されたブロック番号に対応する
+   出力ルートを取得し、残りの検証プロセスを内部で実行します。
+3. 証明の検証に失敗した場合、呼び出しはリバートします。成功した場合は、再証明を防ぐためにハッシュが記録されます。
+   なお、対応する出力ルートが変更された場合は、同じ出金を再度証明できます。
+4. 出金が証明されると、7 日間のチャレンジ期間に入ります。この期間中、他のネットワーク参加者は
+   対応する出力ルートの完全性に異議を申し立てることができます。
+5. チャレンジ期間が経過すると、リレイヤーが出金確定トランザクションを
+   `OptimismPortal` コントラクトに送信します。
+   リレイヤーは、L2 上で出金を開始したエンティティと同一である必要はありません。
+6. `OptimismPortal` コントラクトは出金トランザクションデータを受け取り、その出金が
+   証明済みであり、かつチャレンジ期間を経過していることを検証します。
+7. 要件を満たしていない場合、呼び出しはリバートします。満たしている場合は呼び出しが転送され、リプレイを防ぐために
+   ハッシュが記録されます。
+
+## L2ToL1MessagePasser コントラクト {#the-l2tol1messagepasser-contract}
+
+出金は、L2ToL1MessagePasser コントラクトの `initiateWithdrawal` 関数を呼び出すことで開始されます。
+L2ToL1MessagePasser は `0x4200000000000000000000000000000000000016` にデプロイされたシンプルなプリデプロイコントラクトであり、
+出金されるメッセージを保存します。
+
+```js L2ToL1MessagePasser.sol lines wrap expandable
+interface L2ToL1MessagePasser {
+    event MessagePassed(
+        uint256 indexed nonce, // すべての出金メッセージで共有されるグローバルな nonce 値
+        address indexed sender,
+        address indexed target,
+        uint256 value,
+        uint256 gasLimit,
+        bytes data,
+        bytes32 withdrawalHash
+    );
+
+    event WithdrawerBalanceBurnt(uint256 indexed amount);
+
+    function burn() external;
+
+    function initiateWithdrawal(address _target, uint256 _gasLimit, bytes memory _data) payable external;
+
+    function messageNonce() public view returns (uint256);
+
+    function sentMessages(bytes32) view external returns (bool);
+}
+
+```
+
+`MessagePassed` イベントには、ハッシュ化されて
+`sentMessages` マッピングに格納されるすべてのデータと、そのハッシュ値自体が含まれます。
+
+### 出金時にはアドレスはエイリアスされない {#addresses-are-not-aliased-on-withdrawals}
+
+コントラクトが入金を行う場合、送信者のアドレスは[エイリアス](/ja/specifications/base-protocol/bridging/deposits#address-aliasing)されます。一方、出金ではこのような処理は行われず、
+送信者のアドレスは変更されません。両者の違いは次のとおりです。
+
+* L2 では、入金の送信者アドレスは `CALLER` オペコードによって返されます。そのため、コントラクトは呼び出し元が
+  L1 と L2 のどちらであるかを容易に判別できません。
+* 一方 L1 では、出金の送信者アドレスは `OptimismPortal` コントラクトの `l2Sender()` 関数を呼び出して
+  取得します。
+
+`l2Sender()` を呼び出せば、呼び出しがどのドメインから発生したのかという曖昧さはなくなります。ただし開発者は、
+アドレスが同じであっても、L2 上のコントラクトが L1 上のコントラクトと同じように動作するとは限らない点に注意する必要があります。
+
+## Optimism Portal コントラクト {#the-optimism-portal-contract}
+
+Optimism Portal は、Base L2 への入口であると同時に出口としても機能します。これは
+[OptimismPortal](/ja/specifications/base-protocol/bridging/deposits#deposit-contract) コントラクトを継承したコントラクトで、さらに出金用として以下の
+インターフェースを提供します。
+
+* [`WithdrawalTransaction` 型]
+* [`OutputRootProof` 型]
+
+```js OptimismPortal.sol lines wrap expandable
+interface OptimismPortal {
+
+    event WithdrawalFinalized(bytes32 indexed withdrawalHash, bool success);
+
+
+    function l2Sender() returns(address) external;
+
+    function proveWithdrawalTransaction(
+        Types.WithdrawalTransaction memory _tx,
+        uint256 _l2OutputIndex,
+        Types.OutputRootProof calldata _outputRootProof,
+        bytes[] calldata _withdrawalProof
+    ) external;
+
+    function finalizeWithdrawalTransaction(
+        Types.WithdrawalTransaction memory _tx
+    ) external;
+}
+```
+
+## 出金の検証とファイナライズ {#withdrawal-verification-and-finalization}
+
+出金を証明してファイナライズするには、以下の入力が必要です。
+
+* 出金トランザクションデータ:
+  * `nonce`: 指定されたメッセージの nonce。
+  * `sender`: L2 上のメッセージ送信者のアドレス。
+  * `target`: L1 上の送信先アドレス。
+  * `value`: 送信先に送る ETH。
+  * `data`: 送信先に送るデータ。
+  * `gasLimit`: 送信先に転送するガス。
+* 証明および検証データ:
+  * `l2OutputIndex`: 該当する出力ルートが格納されている、L2 出力内のインデックス。
+  * `outputRootProof`: 出力ルートの導出に使用する 4 つの `bytes32` 値。
+  * `withdrawalProof`: L2ToL1MessagePasser コントラクト内に指定の出金が含まれることを示す包含証明。
+
+これらの入力は、以下の条件をすべて満たす必要があります。
+
+1. `l2OutputIndex` が、該当する出力ルートを含む L2 出力内のインデックスであること。
+2. `L2OutputOracle.getL2Output(l2OutputIndex)` がゼロ以外の `OutputProposal` を返すこと。
+3. `outputRootProof` の値の keccak256 ハッシュが `outputRoot` と等しいこと。
+4. `withdrawalProof` が、出金トランザクションデータのハッシュが L2 上の L2ToL1MessagePasser コントラクトのストレージに含まれていることを
+   示す有効な包含証明であること。
+
+## セキュリティに関する考慮事項 {#security-considerations}
+
+### 出金検証の主要な特性 {#key-properties-of-withdrawal-verification}
+
+1. 出金を「二重支払い」できてはなりません。つまり、L2 で開始されたメッセージに対応しない出金を L1 上で
+   リレーできてはなりません。参考として、Polygon で発見されたこの種の脆弱性に関する[こちらの記事][polygon-dbl-spend]を
+   参照してください。
+
+   [polygon-dbl-spend]: https://gerhard-wagner.medium.com/double-spending-bug-in-polygons-plasma-bridge-2e0954ccadf1
+
+2. L2 で開始された各出金 (つまり、一意の `messageNonce()` を持つもの) について、以下の特性が成り立たなければなりません。
+   1. 出金の outputRoot が変更された場合を除き、出金を証明できるのは一度だけでなければなりません。
+   2. 出金をファイナライズできるのは一度だけでなければなりません。
+   3. メッセージのフィールドを一つでも改変した状態でリレーできてはなりません。具体的には次のとおりです。
+      1. `sender` フィールドを改変されると、「なりすまし」攻撃が可能になります。
+      2. `target`、`data`、または `value` フィールドを改変されると、攻撃者が出金の本来意図された結果を
+         危険な形で変更できてしまいます。
+      3. `gasLimit` を改変されると、リレーのコストが過度に高くなったり、リレイヤーが `target` での実行を
+         (ガス不足により) 失敗させたりできるおそれがあります。
+
+### 検証に成功したメッセージがリレー時に失敗した場合の処理 {#handling-successfully-verified-messages-that-fail-when-relayed}
+
+リレーされた呼び出しの実行が `target` コントラクト内で失敗した場合、残念ながら、その失敗が「想定どおり」だったのかどうか、また「再実行可能」とすべきかどうかを判別することはできません。
+こうした理由に加え、複雑さを最小限に抑えるため、再実行機能は提供していません。必要であれば、外部のユーティリティコントラクトで実装できます。
+
+[`WithdrawalTransaction` type]: https://github.com/ethereum-optimism/optimism/blob/08daf8dbd38c9ffdbd18fc9a211c227606cdb0ad/packages/contracts-bedrock/src/libraries/Types.sol#L62-L69
+
+[`OutputRootProof` type]: https://github.com/ethereum-optimism/optimism/blob/08daf8dbd38c9ffdbd18fc9a211c227606cdb0ad/packages/contracts-bedrock/src/libraries/Types.sol#L25-L30
+
+### OptimismPortal は L1 上で任意のメッセージを送信できる {#optimismportal-can-send-arbitrary-messages-on-l1}
+
+`L2ToL1MessagePasser` コントラクトの `initiateWithdrawal` 関数は、`_target` アドレスと `_data` バイト列を受け取ります。
+これらは、チャレンジ期間の経過後に `finalizeWithdrawalTransaction` が呼び出されると、L1 上の `CALL` オペコードに渡されます。
+つまり、`OptimismPortal` コントラクトは、設計上、`OptimismPortal` 自身を `msg.sender` として
+L1 上で任意のトランザクションを送信するために利用できます。
+
+そのため、`OptimismPortal` コントラクトのユーザーは、ポータルに付与する権限に十分注意する必要があります。
+たとえば、誤って `OptimismPortal` コントラクトに送られた ERC20 トークンは、事実上失われたものと考えるべきです。
+L2 で承認を開始し、 (チャレンジ期間の経過後に) L1 でその承認を証明・ファイナライズすることで、
+ポータルからの当該トークンの送金を事前承認すれば、誰でもそのトークンを引き出せてしまうためです。

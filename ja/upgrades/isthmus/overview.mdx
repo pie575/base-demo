@@ -1,0 +1,40 @@
+---
+title: "Isthmus"
+sidebarTitle: "概要"
+description: "Ethereum Pectra の EIP を取り込み、シーケンサーの収益源となるオペレーター手数料メカニズムを導入する Isthmus ハードフォークの概要。"
+---
+
+## 有効化タイムスタンプ {#activation-timestamps}
+
+| ネットワーク    | 有効化タイムスタンプ                              |
+| --------- | --------------------------------------- |
+| `mainnet` | `1746806401` (2025-05-09 16:00:01 UTC)  |
+| `sepolia` | `1744905600` (2025-04-17 16:00:00 UTC)  |
+
+## 実行レイヤー {#execution-layer}
+
+* [Pectra](https://eips.ethereum.org/EIPS/eip-7600) (実行レイヤー) :
+  * [EIP-7702](https://eips.ethereum.org/EIPS/eip-7702)
+    * [Span Batch の更新](/ja/upgrades/isthmus/derivation#span-batch-updates)
+  * [EIP-2537](https://eips.ethereum.org/EIPS/eip-2537)
+  * [EIP-2935](https://eips.ethereum.org/EIPS/eip-2935)
+    * [EIP-2935 コントラクトのデプロイ](/ja/upgrades/isthmus/derivation#eip-2935-contract-deployment)
+  * [EIP-7002](https://eips.ethereum.org/EIPS/eip-7002)
+    * EIP-7002 のプリデプロイコントラクトおよびシステムコールは、Base には採用されていません。
+  * [EIP-7251](https://eips.ethereum.org/EIPS/eip-7251)
+    * EIP-7251 のプリデプロイコントラクトおよびシステムコールは、Base には採用されていません。
+  * [EIP-7623](https://eips.ethereum.org/EIPS/eip-7623)
+  * [EIP-6110](https://eips.ethereum.org/EIPS/eip-6110)
+  * [EIP-7685](https://eips.ethereum.org/EIPS/eip-7685)
+* [ヘッダーへの L2ToL1MessagePasser ストレージルートの追加](/ja/upgrades/isthmus/exec-engine#l2tol1messagepasser-storage-root-in-header)
+* [オペレーター手数料](/ja/upgrades/isthmus/exec-engine#operator-fee)
+
+## コンセンサスレイヤー {#consensus-layer}
+
+* [Isthmus の導出](/ja/upgrades/isthmus/derivation)
+
+## スマートコントラクト {#smart-contracts}
+
+* [Predeploy](/ja/upgrades/isthmus/predeploys)
+* [L1 ブロック属性](/ja/upgrades/isthmus/l1-attributes)
+* [System Config](/ja/upgrades/isthmus/system-config)

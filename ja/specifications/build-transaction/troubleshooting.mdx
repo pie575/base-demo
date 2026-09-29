@@ -1,0 +1,36 @@
+---
+title: "トラブルシューティング"
+description: "有効性トランザクションの送信およびブロックへの取り込みに関する問題を診断します。"
+---
+
+トランザクションがオンチェーンに取り込まれたかどうかは、[`eth_getTransactionReceipt`](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionReceipt) で確認できます。
+
+## RPC メソッドが利用できない {#rpc-method-is-unavailable}
+
+`base_sendRawTransactionValidity` に対応したエンドポイントを使用してください。現在、このメソッドは Vibenet で利用できます。
+
+## 送信が失敗する場合 {#submission-fails}
+
+1 番目のパラメーターが、署名済みの legacy、EIP-2930、または EIP-1559 トランザクションであることを確認してください。また、2 番目のパラメーターに空でない `validity` 配列が含まれていることも確認してください。
+
+述語タイプ、演算子、および `0x` プレフィックス付きの 16 進数値を確認してください。リクエスト形式については、[Validity Transaction RPC](/ja/specifications/build-transaction/base_sendRawTransactionValidity) を参照してください。
+
+問題をエスカレーションする際は、JSON-RPC エラーを省略せずにすべて記録してください。
+
+## トランザクションが含まれなかった場合 {#transaction-was-not-included}
+
+トランザクションが保留状態のままになる原因としては、述語が偽になっている、別のトランザクションの優先度のほうが高い、トランザクションが置き換えられた、指定した最大ブロックまたは Flashblock の位置を過ぎた、などが考えられます。
+
+## トランザクションの有効期限切れ {#transaction-expired}
+
+`block_number` または `flashblock_index` の条件をより後の値に設定し、新たに署名したトランザクションを送信してください。
+
+## 置き換えトランザクションの手数料が不足している {#replacement-is-underpriced}
+
+手数料フィールドの値を引き上げて再署名し、同じ送信者と nonce で再試行してください。
+
+## サポートを受ける {#get-help}
+
+問い合わせの際は、ネットワーク、RPC プロバイダー、トランザクションハッシュ、述語タイプ、送信時刻、JSON-RPC エラーを記載してください。公開のサポートチャンネルでは、秘密鍵、認証情報、署名済みトランザクションの全文を共有しないでください。
+
+コミュニティサポートを利用する場合は、[Base Discord](https://base.org/discord) の `#developer-chat` チャンネルをご利用ください。

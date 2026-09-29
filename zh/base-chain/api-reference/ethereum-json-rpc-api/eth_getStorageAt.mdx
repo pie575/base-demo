@@ -1,0 +1,67 @@
+---
+title: 'eth_getStorageAt'
+sidebarTitle: 'eth_getStorageAt'
+description: '返回指定地址某个存储槽的值。使用 pending 可读取预确认的存储数据。'
+---
+
+返回指定地址某个存储位置的值。
+
+<Tip>
+  **Flashblocks：** 使用 `"pending"` 查询 `https://mainnet.base.org`，即可读取经预确认交易更新的存储数据，约每 200ms 更新一次。
+</Tip>
+
+## 参数 {#parameters}
+
+<ParamField body="address" type="string" required>
+  存储所属的 20 字节地址。
+</ParamField>
+
+<ParamField body="position" type="string" required>
+  存储槽位置，以十六进制整数表示。
+</ParamField>
+
+<ParamField body="block" type="string" required>
+  十六进制区块号，或 `"latest"`、`"pending"`、`"safe"`、`"finalized"`、`"earliest"` 之一。
+</ParamField>
+
+## 返回值 {#returns}
+
+<ResponseField name="result" type="string">
+  指定存储位置上的值，以 32 字节十六进制字符串表示。
+</ResponseField>
+
+## 示例 {#example}
+
+<CodeGroup>
+  ```bash 标准（latest） lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_getStorageAt",
+      "params": ["0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", "0x0", "latest"],
+      "id": 1
+    }'
+  ```
+
+  ```bash Flashblocks（pending，约 200ms） lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_getStorageAt",
+      "params": ["0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", "0x0", "pending"],
+      "id": 1
+    }'
+  ```
+
+  ```json 响应
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x0000000000000000000000000000000000000000000000000000000000000001"
+  }
+  ```
+</CodeGroup>

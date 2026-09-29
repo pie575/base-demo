@@ -1,0 +1,95 @@
+---
+title: "Capturar una autorización"
+keywords: ["Commerce Payments capture", "capture escrowed USDC", "PaymentCaptured", "deferred settlement Base", "Commerce Payments partial capture", "split shipment payment", "variable USDC capture", "capturableAmount"]
+description: "Captura la totalidad o una parte de una autorización en custodia, ya sea en una sola captura o en varios tramos a medida que se completa el pedido, antes de que venza la autorización."
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+Captura una autorización cuando el pedido esté listo para liquidarse. El operador transfiere la totalidad o parte del importe en custodia al receptor y al receptor de comisiones sin volver a cobrar al pagador. Puedes capturar el importe completo de una sola vez, capturar un importe menor si el total final cambia después del checkout o hacer varias capturas parciales a medida que se envía el pedido.
+
+<Info>
+  El flujo de pago de esta guía se basa en el [Commerce Payments Protocol](https://github.com/base/commerce-payments).
+</Info>
+
+## Demostración {#demo}
+
+<PaymentsDemo flow="capture" />
+
+<Tip>
+  La demostración anterior es solo una simulación. Si quieres ver demostraciones onchain en Vibenet, visita [Demostraciones de la cadena de Base](https://chain.base.org/demos).
+</Tip>
+
+## Verificar y capturar {#check-and-capture}
+
+Lee `paymentState(paymentInfoHash)` antes de realizar la captura. El monto debe ser distinto de cero, no superar `capturableAmount` y enviarse estrictamente antes de `authorizationExpiry`.
+
+El operador proporciona un `feeAmount` absoluto en unidades brutas del token. El protocolo lo valida según los valores `minFeeBps` y `maxFeeBps` por captura almacenados en `PaymentInfo`.
+
+{/* sample: usdc-capture-ts */}
+
+```typescript TypeScript lines wrap expandable highlight={8-11,16-17}
+export async function captureAuthorization(
+  payment: StoredProtocolPayment,
+  amount = payment.paymentInfo.maxAmount,
+) {
+  const [, capturableAmount] = await publicClient.readContract({
+    address: AUTH_CAPTURE_ESCROW,
+    abi: authCaptureEscrowAbi,
+    functionName: "paymentState",
+    args: [payment.paymentInfoHash],
+  });
+  if (amount > capturableAmount) throw new Error("Capture exceeds authorized amount");
+  const simulation = await publicClient.simulateContract({
+    account,
+    address: AUTH_CAPTURE_ESCROW,
+    abi: authCaptureEscrowAbi,
+    functionName: "capture",
+    args: [payment.paymentInfo, amount, 0n, zeroAddress],
+  });
+  const hash = await walletClient.writeContract(simulation.request);
+  const receipt = await publicClient.waitForTransactionReceipt({ hash, confirmations: 2 });
+  if (receipt.status !== "success") throw new Error("Payment capture reverted");
+  return receipt;
+}
+```
+
+La captura reduce `capturableAmount` y aumenta `refundableAmount` en el mismo importe bruto. El receptor recibe el importe bruto menos las comisiones.
+
+<Check>
+  Verifica el evento `PaymentCaptured(paymentInfoHash, amount, feeAmount, feeReceiver)` y las transferencias previstas al receptor antes de marcar como liquidado el tramo de cumplimiento del pedido.
+</Check>
+
+## Capturar un importe parcial {#capture-a-partial-amount}
+
+<PaymentsDemo flow="partial" />
+
+Pasa un `amount` menor a la misma llamada `capture` en cada incremento. La suma de las capturas correctas no puede superar `PaymentAuthorized.amount`, y cada captura valida sus propios límites de comisión de forma independiente. La reserva restante se registra onchain sin necesidad de un contrato de checkout personalizado.
+
+Para una autorización de 100 USDC, una captura de 64 USDC deja 36 USDC disponibles para capturar y 64 USDC reembolsables. Puedes capturar otro incremento o [anular el resto](/es/build-on-base/accept-payments/void-an-authorization).
+
+<Check>
+  Después de cada captura, concilia `PaymentCaptured.amount` con los nuevos valores de `capturableAmount` y `refundableAmount` antes de que otro worker haga avanzar el pedido.
+</Check>
+
+<Warning>
+  Los límites de comisión se evalúan en cada captura y usan división entera. Con tokens de pocos decimales, fragmentar una liquidación en muchas capturas pequeñas puede reducir la comisión mínima total. Si esto es relevante para tu caso, aplica un tamaño mínimo de captura offchain.
+</Warning>
+
+## Plazo de captura {#capture-deadline}
+
+<Warning>
+  Al llegar a `authorizationExpiry`, la captura deja de estar disponible y el pagador puede recuperar el saldo restante. Para aplicar el plazo, usa el tiempo de la cadena en lugar del reloj del servidor de la aplicación.
+</Warning>
+
+## Consulta también {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="Anular una autorización" icon="ban" href="/es/build-on-base/accept-payments/void-an-authorization">
+    Devuelve al pagador el importe restante que no se necesita.
+  </Card>
+
+  <Card title="Reembolsar un pago" icon="rotate-left" href="/es/build-on-base/accept-payments/refund-a-payment">
+    Devuelve al pagador el importe capturado previamente.
+  </Card>
+</CardGroup>

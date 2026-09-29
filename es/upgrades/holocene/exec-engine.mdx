@@ -1,0 +1,103 @@
+---
+title: "Motor de ejecución de L2"
+description: "Cambios en el motor de ejecución introducidos por la actualización Holocene, que permiten usar parámetros dinámicos de EIP-1559 codificados en los encabezados de bloque y configurados mediante SystemConfig."
+---
+
+## Descripción general {#overview}
+
+Los parámetros de EIP-1559 se codifican en el campo `extraData` del encabezado del bloque y pueden configurarse dinámicamente mediante
+el contrato `SystemConfig`.
+
+## Activación por marca de tiempo {#timestamp-activation}
+
+Holocene, al igual que otras actualizaciones de red, se activa a partir de una marca de tiempo.  Los cambios en las reglas de ejecución de bloques de L2 se aplican
+cuando `L2 Timestamp >= activation time`.
+
+## Parámetros dinámicos de EIP-1559 {#dynamic-eip-1559-parameters}
+
+### Parámetros de EIP-1559 en el encabezado del bloque {#eip-1559-parameters-in-block-header}
+
+A partir de la actualización Holocene, el campo `extraData` del encabezado de cada bloque debe tener el siguiente formato:
+
+| Nombre        | Tipo               | Desplazamiento en bytes |
+| ------------- | ------------------ | ----------------------- |
+| `version`     | `u8`               | `[0, 1)`                |
+| `denominator` | `u32 (big-endian)` | `[1, 5)`                |
+| `elasticity`  | `u32 (big-endian)` | `[5, 9)`                |
+
+Además:
+
+* `version` debe ser `0`;
+* `denominator` y `elasticity` deben ser distintos de cero;
+* no hay datos adicionales más allá de estos 9 bytes.
+
+Tenga en cuenta que `extraData` tiene una capacidad máxima de 32 bytes (para ajustarse al tipo de dato `extraData` de la beacon chain de L1) y que su
+formato puede modificarse o ampliarse en futuras actualizaciones.
+
+Tenga en cuenta también que, si la cadena tuvo su génesis con Holocene, el bloque génesis debe tener un `extraData` con el formato descrito que represente
+los parámetros iniciales que utilizará la cadena.
+
+### Parámetros de EIP-1559 en `PayloadAttributesV3` {#eip-1559-parameters-in-payloadattributesv3}
+
+El tipo [`PayloadAttributesV3`](https://github.com/ethereum/execution-apis/blob/cea7eeb642052f4c2e03449dc48296def4aafc24/src/engine/cancun.md#payloadattributesv3)
+se amplía con un valor adicional, `eip1559Params`:
+
+```rs Extended PayloadAttributesV3 lines wrap expandable
+PayloadAttributesV3: {
+    timestamp: QUANTITY
+    prevRandao: DATA (32 bytes)
+    suggestedFeeRecipient: DATA (20 bytes)
+    withdrawals: array of WithdrawalV1
+    parentBeaconBlockRoot: DATA (32 bytes)
+    transactions: array of DATA
+    noTxPool: bool
+    gasLimit: QUANTITY or null
+    eip1559Params: DATA (8 bytes) or null
+}
+```
+
+#### Codificación {#encoding}
+
+A partir de la activación de Holocene, `eip1559Parameters` en `PayloadAttributeV3` debe tener exactamente 8 bytes con el siguiente
+formato:
+
+| Nombre        | Tipo               | Desplazamiento en bytes |
+| ------------- | ------------------ | ----------------------- |
+| `denominator` | `u32 (big-endian)` | `[0, 4)`                |
+| `elasticity`  | `u32 (big-endian)` | `[4, 8)`                |
+
+#### Cálculo de PayloadID {#payloadid-computation}
+
+Si `eip1559Params != null`, `eip1559Params` se incluye en el hasher de `PayloadID` justo después del campo
+`gasLimit`.
+
+### Ejecución {#execution}
+
+#### Procesamiento de los atributos del payload {#payload-attributes-processing}
+
+Antes de la activación de Holocene, `eip1559Parameters` en `PayloadAttributesV3` debe ser null; en caso contrario, se considera
+inválido.
+
+A partir de la activación de Holocene, todo `ExecutionPayload` correspondiente a un `PayloadAttributesV3` debe contener
+`extraData` con el formato del [valor del encabezado](#eip-1559-parameters-in-block-header). Los valores `denominator` y `elasticity`
+de este `extraData` deben coincidir con los de `eip1559Parameters`, salvo que ambos sean 0.  Cuando ambos son 0, se deben usar en su lugar las
+[constantes de EIP-1559 anteriores](/es/specifications/base-protocol/execution/l2-execution-engine#1559-parameters) para rellenar `extraData`.
+
+#### Cálculo de la tarifa base {#base-fee-computation}
+
+Antes de la actualización Holocene, los parámetros de denominador y elasticidad de EIP-1559 que se utilizan para calcular la tarifa base del bloque
+eran [constantes](/es/specifications/base-protocol/execution/l2-execution-engine#1559-parameters).
+
+A partir de la actualización Holocene, estos parámetros se determinan de la siguiente manera:
+
+* si Holocene no está activo en `parent_header.timestamp`, se utilizan las [constantes de EIP-1559
+  anteriores](/es/specifications/base-protocol/execution/l2-execution-engine#1559-parameters). Tenga en cuenta que `parent_header.extraData` está vacío
+  antes de Holocene, salvo, posiblemente, en el bloque génesis.
+* si Holocene está activo en `parent_header.timestamp`, se utilizan los parámetros de `parent_header.extraData`.
+
+### Justificación {#rationale}
+
+Incluir los parámetros de EIP-1559 en el encabezado de bloque de L2 nos permite conservar la pureza de la función que calcula
+la tarifa base del siguiente bloque a partir del encabezado de su bloque padre y, al mismo tiempo, configurarlos dinámicamente.  La configuración
+dinámica se gestiona de forma similar a `gasLimit`: el pipeline de derivación proporciona los valores correspondientes del contrato `SystemConfig`
+al constructor de bloques a través de los parámetros de `PayloadAttributesV3`.

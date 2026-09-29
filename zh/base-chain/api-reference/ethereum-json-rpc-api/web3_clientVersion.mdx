@@ -1,0 +1,42 @@
+---
+title: 'web3_clientVersion'
+sidebarTitle: 'web3_clientVersion'
+description: '返回当前客户端版本字符串。'
+---
+
+返回节点客户端软件的版本字符串。
+
+<Note>
+  并非所有公共端点都支持此方法。在 Sepolia 公共节点 (`sepolia.base.org`) 上调用此方法会返回 `-32601 Method not found`，但在主网上可正常使用。
+</Note>
+
+## 参数 {#parameters}
+
+无参数。
+
+## 返回值 {#returns}
+
+<ResponseField name="result" type="string">
+  客户端版本字符串。格式：`<client>/<version>-<commit>/<platform>/base/<base-version>`。该字符串会随节点软件更新而变化，请勿依赖解析其内容。
+</ResponseField>
+
+## 示例 {#example}
+
+<CodeGroup>
+  ```json Request
+  {
+    "jsonrpc": "2.0",
+    "method": "web3_clientVersion",
+    "params": [],
+    "id": 1
+  }
+  ```
+
+  ```json Response
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "reth/v1.11.3-2ac58a2/x86_64-unknown-linux-gnu/base/v0.9.0"
+  }
+  ```
+</CodeGroup>

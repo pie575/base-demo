@@ -1,0 +1,110 @@
+---
+title: Solución de problemas con transacciones
+slug: /troubleshooting-transactions
+description: Guía para diagnosticar y resolver problemas con las transacciones en Base.
+---
+
+## La transacción no se incluye en un bloque {#transaction-not-being-included}
+
+Si tu transacción lleva pendiente más tiempo del esperado, comprueba lo siguiente:
+
+### Tarifa máxima demasiado baja {#max-fee-too-low}
+
+Si tu `maxFeePerGas` es inferior a la tarifa base actual, tu transacción quedará pendiente hasta que la tarifa base baje al nivel que especificaste.
+
+**Solución**: El `maxFeePerGas` debe cubrir tanto la tarifa base como tu tarifa de prioridad. Como la tarifa base puede cambiar en cada bloque, establece un `maxFeePerGas` lo bastante alto como para que siga siendo válido aunque la tarifa base suba mientras tu transacción esté pendiente. Un enfoque habitual es:
+
+```text Max Fee Formula
+maxFeePerGas = baseFee * 2 + maxPriorityFeePerGas
+```
+
+Esta fórmula (utilizada por [ethers.js](https://github.com/ethers-io/ethers.js/blob/98c49d091eb84a9146dfba8476f18e4c3e3d1d31/src.ts/providers/abstract-provider.ts#L945-L950)) deja margen para que la tarifa base se duplique antes de que tu transacción ya no pueda ejecutarse. Solo pagas la tarifa base real en el momento en que se incluye la transacción, no la máxima.
+
+<Note>
+  Base tiene una [tarifa base mínima](/es/specifications/transactions/network-fees#minimum-base-fee). Las transacciones con un `maxFeePerGas` inferior a este valor nunca se incluirán, ya que la tarifa base no puede bajar de ese mínimo.
+</Note>
+
+### Tarifa de prioridad demasiado baja {#priority-fee-too-low}
+
+En periodos de alta demanda, las transacciones compiten por el espacio en los bloques mediante tarifas de prioridad. Si tu tarifa de prioridad es demasiado baja en comparación con la de otras transacciones, la tuya podría retrasarse.
+
+**Solución**: la mayoría de los usuarios simplemente espera a que baje la congestión. Para transacciones urgentes, usa `eth_maxPriorityFeePerGas` para obtener una estimación de la tarifa de prioridad que supere a suficientes transacciones recientes como para que la tuya se incluya.
+
+<Note>
+  Si la limitación de DA está activa, no existe ningún endpoint RPC que calcule estimaciones de tarifas de prioridad teniéndola en cuenta. Durante la limitación de DA, incluso las transacciones con tarifas de prioridad altas pueden retrasarse, ya que el sequencer limita las transacciones de L2 para controlar su rendimiento de disponibilidad de datos en L1.
+</Note>
+
+### Hueco en el nonce {#nonce-gap}
+
+Si tienes una transacción pendiente con nonce N, todas las transacciones con nonce N+1 o superior quedarán en cola detrás de ella, sin importar sus tarifas.
+
+**Solución**: Espera a que se incluya la transacción pendiente o reemplázala enviando una nueva transacción con el mismo nonce y una tarifa más alta (`maxPriorityFeePerGas` y `maxFeePerGas` al menos un 10 % superiores).
+
+### Nonce demasiado bajo {#nonce-too-low}
+
+Si envías una transacción con un nonce que ya se ha utilizado, se rechazará.
+
+**Solución**: consulta tu nonce actual con `eth_getTransactionCount` y la etiqueta `pending` para obtener el siguiente nonce disponible.
+
+## Transacción rechazada {#transaction-rejected}
+
+### El límite de gas supera el máximo {#gas-limit-exceeds-maximum}
+
+Base aplica un [máximo de gas por transacción](/es/specifications/transactions/throughput-and-limits#per-transaction-gas-maximum) de **16.777.216 de gas (2^24)**. Las transacciones que especifican un límite de gas superior se rechazan durante la validación del bloque.
+
+**Error**: `exceeds maximum per-transaction gas limit`
+
+**Solución**: Reduce el límite de gas a 16.777.216 (2^24) o menos. Si tu transacción realmente necesita más gas, tendrás que dividirla en varias transacciones.
+
+## Transacción incluida pero fallida {#transaction-included-but-failed}
+
+Si tu transacción se incluyó en un bloque, pero aparece con estado fallido:
+
+### Sin gas suficiente {#out-of-gas}
+
+La transacción se quedó sin gas durante la ejecución.
+
+**Solución**: aumenta el límite de gas. Usa `eth_estimateGas` para obtener una estimación del gas y añade un margen (p. ej., un 20 %) para compensar posibles variaciones.
+
+### Revertida por el contrato {#reverted-by-contract}
+
+La ejecución del contrato se encontró con una condición de reversión (revert).
+
+**Solución**: Revisa la transacción en [Basescan](https://basescan.org) para ver el motivo de la reversión. Entre las causas habituales están las sentencias `require` que fallan, los errores aritméticos o las transiciones de estado no válidas.
+
+## Confirmación lenta {#slow-confirmation}
+
+### Comprender los tiempos de confirmación {#understanding-confirmation-times}
+
+Base produce bloques cada 2 segundos, pero [Flashblocks](/es/specifications/transactions/transaction-ordering#flashblocks) ofrece preconfirmaciones cada 200 ms.
+
+| Nivel de confirmación         | Tiempo  | Descripción                                     |
+| ----------------------------- | ------- | ----------------------------------------------- |
+| Preconfirmación de Flashblock | ~200 ms | Transacción incluida en una preconfirmación     |
+| Inclusión en bloque de L2     | ~2 s    | Transacción incluida en un bloque de L2 sellado |
+| Inclusión en lote de L1       | ~2 min  | Transacción publicada en Ethereum               |
+| Finalidad en L1               | ~20 min | El lote de Ethereum se finaliza                 |
+
+Consulta [Finalidad de las transacciones](/es/specifications/transactions/transaction-finality) para obtener más información.
+
+### Uso de Flashblocks para confirmaciones más rápidas {#using-flashblocks-for-faster-confirmations}
+
+Para obtener la confirmación más rápida posible, utiliza un endpoint RPC compatible con Flashblocks:
+
+| Red     | RPC de Flashblocks         |
+| ------- | -------------------------- |
+| Mainnet | `https://mainnet.base.org` |
+| Sepolia | `https://sepolia.base.org` |
+
+Estos endpoints devuelven los recibos de transacción en cuanto la transacción se incluye en un Flashblock, sin esperar a que se complete el bloque L2.
+
+## Herramientas de depuración {#debugging-tools}
+
+* **[Basescan](https://basescan.org)**: consulta el estado de las transacciones, los logs y los motivos de reversión
+* **[Tenderly](https://tenderly.co)**: simula y depura transacciones
+* **`eth_call`**: prueba llamadas a contratos sin enviar ninguna transacción
+* **`eth_estimateGas`**: estima el consumo de gas antes de enviar la transacción
+
+## Cómo obtener ayuda {#getting-help}
+
+Si sigues teniendo problemas, escríbenos en el canal `#developer-chat` del [Discord de Base](https://base.org/discord).

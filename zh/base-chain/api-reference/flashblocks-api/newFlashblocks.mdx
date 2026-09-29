@@ -1,0 +1,67 @@
+---
+title: 'newFlashblocks'
+sidebarTitle: 'newFlashblocks'
+description: '订阅后，每构建一个预确认区块，即可接收完整的 Flashblock 负载流。仅适用于 Flashblocks WebSocket 端点。'
+---
+
+通过 `eth_subscribe` 订阅后，每构建一个 Flashblock，即可接收完整的区块状态更新。每条消息都包含当前构建中区块已累积的预确认状态。
+
+<Info>
+  此订阅需要支持 WebSocket 的 RPC 端点。Base 公共端点 (`mainnet.base.org`、`sepolia.base.org`) 仅支持 HTTP。请从 [Builder Stack](/zh/get-started/builder-stack) 中选择支持 Flashblocks 的 WebSocket 提供商。
+</Info>
+
+<Note>
+  需要 [base/base](https://github.com/base/base) 客户端 v0.3.1 或更高版本。
+</Note>
+
+<Warning>
+  每个订阅**每条 WebSocket 消息只推送一个 Flashblock 对象**。事件大约每 200ms 到达一次。如果处理程序需要对每个事件进行大量处理，请对其进行节流或防抖，以免造成阻塞。
+</Warning>
+
+## 参数 {#parameters}
+
+<ParamField body="subscriptionType" type="string" required>
+  必须为 `"newFlashblocks"`。
+</ParamField>
+
+## 返回值 {#returns}
+
+<ResponseField name="result" type="string">
+  十六进制编码的订阅 ID。每条事件通知推送的是一个 **Flashblock 对象**，而非标准区块对象。其负载包含 `payload_id`、`index`、`diff`，以及 `base` (仅在 index 为 0 时提供) 。完整结构请参阅 [Infrastructure Stream schema](/zh/base-chain/api-reference/flashblocks-api/flashblocks-api-overview#flashblock-object)。
+</ResponseField>
+
+## 示例 {#example}
+
+<CodeGroup>
+  ```json Subscribe
+  {"jsonrpc": "2.0", "id": 1, "method": "eth_subscribe", "params": ["newFlashblocks"]}
+  ```
+
+  ```json Subscription ID Response
+  {"jsonrpc": "2.0", "id": 1, "result": "0x3b8cd9e5f4a7b2c1d0e3f4a5b6c7d8e9"}
+  ```
+
+  ```javascript JavaScript lines wrap expandable
+  import WebSocket from 'ws';
+
+  // 使用支持 Flashblocks 的服务商 WSS 端点（参见 Builder Stack）
+  const ws = new WebSocket('wss://your-flashblocks-provider.example/ws');
+
+  ws.on('open', () => {
+    ws.send(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'eth_subscribe',
+      params: ['newFlashblocks'],
+      id: 1
+    }));
+  });
+
+  ws.on('message', (data) => {
+    const msg = JSON.parse(data.toString());
+    if (msg.method === 'eth_subscription') {
+      // 约每 200ms 触发一次，返回最新的 Flashblock 状态
+      console.log('Flashblock update:', msg.params.result);
+    }
+  });
+  ```
+</CodeGroup>

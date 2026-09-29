@@ -1,0 +1,35 @@
+---
+title: "预部署合约"
+description: "Isthmus 升级中的预部署合约变更，包括 L1Block 的更新以及新增的 OperatorFeeVault 合约。"
+---
+
+## 概述 {#overview}
+
+### L1Block {#l1block}
+
+#### 接口 {#interface}
+
+##### `setIsthmus` {#setisthmus}
+
+此函数应在 Isthmus 网络升级的激活区块上调用一次。
+它 MUST 仅能由 `DEPOSITOR_ACCOUNT` 调用一次。被调用时，它 MUST
+依次调用各项网络特定配置的 getter，并将返回数据 (returndata) 写入存储。
+
+### GasPriceOracle {#gaspriceoracle}
+
+Isthmus 升级引入了一个新方法：`getOperatorFee(uint256)`。该方法
+返回给定 `gasUsed` 对应的运营方费用。运营方费用按照执行引擎规范中
+[运营方费用](./exec-engine#operator-fee)一节所述的公式计算。
+
+`getOperatorFee(uint256)` 的返回值上限为 `U256` 的最大值。
+
+### OperatorFeeVault {#operatorfeevault}
+
+与 `BaseFeeVault`、`SequencerFeeVault` 和 `L1FeeVault` 一样，该金库实现了 `FeeVault`。
+存入或提取资金均无需任何特殊逻辑。
+
+其地址将为 `0x420000000000000000000000000000000000001b`。
+
+另请参阅[费用金库](./exec-engine#fee-vaults)。
+
+## 安全考量 {#security-considerations}

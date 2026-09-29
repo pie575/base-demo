@@ -1,0 +1,44 @@
+---
+title: 'eth_getBlockTransactionCountByNumber'
+sidebarTitle: 'eth_getBlockTransactionCountByNumber'
+description: '根据区块号返回区块中的交易数量。'
+---
+
+返回指定区块号对应区块中的交易数量。
+
+<Tip>
+  **Flashblocks：** 向 `https://mainnet.base.org` 发起查询并传入 `"pending"`，即可获取当前 Flashblock 中已预确认交易的数量。
+</Tip>
+
+## 参数 {#parameters}
+
+<ParamField body="block" type="string" required>
+  十六进制格式的区块号，或 `"latest"`、`"pending"`、`"safe"`、`"finalized"`、`"earliest"` 之一。
+</ParamField>
+
+## 返回值 {#returns}
+
+<ResponseField name="result" type="string">
+  区块中的交易数量，以十六进制整数表示。
+</ResponseField>
+
+## 示例 {#example}
+
+<CodeGroup>
+  ```json Request
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_getBlockTransactionCountByNumber",
+    "params": ["latest"],
+    "id": 1
+  }
+  ```
+
+  ```json Response
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x1f"
+  }
+  ```
+</CodeGroup>

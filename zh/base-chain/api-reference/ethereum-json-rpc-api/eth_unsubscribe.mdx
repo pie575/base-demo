@@ -1,0 +1,48 @@
+---
+title: 'eth_unsubscribe'
+sidebarTitle: 'eth_unsubscribe'
+description: '取消一个处于活动状态的 WebSocket 订阅。'
+---
+
+取消通过 [`eth_subscribe`](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_subscribe) 创建的订阅。调用此方法后，该订阅 ID 即失效。
+
+## 参数 {#parameters}
+
+<ParamField body="subscriptionId" type="string" required>
+  `eth_subscribe` 返回的订阅 ID。
+</ParamField>
+
+## 返回值 {#returns}
+
+<ResponseField name="result" type="boolean">
+  若成功取消订阅，则返回 `true`；若未找到该订阅 ID，则返回 `false`。
+</ResponseField>
+
+## 示例 {#example}
+
+<CodeGroup>
+  ```json 请求
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "eth_unsubscribe",
+    "params": ["0x1887ec8b9589ccad00000000000532da"]
+  }
+  ```
+
+  ```json 响应（成功）
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": true
+  }
+  ```
+
+  ```json 响应（未找到）
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": false
+  }
+  ```
+</CodeGroup>

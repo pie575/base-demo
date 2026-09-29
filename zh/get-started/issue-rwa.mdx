@@ -1,0 +1,56 @@
+---
+title: "资产代币化"
+description: "借助 B20 Asset 标准在 Base 上表示和管理现实世界资产：通过统一的 ERC-20 兼容接口，实现可配置精度、发行方角色、持有者管控和收益分配。"
+keywords: ["在 Base 上发行 RWA", "现实世界资产代币化", "B20 Asset", "Base 代币化资产", "代币化股份"]
+---
+
+import { AssetDemo } from "/snippets/AssetDemo.jsx"
+import RwaDisclaimer from "/snippets/zh/RwaDisclaimer.mdx"
+
+使用 [B20 Asset 标准](/zh/specifications/b20/concepts/token-types#4-asset)来代表现实世界资产。借助 Base 内置的统一 ERC-20 兼容接口，你可以配置精度和发行方角色、分发份额、限定合格持有人，并执行收益分配。以下指南以股票代币为示例，相同的流程也适用于其他类型的资产。
+
+<RwaDisclaimer />
+
+## 演示 {#demo}
+
+<AssetDemo />
+
+<Tip>
+  本演示使用浏览器在本地生成的账户，在 **Base Vibenet** 上提交真实交易。如果 Vibenet 或其 B20 功能不可用，演示将自动切换为离线示意版本。
+</Tip>
+
+## 指南 {#guides}
+
+<CardGroup cols={2}>
+  <Card title="创建资产代币" icon="building-columns" href="/zh/build-on-base/issue-rwa/create-an-asset-token">
+    为单一类别的份额配置 B20 Asset 代币。
+  </Card>
+
+  <Card title="向持有人发行份额" icon="chart-column" href="/zh/build-on-base/issue-rwa/issue-units">
+    一次性批量向多个已获批准的持有人分发份额。
+  </Card>
+
+  <Card title="限制合格持有人" icon="user-check" href="/zh/build-on-base/issue-rwa/restrict-eligible-holders">
+    通过共享允许列表管控发行和转账。
+  </Card>
+
+  <Card title="限制转账发起方" icon="user-shield" href="/zh/build-on-base/issue-rwa/restrict-transfer-initiators">
+    要求每笔转账都必须由指定的发起方 (例如过户代理) 发起。
+  </Card>
+
+  <Card title="扣押并注销份额" icon="user-slash" href="/zh/build-on-base/issue-rwa/seize-and-cancel-units">
+    将不合格持有人的份额转入托管地址，然后予以注销。
+  </Card>
+
+  <Card title="向持有人发布变更公告" icon="bullhorn" href="/zh/build-on-base/issue-rwa/announce-a-distribution">
+    发布链上披露信息，并同步执行其中所述的发行、乘数更新或销毁操作。
+  </Card>
+
+  <Card title="应用乘数" icon="code-branch" href="/zh/build-on-base/issue-rwa/apply-a-multiplier">
+    无需迁移持有人即可更新显示余额。
+  </Card>
+
+  <Card title="暂停转账" icon="pause" href="/zh/build-on-base/issue-rwa/pause-transfers">
+    在发生安全事件时暂停转账，同时保持发行功能可用。
+  </Card>
+</CardGroup>

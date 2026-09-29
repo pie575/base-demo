@@ -1,0 +1,21 @@
+---
+title: "証明"
+sidebarTitle: "概要"
+description: "Azul 証明システムにおいて、L2 チェックポイントの提案を Ethereum から検証可能にするオフチェーンサービスとオンチェーンコントラクトの概要。"
+---
+
+証明システムは、L2 チェックポイントの提案を Ethereum から検証可能にするオフチェーンサービスと
+オンチェーンコントラクトで構成されます。提案は、固定された L2 ブロック範囲に対する出力ルートを主張するものです。
+独立した証明アクターがその主張を再計算して証明データを提供し、主張が無効であれば
+ゲームに異議を申し立てます。
+
+このセクションでは、Azul 証明システムを構成する各コンポーネントの役割について説明します。
+
+* [Challenger](/ja/specifications/base-protocol/proofs/challenger): 進行中のゲームを正規の L2 ステートと照合し、無効な主張に
+  異議を申し立てます。
+* [Proposer](/ja/specifications/base-protocol/proofs/proposer): 新しいチェックポイント提案を作成します。
+* [Registrar](/ja/specifications/base-protocol/proofs/registrar): 承認済みの TEE 署名者 ID を登録するオンチェーンレジストリを管理します。
+* [TEE Prover](/ja/specifications/base-protocol/proofs/tee-prover): 通常の提案パス向けに、Nitro Enclave に基づく証明を生成します。
+* [ZK Prover](/ja/specifications/base-protocol/proofs/zk-prover): 提案パスおよび異議申し立てパス向けに、パーミッションレスな証明を生成します。
+* [Contracts](/ja/specifications/base-protocol/proofs/proof-contracts): 証明データの検証とゲーム状態の追跡を行い、ゲームの結果に応じて出金と
+  ボンドを解放します。

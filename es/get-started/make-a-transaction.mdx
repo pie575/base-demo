@@ -1,0 +1,50 @@
+---
+title: "Realizar una transacción"
+keywords: ["enviar transacción Base", "ejemplo de viem en Base", "primera transacción en Base", "comisiones de transacción en Base"]
+description: "Envía tu primera transacción en Base con viem: conéctate, firma y confirma en segundos por una fracción de centavo."
+---
+
+Base usa el mismo modelo de transacciones que Ethereum, así que puedes usar cualquier biblioteca compatible con la EVM. Aquí tienes un ejemplo mínimo de envío con [viem](https://viem.sh).
+
+## Enviar una transacción {#send-a-transaction}
+
+```ts send.ts lines wrap expandable
+import { createWalletClient, http, parseEther } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+import { base } from 'viem/chains';
+
+const account = privateKeyToAccount('0xYourPrivateKey');
+
+const client = createWalletClient({
+  account,
+  chain: base,
+  transport: http('https://mainnet.base.org'),
+});
+
+const hash = await client.sendTransaction({
+  to: '0xRecipientAddress',
+  value: parseEther('0.001'),
+});
+
+console.log(`Sent, view at https://basescan.org/tx/${hash}`);
+```
+
+<Warning>
+  Nunca escribas una clave privada directamente en el código ni la expongas. `'0xYourPrivateKey'` es un marcador de posición. Carga la clave desde una variable de entorno o un gestor de secretos, mantenla en el servidor y nunca la subas al control de versiones.
+</Warning>
+
+<Tip>
+  En Base, las transacciones se confirman en menos de un segundo gracias a [Flashblocks](/es/specifications/transactions/transaction-ordering#flashblocks) y, por lo general, cuestan una fracción de centavo en gas.
+</Tip>
+
+## Próximos pasos {#next-steps}
+
+<CardGroup cols={2}>
+  <Card title="Emitir una stablecoin" icon="coins" href="/es/get-started/issue-stablecoins">
+    Lanza un token respaldado por dinero fiduciario con una sola llamada.
+  </Card>
+
+  <Card title="Facilitar pagos" icon="credit-card" href="/es/get-started/accept-payments">
+    Acepta USDC con un pago de un solo toque.
+  </Card>
+</CardGroup>

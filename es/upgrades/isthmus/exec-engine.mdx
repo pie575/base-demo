@@ -1,0 +1,263 @@
+---
+title: "Motor de ejecución de L2"
+description: "Cambios en el motor de ejecución introducidos con la actualización Isthmus, como la raíz de almacenamiento de L2ToL1MessagePasser en los encabezados de bloque y el cobro de la tarifa del operador."
+---
+
+[l2-to-l1-mp]: /specifications/base-protocol/execution/predeploys#L2ToL1MessagePasser
+
+[output-root]: /specifications/reference/glossary#l2-output-root
+
+## Descripción general {#overview}
+
+La raíz de almacenamiento del `L2ToL1MessagePasser` se incluye en el campo
+`withdrawalRoot` del encabezado del bloque.
+
+## Activación por marca de tiempo {#timestamp-activation}
+
+Isthmus, al igual que otras actualizaciones de red, se activa en una marca de tiempo determinada.
+Los cambios en las reglas de ejecución de los bloques de L2 se aplican cuando `L2 Timestamp >= activation time`.
+
+## Raíz de almacenamiento de `L2ToL1MessagePasser` en el encabezado {#l2tol1messagepasser-storage-root-in-header}
+
+Tras la activación del hardfork Isthmus, el campo `withdrawalsRoot` del encabezado de bloque de L2 contendrá la raíz de almacenamiento de 32 bytes
+de la cuenta [`L2ToL1MessagePasser`][l2-to-l1-mp] en el estado global identificado por el campo stateRoot
+del encabezado del bloque. La raíz de almacenamiento debe coincidir con la que devuelve `eth_getProof`
+para el número de bloque indicado.
+
+### Reglas de validez del encabezado {#header-validity-rules}
+
+Antes de la activación de Isthmus:
+
+* el campo `withdrawalsRoot` del encabezado del bloque de L2 debe ser:
+  * `nil` si Canyon no se ha activado.
+  * `keccak256(rlp(empty_string_code))` si Canyon se ha activado.
+* el campo `requestsHash` del encabezado del bloque de L2 debe omitirse.
+
+Después de la activación de Isthmus, un encabezado de bloque de L2 es válido si y solo si:
+
+1. El campo `withdrawalsRoot`
+   1. Tiene una longitud de 32 bytes.
+   2. Coincide con la raíz de almacenamiento de la cuenta [`L2ToL1MessagePasser`][l2-to-l1-mp],
+      tal como queda comprometida en el `storageRoot` del encabezado del bloque
+2. El campo `requestsHash` es igual a `sha256('') = 0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`,
+   lo que indica que el bloque no contiene solicitudes.
+
+### Raíz de retiros del encabezado {#header-withdrawals-root}
+
+| Desplazamiento en bytes | Descripción                                                              |
+| ----------------------- | ------------------------------------------------------------------------ |
+| `[0, 32)`               | Raíz de almacenamiento de la cuenta [`L2ToL1MessagePasser`][l2-to-l1-mp] |
+
+#### Justificación {#rationale}
+
+Actualmente, para generar [raíces de salida de L2][output-root] para bloques históricos, se necesita un nodo de archivo. Esto
+supone una carga directa para los usuarios del sistema en un escenario con pruebas de fallos, en el que:
+
+1. Un proponente debe tener un nodo de archivo para proponer una raíz de salida en el safe head.
+2. Un usuario que prueba su retiro debe tener un nodo de archivo para verificar que la raíz de salida con la que
+   prueba su retiro es realmente válida y está incluida en la cadena segura.
+
+Colocar la raíz de almacenamiento de la cuenta [`L2ToL1MessagePasser`][l2-to-l1-mp] en el campo `withdrawalsRoot` alivia esta carga
+tanto para los usuarios como para los participantes del protocolo, lo que les permite proponer y verificar otras propuestas con menores costos operativos.
+
+#### Bloque génesis {#genesis-block}
+
+Si Isthmus está activo en el bloque génesis, el campo `withdrawalsRoot` del encabezado del bloque génesis se establece como la
+raíz de almacenamiento de la cuenta [`L2ToL1MessagePasser`][l2-to-l1-mp].
+
+#### Procesamiento del estado {#state-processing}
+
+Durante el procesamiento del estado, el encabezado cuyas transacciones se están validando no debe exponer su `withdrawalsRoot`
+a la capa de la EVM/aplicación.
+
+#### P2P {#p2p}
+
+Durante la sincronización, se espera que la lista de retiros del cuerpo del bloque esté vacía (OP stack no utiliza
+la lista de retiros) y, por lo tanto, que el hash de la lista de retiros sea la raíz MPT de una lista vacía.
+Al verificar la cadena de encabezados a partir del último encabezado sincronizado, se utiliza la marca de tiempo del encabezado para
+determinar si Isthmus está activo en dicho bloque. En caso afirmativo, se espera que el hash MPT `withdrawalsRoot` del encabezado
+pueda ser cualquier valor no nulo (ya que debe contener la raíz de almacenamiento de `L2ToL1MessagePasser`).
+
+#### Consideraciones de compatibilidad con versiones anteriores {#backwards-compatibility-considerations}
+
+A partir de Canyon (que incluye compatibilidad con el hardfork Shanghai) y antes de la activación de Isthmus,
+el campo `withdrawalsRoot` se establece en la raíz MPT de una lista de retiros vacía, que coincide con
+la raíz de un almacenamiento vacío. Los retiros quedan registrados en el estado de L2, pero
+no se reflejan en `withdrawalsRoot`. Por lo tanto, antes de la activación de Isthmus,
+aunque `withdrawalsRoot` esté presente y el encabezado contenga una raíz MPT, no debe utilizarse.
+Toda implementación que calcule la raíz de salida debe asegurarse de no usar el `withdrawalsRoot` del encabezado.
+
+Tenga en cuenta que siempre hay almacenamiento distinto de cero en [`L2ToL1MessagePasser`][l2-to-l1-mp],
+porque es un [predeploy con proxy](/es/specifications/base-protocol/execution/predeploys): desde el génesis
+almacena una dirección de implementación y una dirección de propietario. Por lo tanto, a partir de Isthmus,
+`withdrawalsRoot` nunca será nulo ni será la raíz MPT de una lista vacía.
+
+#### Consideraciones de compatibilidad futura {#forwards-compatibility-considerations}
+
+Actualmente, el campo `withdrawalsRoot` no se utiliza en el formato de consenso del encabezado de Base, y nunca se
+utilizará para ningún otro fin de los previstos actualmente. Asignar a este valor la raíz de almacenamiento de la cuenta de retiros
+encaja directamente con Base y aprovecha el campo ya existente en el formato de consenso del encabezado de L1.
+
+#### Consideraciones de implementación para clientes {#client-implementation-considerations}
+
+Cada cliente de EL almacena el estado histórico de las cuentas de forma distinta. Si, en un caso hipotético, Base no tuviera
+ningún retiro saliente durante un período prolongado, es posible que el nodo no tenga acceso a la raíz de almacenamiento de la cuenta del
+[`L2ToL1MessagePasser`][l2-to-l1-mp]. En ese caso, el cliente no podría mantener el consenso. Sin embargo, la mayoría de los clientes
+modernos pueden, como mínimo, reconstruir sobre la marcha la raíz de almacenamiento de la cuenta en un bloque determinado si no
+almacenan directamente esta información.
+
+##### Simulación de transacciones {#transaction-simulation}
+
+En respuesta a métodos RPC como `eth_simulateV1`, que permiten simular transacciones arbitrarias dentro de uno o más bloques,
+se debe incluir una raíz de retiros vacía en el encabezado de todo bloque compuesto por dichas transacciones simuladas. Lo mismo
+se aplica a los casos en los que el valor real de la raíz de retiros no está disponible de inmediato.
+
+## Solicitudes de depósito {#deposit-requests}
+
+[EIP-6110] traslada los depósitos a la capa de ejecución e introduce una nueva solicitud de depósito de [EIP-7685] de tipo
+`DEPOSIT_REQUEST_TYPE`. Estas solicitudes de depósito aparecen luego en la lista de solicitudes de [EIP-7685]. Base debe ignorar estas
+solicitudes, por lo que es necesario modificar la generación de solicitudes para excluir las solicitudes de depósito de [EIP-6110]. Tenga en cuenta que, como el tipo de solicitud de [EIP-6110]
+*no* existía antes de Pectra en L1 ni del hardfork Isthmus en L2, no se necesita un momento de activación: estas
+solicitudes de tipo depósito pueden excluirse siempre.
+
+[EIP-6110]: https://eips.ethereum.org/EIPS/eip-6110
+
+[EIP-7685]: https://eips.ethereum.org/EIPS/eip-7685
+
+## Lista de retiros del cuerpo del bloque {#block-body-withdrawals-list}
+
+La lista de retiros del cuerpo del bloque se codifica como una lista RLP vacía.
+
+## Cambios en la EVM {#evm-changes}
+
+### Precompilados BLS {#bls-precompiles}
+
+Al igual que el precompilado `bn256Pairing` del [hard fork Granite](../granite/exec-engine),
+[EIP-2537](https://eips.ethereum.org/EIPS/eip-2537) introduce un precompilado
+BLS que interrumpe la ejecución de forma anticipada en la EVM según el tamaño de la entrada.
+
+A continuación se indican los límites de tamaño de entrada de los contratos precompilados BLS:
+
+* Multiplicación multiescalar en G1: `input_size <= 513760 bytes`
+* Multiplicación multiescalar en G2: `input_size <= 488448 bytes`
+* Comprobación de emparejamiento: `input_size <= 235008 bytes`
+
+Los demás precompilados BLS son operaciones de tamaño fijo con un costo de gas fijo.
+
+## Sellado de bloques {#block-sealing}
+
+En Base, `EIP-7685` es una operación nula (no-op) y `requestsHash` siempre se establece en `sha256('')` (como se indica en las
+[reglas de validez del encabezado](#header-validity-rules)). Por lo tanto, [EIP-6110](https://eips.ethereum.org/EIPS/eip-6110),
+[EIP-7002](https://eips.ethereum.org/EIPS/eip-7002) y [EIP-7251](https://eips.ethereum.org/EIPS/eip-7251) tampoco
+están habilitados. Tras la activación de Isthmus, la capa de ejecución de Base debe garantizar que, durante el proceso de sellado de bloques,
+*no se invoquen* ni el filtrado posterior al bloque de los eventos del contrato de depósito (EIP-6110) ni las llamadas al sistema de
+`EIP-7002` + `EIP-7251`.
+
+Los usuarios de Base pueden seguir desplegando estos contratos inteligentes sin necesidad de permisos, pero la capa de ejecución de Base no les dará ningún tratamiento especial, y no se tienen en cuenta las llamadas al sistema introducidas en el hardfork Pectra de L1.
+
+## Actualizaciones de la Engine API {#engine-api-updates}
+
+### Actualización de `ExecutionPayload` {#update-to-executionpayload}
+
+Tras el hard fork Isthmus, `ExecutionPayload` incluirá un campo adicional para `withdrawalsRoot`.
+
+### API `engine_newPayloadV4` {#engine_newpayloadv4-api}
+
+A partir de Isthmus, se utilizará `engine_newPayloadV4`.
+
+El parámetro `executionRequests` DEBE ser un array vacío.
+
+## Comisiones {#fees}
+
+Las nuevas variantes del OP Stack presentan patrones de consumo de recursos distintos y, por ello, requieren un modelo
+de precios más flexible. Para admitir estructuras de comisiones más personalizables, Isthmus añade un nuevo componente al cálculo
+de comisiones: el `operatorFee`, parametrizado mediante dos escalares, el `operatorFeeScalar`
+y el `operatorFeeConstant`.
+
+### Tarifa del operador {#operator-fee}
+
+La tarifa del operador está integrada directamente en la EVM, junto con la tarifa de gas estándar y la tarifa de datos de L1
+propia de Base. Esta tarifa sigue la misma semántica que las tarifas que ya se cobran en la EVM[^1], pero con una nueva cuenta beneficiaria.
+
+#### Fórmula de la tarifa {#fee-formula}
+
+$$
+\text{operatorFee} = (\text{gas} \times \text{operatorFeeScalar} \div 10^6) + \text{operatorFeeConstant}
+$$
+
+Donde:
+
+* `gas` es la cantidad de gas que utilizó la transacción. Al calcular la cantidad de gas que se compra al
+  inicio de la transacción, este valor debe ser el `gas_limit`. Al determinar cuánto gas debe reembolsarse
+  según la parte del `gas_limit` que haya utilizado la transacción, este valor debe ser el `gas_used`.
+* `operatorFeeScalar` es un escalar `uint32` establecido por el operador de la cadena y escalado por `1e6`.
+* `operatorFeeConstant` es un escalar `uint64` establecido por el operador de la cadena.
+
+Ten en cuenta que el valor máximo de la tarifa del operador ocupa 77 bits, lo cual puede calcularse a partir de los valores máximos de los parámetros de entrada:
+
+```text Maximum Operator Fee
+operatorFee_max = (uint64_max * uint32_max / 10^6) + uint64_max ≈ 7.924660923989131 * 10^22
+```
+
+Por lo tanto, las implementaciones no necesitan comprobar si hay desbordamientos si realizan los cálculos con tipos `uint256`.
+
+#### Tarifas del operador en depósitos {#deposit-operator-fees}
+
+A las transacciones de depósito no se les cobran tarifas del operador. Para todas las transacciones de depósito, independientemente de la configuración de los parámetros
+de la tarifa del operador, la tarifa del operador debe ser **cero**. Las transacciones de depósito tampoco reciben reembolsos de gas por la tarifa del operador,
+ya que, de entrada, nunca compran el gas correspondiente a la tarifa del operador.
+
+#### Semántica de tarifas en la EVM {#evm-fee-semantics}
+
+Al igual que otras tarifas en la EVM, la tarifa del operador debe cobrarse según el siguiente patrón:
+
+1. Durante la validación previa a la ejecución, la cuenta debe tener suficiente ETH para cubrir las tarifas existentes de gas y de datos de L1 en el peor caso,
+   *además de* la tarifa del operador en el peor caso (para los depósitos, la tarifa en el peor caso es `0`). Para calcular este valor, utiliza la
+   [fórmula de tarifas](#fee-formula) con `gas` establecido en el `gas_limit` de la transacción y súmalo a la tarifa de transacción
+   existente en el peor caso.
+2. Al comprar gas antes de la ejecución, cobra a la cuenta la tarifa del operador en el peor caso. Para calcular este valor, utiliza la
+   [fórmula de tarifas](#fee-formula) con `gas` establecido en el `gas_limit` de la transacción.
+3. Después de la ejecución, al emitir los reembolsos, a las transacciones que compraron gas para la tarifa del operador se les debe reembolsar el gas de la tarifa del operador
+   no utilizado (es decir, al invocador solo se le debe cobrar la tarifa del operador *efectiva*). El reembolso debe
+   calcularse como $\text{opFeeRefund} = \text{opFeeWorstCase} - \text{opFeeActual}$, donde:
+   * $\text{opFeeWorstCase}$ es el valor descrito en los puntos 1 y 2.
+   * $\text{opFeeActual}$ es el importe de la tarifa del operador que realmente se utilizó. Este valor se calcula con la
+     [fórmula de tarifas](#fee-formula) con `gas` establecido en `gas_limit - gas_used + refunded_gas`. `refunded_gas` se define
+     según [EIP-3529](https://eips.ethereum.org/EIPS/eip-3529).
+4. Después de la ejecución, al recompensar a los beneficiarios de las tarifas, envía la *tarifa del operador gastada* a la
+   [bóveda de tarifas del operador](#fee-vaults). Este valor es exactamente $\text{opFeeActual}$, tal como se describió anteriormente.
+
+Las implementaciones deben garantizar que no se acuñe ni se destruya ETH como consecuencia de la tarifa del operador.
+
+#### Cambios en el pool de transacciones {#transaction-pool-changes}
+
+Para tener en cuenta la tarifa adicional que, como se mencionó anteriormente, interviene en la validez de las transacciones, el pool de transacciones debe rechazar
+las transacciones cuyo saldo no alcance para cubrir el costo máximo posible de la tarifa de la transacción. Este costo máximo
+de una transacción ahora incluye la tarifa del operador máxima posible.
+
+#### Configuración de los parámetros de la tarifa del operador {#configuring-operator-fee-parameters}
+
+`operatorFeeScalar` y `operatorFeeConstant` se cargan de forma similar a `baseFeeScalar` y
+`blobBaseFeeScalar`, que se usan en el cálculo de [`L1Fee`](/es/specifications/base-protocol/execution/l2-execution-engine#ecotone-l1-cost-fee-changes-eip-4844-da).
+En concreto, se puede acceder a estos parámetros de dos formas intercambiables:
+
+* leyéndolos de los atributos de L1 depositados (`operatorFeeScalar` y `operatorFeeConstant`) del bloque de L2 actual
+* leyéndolos del contrato L1 Block Info (`0x4200000000000000000000000000000000000015`)
+  * mediante las funciones getter de Solidity correspondientes (`operatorFeeScalar`, `operatorFeeConstant`)
+  * mediante lecturas directas del almacenamiento:
+    * El escalar de la tarifa del operador, como `uint32` big-endian en el slot `8` con desplazamiento `0`.
+    * La constante de la tarifa del operador, como `uint64` big-endian en el slot `8` con desplazamiento `4`.
+
+### Bóvedas de tarifas {#fee-vaults}
+
+Las tarifas recaudadas se envían a una nueva bóveda destinada a la `operatorFee`: la [`OperatorFeeVault`](./predeploys#operatorfeevault).
+
+Al igual que las bóvedas existentes, se trata de una dirección fija en el código que apunta a un contrato proxy predesplegado.
+El proxy está respaldado por un contrato de bóveda desplegado, basado en `FeeVault`, que transfiere de forma segura los fondos de la bóveda a L1.
+
+### Recibos {#receipts}
+
+Tras la activación de Isthmus, se añaden dos nuevos campos, `operatorFeeScalar` y `operatorFeeConstant`, a los recibos de transacción
+si y solo si al menos uno de ellos es distinto de cero.
+
+[^1]: Wood, G., &amp; Ethereum Contributors. (n.d.-a). Ethereum Yellow Paper. [https://ethereum.github.io/yellowpaper/paper.pdf](https://ethereum.github.io/yellowpaper/paper.pdf) Página 8, sección 5: «Gas and Payment»

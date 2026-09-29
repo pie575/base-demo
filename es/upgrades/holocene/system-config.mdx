@@ -1,0 +1,72 @@
+---
+title: "Configuración del sistema"
+description: "Cambios en SystemConfig introducidos en la actualización Holocene, que incorporan la configuración dinámica de los parámetros de EIP-1559 mediante eventos ConfigUpdate."
+---
+
+## Descripción general {#overview}
+
+El contrato `SystemConfig` se actualiza para admitir parámetros de EIP-1559 dinámicos.
+
+### `ConfigUpdate` {#configupdate}
+
+Cuando se actualiza la configuración, se DEBE emitir un evento [`ConfigUpdate`](/es/specifications/base-protocol/consensus/derivation#system-config-updates)
+con los siguientes parámetros:
+
+| `version`    | `updateType` | `data`                                                     | Uso                                                  |
+| ------------ | ------------ | ---------------------------------------------------------- | ---------------------------------------------------- |
+| `uint256(0)` | `uint8(4)`   | `abi.encode((uint256(_denominator) << 32) \| _elasticity)` | Modifica el denominador y la elasticidad de EIP-1559 |
+
+Tenga en cuenta que la codificación anterior corresponde al formato que emite el evento de SystemConfig, el cual difiere del formato de extraData
+del encabezado del bloque.
+
+### Inicialización {#initialization}
+
+Las siguientes acciones deben producirse durante la inicialización de `SystemConfig`:
+
+* `emit ConfigUpdate.BATCHER`
+* `emit ConfigUpdate.FEE_SCALARS`
+* `emit ConfigUpdate.GAS_LIMIT`
+* `emit ConfigUpdate.UNSAFE_BLOCK_SIGNER`
+
+Se omite intencionadamente `emit ConfigUpdate.EIP_1559_PARAMS`.
+Mientras estos valores no estén establecidos, se usarán los valores predeterminados.
+Exigir que los parámetros de EIP-1559 se establezcan durante la inicialización impondría el requisito estricto
+de que la L2 aplique el hardfork antes de que se actualicen los contratos de L1, algo difícil de gestionar en un
+ecosistema con muchas cadenas.
+
+### Modificación de los parámetros de EIP-1559 {#modifying-eip-1559-parameters}
+
+Se introduce un nuevo `UpdateType` de `SystemConfig` que permite modificar los
+parámetros de [EIP-1559](https://eips.ethereum.org/EIPS/eip-1559). De este modo, el operador
+de la cadena puede modificar `BASE_FEE_MAX_CHANGE_DENOMINATOR` y `ELASTICITY_MULTIPLIER`.
+
+### Interfaz {#interface}
+
+#### Parámetros de EIP-1559 {#eip-1559-params}
+
+##### `setEIP1559Params` {#seteip1559params}
+
+Solo el gobernador de la cadena DEBE poder invocar esta función.
+
+```solidity SystemConfig.sol
+function setEIP1559Params(uint32 _denominator, uint32 _elasticity)
+```
+
+`_denominator` y `_elasticity` DEBEN establecerse en valores mayores que 0.
+El operador de la cadena puede configurar parámetros de EIP-1559 que deriven en una mala experiencia de usuario.
+
+##### `eip1559Elasticity` {#eip1559elasticity}
+
+Esta función devuelve la elasticidad de EIP-1559 configurada actualmente.
+
+```solidity SystemConfig.sol
+function eip1559Elasticity()(uint32)
+```
+
+##### `eip1559Denominator` {#eip1559denominator}
+
+Esta función devuelve el denominador de EIP-1559 configurado actualmente.
+
+```solidity SystemConfig.sol
+function eip1559Denominator()(uint32)
+```

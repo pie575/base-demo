@@ -1,0 +1,157 @@
+---
+title: 'debug_traceTransaction'
+sidebarTitle: 'debug_traceTransaction'
+description: 'トランザクションの完全なEVM実行トレースを返します。debug APIが有効なノードが必要です。'
+---
+
+トランザクションを再実行し、その完全なEVM実行トレースを返します。トレースには、実行されたすべてのオペコード、各ステップでのガス消費量、スタックの内容、ストレージの変更が含まれます。
+
+<Warning>
+  debugメソッドはトランザクションを再実行するため、計算コストが高くなります。利用可否やレート制限は、[Builder Stack](/ja/get-started/builder-stack)に掲載されているプロバイダーごとに異なります。ホットパス (頻繁に実行される処理) での呼び出しは避けてください。
+</Warning>
+
+## パラメーター {#parameters}
+
+<ParamField body="transactionHash" type="string" required>
+  トレース対象のトランザクションハッシュ (32バイト) 。
+</ParamField>
+
+<ParamField body="traceOptions" type="object">
+  トレース設定 (任意) 。
+
+  <Expandable title="トレースオプション">
+    <ParamField body="tracer" type="string">
+      組み込みトレーサーの名前。`"callTracer"` はコールツリーを、`"prestateTracer"` は実行前のアカウント状態を返します。省略した場合は、デフォルトの struct log トレーサーが使用されます。
+    </ParamField>
+
+    <ParamField body="tracerConfig" type="object">
+      選択したトレーサー向けのオプション。`"callTracer"` の場合、`{ "onlyTopCall": true }` を指定すると内部呼び出しがスキップされます。
+    </ParamField>
+
+    <ParamField body="disableStorage" type="boolean">
+      `true` の場合、struct log にストレージの内容を含めません。レスポンスサイズを削減できます。デフォルトは `false` です。
+    </ParamField>
+
+    <ParamField body="disableMemory" type="boolean">
+      `true` の場合、struct log にメモリの内容を含めません。レスポンスサイズを削減できます。デフォルトは `false` です。
+    </ParamField>
+
+    <ParamField body="disableStack" type="boolean">
+      `true` の場合、struct log にスタックの内容を含めません。デフォルトは `false` です。
+    </ParamField>
+
+    <ParamField body="timeout" type="string">
+      実行タイムアウト。Go の duration 形式の文字列で指定します (例：`"10s"`、`"30s"`) 。デフォルトは `"5s"` です。
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## 戻り値 {#returns}
+
+<ResponseField name="result" type="object">
+  実行トレース。形式は `tracer` オプションによって異なります。
+
+  <Expandable title="デフォルトの Struct Log トレース">
+    <ResponseField name="gas" type="number">トランザクションに割り当てられたガスの総量。</ResponseField>
+    <ResponseField name="failed" type="boolean">トランザクションが失敗 (リバート) したかどうか。</ResponseField>
+    <ResponseField name="returnValue" type="string">実行結果の戻り値 (16進エンコード) 。</ResponseField>
+
+    <ResponseField name="structLogs" type="array">
+      struct log エントリの配列。実行された EVM オペコード1つにつき1エントリが含まれます。
+
+      <Expandable title="Struct Log のフィールド">
+        <ResponseField name="pc" type="number">プログラムカウンタの位置。</ResponseField>
+        <ResponseField name="op" type="string">EVM オペコード名 (例：`"PUSH1"`、`"SLOAD"`) 。</ResponseField>
+        <ResponseField name="gas" type="number">このステップ時点での残りガス。</ResponseField>
+        <ResponseField name="gasCost" type="number">このオペコードのガスコスト。</ResponseField>
+        <ResponseField name="depth" type="number">呼び出しの深さ (1 = トップレベルの呼び出し) 。</ResponseField>
+        <ResponseField name="stack" type="array">このステップ時点での EVM スタックの値。</ResponseField>
+        <ResponseField name="memory" type="array">EVM メモリの内容 (32バイトごとのチャンク) 。</ResponseField>
+        <ResponseField name="storage" type="object">このステップでのコントラクトストレージの変更 (スロット → 値) 。</ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+
+  <Expandable title="callTracer の結果">
+    <ResponseField name="type" type="string">呼び出しの種類：`"CALL"`、`"STATICCALL"`、`"DELEGATECALL"`、または `"CREATE"`。</ResponseField>
+    <ResponseField name="from" type="string">送信者のアドレス。</ResponseField>
+    <ResponseField name="to" type="string">受信者のアドレス。</ResponseField>
+    <ResponseField name="value" type="string">呼び出し時に送信された ETH の量。</ResponseField>
+    <ResponseField name="gas" type="string">呼び出しに割り当てられたガス。</ResponseField>
+    <ResponseField name="gasUsed" type="string">実際に消費されたガス。</ResponseField>
+    <ResponseField name="input" type="string">送信されたコールデータ。</ResponseField>
+    <ResponseField name="output" type="string">呼び出しの戻りデータ。</ResponseField>
+    <ResponseField name="error" type="string">呼び出しがリバートした場合のエラーメッセージ。省略可能。</ResponseField>
+    <ResponseField name="calls" type="array">内部呼び出しを表す、ネストされた呼び出しオブジェクトの配列。</ResponseField>
+  </Expandable>
+</ResponseField>
+
+## 例 {#example}
+
+<CodeGroup>
+  ```json リクエスト（デフォルトの struct log） lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "method": "debug_traceTransaction",
+    "params": [
+      "0xb903239f8543d04b5dc1ba6579132b143087c68db1b2168786408fcbce568238",
+      {}
+    ],
+    "id": 1
+  }
+  ```
+
+  ```json リクエスト（callTracer） lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "method": "debug_traceTransaction",
+    "params": [
+      "0xb903239f8543d04b5dc1ba6579132b143087c68db1b2168786408fcbce568238",
+      { "tracer": "callTracer" }
+    ],
+    "id": 1
+  }
+  ```
+
+  ```json レスポンス（デフォルト） lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "gas": 21000,
+      "failed": false,
+      "returnValue": "",
+      "structLogs": [
+        {
+          "pc": 0,
+          "op": "PUSH1",
+          "gas": 21000,
+          "gasCost": 3,
+          "depth": 1,
+          "stack": [],
+          "memory": [],
+          "storage": {}
+        }
+      ]
+    }
+  }
+  ```
+
+  ```json レスポンス（callTracer） lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "type": "CALL",
+      "from": "0xd3cda913deb6f4967b2ef66ae97de114a83bcc01",
+      "to": "0x4200000000000000000000000000000000000006",
+      "value": "0x2c68af0bb14000",
+      "gas": "0x5208",
+      "gasUsed": "0x5208",
+      "input": "0x",
+      "output": "0x",
+      "calls": []
+    }
+  }
+  ```
+</CodeGroup>

@@ -1,0 +1,39 @@
+---
+title: "SDK y API"
+description: "SDK, API y herramientas de línea de comandos para la verificación de identidad, el desarrollo local y el acceso directo a la cadena de Base."
+keywords: ["Base SDK", "Base API reference", "Base Verify API", "Base JSON-RPC", "Flashblocks API", "base-anvil"]
+---
+
+Elige el SDK, la API o la herramienta de línea de comandos que mejor se adapte a las necesidades de tu aplicación. Base ofrece API de verificación de identidad, herramientas de desarrollo local y API de acceso directo a la cadena.
+
+<CardGroup cols={2}>
+  <Card title="Base Chain API" icon="server" href="/es/base-chain/api-reference/rpc-overview">
+    JSON-RPC, streaming de Flashblocks y trazas de depuración sobre nodos de Base.
+  </Card>
+
+  <Card title="Base Verify API" icon="user-check" href="/es/sdks/base-verify/overview">
+    Demuestra la propiedad verificada de cuentas y aplica políticas de elegibilidad resistentes a ataques Sybil.
+  </Card>
+
+  <Card title="CLI de base-anvil" icon="terminal" href="/es/sdks/base-anvil">
+    Compila y prueba en local contratos nativos de Base con el conjunto de herramientas Foundry de Base.
+  </Card>
+</CardGroup>
+
+## ¿Qué interfaz necesito? {#which-surface-do-i-need}
+
+| Quieres…                                                                   | Usa                                                                                      |
+| -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Verificar la titularidad de una cuenta o aplicar una política de identidad | [Base Verify API](/es/sdks/base-verify/overview)                                            |
+| Compilar y probar contratos nativos de Base en local                       | [CLI de base-anvil](/es/sdks/base-anvil)                                                    |
+| Leer saldos, bloques o registros, o enviar transacciones sin procesar      | [JSON-RPC de Ethereum](/es/base-chain/api-reference/rpc-overview)                           |
+| Recibir en streaming confirmaciones en menos de un segundo                 | [API de Flashblocks](/es/base-chain/api-reference/flashblocks-api/flashblocks-api-overview) |
+| Rastrear una transacción o un bloque                                       | [API de depuración](/es/base-chain/api-reference/debug-api/debug_traceTransaction)          |
+
+<Card title="¿Buscas Base Account SDK o Base MCP?" icon="arrow-up-right-from-square" href="/es/sdks/migrated-products">
+  Estos productos y su documentación se han trasladado a Coinbase Developer Platform con los nombres Coinbase Wallet SDK y Wallet MCP.
+</Card>
+
+<Card title="Parte de un caso de uso" icon="rocket" href="/es/build-on-base/overview">
+  Si prefieres partir de un objetivo concreto (integrar DeFi, tokenizar activos, emitir stablecoins o aceptar pagos), empieza por Build on Base.
+</Card>

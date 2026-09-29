@@ -1,0 +1,43 @@
+---
+title: "Base Verify API"
+sidebarTitle: "概要"
+description: "Base Verify の API とコントラクトを使用して、検証済みアカウントの所有権の証明、重複参加の防止、参加資格ポリシーの適用を行います。"
+---
+
+Base Verify を使用すると、ユーザーは認証情報をアプリケーションに開示することなく、検証済みアカウントを自身が管理していることを証明できます。Sybil 耐性の追加、複数のウォレットをまたいだ重複参加の防止、検証済みの属性に基づくアクションの制限などに活用できます。
+
+## 統合方法を選択する {#choose-an-integration}
+
+<CardGroup cols={2}>
+  <Card title="ソーシャルアカウントを検証する" icon="user-check" href="/ja/sdks/base-verify/verify-social-accounts">
+    アプリケーションのバックエンドで、検証済みのアカウント所有権と属性を確認します。
+  </Card>
+
+  <Card title="オンチェーンでユーザーを検証する" icon="shield-check" href="/ja/sdks/base-verify/verify-users-onchain">
+    ID の重複排除と参加資格ポリシーを、スマートコントラクト内で直接適用します。
+  </Card>
+</CardGroup>
+
+## 各インテグレーションの違い {#how-the-integrations-differ}
+
+|                 | ソーシャルアカウントを検証する                 | オンチェーンでユーザーを検証する                      |
+| --------------- | -------------------------------------- | ----------------------------------------- |
+| 検証の実施場所         | アプリケーションのバックエンド                        | スマートコントラクト                                |
+| 利用する Base の機能   | Base Verify REST API                   | Base Verify REST API とオンチェーンコントラクト        |
+| 返される結果          | 検証トークンと属性情報                            | 署名付きの `identityHash`、有効期限、署名              |
+| 主な用途            | アクセス制限付きのアプリケーション体験、報酬、バックエンドで管理するクレーム | コントラクトレベルのクレーム、デポジット、ミント、投票などのオンチェーンアクション |
+| アプリケーションのバックエンド | 必須                                     | クレーム時には不要                                 |
+
+どちらのインテグレーションでも、リクエスト元がウォレットを管理していることを証明するために、ウォレットで署名した SIWE メッセージを使用します。Base Verify はリクエストされたプロバイダーまたはポリシーを評価し、選択したフローに必要な検証データのみを返します。
+
+## 関連リソース {#related-resources}
+
+<CardGroup cols={2}>
+  <Card title="ユーザーの認証" icon="key" href="https://docs.cdp.coinbase.com/coinbase-wallet/guides/authenticate-users">
+    Coinbase Wallet を接続してユーザーを認証します。
+  </Card>
+
+  <Card title="型付きデータの署名と検証" icon="signature" href="https://docs.cdp.coinbase.com/coinbase-wallet/guides/sign-and-verify-typed-data">
+    アプリケーションでウォレットの署名を取得し、検証します。
+  </Card>
+</CardGroup>

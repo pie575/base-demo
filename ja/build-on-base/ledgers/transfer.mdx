@@ -1,0 +1,40 @@
+---
+title: "台帳内での送金"
+keywords: ["Base ledger transfer", "private transfer", "confidential payments Base", "off-chain balance"]
+description: "送金者、受取人、金額をパブリックチェーンに公開せずに、台帳内のアカウント間で残高を移動します。"
+---
+
+import { LedgersDemo } from "/snippets/LedgersDemo.jsx"
+
+資金を台帳に入金すると、アカウントは残高やアクティビティを公開のブロックエクスプローラーに表示させることなく、送金、スワップ、利回りの獲得を行えます。Base 上で処理されるのは入金と出金のみで、その間の処理はすべて非公開です。詳しくは[プライベートトランザクション](/ja/get-started/private-transactions)を参照してください。
+
+## デモ {#demo}
+
+<LedgersDemo flow="transact" />
+
+<Tip>
+  上記のデモはモックです。Vibenet 上で動作するオンチェーンデモを確認したい場合は、[Base chain demos](https://chain.base.org/demos) をご覧ください。
+</Tip>
+
+## オンチェーンで公開される情報 {#whats-exposed-onchain}
+
+| データ     | 公開有無 | 理由                          |
+| ------- | ---- | --------------------------- |
+| 送信者     | 非公開  | 送金は台帳内で完結します。               |
+| 受信者     | 非公開  | 送金は台帳内で完結します。               |
+| 金額      | 非公開  | 送金は台帳内で完結します。               |
+| アクティビティ | 非公開  | 送金に関する情報は一切 Base 上に記録されません。 |
+
+台帳は背後にあるオフチェーンシステムの種類を問わないため、独自の帳簿管理やカスタムのトランザクションロジックを自由に運用できます。
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="台帳への入金" icon="download" href="/ja/build-on-base/ledgers/deposit">
+    Base から台帳に資金を移動します。
+  </Card>
+
+  <Card title="台帳からの出金" icon="upload" href="/ja/build-on-base/ledgers/withdraw">
+    台帳から Base に資金を戻します。
+  </Card>
+</CardGroup>

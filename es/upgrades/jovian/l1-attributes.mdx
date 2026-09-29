@@ -1,0 +1,40 @@
+---
+title: "Atributos de bloque de L1"
+description: "Cambios en la transacción de atributos de L1 introducidos por la actualización Jovian, que amplían el calldata para incluir el escalar de gas de la huella de DA."
+---
+
+## Descripción general {#overview}
+
+La transacción de atributos del bloque de L1 se actualiza para incluir el escalar de gas de la huella de DA.
+
+| Argumento de entrada | Tipo    | Bytes de calldata | Segmento |
+| -------------------- | ------- | ----------------- | -------- |
+| {0x3db6be2b}         |         | 0-3               | n/a      |
+| baseFeeScalar        | uint32  | 4-7               | 1        |
+| blobBaseFeeScalar    | uint32  | 8-11              |          |
+| sequenceNumber       | uint64  | 12-19             |          |
+| l1BlockTimestamp     | uint64  | 20-27             |          |
+| l1BlockNumber        | uint64  | 28-35             |          |
+| basefee              | uint256 | 36-67             | 2        |
+| blobBaseFee          | uint256 | 68-99             | 3        |
+| l1BlockHash          | bytes32 | 100-131           | 4        |
+| batcherHash          | bytes32 | 132-163           | 5        |
+| operatorFeeScalar    | uint32  | 164-167           | 6        |
+| operatorFeeConstant  | uint64  | 168-175           |          |
+| daFootprintGasScalar | uint16  | 176-177           |          |
+
+Tenga en cuenta que, siguiendo el mismo patrón que las versiones anteriores de la transacción de atributos de L1,
+el primer argumento de entrada es el selector de función: los primeros cuatro bytes de `keccak256("setL1BlockValuesJovian()")`.
+
+En el bloque de activación, existen dos posibilidades:
+
+* Si Jovian está activo desde el génesis, no hay transacciones en el bloque de activación
+  y, por lo tanto, no hay ninguna transacción de Atributos de bloque de L1 que tener en cuenta.
+* Si Jovian se activa después del génesis, se debe usar el método [`setL1BlockValuesIsthmus()`](../isthmus/l1-attributes).
+  Esto se debe a que el contrato L1 Block todavía no se habrá actualizado.
+
+En cada bloque de L2 posterior, se debe usar el método `setL1BlockValuesJovian()`.
+
+Al usar este método, los valores previos a Jovian se migran 1:1
+y la transacción también asigna a `daFootprintGasScalar` el
+valor de [`SystemConfig`](/es/specifications/base-protocol/consensus/derivation#system-configuration). Si ese valor es `0`, se establece el valor predeterminado de `400`.

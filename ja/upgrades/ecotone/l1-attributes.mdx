@@ -1,0 +1,115 @@
+---
+title: "Ecotone の L1 属性"
+description: "Ecotone アップグレードにおける L1 属性トランザクションの変更点。新しい blob ベースの手数料計算モデルに対応するため、calldata の形式が更新されています。"
+---
+
+## 概要 {#overview}
+
+Ecotone がジェネシス時点でアクティベートされていない場合、Ecotone のアクティベーションブロックでは、
+L1 属性トランザクションに `setL1BlockValues()` の呼び出しが含まれます。
+これは、L1 属性トランザクションが [Ecotone アップグレードトランザクション][ecotone-upgrade-txs]より前に実行されるため、
+`setL1BlockValuesEcotone` がまだ存在するとは限らないからです。
+
+以降のすべての L1 属性トランザクションには、`setL1BlockValuesEcotone()` 関数の呼び出しを含めるべきです (SHOULD) 。
+入力引数は ABI エンコードされた関数パラメータではなくなり、
+代わりに 32 バイト境界に揃えた 5 つのセグメントにパックされます (関数セレクタの直後から開始) 。
+符号なし整数の各引数は、基になる型に対応するバイト数を用いてビッグエンディアンでエンコードされます。
+calldata 全体のレイアウトは次のとおりです。
+
+[ecotone-upgrade-txs]: derivation#network-upgrade-automation-transactions
+
+| 入力引数              | 型       | Calldata バイト | セグメント |
+| ----------------- | ------- | ------------ | ----- |
+| {0x440a5e20}      |         | 0-3          | n/a   |
+| baseFeeScalar     | uint32  | 4-7          | 1     |
+| blobBaseFeeScalar | uint32  | 8-11         |       |
+| sequenceNumber    | uint64  | 12-19        |       |
+| l1BlockTimestamp  | uint64  | 20-27        |       |
+| l1BlockNumber     | uint64  | 28-35        |       |
+| basefee           | uint256 | 36-67        | 2     |
+| blobBaseFee       | uint256 | 68-99        | 3     |
+| l1BlockHash       | bytes32 | 100-131      | 4     |
+| batcherHash       | bytes32 | 132-163      | 5     |
+
+calldata の合計長はちょうど 164 バイトでなければなりません (MUST) 。つまり、6 番目にして最後のセグメントは
+一部しか埋まりません。すべての L2 ブロックには L1 属性
+デポジットトランザクションが含まれるため、これによりデータベースの増加を抑えられます。
+
+Ecotone の L1 属性が初めて使用されるのは、Ecotone アクティベーションブロックの直後の L2 ブロックです。
+
+Ecotone 以前の値はそのまま 1:1 で移行されます。
+Ecotone アクティベーションブロックより後のブロックには、Ecotone 以前のすべての値が 1:1 で含まれるほか、
+次の新しい属性が設定されます。
+
+* `baseFeeScalar` には、Ecotone 以前の `scalar` の値が設定されます。
+* `blobBaseFeeScalar` には `0` が設定されます。
+* Ecotone 以前の `overhead` 属性は削除されます。
+* `blobBaseFee` には、L1 オリジンブロックの L1 blob 基本手数料が設定されます。
+  L1 ブロックが blob をサポートしていない場合は `1` になります。
+  この `1` という値は、EIP-4844 の `MIN_BLOB_GASPRICE` に由来します。
+
+なお、L1 blob 基本手数料は L1 オリジンブロックの一部として公開されているわけでは *ありません*。
+[EIP-4844](https://eips.ethereum.org/EIPS/eip-4844#base-fee-per-blob-gas-update-rule) に記載されているとおり、
+L1 オリジンブロックのヘッダーにある excess blob gas フィールドを入力とする、パラメータ化されたオフチェーンの計算式を用いて
+算出する必要があります。
+計算式内の `BLOB_BASE_FEE_UPDATE_FRACTION` パラメータは、
+オリジンブロックの時点で有効な L1 フォークによって
+異なります (例：[EIP-7691](https://eips.ethereum.org/EIPS/eip-7691) を参照) 。そのため、
+L2 コンセンサスレイヤークライアントが `blobBaseFee` を正しく計算するには、各 L1 フォークの blob パラメータとアクティベーション
+時刻を把握しておく必要があります。[EIP-7892](https://eips.ethereum.org/EIPS/eip-7892) で導入された
+Blob Parameter Only (BPO) フォークにより、
+`BLOB_BASE_FEE_UPDATE_FRACTION` が頻繁に更新される可能性があります。
+したがって、クライアントおよび証明プログラムは、
+こうしたフォークに常に追従する必要があります。
+
+## L1 属性プリデプロイコントラクト {#l1-attributes-predeployed-contract}
+
+[sys-config]: /specifications/base-protocol/consensus/derivation#system-configuration
+
+L1 属性プリデプロイは、以下の値を保持します。
+
+* L1 ブロック属性:
+  * `number` (`uint64`)
+  * `timestamp` (`uint64`)
+  * `basefee` (`uint256`)
+  * `hash` (`bytes32`)
+  * `blobBaseFee` (`uint256`)
+* `sequenceNumber` (`uint64`): エポック開始時点を基準とした L2 ブロック番号です。
+  つまり、L1 属性が最後に変更された時点の L2 ブロック高からの L2 ブロック数を表し、
+  新しいエポックの開始時に 0 にリセットされます。
+* L1 ブロックに紐づくシステム設定値([システム設定仕様][sys-config]を参照):
+  * `batcherHash` (`bytes32`): 現在稼働中のバッチ提出者に対するバージョン付きコミットメント。
+  * `baseFeeScalar` (`uint32`): Ecotone の L1 コスト計算において `basefee` をスケーリングするためのシステム設定値
+  * `blobBasefeeScalar` (`uint32`): Ecotone の L1 コスト計算において `blobBaseFee` をスケーリングするためのシステム設定値
+
+`overhead` および `scalar` の値は Ecotone アクティベーションブロック以降も引き続き参照できますが、
+システムの動作には一切影響しません。これらのフィールドは、以前は `l1FeeOverhead`
+および `l1FeeScalar` とも呼ばれていました。
+
+`packages/contracts-bedrock` ディレクトリで `pnpm build` を実行すると、ジェネシスファイルに追加するバイトコードが
+`/packages/contracts-bedrock/forge-artifacts/L1Block.sol/L1Block.json` にあるビルド成果物ファイルの
+`deployedBytecode` フィールドに出力されます。
+
+### Ecotone L1Block アップグレード {#ecotone-l1block-upgrade}
+
+L1 属性プリデプロイ済みコントラクト `L1Block.sol` は、Ecotone アップグレードの一環としてアップグレードされます。
+バージョンは `1.2.0` に引き上げられ、新しいストレージスロットが 1 つ追加されるとともに、既存のスロットの 1 つに
+追加のデータが格納されるようになります。
+
+* `blobBaseFee` (`uint256`): L1 の blob 基本手数料。
+* `blobBaseFeeScalar` (`uint32`): L1 コストのうち、L1 blob 基本手数料部分に適用されるスカラー値。
+* `baseFeeScalar` (`uint32`): L1 コストのうち、L1 基本手数料部分に適用されるスカラー値。
+
+L1 属性トランザクションが呼び出す関数は、ネットワークアップグレードによって異なります。
+
+* Ecotone のアクティベーション前:
+  * Ecotone 以前の L1 属性ルールに従い、`setL1BlockValues` が呼び出されます。
+* Ecotone のアクティベーションブロック:
+  * ジェネシスでアクティベートされる場合を除き、`setL1BlockValues` 関数を呼び出さなければなりません (MUST) 。
+    その後、同じブロック内でコントラクトがアップグレードされ、`setL1BlockValuesEcotone` がサポートされるようになります。
+* Ecotone のアクティベーション後:
+  * `setL1BlockValues` 関数は非推奨となり、決して呼び出してはなりません (MUST never) 。
+  * 新しい Ecotone 属性を指定して `setL1BlockValuesEcotone` を呼び出さなければなりません (MUST) 。
+
+`setL1BlockValuesEcotone` のパラメータには密にパックされたエンコーディングが使用されます。詳細は
+[L1 属性デポジットトランザクションのコールデータ](/ja/specifications/base-protocol/bridging/deposits#l1-attributes-deposited-transaction-calldata)を参照してください。

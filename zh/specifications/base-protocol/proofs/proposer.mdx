@@ -1,0 +1,337 @@
+---
+title: "提议者"
+description: "提议者规范。提议者是一项链下服务，负责将规范 L2 检查点区间转化为 L1 上的 AggregateVerifier 博弈。"
+---
+
+提议者是一项链下服务，负责将规范 L2 检查点区间转化为 L1 上的
+`AggregateVerifier` 博弈。它以链上最新的父状态为基础选出下一个检查点，获取该区间的 TEE 证明，并对照规范 L2 状态验证该证明，
+随后通过 `DisputeGameFactory` 创建下一个争议博弈。
+
+生产环境中的提议者由其配置的 L1 交易签名者控制，但其输出仍具有
+自验证性：每个博弈都由博弈类型、所声明的 output root、父博弈、
+L2 区块号以及中间 output root 唯一确定，且其证明既可由链上验证器校验，
+也可由独立的挑战者校验。
+
+## 职责 {#responsibilities}
+
+符合规范的提议者 (proposer) 需执行以下工作：
+
+1. 从 L1 读取当前生效的 `AggregateVerifier` 实现及提议参数。
+2. 从 `AnchorStateRegistry` 和 `DisputeGameFactory` 恢复最新的链上父状态。
+3. 选择下一个检查点区块，该区块不得晚于所选的安全头 (safe head) 。
+4. 为该检查点范围构建 `prover_prove` 请求。
+5. 仅接受 TEE 证明结果来创建提议。
+6. 在即将提交到 L1 之前，根据规范 L2 状态重新验证聚合 output root 及所有中间根。
+7. 可选：对照 `TEEProverRegistry` 预先检查 TEE 签名者。
+8. 附带所需保证金调用 `DisputeGameFactory.createWithInitData()` 提交提议。
+9. 遇到暂时性的证明、RPC 和交易失败时进行重试，且不得创建顺序错乱的游戏。
+
+提议者不负责挑战游戏、结算游戏、领取保证金或判定提款最终性。
+这些职责由挑战者和证明合约承担。
+
+## 启动配置 {#startup-configuration}
+
+启动时，proposer 会连接以下组件：
+
+* L1 执行层 RPC，用于读取合约和提交交易
+* L2 执行层 RPC，用于获取已商定的 L2 区块头
+* rollup RPC，用于获取同步状态和输出根
+* 实现了 `prover_prove` 的 prover RPC
+* `AnchorStateRegistry`
+* `DisputeGameFactory`
+* 可选的 `TEEProverRegistry`
+
+proposer 从以下位置读取争议游戏的实现合约地址：
+
+```text Game Implementation Lookup
+DisputeGameFactory.gameImpls(gameType)
+```
+
+实现合约地址必须为非零值。随后，proposer 会读取：
+
+```text Startup Reads
+AggregateVerifier.BLOCK_INTERVAL()
+AggregateVerifier.INTERMEDIATE_BLOCK_INTERVAL()
+DisputeGameFactory.initBonds(gameType)
+```
+
+`BLOCK_INTERVAL` 必须至少为 `2`，`INTERMEDIATE_BLOCK_INTERVAL` 必须为非零值，且
+`BLOCK_INTERVAL % INTERMEDIATE_BLOCK_INTERVAL` 必须为 `0`。每个提案中的中间根数量
+为：
+
+```text Intermediate Root Count
+BLOCK_INTERVAL / INTERMEDIATE_BLOCK_INTERVAL
+```
+
+提议者 (proposer) 默认使用已最终确定 (finalized) 的 L2 状态。如果通过显式配置允许非最终确定的提议，则它可以改用 rollup 节点的安全 (safe) L2 状态。
+
+## 父状态恢复 {#parent-recovery}
+
+在规划新任务之前，proposer 会先从 L1 恢复最新的链上父状态。父
+状态包括：
+
+```text Parent State Fields
+parentAddress
+parentOutputRoot
+parentL2BlockNumber
+```
+
+如果不存在匹配的游戏，则父级为 `AnchorStateRegistry` 中的锚定根 (anchor root) ：
+
+```text Anchor Parent State
+parentAddress = AnchorStateRegistry address
+parentOutputRoot = AnchorStateRegistry.getAnchorRoot().root
+parentL2BlockNumber = AnchorStateRegistry.getAnchorRoot().l2BlockNumber
+```
+
+如果已存在游戏，提议者会从锚定根 (anchor root) 开始执行确定性的前向遍历；如果缓存仍然有效，则从缓存的已恢复末端开始。每一步的操作如下：
+
+1. 计算：
+
+   ```text
+   expectedBlock = parentL2BlockNumber + BLOCK_INTERVAL
+   ```
+
+2. 获取每个中间检查点的规范 output root：
+
+   ```text
+   parentL2BlockNumber + INTERMEDIATE_BLOCK_INTERVAL * i
+   ```
+
+   其中 `i` 的取值范围为 `1..=BLOCK_INTERVAL / INTERMEDIATE_BLOCK_INTERVAL`。
+
+3. 将最后一个中间根作为 `expectedBlock` 的规范根声明 (root claim) 。
+
+4. 根据 `expectedBlock`、`parentAddress` 以及按顺序排列的中间根，编码生成 `extraData`。
+
+5. 查找预期的游戏：
+
+   ```text
+   DisputeGameFactory.games(gameType, rootClaim, extraData)
+   ```
+
+6. 如果查找返回 `address(0)`，则停止。当前父游戏即为最新的已恢复状态。
+
+7. 否则，将父游戏推进为返回的游戏代理合约，然后继续。
+
+此恢复方法不会通过扫描工厂索引来寻找&quot;最佳&quot;游戏，而是使用游戏唯一的工厂键，因此只有已恢复父游戏的规范后继游戏才能推进父游戏链。如果某个游戏的根、父游戏、L2 区块号或中间根有误，其键就会不同，因而会被父游戏恢复过程忽略。
+
+## 检查点选择 {#checkpoint-selection}
+
+恢复完成后，下一个提案目标为：
+
+```text Target Block Formula
+targetBlock = parentL2BlockNumber + BLOCK_INTERVAL
+```
+
+除非满足以下条件，否则提议者不得为 `targetBlock` 请求或提交证明：
+
+```text Safe Head Constraint
+targetBlock <= safeHead
+```
+
+其中 `safeHead` 取以下值之一：
+
+* 默认为 `finalized_l2.number`
+* 仅在显式启用非最终化提案时为 `safe_l2.number`
+
+启用并行证明后，提议者可以同时为多个未来的检查点
+目标请求证明，但向 L1 的提交仍严格按顺序进行。同一时间最多只有一笔提案交易处于
+待确认状态；在所有更早的检查点博弈均已恢复或确认之前，
+不会提交下一笔交易。
+
+## 证明请求 {#proof-request}
+
+对于一个检查点区间，提议者会构建一个 `ProofRequest`，包含以下字段：
+
+| 字段                            | 值                                           |
+| ----------------------------- | ------------------------------------------- |
+| `l1_head`                     | 构建请求时最新 L1 区块的哈希                            |
+| `l1_head_number`              | 构建请求时最新 L1 区块的区块号                           |
+| `agreed_l2_head_hash`         | `parentL2BlockNumber` 处的 L2 区块哈希            |
+| `agreed_l2_output_root`       | 从 L1 恢复的父 output root                       |
+| `claimed_l2_output_root`      | Rollup RPC 返回的 `targetBlock` 处的 output root |
+| `claimed_l2_block_number`     | `targetBlock`                               |
+| `proposer`                    | 将要提交提案交易的 L1 地址                             |
+| `intermediate_block_interval` | `INTERMEDIATE_BLOCK_INTERVAL`               |
+| `image_hash`                  | 预期的 TEE 镜像哈希                                |
+
+证明者的 RPC 方法为：
+
+```text Prover RPC Method
+prover_prove(ProofRequest) -> ProofResult
+```
+
+提议者 (proposer) 接受 `ProofResult::Tee` 来创建提案。在当前的提议者路径中，ZK 证明结果不是有效输入。
+
+## TEE 提案日志 {#tee-proposal-journal}
+
+TEE 证明器返回：
+
+* 覆盖整个检查点范围的聚合提案
+* 该范围内每个区块各自的提案
+
+聚合提案包含：
+
+```text Aggregate Proposal Fields
+outputRoot
+signature
+l1OriginHash
+l1OriginNumber
+l2BlockNumber
+prevOutputRoot
+configHash
+```
+
+TEE 签名所覆盖的数据为：
+
+```text TEE Signature Preimage
+keccak256(journal)
+```
+
+其中 `journal` 的打包格式如下：
+
+```text Journal Packing lines wrap expandable
+proposer(20)
+|| l1OriginHash(32)
+|| prevOutputRoot(32)
+|| startingL2Block(8)
+|| outputRoot(32)
+|| endingL2Block(8)
+|| intermediateRoots(32 * N)
+|| configHash(32)
+|| teeImageHash(32)
+```
+
+对于聚合提案：
+
+```text Aggregate Proposal Values
+startingL2Block = parentL2BlockNumber
+endingL2Block = targetBlock
+prevOutputRoot = parentOutputRoot
+outputRoot = claimed root at targetBlock
+```
+
+有序的 `intermediateRoots` 每隔 `INTERMEDIATE_BLOCK_INTERVAL` 个区块采样一次，其中包含
+最终目标区块的根。
+
+## 提交前验证 {#pre-submission-validation}
+
+在即将向 L1 提交之前，提议者必须对照规范 L2
+状态重新校验证明：
+
+1. 获取 `targetBlock` 处的 rollup output root。
+2. 要求其与聚合提案的 `outputRoot` 相等。
+3. 从各区块的提案中提取中间根。
+4. 获取每个中间检查点的规范 output root。
+5. 要求每个提议的中间根都与对应的规范根相等。
+
+如果聚合根或任一中间根已不再与规范状态一致，提议者会
+丢弃待处理的工作并重新启动恢复流程。这可以避免在 L1
+或 L2 发生重组后使用过时的证明结果。
+
+如果配置了 `TEEProverRegistry`，提议者应从
+聚合提案签名中恢复出 TEE 签名者，并调用：
+
+```text Signer Validity Check
+TEEProverRegistry.isValidSigner(signer)
+```
+
+如果注册表返回 `false`，提议者不得提交该证明，而应将其丢弃并重新请求证明。如果注册表检查本身因 RPC 或部署问题而失败，提议者可以继续提交，由链上验证器负责强制执行签名者有效性检查。
+
+## 创建博弈 {#game-creation}
+
+提议者使用以下参数创建博弈：
+
+```solidity Game Creation Call
+DisputeGameFactory.createWithInitData{value: initBond}(
+    gameType,
+    rootClaim,
+    extraData,
+    initData
+)
+```
+
+其中：
+
+```text Root Claim
+rootClaim = aggregateProposal.outputRoot
+```
+
+`extraData` 采用紧凑打包 (packed) 格式，而非 ABI 编码：
+
+```text Extra Data Packing
+l2BlockNumber(32) || parentAddress(20) || intermediateRoots(32 * N)
+```
+
+`l2BlockNumber` 编码为 32 字节大端序整数。`parentAddress` 是恢复出的父
+游戏代理地址；对于锚点之后的第一个游戏，则为 `AnchorStateRegistry` 地址。
+
+`initData` 是传给 `AggregateVerifier.initializeWithInitData()` 的 TEE 证明字节：
+
+```text Init Data Packing
+proofType(1) || l1OriginHash(32) || l1OriginNumber(32) || signature(65)
+```
+
+对于 TEE 证明：
+
+```text TEE Proof Type
+proofType = 0
+```
+
+签名中的 ECDSA `v` 值在提交前必须规范化为 `27` 或 `28`。
+
+`initBond` 在启动时从 `DisputeGameFactory.initBonds(gameType)` 读取，并作为
+交易的 value 发送。nonce 管理、手续费加价 (fee bumping) 、签名及交易重新提交均由
+L1 交易管理器负责。
+
+## 重复的游戏 {#duplicate-games}
+
+游戏的工厂键如下：
+
+```text Factory Game Key
+gameType || rootClaim || extraData
+```
+
+如果 `createWithInitData()` 因 `GameAlreadyExists` 而回滚，proposer 会将该目标视为
+已提交。随后，它会从 L1 刷新恢复状态，并从恢复出的最新端点继续执行。此机制用于处理以下情况：
+之前的交易已成功，但 proposer 未能获取其收据；或者另一个有效的 proposer 已抢先提交了同一个 game。
+
+## 重试行为 {#retry-behavior}
+
+提议者 (proposer) 会在后续的 tick 中重试暂时性故障：
+
+| 故障                  | 要求的行为                     |
+| ------------------- | ------------------------- |
+| 恢复时 RPC 或合约读取失败     | 跳过当前 tick，并在下一个 tick 重试恢复 |
+| 证明请求失败              | 在后续 tick 中重试该目标           |
+| 证明多次失败              | 重置流水线状态并从 L1 恢复           |
+| L1 提交失败             | 保留已证明的结果，并在后续 tick 中重试提交  |
+| L1 提交超时             | 按提交失败处理，并在恢复后重试           |
+| `GameAlreadyExists` | 按成功处理，刷新恢复状态后继续           |
+| 规范根不匹配              | 重置流水线状态，并基于恢复出的 L1 状态重新证明 |
+| TEE 签名者无效           | 丢弃该证明并重新请求证明              |
+
+在当前实现中，单个证明目标最多重试三次，之后将重置流水线
+状态。提案提交的超时时间为十分钟。
+
+## 管理接口 {#admin-interface}
+
+提议者 (proposer) 可以对外提供一个可选的 JSON-RPC 管理接口。启用后，该接口提供以下方法：
+
+| 方法                      | 结果          |
+| ----------------------- | ----------- |
+| `admin_startProposer`   | 启动证明流水线     |
+| `admin_stopProposer`    | 停止证明流水线     |
+| `admin_proposerRunning` | 返回流水线是否正在运行 |
+
+启动已在运行的提议者，或停止已停止的提议者，均视为错误。
+
+## 试运行模式 {#dry-run-mode}
+
+在试运行模式下，提议者会执行恢复、检查点选择、证明获取以及
+提交前验证，但不会提交 L1 交易，而是仅在日志中记录本应
+创建的博弈。
+
+试运行模式适合用来验证证明者和 RPC 的行为，但不会推进链上的
+提案链。

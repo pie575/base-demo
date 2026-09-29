@@ -1,0 +1,77 @@
+---
+title: "RPC"
+description: "ロールアップノードの RPC インターフェースの仕様。L2 の出力ルートを取得する optimism_outputAtBlock メソッドについても説明します。"
+---
+
+## L2 出力 RPC メソッド {#l2-output-rpc-method}
+
+ロールアップノードには独自の RPC メソッド `optimism_outputAtBlock` があり、
+[L2 出力ルート](/ja/specifications/reference/glossary#l2-output-root)に対応する 32 バイトのハッシュを返します。
+
+### 構造体 {#structures}
+
+ここでは、ロールアップノードの API メソッドで使用される型を定義します。
+これらの型は、[Engine API 仕様][engine-structures]で定義された型を拡張したものです。
+
+#### BlockID {#blockid}
+
+* `hash`: `DATA`、32 バイト
+* `number`: `QUANTITY`、64 ビット
+
+#### L1BlockRef {#l1blockref}
+
+* `hash`: `DATA`、32 バイト
+* `number`: `QUANTITY`、64 ビット
+* `parentHash`: `DATA`、32 バイト
+* `timestamp`: `QUANTITY`、64 ビット
+
+#### L2BlockRef {#l2blockref}
+
+* `hash`: `DATA`、32 バイト
+* `number`: `QUANTITY`、64 ビット
+* `parentHash`: `DATA`、32 バイト
+* `timestamp`: `QUANTITY`、64 ビット
+* `l1origin`: `BlockID`
+* `sequenceNumber`: `QUANTITY`、64 ビット - エポックの最初のブロックからの距離
+
+#### SyncStatus {#syncstatus}
+
+ロールアップドライバーの状態のスナップショットを表します。
+
+* `current_l1`: `Object` - [`L1BlockRef`](#l1blockref) のインスタンス。
+* `current_l1_finalized`: `Object` - [`L1BlockRef`](#l1blockref) のインスタンス。
+* `head_l1`: `Object` - [`L1BlockRef`](#l1blockref) のインスタンス。
+* `safe_l1`: `Object` - [`L1BlockRef`](#l1blockref) のインスタンス。
+* `finalized_l1`: `Object` - [`L1BlockRef`](#l1blockref) のインスタンス。
+* `unsafe_l2`: `Object` - [`L2BlockRef`](#l2blockref) のインスタンス。
+* `safe_l2`: `Object` - [`L2BlockRef`](#l2blockref) のインスタンス。
+* `finalized_l2`: `Object` - [`L2BlockRef`](#l2blockref) のインスタンス。
+* `pending_safe_l2`: `Object` - [`L2BlockRef`](#l2blockref) のインスタンス。
+* `queued_unsafe_l2`: `Object` - [`L2BlockRef`](#l2blockref) のインスタンス。
+
+### Output メソッド API {#output-method-api}
+
+ここで使用する入力型および戻り値の型は、[Engine API 仕様][engine-structures]の定義に従います。
+
+[engine-structures]: https://github.com/ethereum/execution-apis/blob/main/src/engine/paris.md#structures
+
+#### `optimism_outputAtBlock` {#optimism_outputatblock}
+
+指定したL2ブロックの出力ルートと関連メタデータを返します。
+
+**パラメーター**
+
+| 名前            | 型                | 説明             |
+| :------------ | :--------------- | :------------- |
+| `blockNumber` | `QUANTITY`、64ビット | L2ブロック番号 (整数)  |
+
+**戻り値**
+
+| 名前                      | 型            | 説明                                   |
+| :---------------------- | :----------- | :----------------------------------- |
+| `version`               | `DATA`、32バイト | 出力ルートのバージョン番号 (`0`から開始)              |
+| `outputRoot`            | `DATA`、32バイト | 出力ルート                                |
+| `blockRef`              | `Object`     | [`L2BlockRef`](#l2blockref)のインスタンス   |
+| `withdrawalStorageRoot` | `DATA`、32バイト | `L2ToL1MessagePasser`コントラクトのストレージルート |
+| `stateRoot`             | `DATA`、32バイト | ステートルート                              |
+| `syncStatus`            | `Object`     | [`SyncStatus`](#syncstatus)のインスタンス   |

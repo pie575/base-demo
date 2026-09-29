@@ -1,0 +1,101 @@
+---
+title: "创建资产代币"
+description: "创建一个 6 位小数的 B20 Asset 代币，并配置发行方角色、供应上限以及由发行方自定义的元数据。本示例配置的是一种股票代币。"
+keywords: ["在 Base 上创建资产代币", "B20 Asset 代币", "Base 代币化资产", "B20Factory Asset"]
+---
+
+import { AssetDemo } from "/snippets/AssetDemo.jsx"
+import RwaDisclaimer from "/snippets/zh/RwaDisclaimer.mdx"
+
+使用 [B20 Asset 变体](/zh/specifications/b20/concepts/token-types#4-asset)来表示一类代币化股份，该变体支持可配置的精度、发行方角色、供应量控制和元数据。本示例将创建小数位数为 6 的 Example Corp Class A (`EXM`) 。
+
+<RwaDisclaimer />
+
+## 演示 {#demo}
+
+<AssetDemo flow="create" />
+
+<Tip>
+  本演示使用浏览器本地生成的账户在 **Base Vibenet** 上提交真实交易。如果 Vibenet 或其 B20 功能不可用，演示会自动切换为离线示意版本。
+</Tip>
+
+<Note>
+  初次接触 B20？请参阅 [B20 代币标准](/zh/build-on-base/issue-rwa/create-an-asset-token)，了解相关概念及完整的发行流程演练。这些示例适用于 `base-std@1505323`、`viem@2.55.11` 和 Base Foundry `v1.1.1`。
+</Note>
+
+## 创建并验证股票代币 {#create-and-verify-the-stock-token}
+
+如果你需要可配置的小数位数、公告、定时生效的 UI 乘数、额外元数据或 `batchMint`，请选择 **Asset** 变体。Asset 的小数位数必须在 `[6, 18]` 范围内，超出该范围会回滚并报 `InvalidDecimals`。类型在创建时即固化到代币地址中，之后无法更改。
+
+<CodeGroup>
+  {/* sample: stock-create-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={15}
+  import { encodeAbiParameters, encodeFunctionData, keccak256, parseAbiParameters, parseEventLogs, stringToBytes } from "viem";
+  import { account } from "../../shared/clients.js";
+  import { B20_FACTORY, b20Abi, factoryAbi, role } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function createStockToken() {
+    const salt = keccak256(stringToBytes("example-class-a-v1"));
+    const params = encodeAbiParameters(
+      parseAbiParameters("(uint8 version,string name,string symbol,address initialAdmin,uint8 decimals)"),
+      [{ version: 1, name: "Example Corp Class A", symbol: "EXM", initialAdmin: account.address, decimals: 6 }],
+    );
+    const initCalls = ["MINT_ROLE", "BURN_BLOCKED_ROLE", "PAUSE_ROLE", "UNPAUSE_ROLE", "OPERATOR_ROLE"].map(
+      (name) => encodeFunctionData({ abi: b20Abi, functionName: "grantRole", args: [role(name), account.address] }),
+    );
+    const receipt = await sendContract({ address: B20_FACTORY, abi: factoryAbi, functionName: "createB20", args: [0, salt, params, initCalls] });
+    const [created] = parseEventLogs({ abi: factoryAbi, logs: receipt.logs, eventName: "B20Created" });
+    return created.args.token;
+  }
+  ```
+
+  {/* sample: stock-create-solidity */}
+
+  ```solidity Solidity lines wrap expandable highlight={1}
+      function createStock(address admin) public returns (address token) {
+          B20FactoryLib.B20AssetRoleHolders memory holders = B20FactoryLib.B20AssetRoleHolders({
+              minter: admin,
+              burner: admin,
+              burnBlocker: admin,
+              pauser: admin,
+              unpauser: admin,
+              metadataAdmin: admin,
+              operator: admin
+          });
+          bytes[] memory settings = new bytes[](1);
+          settings[0] = B20FactoryLib.encodeUpdateSupplyCap(1_000_000e6);
+          token = StdPrecompiles.B20_FACTORY.createB20(
+              IB20Factory.B20Variant.ASSET,
+              keccak256("example-class-a-v1"),
+              B20FactoryLib.encodeAssetCreateParams("Example Corp Class A", "EXM", admin, 6),
+              B20FactoryLib.concat(B20FactoryLib.buildRoleGrants(holders), settings)
+          );
+      }
+  ```
+</CodeGroup>
+
+工厂根据 `(variant, sender, salt)` 分配确定性地址。Asset 代币地址的第 `[10]` 字节为 `0x00`。重复使用相同的 `(variant, sender, salt)` 三元组会回滚并报 `TokenAlreadyExists`。可选的 `initCalls` (例如上文中的角色授予) 会在同一笔交易中对新代币执行。`createB20` 返回后，工厂即放弃访问权限。
+
+有关完整的接口、角色和策略，请参阅 [B20 代币标准](/zh/build-on-base/issue-rwa/create-an-asset-token)。
+
+<Check>
+  工厂会为 Asset 变体触发 `B20Created` 事件，并返回确定性的代币地址。
+</Check>
+
+<Warning>
+  供应上限仅是技术层面的上限，并不代表法定股本或已发行在外的股份。
+</Warning>
+
+## 另请参阅 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="发行份额" icon="coins" href="/zh/build-on-base/issue-rwa/issue-units">
+    为持有人铸造资产单位。
+  </Card>
+
+  <Card title="限制合格持有人" icon="user-check" href="/zh/build-on-base/issue-rwa/restrict-eligible-holders">
+    通过策略限定哪些人可以持有。
+  </Card>
+</CardGroup>

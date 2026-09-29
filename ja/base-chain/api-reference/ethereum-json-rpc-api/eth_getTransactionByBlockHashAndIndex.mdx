@@ -1,0 +1,64 @@
+---
+title: 'eth_getTransactionByBlockHashAndIndex'
+sidebarTitle: 'eth_getTransactionByBlockHashAndIndex'
+description: 'ブロックハッシュとインデックス位置を指定してトランザクションを返します。'
+---
+
+ブロックハッシュと、そのブロック内でのトランザクションのインデックス位置を指定して、該当するトランザクションの情報を返します。
+
+## パラメーター {#parameters}
+
+<ParamField body="blockHash" type="string" required>
+  32バイトのブロックハッシュ。
+</ParamField>
+
+<ParamField body="index" type="string" required>
+  トランザクションのインデックス位置 (16進数の整数) 。
+</ParamField>
+
+## 戻り値 {#returns}
+
+<ResponseField name="result" type="object | null">
+  トランザクションオブジェクト。見つからない場合は `null` を返します。全フィールドの一覧については [`eth_getTransactionByHash`](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionByHash) を参照してください。
+</ResponseField>
+
+## 例 {#example}
+
+<CodeGroup>
+  ```json Request
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_getTransactionByBlockHashAndIndex",
+    "params": ["0x5c330e55a190f82ea486b61e5b12e27dfb4fb3cecfc5746886ef38ca1281bce8", "0x0"],
+    "id": 1
+  }
+  ```
+
+  ```json Response (type 0x7e deposit, index 0x0) lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "blockHash": "0x491bca01d4bc076d60833dbd973fe031a74e7ae31866bf70d077619e09edb6ff",
+      "blockNumber": "0x2c31b0b",
+      "depositReceiptVersion": "0x1",
+      "from": "0xdeaddeaddeaddeaddeaddeaddeaddeaddead0001",
+      "gas": "0xf4240",
+      "gasPrice": "0x0",
+      "hash": "0x03c8f106f18ad94190e763e21b584c5825b2f4c61f1274c0e8abe65b4476cd51",
+      "input": "0x3db6be2b...",
+      "mint": "0x0",
+      "nonce": "0x2c31b0e",
+      "r": "0x0",
+      "s": "0x0",
+      "sourceHash": "0xe40ffb1b9f98a24b21e90e3a3cfe49de1eed195618e943da4d029881d3b3e055",
+      "to": "0x4200000000000000000000000000000000000015",
+      "transactionIndex": "0x0",
+      "type": "0x7e",
+      "v": "0x0",
+      "value": "0x0",
+      "yParity": "0x0"
+    }
+  }
+  ```
+</CodeGroup>

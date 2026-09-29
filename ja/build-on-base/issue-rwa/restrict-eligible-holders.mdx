@@ -1,0 +1,95 @@
+---
+title: "保有者の適格性を制限する"
+description: "B20 の許可リストを発行と転送に適用し、ユニットを保有できるのを承認済みの保有者のみに限定します。"
+keywords: ["アセットトークン 許可リスト", "B20 Policy Registry", "適格保有者", "KYC トークン"]
+---
+
+import { AssetDemo } from "/snippets/AssetDemo.jsx"
+import RwaDisclaimer from "/snippets/ja/RwaDisclaimer.mdx"
+
+[Policy Registry](/ja/specifications/b20/concepts/policies#21-the-registry-and-the-token)で許可リストを作成し、シェアの発行、送信、受信時に適用します。ポリシー管理者によって追加されるまで、アカウントは対象外となります。
+
+<RwaDisclaimer />
+
+## デモ {#demo}
+
+<AssetDemo flow="restrict" />
+
+<Tip>
+  このデモでは、ブラウザ上でローカルに生成したアカウントを使用して、**Base Vibenet** に実際のトランザクションを送信します。Vibenet またはその B20 機能が利用できない場合は、説明用のオフライン版に自動的に切り替わります。
+</Tip>
+
+<Note>
+  B20 を初めて使う方は、[B20 トークン標準](/ja/build-on-base/issue-rwa/create-an-asset-token)で基本概念とローンチ手順の全体を確認してください。これらのサンプルは `base-std@1505323`、`viem@2.55.11`、Base Foundry `v1.1.1` を対象としています。
+</Note>
+
+## 適格性ポリシーの作成とバインド {#create-and-bind-the-eligibility-policy}
+
+<CodeGroup>
+  {/* sample: stock-restrict-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={7,10}
+  import { parseEventLogs, type Address } from "viem";
+  import { account } from "../../shared/clients.js";
+  import { POLICY_REGISTRY, b20Abi, policyRegistryAbi, scope } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function restrictStockHolders(token: Address, holders: Address[]) {
+    const receipt = await sendContract({ address: POLICY_REGISTRY, abi: policyRegistryAbi, functionName: "createPolicyWithAccounts", args: [account.address, 1, holders] });
+    const [created] = parseEventLogs({ abi: policyRegistryAbi, logs: receipt.logs, eventName: "PolicyCreated" });
+    for (const policyScope of [scope("MINT_RECEIVER_POLICY"), scope("TRANSFER_SENDER_POLICY"), scope("TRANSFER_RECEIVER_POLICY")]) {
+      await sendContract({ address: token, abi: b20Abi, functionName: "updatePolicy", args: [policyScope, created.args.policyId] });
+    }
+    return created.args.policyId;
+  }
+  ```
+
+  {/* sample: stock-restrict-solidity */}
+
+  ```solidity Solidity lines wrap expandable highlight={2,5,6,7}
+      function restrictStock(address token, address admin, address[] memory holders) public returns (uint64 id) {
+          id = StdPrecompiles.POLICY_REGISTRY.createPolicyWithAccounts(
+              admin, IPolicyRegistry.PolicyType.ALLOWLIST, holders
+          );
+          IB20(token).updatePolicy(B20Constants.MINT_RECEIVER_POLICY, id);
+          IB20(token).updatePolicy(B20Constants.TRANSFER_SENDER_POLICY, id);
+          IB20(token).updatePolicy(B20Constants.TRANSFER_RECEIVER_POLICY, id);
+      }
+  ```
+
+  {/* sample: stock-restrict-cli */}
+
+  ```bash CLI lines wrap expandable highlight={2,7}
+  CREATE_TX=$(base-cast send "$POLICY_REGISTRY" \
+    "createPolicyWithAccounts(address,uint8,address[])" "$ADMIN" 1 "[$ALICE,$BOB]" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" --json | jq -r .transactionHash)
+  POLICY_TOPIC=$(base-cast receipt "$CREATE_TX" --rpc-url "$RPC_URL" --json | jq -r '.logs[0].topics[1]')
+  POLICY_ID=$(base-cast to-dec "$POLICY_TOPIC")
+  for SCOPE in MINT_RECEIVER_POLICY TRANSFER_SENDER_POLICY TRANSFER_RECEIVER_POLICY; do
+    base-cast send "$TOKEN_ADDRESS" "updatePolicy(bytes32,uint64)" "$(base-cast keccak "$SCOPE")" "$POLICY_ID" \
+      --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  done
+  ```
+</CodeGroup>
+
+インターフェース、ロール、ポリシーの詳細については、[B20 トークン標準](/ja/build-on-base/issue-rwa/create-an-asset-token)を参照してください。
+
+<Check>
+  ミントの受取人、転送の送信者、転送の受取人のいずれも、同一の許可リストポリシーによって制限されます。
+</Check>
+
+<Warning>
+  許可リストをバインドする前に、保有者となる予定のアカウントをすべて登録しておいてください。リストに含まれていないアカウントは、バインドした時点で直ちに不適格となります。
+</Warning>
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="転送を開始できるユーザーを制限する" icon="user-shield" href="/ja/build-on-base/issue-rwa/restrict-transfer-initiators">
+    すべての転送で、指定されたイニシエーターによる実行を必須にします。
+  </Card>
+
+  <Card title="転送を一時停止する" icon="circle-pause" href="/ja/build-on-base/issue-rwa/pause-transfers">
+    緊急時に転送を停止します。
+  </Card>
+</CardGroup>

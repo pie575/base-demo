@@ -1,0 +1,70 @@
+---
+title: "事件"
+description: "B20 代币、工厂、策略注册表和激活注册表接口触发的事件。"
+---
+
+*B20 系统触发的所有事件的完整列表，按声明文件分组。*
+
+## [`IB20`](/specifications/b20/reference/interfaces/ib20) {#ib20}
+
+| 事件                                                                                                        | 触发方                                                                                                                                           | 触发时机                                                                                                           |
+| --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `Transfer(address indexed from, address indexed to, uint256 amount)`                                      | `transfer`、`transferFrom`、`transferWithMemo`、`transferFromWithMemo`、`mint`、`mintWithMemo`、`burn`、`burnWithMemo`、`burnBlocked`、`seizeWithMemo` | 每次成功转账、铸造 (`from = address(0)`) 或销毁 (`to = address(0)`) 时触发，包括带 memo、销毁被封禁地址余额以及扣押等变体。                         |
+| `Approval(address indexed owner, address indexed spender, uint256 amount)`                                | `approve`、`permit`                                                                                                                            | 设置授权额度时。                                                                                                       |
+| `Memo(address indexed caller, bytes32 indexed memo)`                                                      | `transferWithMemo`、`transferFromWithMemo`、`mintWithMemo`、`burnWithMemo`                                                                       | 紧随底层 `Transfer` 事件之后触发。`caller` 为带 memo 调用的 `msg.sender`。                                                      |
+| `BurnedBlocked(address indexed caller, address indexed from, uint256 amount)`                             | `burnBlocked` (已弃用)                                                                                                                           | 与 `Transfer(from, address(0), amount)` 一同触发。                                                                   |
+| `Seized(address indexed caller, address indexed from, address indexed to, uint256 amount)`                | `seizeWithMemo`                                                                                                                               | 与 `Transfer(from, to, amount)` 和 `Memo(caller, memo)` 一同触发，用于记录一次基于转账的扣押。                                      |
+| `RoleGranted(bytes32 indexed role, address indexed account, address indexed sender)`                      | `grantRole`                                                                                                                                   | `account` 被授予 `role`。`sender` 为发起调用者。                                                                          |
+| `RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender)`                      | `revokeRole`、`renounceRole`、`renounceLastAdmin`                                                                                               | `account` 的 `role` 被撤销。`sender` 为管理员角色持有者 (`revokeRole`) 或 `account` 本身 (`renounceRole`/`renounceLastAdmin`) 。 |
+| `RoleAdminChanged(bytes32 indexed role, bytes32 indexed previousAdminRole, bytes32 indexed newAdminRole)` | `setRoleAdmin`                                                                                                                                | `role` 的管理员角色发生变更。                                                                                             |
+| `LastAdminRenounced(address indexed previousAdmin)`                                                       | `renounceLastAdmin`                                                                                                                           | 与标准的 `RoleRevoked(DEFAULT_ADMIN_ROLE, previousAdmin, previousAdmin)` 事件一同触发。                                   |
+| `Paused(address indexed updater, PausableFeature[] features)`                                             | `pause`                                                                                                                                       | `features` 为调用参数 (而非调用后的暂停状态) 。                                                                                |
+| `Unpaused(address indexed updater, PausableFeature[] features)`                                           | `unpause`                                                                                                                                     | `features` 为调用参数 (而非调用后的暂停状态) 。                                                                                |
+| `PolicyUpdated(bytes32 indexed policyScope, uint64 oldPolicyId, uint64 newPolicyId)`                      | `updatePolicy`；代币创建时亦会触发                                                                                                                      | 代币的策略槽位发生变更。创建时的初始槽位分配也会触发此事件，此时 `oldPolicyId == 0`。                                                           |
+| `SupplyCapUpdated(address indexed updater, uint256 oldSupplyCap, uint256 newSupplyCap)`                   | `updateSupplyCap`                                                                                                                             | 供应上限发生变更。                                                                                                      |
+| `ContractURIUpdated()`                                                                                    | `updateContractURI`                                                                                                                           | 依据 ERC-7572，该事件不带参数；集成方需重新获取 `contractURI()`。                                                                  |
+| `NameUpdated(address indexed updater, string newName)`                                                    | `updateName`                                                                                                                                  | 代币名称发生变更，事件中携带新的名称字符串。                                                                                         |
+| `SymbolUpdated(address indexed updater, string newSymbol)`                                                | `updateSymbol`                                                                                                                                | 代币符号发生变更，事件中携带新的符号字符串。                                                                                         |
+| `EIP712DomainChanged()`                                                                                   | `updateName`                                                                                                                                  | ERC-5267 域变更信号，每次成功调用恰好触发一次，紧随 `NameUpdated` 之后。`updateSymbol` 不会触发此事件。                                        |
+
+## [`IB20Asset`](/specifications/b20/reference/interfaces/ib20-asset) {#ib20asset}
+
+| 事件                                                                                       | 触发方                                             | 触发时机                                                             |
+| ---------------------------------------------------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------------- |
+| `MultiplierUpdated(uint256 multiplier)`                                                  | `updateMultiplier` (已弃用的即时设置函数)                 | 已弃用的旧版主题镜像事件，与 `UIMultiplierUpdated` 一同触发，确保监听旧主题的索引器仍可正常工作。[^1] |
+| `UIMultiplierUpdateCancelled(uint256 cancelledMultiplier, uint256 cancelledEffectiveAt)` | `cancelUIMultiplierUpdate`；`updateUIMultiplier` | 已计划的乘数更新被取消时触发，包括显式取消，以及 `updateUIMultiplier` 清除尚未生效的待定更新时的隐式取消。 |
+| `ExtraMetadataUpdated(string key, string value)`                                         | `updateExtraMetadata`                           | 设置、更新或删除某个额外元数据条目时触发 (`value` 为空表示删除) 。                          |
+| `Announcement(address indexed caller, string id, string description, string uri)`        | `announce`                                      | 开启一个公告区段。                                                        |
+| `EndAnnouncement(string id)`                                                             | `announce`                                      | 关闭由 `id` 相同的配对 `Announcement` 所开启的区段。                            |
+
+[^1]: 根据函数级文档，只有 `updateMultiplier` 会触发 `MultiplierUpdated`；计划式的 `updateUIMultiplier` 仅触发 `UIMultiplierUpdated`。但源码中该事件自身的文档注释还将 `updateUIMultiplier` 列为 `MultiplierUpdated` 的触发方，这与 `updateUIMultiplier` 自身的 `@notice` 相矛盾。此处特意标明这一冲突，而非擅自采信其中一种说法。
+
+## [`IB20Factory`](/specifications/b20/reference/interfaces/ib20-factory) {#ib20factory}
+
+| 事件                                                                                                                                    | 触发方         | 触发时机                                                                                                                                     |
+| ------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `B20Created(address indexed token, B20Variant indexed variant, string name, string symbol, uint8 decimals, bytes variantEventParams)` | `createB20` | 每次调用触发一次，时机为代币身份信息固定之后、分发任何 `initCalls` 之前。`variantEventParams` 携带变体特有的身份数据 (ASSET 为空；STABLECOIN 为 ABI 编码的 `B20StablecoinEventParams`) 。 |
+
+## [`IPolicyRegistry`](/specifications/b20/reference/interfaces/i-policy-registry) {#ipolicyregistry}
+
+| 事件                                                                                                       | 触发方                                                               | 触发时机                                                                                  |
+| -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `PolicyCreated(uint64 indexed policyId, address indexed creator, PolicyType policyType)`                 | `createPolicy`、`createPolicyWithAccounts`、`createCompositePolicy` | 创建新策略时。                                                                               |
+| `PolicyAdminStaged(uint64 indexed policyId, address indexed currentAdmin, address indexed pendingAdmin)` | `stageUpdateAdmin`                                                | 暂存新管理员时。`pendingAdmin == address(0)` 表示清除先前的提名。                                       |
+| `PolicyAdminUpdated(uint64 indexed policyId, address indexed previousAdmin, address indexed newAdmin)`   | `finalizeUpdateAdmin`、`renounceAdmin`；创建策略时也会触发                   | 当前管理员变更时。`newAdmin == address(0)` 表示放弃管理员权限；`previousAdmin == address(0)` 表示创建时的初始指派。 |
+| `AllowlistUpdated(uint64 indexed policyId, address indexed updater, bool allowed, address[] accounts)`   | `updateAllowlist`                                                 | 批量将一个或多个账户的 ALLOWLIST 成员资格设为 `allowed` 时。                                             |
+| `BlocklistUpdated(uint64 indexed policyId, address indexed updater, bool blocked, address[] accounts)`   | `updateBlocklist`                                                 | 批量将一个或多个账户的 BLOCKLIST 成员资格设为 `blocked` 时。                                             |
+| `CompositePolicyUpdated(uint64 indexed policyId, address indexed updater, uint64[] childPolicyIds)`      | `createCompositePolicy`、`updateComposite`                         | 设置或整体替换组合策略的子策略集合时。创建时及此后每次更新时均会触发，并携带更新后的完整集合。                                       |
+
+## [`IActivationRegistry`](/specifications/b20/reference/interfaces/i-activation-registry) {#iactivationregistry}
+
+| 事件                                                                    | 触发方          | 触发时机           |
+| --------------------------------------------------------------------- | ------------ | -------------- |
+| `FeatureActivated(bytes32 indexed feature, address indexed caller)`   | `activate`   | `feature` 激活时。 |
+| `FeatureDeactivated(bytes32 indexed feature, address indexed caller)` | `deactivate` | `feature` 停用时。 |
+
+## [`IERC8056`](https://github.com/base/base-std/blob/main/src/interfaces/IERC8056.sol) (`IScaledUIAmount`) {#ierc8056-iscaleduiamount}
+
+| 事件                                                                                                | 触发方                                                           | 触发时机                                                                 |
+| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `UIMultiplierUpdated(uint256 oldMultiplier, uint256 newMultiplier, uint256 effectiveAtTimestamp)` | `updateUIMultiplier` (计划生效) ；`updateMultiplier` (已弃用的即时设置函数)  | UI 乘数更新时触发。计划生效的设置函数仅触发此事件；已弃用的即时设置函数则会同时触发此事件和 `MultiplierUpdated`。 |

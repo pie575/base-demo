@@ -1,0 +1,97 @@
+---
+title: "Errores"
+description: "Errores personalizados de B20, sus selectores y las condiciones que los provocan."
+---
+
+*Lista exhaustiva de errores personalizados, sus selectores y las condiciones que los provocan. Los selectores son el hash `keccak256` de 4 bytes de la firma del error y se calculan con `cast sig "ErrorName(types...)"`. Los parámetros de tipo enum se codifican como su `uint8` subyacente.*
+
+*Nota: varios nombres de error se reutilizan en distintos archivos con parámetros diferentes (o sin parámetros), lo que cambia el selector. `PolicyNotFound()` ([`IPolicyRegistry`](/specifications/b20/reference/interfaces/i-policy-registry)) y `PolicyNotFound(uint64)` ([`IB20`](/specifications/b20/reference/interfaces/ib20)) son errores independientes con selectores distintos, al igual que `Unauthorized()` (`IB20` / `IPolicyRegistry`) y `Unauthorized(address)` ([`IActivationRegistry`](/specifications/b20/reference/interfaces/i-activation-registry)). En cambio, `LengthMismatch(uint256,uint256)` comparte el mismo selector en [`IB20Asset`](/specifications/b20/reference/interfaces/ib20-asset) y [`B20FactoryLib`](https://github.com/base/base-std/blob/main/src/lib/B20FactoryLib.sol): se declaran por separado, pero tienen una firma idéntica.*
+
+## [`IB20`](/specifications/b20/reference/interfaces/ib20) {#ib20}
+
+| Error                                                                       | Selector     | Se lanza cuando                                                                                                                                                |
+| --------------------------------------------------------------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NonPayable()`                                                              | `0x6fb1b0e9` | Se adjuntó ETH a una llamada dirigida a un selector no pagable (nonpayable) del token.                                                                         |
+| `AccessControlUnauthorizedAccount(address account, bytes32 neededRole)`     | `0xe2517d3f` | `account` no tiene el rol `neededRole`.                                                                                                                        |
+| `Unauthorized()`                                                            | `0x82b42900` | El llamador no superó una comprobación de autorización posicional que no puede expresarse como «falta el rol X».                                               |
+| `ContractPaused(uint8 feature)`                                             | `0xfd8c4245` | La `PausableFeature` que rige la operación está en pausa.                                                                                                      |
+| `InsufficientAllowance(address spender, uint256 allowance, uint256 needed)` | `0x192b9e4e` | La asignación (allowance) de `spender` es inferior a `needed` para el `transferFrom` solicitado.                                                               |
+| `InsufficientBalance(address sender, uint256 balance, uint256 needed)`      | `0xdb42144d` | El saldo de `sender` es inferior a `needed` para la transferencia o quema solicitada.                                                                          |
+| `InvalidSender(address sender)`                                             | `0x4c14f64c` | La dirección de origen de la transferencia no es válida (normalmente, `address(0)`).                                                                           |
+| `InvalidReceiver(address receiver)`                                         | `0x9cfea583` | La dirección de destino de la transferencia no es válida (`address(0)` o cualquier dirección con prefijo B20).                                                 |
+| `InvalidApprover(address approver)`                                         | `0x8bc146c4` | La dirección `owner` de la aprobación no es válida (normalmente, `address(0)`).                                                                                |
+| `InvalidSpender(address spender)`                                           | `0x4e15efda` | La dirección `spender` de la aprobación no es válida (normalmente, `address(0)`).                                                                              |
+| `InvalidAmount()`                                                           | `0x2c5211c6` | Un argumento de cantidad era cero cuando se requiere un valor distinto de cero. No se usa para los argumentos de cantidad de ERC-20.                           |
+| `EmptyFeatureSet()`                                                         | `0x4861ff45` | Se pasó un array vacío a una función que requiere al menos un elemento.                                                                                        |
+| `InvalidSupplyCap(uint256 currentSupply, uint256 proposedCap)`              | `0x0a3780ce` | El límite de suministro propuesto es inferior al `totalSupply` actual o superior a `type(uint128).max`.                                                        |
+| `SupplyCapExceeded(uint256 cap, uint256 attempted)`                         | `0x4b344b11` | La acuñación haría que `totalSupply` superara el límite configurado.                                                                                           |
+| `PolicyForbids(bytes32 policyScope, uint64 policyId)`                       | `0xa43fec12` | Un slot de política denegó la operación.                                                                                                                       |
+| `PolicyNotFound(uint64 policyId)`                                           | `0xcccad523` | El ID de política proporcionado no existe en el registro de políticas.                                                                                         |
+| `UnsupportedPolicyType(bytes32 policyScope)`                                | `0xcdd98a4a` | `policyScope` no es un slot compatible con este token (o con su variante).                                                                                     |
+| `AccountNotSeizable(address account)`                                       | `0x91dbbc8d` | Se llamó a `seizeWithMemo` sobre un `from` que está exento de incautación (sigue autorizado) según `SEIZE_EXEMPT_POLICY`.                                      |
+| `AccountNotBlocked(address account)`                                        | `0x64a5cb46` | Se llamó a la función obsoleta `burnBlocked` sobre un `from` que está autorizado actualmente según `TRANSFER_SENDER_POLICY` (es decir, que no está bloqueado). |
+| `ExpiredSignature(uint256 deadline)`                                        | `0xbd2a913c` | Se envió un `permit` de EIP-2612 con un `deadline` estrictamente menor que `block.timestamp`.                                                                  |
+| `InvalidSigner(address signer, address owner)`                              | `0x7ba5ffb5` | La recuperación ECDSA de un `permit` de EIP-2612 devolvió `signer`, que no coincide con el `owner` declarado.                                                  |
+| `LastAdminCannotRenounce()`                                                 | `0x361513e7` | El único administrador restante llamó a `renounceRole(DEFAULT_ADMIN_ROLE, ...)`.                                                                               |
+| `NotSoleAdmin()`                                                            | `0x2a98e73b` | Se llamó a `renounceLastAdmin()` cuando otras cuentas también tienen `DEFAULT_ADMIN_ROLE`.                                                                     |
+| `AccessControlBadConfirmation()`                                            | `0x6697b232` | El argumento `callerConfirmation` de `renounceRole` no era `msg.sender`.                                                                                       |
+
+## [`IB20Asset`](/specifications/b20/reference/interfaces/ib20-asset) {#ib20asset}
+
+| Error                                               | Selector     | Se lanza cuando                                                                                                                                                                                               |
+| --------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AnnouncementIdAlreadyUsed(string id)`              | `0xd10b3c9e` | Se llamó a `announce` con un `id` que ya se había consumido.                                                                                                                                                  |
+| `InvalidMetadataKey()`                              | `0x86ea3abb` | Se llamó a `updateExtraMetadata` con una `key` vacía.                                                                                                                                                         |
+| `InvalidMultiplier()`                               | `0x6f12f3dc` | Se llamó a un setter de multiplicador (`updateUIMultiplier` o el obsoleto `updateMultiplier`) con un multiplicador igual a cero o superior al límite de protección contra desbordamiento `type(uint128).max`. |
+| `EffectiveAtInPast(uint256 effectiveAt)`            | `0x14119cf6` | Se llamó a `updateUIMultiplier` con un `effectiveAt` que no es posterior al momento actual.                                                                                                                   |
+| `EffectiveAtTooFar(uint256 effectiveAt)`            | `0x1ce214fa` | Se llamó a `updateUIMultiplier` con un `effectiveAt` superior a `type(uint64).max`.                                                                                                                           |
+| `UIMultiplierUpdateExists(uint256 effectiveAt)`     | `0x4481a68e` | Se llamó a `updateUIMultiplier` cuando ya existía una actualización pendiente vigente.                                                                                                                        |
+| `UIMultiplierUpdateDoesNotExist()`                  | `0xa7d6a5ca` | Se llamó a `cancelUIMultiplierUpdate` sin que hubiera ninguna actualización pendiente vigente.                                                                                                                |
+| `LengthMismatch(uint256 leftLen, uint256 rightLen)` | `0xab8b67c6` | Se llamó a una función por lotes con arrays paralelos de longitudes distintas.                                                                                                                                |
+| `EmptyBatch()`                                      | `0xc2e5347d` | Se llamó a una función por lotes con arrays vacíos.                                                                                                                                                           |
+| `AnnouncementInProgress()`                          | `0x5c5f0829` | Una llamada interna despachada por `announce` intentó volver a invocar `announce`.                                                                                                                            |
+| `InternalCallMalformed(bytes call)`                 | `0x4e2f143e` | Una llamada interna despachada por `announce` tenía menos de cuatro bytes.                                                                                                                                    |
+| `InternalCallFailed(bytes call)`                    | `0xb288a127` | Una llamada interna despachada por `announce` se revirtió con un revert ordinario (el motivo no se propaga).                                                                                                  |
+
+## [`IB20Factory`](/specifications/b20/reference/interfaces/ib20-factory) {#ib20factory}
+
+| Error                                              | Selector     | Se lanza cuando                                                                                                  |
+| -------------------------------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `NonPayable()`                                     | `0x6fb1b0e9` | Se adjuntó ETH a una llamada dirigida a un selector no pagable de la fábrica.                                    |
+| `TokenAlreadyExists(address token)`                | `0x15ef3a57` | Ya existe un token en la dirección determinista derivada de `(variant, msg.sender, salt)`.                       |
+| `InvalidVariant()`                                 | `0xf10e8e43` | `variant` no es un `B20Variant` reconocido.                                                                      |
+| `UnsupportedVersion(uint8 version, uint8 variant)` | `0xc0d8b4e0` | El byte inicial `version` de `params` no coincide con ninguna codificación conocida para la variante solicitada. |
+| `MissingRequiredField(string field)`               | `0x4a43ae87` | Un argumento de cadena obligatorio se pasó como cadena vacía.                                                    |
+| `InvalidCurrency(string code)`                     | `0x997c1de8` | El `currency` de la stablecoin no estaba vacío, pero contenía un byte fuera del rango `A`-`Z`.                   |
+| `InvalidDecimals(uint8 decimals)`                  | `0xca950391` | Los `decimals` del activo estaban fuera de `[B20Constants.MIN_ASSET_DECIMALS, B20Constants.MAX_ASSET_DECIMALS]`. |
+| `InitCallFailed(uint256 index)`                    | `0x4eae0860` | Una de las `initCalls` revirtió sin propagar ningún motivo.                                                      |
+
+## [`IPolicyRegistry`](/specifications/b20/reference/interfaces/i-policy-registry) {#ipolicyregistry}
+
+| Error                                      | Selector     | Se lanza cuando                                                                                                                                      |
+| ------------------------------------------ | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NonPayable()`                             | `0x6fb1b0e9` | Se adjuntó ETH a una llamada dirigida a un selector no pagable del registro de políticas.                                                            |
+| `Unauthorized()`                           | `0x82b42900` | El llamador no es el administrador que requiere la operación intentada.                                                                              |
+| `PolicyNotFound()`                         | `0x720caa4f` | El ID de política indicado no existe.                                                                                                                |
+| `IncompatiblePolicyType()`                 | `0xf1011ef5` | La operación no es compatible con el tipo de la política.                                                                                            |
+| `ZeroAddress()`                            | `0xd92e233d` | Un argumento de dirección obligatorio era la dirección cero.                                                                                         |
+| `BatchSizeTooLarge(uint256 maxBatchSize)`  | `0x083e2f67` | Un lote de membresía superó el límite del registro.                                                                                                  |
+| `NoPendingAdmin()`                         | `0xb4539afa` | Se llamó a `finalizeUpdateAdmin` sin que hubiera un administrador pendiente preparado.                                                               |
+| `ChildPoliciesOutsideOfRange()`            | `0x697ec868` | Se creó o actualizó una política compuesta con un número de políticas hijas fuera de `[MIN_COMPOSITE_CHILD_POLICIES, MAX_COMPOSITE_CHILD_POLICIES]`. |
+| `InvalidChildPolicy(uint64 childPolicyId)` | `0x46508ef6` | Una política hija no es una política simple (ALLOWLIST/BLOCKLIST) existente.                                                                         |
+
+## [`IActivationRegistry`](/specifications/b20/reference/interfaces/i-activation-registry) {#iactivationregistry}
+
+| Error                                  | Selector     | Se lanza cuando                                                                                                            |
+| -------------------------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `Unauthorized(address caller)`         | `0x8e4a23d6` | El llamador no es el administrador de activación.                                                                          |
+| `AlreadyActivated(bytes32 feature)`    | `0x866b0041` | Se llamó a `activate` para una funcionalidad que ya está activada.                                                         |
+| `FeatureNotActivated(bytes32 feature)` | `0xb9b2a425` | Se llamó a `checkActivated` para una funcionalidad inactiva, o a `deactivate` para una funcionalidad que ya está inactiva. |
+| `DelegateCallNotAllowed()`             | `0x0d89438e` | El precompilado se invocó mediante `DELEGATECALL` o `CALLCODE`.                                                            |
+| `StaticCallNotAllowed()`               | `0xbeaba5b7` | Se invocó un punto de entrada que modifica el estado desde un contexto de llamada `STATICCALL`.                            |
+
+## [`B20FactoryLib`](https://github.com/base/base-std/blob/main/src/lib/B20FactoryLib.sol) {#b20factorylib}
+
+| Error                                               | Selector     | Se lanza cuando                                                                |
+| --------------------------------------------------- | ------------ | ------------------------------------------------------------------------------ |
+| `LengthMismatch(uint256 leftLen, uint256 rightLen)` | `0xab8b67c6` | Dos arrays paralelos pasados a un helper `build*` tienen longitudes distintas. |

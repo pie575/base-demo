@@ -1,0 +1,86 @@
+---
+title: "支払いをリクエストする"
+keywords: ["Commerce Payments charge", "request USDC payment", "onchain checkout Base", "PaymentCharged"]
+description: "Base 上でエスクローを利用した即時請求をリクエストし、決済します。"
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+`charge` オペレーションを使用して即時決済をリクエストします。支払者が支払条件とトークンの回収を承認すると、オペレーターが1回のトランザクションで金額の回収と決済を行い、返金可能な金額として記録します。
+
+<Info>
+  このガイドの決済フローは [Commerce Payments Protocol](https://github.com/base/commerce-payments) に基づいています。
+</Info>
+
+## デモ {#demo}
+
+<PaymentsDemo flow="accept" />
+
+<Tip>
+  上記のデモはモックです。Vibenet上で動作するオンチェーンデモを見たい場合は、[Base chain demos](https://chain.base.org/demos)をご覧ください。
+</Tip>
+
+<Note>
+  これらの例では、`0xf96815976523E00e65Be8f34cA5e64b4f41EB19c`にデプロイされたv1.1.0の`AuthCaptureEscrow`を使用しています。BaseとBase Sepoliaには、同じCREATE2アドレスでデプロイされています。
+</Note>
+
+## 支払いの請求と検証 {#charge-and-verify-the-payment}
+
+完全なフィクスチャでは、一意の `PaymentInfo` を作成し、支払者に依存しないハッシュを導出したうえで、デプロイ済みのコレクター宛ての ERC-3009 `ReceiveWithAuthorization` に署名するよう支払者に求めます。その後、オペレーターが `charge` を送信します。
+
+| コレクター    | 最適な用途                                 |
+| -------- | ------------------------------------- |
+| ERC-3009 | USDC など、ネイティブの送金承認機能を備えたトークン          |
+| Permit2  | 支払者が Permit2 を承認した後、より幅広い ERC-20 に対応  |
+| 事前承認     | 標準的な ERC-20 のアローワンスと、支払いごとの事前承認の組み合わせ |
+| 支出権限     | ウォレットベースの定期請求ワークフロー                   |
+
+B20 やその他の ERC-20 トークンでも、コレクター、オペレーターのトークンストア、受取人、手数料受取人の参加が送金ポリシーで許可されていれば、Permit2 または事前承認コレクターを使用できます。
+
+{/* sample: usdc-accept-ts */}
+
+```typescript TypeScript lines wrap expandable highlight={2,7,11-12}
+export async function requestPayment(receiver: Address, orderId: string) {
+  const payment = await prepareErc3009Payment(receiver, orderId, "5.00");
+  const simulation = await publicClient.simulateContract({
+    account,
+    address: AUTH_CAPTURE_ESCROW,
+    abi: authCaptureEscrowAbi,
+    functionName: "charge",
+    args: [
+      payment.paymentInfo,
+      payment.paymentInfo.maxAmount,
+      ERC3009_PAYMENT_COLLECTOR,
+      payment.collectorData,
+      0n,
+      zeroAddress,
+    ],
+  });
+  const hash = await operatorWallet.writeContract(simulation.request);
+  const receipt = await publicClient.waitForTransactionReceipt({ hash, confirmations: 2 });
+  if (receipt.status !== "success") throw new Error("Payment charge reverted");
+  return { hash, paymentInfoHash: payment.paymentInfoHash };
+}
+```
+
+プロトコルは `amount - feeAmount` を `paymentInfo.receiver` に送金し、手数料を別途送金したうえで、`refundableAmount` を請求額の全額分だけ増やします。
+
+<Check>
+  `PaymentCharged` を確認し、その `paymentInfoHash` を注文と照合したうえで、履行の前にイベントをアトミックに処理済みとしてマークしてください。
+</Check>
+
+<Warning>
+  支払者の署名だけでは決済は完了しません。回収と分配が完了したことを証明できるのは、成功した `charge` のレシートだけです。`maxFeeBps` は狭い範囲に抑え、オペレーターが拒否リストに登録された受取人を差し替える必要がない限り、`feeReceiver` は固定してください。
+</Warning>
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="支払いをオーソライズする" icon="signature" href="/ja/build-on-base/accept-payments/authorize-a-payment">
+    資金をエスクローで確保し、注文の履行後にキャプチャします。
+  </Card>
+
+  <Card title="支払いを検証する" icon="shield-check" href="/ja/build-on-base/accept-payments/verify-a-payment">
+    注文を履行する前に、プロトコルイベントを確認します。
+  </Card>
+</CardGroup>

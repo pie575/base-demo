@@ -1,0 +1,89 @@
+---
+title: "Recursos para agentes de IA"
+description: "Recursos centrados en Base para agentes de IA, incluidos índices de documentación, acceso mediante MCP, skills y puntos de partida recomendados"
+keywords: ["AI agents", "LLM", "MCP", "Model Context Protocol", "llms.txt", "skills", "Claude Code", "Cursor", "agent wallet", "onchain AI", "Base documentation", "x402"]
+---
+
+<Note>
+  Obtén el índice completo de la documentación en [https://docs.base.org/llms.txt](https://docs.base.org/llms.txt).
+  Usa este archivo para descubrir todas las páginas disponibles antes de seguir explorando.
+</Note>
+
+Usa esta página como punto de partida cuando quieras que un asistente de IA desarrolle sobre Base. Aquí encontrarás tres formas de darle a un asistente contexto sobre Base: archivos estáticos de documentación, una conexión MCP en tiempo real y skills instalables. También encontrarás puntos de entrada recomendados para los flujos de trabajo más habituales.
+
+## Configuración rápida {#quick-setup}
+
+Conecta tu agente a la documentación de Base con un solo comando. Elige el método que mejor se adapte a tu herramienta.
+
+### Servidor MCP {#mcp-server}
+
+Una conexión en tiempo real permite que tu asistente busque y consulte la documentación de Base cuando lo necesite, para que siempre tenga información actualizada.
+
+<CodeGroup>
+  ```sh Claude Code
+  claude mcp add --transport http base-docs https://docs.base.org/mcp
+  ```
+
+  ```sh Codex CLI
+  codex mcp add base-docs --url https://docs.base.org/mcp
+  ```
+
+  ```json Cursor / manual config
+  {
+    "mcpServers": {
+      "base-docs": {
+        "url": "https://docs.base.org/mcp"
+      }
+    }
+  }
+  ```
+</CodeGroup>
+
+Consulta la [guía completa de configuración de MCP](/es/get-started/docs-mcp) para Cursor, Windsurf y otros editores.
+
+### Archivos estáticos de documentación {#static-docs-files}
+
+Úsalos cuando quieras cargar el contexto con una sola solicitud en lugar de mantener una conexión en tiempo real.
+
+| Archivo                                                | Qué contiene                                  | Cuándo usarlo                                           |
+| ------------------------------------------------------ | --------------------------------------------- | ------------------------------------------------------- |
+| [`llms.txt`](https://docs.base.org/llms.txt)           | Índice de páginas con títulos y descripciones | Averiguar qué documentación existe antes de profundizar |
+| [`llms-full.txt`](https://docs.base.org/llms-full.txt) | Documentación completa en un solo archivo     | Dar a un asistente un contexto amplio de una sola vez   |
+
+Todas las páginas de la documentación también están disponibles en Markdown sin formato. Añade `.md` a cualquier URL:
+
+```txt Markdown URL
+https://docs.base.org/get-started/resources-for-ai-agents.md
+```
+
+### Skills {#skills}
+
+Las Skills son flujos de trabajo instalables para agentes que cubren tareas habituales en Base, como conectarse a Base, desplegar contratos, ejecutar un nodo, entre otras. Ofrecen a tu asistente una guía paso a paso para que no tenga que recopilar por su cuenta la información dispersa en la documentación.
+
+```sh Terminal
+npx skills install base/skills -g
+```
+
+Explora las skills disponibles en el [repositorio de skills de Base](https://github.com/base/skills).
+
+## Puntos de partida recomendados {#recommended-starting-points}
+
+Una vez que tu agente tenga el contexto de la documentación, indícale la sección que corresponda a lo que estás desarrollando:
+
+| Qué estás haciendo                                      | Empieza aquí                                                              |
+| ------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Conectar un asistente a la documentación en tiempo real | [Servidor MCP](/es/get-started/docs-mcp)                                     |
+| Cargar la documentación como archivos estáticos         | [Archivos estáticos de documentación](/es/get-started/docs-llms)             |
+| Añadir pagos o transacciones onchain                    | [Realizar pagos x402](/es/build-on-base/accept-payments/call-a-paid-service) |
+| Desplegar contratos                                     | [Desplegar en Base](/es/get-started/make-a-transaction)                      |
+| Desarrollar una aplicación en Base                      | [Crear una aplicación en Base](/es/build-on-base/overview)                   |
+
+## Ejemplos de prompts {#example-prompts}
+
+Copia estos prompts en tu asistente para comprobar que todo funciona correctamente:
+
+* «Despliega mi contrato ERC-20 en Base Sepolia y verifícalo en Basescan».
+* «Añade Sign in with Base a mi aplicación de Next.js con wagmi».
+* «Configura una billetera para mi agente de IA que pueda guardar USDC y firmar transacciones de forma autónoma».
+* «Crea una aplicación con un flujo de pago en USDC».
+* «Crea un agente que pague las solicitudes a APIs mediante el protocolo x402».

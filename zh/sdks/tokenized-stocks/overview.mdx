@@ -1,0 +1,42 @@
+---
+title: "代币化股票 API"
+sidebarTitle: "概览"
+description: "读取 Base 上由 Coinbase 发行的代币化股票记录、协议合约地址以及经归一化处理的代币供应量。"
+---
+
+通过公开的代币化股票 API，可获取 [Base 上由 Coinbase 发行的代币化股票](/zh/build-on-base/integrate-defi/list-tokenized-stocks)的参考数据。该 API 为只读接口，无需 API 密钥。
+
+<Note>
+  Coinbase 代币化股票仅面向美国以外符合条件的司法管辖区内的人士提供。本 API 仅提供只读参考数据，不提供交易、执行、发行、铸造、赎回或托管功能。任何代币或相关产品是否可用，可能受司法管辖、资格及合规要求的限制。集成方有责任落实相应的适用限制。
+</Note>
+
+```text Base URL
+https://api.coinbase.com/v1/tokenized-stocks
+```
+
+[浏览 API 参考](/zh/sdks/tokenized-stocks/api-reference/list-tokenized-stocks)，查看完整的请求和响应 schema，并试用交互式请求构建器。
+
+## 端点 {#endpoints}
+
+| 方法    | 路径                                 | 描述                      |
+| ----- | ---------------------------------- | ----------------------- |
+| `GET` | `/`                                | 列出该 API 当前公开的代币化股票记录。   |
+| `GET` | `/chains`                          | 列出各受支持链上的代币化股票协议合约。     |
+| `GET` | `/total-supply/{contract_address}` | 获取代币的总供应量 (已按其小数位数归一化) 。 |
+
+## 列出代币化股票 {#list-tokenized-stocks}
+
+```bash cURL
+curl https://api.coinbase.com/v1/tokenized-stocks
+```
+
+响应中包含每个代币的合约地址、符号、名称、小数位数、图标 URL、总供应量、ISIN、乘数、已暂停的功能以及 NAV/参考价值数据。代币出现在响应中，并不表示其可供交易或符合相关资格。
+
+## 解读响应字段 {#interpreting-response-fields}
+
+* **`total_supply`** 是按代币小数位数归一化后的代币供应量。它以代币单位计量，而非底层股份的数量。
+* **`multiplier`** 是代币单位与底层股份之间的当前换算系数。该值可能因分红、股票拆分等公司行为而变化，因此将代币单位换算为股份时，务必使用当前值。
+* **`nav_price`** 是该代币最近一次发布的、基于 Chainlink 的 NAV/参考价值。它既不是实时买卖报价，也不是成交价格。
+* **`nav_price_updated_at`** 是 `nav_price` 最近一次在链上更新的时间。喂价仅在价格偏离或心跳触发时更新，非交易时段则保持最后一个值，因此在依赖 `nav_price` 之前，请先检查此时间戳，并设置数据过期阈值。
+
+有关集成指南、喂价详情及当前代币合约地址，请参阅[列出代币化股票](/zh/build-on-base/integrate-defi/list-tokenized-stocks)。

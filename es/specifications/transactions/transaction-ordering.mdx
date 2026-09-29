@@ -1,0 +1,44 @@
+---
+title: Orden de las transacciones
+description: Las transacciones se ordenan según la tarifa de prioridad y el momento de llegada, lo que determina en qué Flashblock se incluyen.
+---
+
+## Descripción general {#overview}
+
+Esta sección describe cómo se ordenan las transacciones en las redes de Base. El orden es independiente de la experiencia de usuario;
+por ejemplo, el secuenciador podría estar construyendo Flashblocks cada 200 ms sin exponerlos públicamente. En ese caso, el orden de los bloques
+cambiaría, pero la experiencia de usuario seguiría siendo la misma.
+
+## Configuraciones {#configurations}
+
+### Flashblocks {#flashblocks}
+
+Los bloques se construyen con [base-builder](https://github.com/base/base/tree/main/crates/builder) mediante subastas de tarifa de prioridad que se celebran cada **200ms**. Gracias a las preconfirmaciones, el tiempo de bloque efectivo se reduce de 2 segundos a 200 milisegundos.
+
+*Hay tres diferencias clave respecto al ordenamiento estándar:*
+
+1. **Temporización**: los Flashblocks se construyen cada 200ms y cada uno ordena una parte del bloque. Una vez construido y difundido un Flashblock, el orden de sus transacciones queda fijado. Las transacciones que llegan más tarde con tarifas de prioridad más altas no pueden incluirse en Flashblocks anteriores.
+
+2. **Asignación de gas**: cada Flashblock dispone de un presupuesto de gas que crece de forma progresiva. El Flashblock 1 puede usar 1/10 del límite de gas del bloque, el Flashblock 2 puede usar 2/10, y así sucesivamente hasta que el Flashblock 10 tiene acceso al límite completo.
+
+   | Flashblock | Gas disponible          |
+   | ---------- | ----------------------- |
+   | 1          | ~40M de gas (1/10)      |
+   | 2          | ~80M de gas (2/10)      |
+   | 3          | ~120M de gas (3/10)     |
+   | ...        | ...                     |
+   | 10         | ~400M de gas (completo) |
+
+   <Note>
+     Como el gas se asigna de forma acumulativa, una transacción debe caber en el presupuesto disponible en el Flashblock en el que se selecciona. El [máximo de gas por transacción](/es/specifications/transactions/throughput-and-limits#per-transaction-gas-maximum) de Base (~16.7M) es inferior al presupuesto de ~40M del Flashblock 1, por lo que cualquier transacción válida puede incluirse desde el primer Flashblock.
+   </Note>
+
+3. **Mempool dinámica**: el constructor acepta nuevas transacciones de forma continua mientras construye cada Flashblock. Esto minimiza la latencia de inclusión, pero implica que las transacciones se ordenan por tarifa *en el momento de la selección*, y no de forma global entre todas las transacciones que llegan durante la ventana de 200ms. Una transacción con tarifa alta que llegue tarde puede quedar por detrás de una transacción con tarifa más baja que ya se haya confirmado.
+
+   <Note>
+     Se trata de una concesión deliberada: se prioriza una inclusión más rápida a costa de &quot;romper&quot; ocasionalmente el orden esperado de la subasta de gas por prioridad (PGA) dentro de un Flashblock.
+   </Note>
+
+### Vanilla {#vanilla}
+
+`base-reth-node` construye los bloques cada 2 s. Las transacciones de esos bloques se ordenan según la tarifa de prioridad.

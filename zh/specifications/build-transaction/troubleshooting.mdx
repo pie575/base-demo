@@ -1,0 +1,36 @@
+---
+title: "故障排查"
+description: "诊断有效性交易在提交和打包过程中出现的问题。"
+---
+
+使用 [`eth_getTransactionReceipt`](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionReceipt) 确认交易是否已被打包上链。
+
+## RPC 方法不可用 {#rpc-method-is-unavailable}
+
+请使用支持 `base_sendRawTransactionValidity` 的端点。目前该方法已在 Vibenet 上提供。
+
+## 提交失败 {#submission-fails}
+
+请确认第一个参数是已签名的 legacy、EIP-2930 或 EIP-1559 交易，并确认第二个参数包含非空的 `validity` 数组。
+
+请检查谓词类型、运算符以及带 `0x` 前缀的十六进制值。请求格式请参阅 [Validity Transaction RPC](/zh/specifications/build-transaction/base_sendRawTransactionValidity)。
+
+上报问题时，请附上完整的 JSON-RPC 错误信息。
+
+## 交易未被打包 {#transaction-was-not-included}
+
+交易可能会一直处于待处理状态，原因包括：谓词条件为假、有其他交易优先级更高、交易已被替换，或者已超出其允许的最大区块或 Flashblock 位置。
+
+## 交易已过期 {#transaction-expired}
+
+请重新签名并提交一笔新交易，将 `block_number` 或 `flashblock_index` 条件设置为更晚的值。
+
+## 替换交易费用过低 {#replacement-is-underpriced}
+
+调高各项费用字段并重新签名，然后使用相同的发送方和 nonce 重试。
+
+## 获取帮助 {#get-help}
+
+寻求帮助时，请提供网络、RPC 提供商、交易哈希、谓词类型、提交时间以及 JSON-RPC 错误信息。请勿在公开支持渠道中分享私钥、身份验证数据或完整的已签名交易。
+
+如需社区支持，请前往 [Base Discord](https://base.org/discord) 的 `#developer-chat` 频道。

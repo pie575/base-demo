@@ -1,0 +1,55 @@
+---
+title: 'debug_traceBlockByNumber'
+sidebarTitle: 'debug_traceBlockByNumber'
+description: '按区块号返回区块中所有交易的 EVM 执行追踪。'
+---
+
+返回指定区块号所对应区块中所有交易的 EVM 执行追踪。
+
+<Warning>
+  调试方法会重放区块中的所有交易，计算开销很大。[Builder Stack](/zh/get-started/builder-stack) 中各提供商对这类方法的支持情况不尽相同。
+</Warning>
+
+## 参数 {#parameters}
+
+<ParamField body="block" type="string" required>
+  十六进制格式的区块号，或 `"latest"`、`"earliest"`、`"safe"`、`"finalized"`。
+</ParamField>
+
+<ParamField body="tracerConfig" type="object">
+  可选的追踪器配置。可用选项请参阅 [`debug_traceTransaction`](/zh/base-chain/api-reference/debug-api/debug_traceTransaction)。
+</ParamField>
+
+## 返回值 {#returns}
+
+<ResponseField name="result" type="array">
+  trace 对象数组，区块中的每笔交易各对应一个 trace 对象。
+</ResponseField>
+
+## 示例 {#example}
+
+<CodeGroup>
+  ```json Request
+  {
+    "jsonrpc": "2.0",
+    "method": "debug_traceBlockByNumber",
+    "params": ["latest", {"tracer": "callTracer"}],
+    "id": 1
+  }
+  ```
+
+  ```json Response lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": [
+      {
+        "result": {
+          "type": "CALL",
+          "gasUsed": "0xab3f"
+        }
+      }
+    ]
+  }
+  ```
+</CodeGroup>

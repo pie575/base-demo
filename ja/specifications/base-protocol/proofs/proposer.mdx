@@ -1,0 +1,335 @@
+---
+title: "プロポーザー"
+description: "正規の L2 チェックポイント範囲を L1 上の AggregateVerifier ゲームに変換するオフチェーンサービスであるプロポーザーの仕様。"
+---
+
+プロポーザーは、正規の L2 チェックポイント範囲を L1 上の
+`AggregateVerifier` ゲームに変換するオフチェーンサービスです。オンチェーン上の最新の親状態から次のチェックポイントを選択し、その範囲の TEE 証明を取得して正規の L2 状態と照合して検証したうえで、
+`DisputeGameFactory` を通じて次のディスピュートゲームを作成します。
+
+本番環境のプロポーザーは、設定された L1 トランザクション署名者によって制御されます。ただし、その出力は依然として
+自己検証可能です。各ゲームはゲームタイプ、主張された出力ルート、親、
+L2 ブロック番号、中間出力ルートによって一意に識別され、証明はオンチェーンのベリファイアや
+独立したチャレンジャーが検証できます。
+
+## 責務 {#responsibilities}
+
+準拠するプロポーザーは、以下の処理を行います。
+
+1. L1 から、有効な `AggregateVerifier` 実装とプロポーザルパラメータを読み取る。
+2. `AnchorStateRegistry` と `DisputeGameFactory` から、オンチェーン上の最新の親状態を復元する。
+3. 選択したセーフヘッドを超えない範囲で、次のチェックポイントブロックを選択する。
+4. チェックポイント範囲を対象とする `prover_prove` リクエストを構築する。
+5. プロポーザルの作成には、TEE 証明の結果のみを受け入れる。
+6. L1 への送信直前に、集約出力ルートおよびすべての中間ルートを正規の L2 状態と照合して
+   再検証する。
+7. 必要に応じて、`TEEProverRegistry` を用いて TEE 署名者を事前チェックする。
+8. 必要なボンドを添えて `DisputeGameFactory.createWithInitData()` を送信する。
+9. 証明、RPC、トランザクションで一時的な障害が発生した場合は、ゲームの作成順序を乱さないように再試行する。
+
+プロポーザーは、ゲームへのチャレンジ、ゲームの解決、ボンドの請求、出金のファイナリティの決定は行いません。
+これらはチャレンジャーと証明コントラクトの責務です。
+
+## 起動時の設定 {#startup-configuration}
+
+起動時、プロポーザーは以下に接続します。
+
+* コントラクトの読み取りとトランザクション送信に使用する L1 実行 RPC
+* 合意済みの L2 ブロックヘッダーを取得するための L2 実行 RPC
+* 同期ステータスと出力ルートを取得するためのロールアップ RPC
+* `prover_prove` を実装したプルーバー RPC
+* `AnchorStateRegistry`
+* `DisputeGameFactory`
+* `TEEProverRegistry` (オプション) 
+
+プロポーザーは、ゲーム実装のアドレスを以下から読み取ります。
+
+```text Game Implementation Lookup
+DisputeGameFactory.gameImpls(gameType)
+```
+
+実装アドレスは非ゼロでなければなりません。続いて、プロポーザーは以下を読み取ります。
+
+```text Startup Reads
+AggregateVerifier.BLOCK_INTERVAL()
+AggregateVerifier.INTERMEDIATE_BLOCK_INTERVAL()
+DisputeGameFactory.initBonds(gameType)
+```
+
+`BLOCK_INTERVAL` は `2` 以上、`INTERMEDIATE_BLOCK_INTERVAL` は 0 以外でなければならず (MUST) 、さらに
+`BLOCK_INTERVAL % INTERMEDIATE_BLOCK_INTERVAL` は `0` でなければなりません (MUST) 。1 つの
+プロポーザルに含まれる中間ルートの数は次のとおりです。
+
+```text Intermediate Root Count
+BLOCK_INTERVAL / INTERMEDIATE_BLOCK_INTERVAL
+```
+
+プロポーザーはデフォルトでファイナライズ済みのL2状態を使用します。未ファイナライズ状態でのプロポーザルを許可するよう明示的に設定されている場合は、代わりにロールアップノードのsafe L2状態を使用することもあります。
+
+## 親状態の復元 {#parent-recovery}
+
+プロポーザーは、新しい作業を計画する前に、最新のオンチェーン親状態を L1 から復元します。親状態は
+次のとおりです。
+
+```text Parent State Fields
+parentAddress
+parentOutputRoot
+parentL2BlockNumber
+```
+
+一致するゲームが存在しない場合、親には `AnchorStateRegistry` のアンカールートが使用されます：
+
+```text Anchor Parent State
+parentAddress = AnchorStateRegistry address
+parentOutputRoot = AnchorStateRegistry.getAnchorRoot().root
+parentL2BlockNumber = AnchorStateRegistry.getAnchorRoot().l2BlockNumber
+```
+
+ゲームが存在する場合、プロポーザーはアンカールートから(キャッシュがまだ有効な場合は、キャッシュ済みの復元済み先端から)決定論的な前方走査を行います。各ステップでは次の処理を行います。
+
+1. 次を計算します。
+
+   ```text
+   expectedBlock = parentL2BlockNumber + BLOCK_INTERVAL
+   ```
+
+2. すべての中間チェックポイントについて、正規の出力ルートを取得します。
+
+   ```text
+   parentL2BlockNumber + INTERMEDIATE_BLOCK_INTERVAL * i
+   ```
+
+   ここで `i` の範囲は `1..=BLOCK_INTERVAL / INTERMEDIATE_BLOCK_INTERVAL` です。
+
+3. 最後の中間ルートを、`expectedBlock` の正規のルートクレームとして扱います。
+
+4. `expectedBlock`、`parentAddress`、および順序付けされた中間ルートから `extraData` をエンコードします。
+
+5. 期待されるゲームを検索します。
+
+   ```text
+   DisputeGameFactory.games(gameType, rootClaim, extraData)
+   ```
+
+6. 検索結果が `address(0)` の場合は終了します。現在の親が、復元された最新の状態です。
+
+7. それ以外の場合は、返されたゲームプロキシを新たな親として処理を続けます。
+
+この復元方法では、「最適な」ゲームを探してファクトリーのインデックスを走査することはありません。ゲームごとに一意なファクトリーキーを使用するため、復元された親に続く正規の次のゲームだけが、親のチェーンを進められます。ルート、親、L2 ブロック番号、または中間ルートが誤っているゲームはキーが異なるため、親の復元では無視されます。
+
+## チェックポイントの選択 {#checkpoint-selection}
+
+リカバリー後、次のプロポーザル対象は以下のとおりです。
+
+```text Target Block Formula
+targetBlock = parentL2BlockNumber + BLOCK_INTERVAL
+```
+
+プロポーザーは、以下の条件をすべて満たす場合を除き、`targetBlock` の証明をリクエストまたは提出してはなりません (MUST NOT) 。
+
+```text Safe Head Constraint
+targetBlock <= safeHead
+```
+
+ここで `safeHead` は次のいずれかです。
+
+* デフォルトでは `finalized_l2.number`
+* 未ファイナライズのプロポーザルが明示的に有効化されている場合に限り `safe_l2.number`
+
+並列証明が有効な場合、プロポーザーは将来の複数のチェックポイントターゲットについて証明を要求できますが、L1 への送信は引き続き厳密に逐次的に行われます。送信中のプロポーザルトランザクションは常に最大 1 件であり、それより前のすべてのチェックポイントゲームが復旧または確認されるまで、次のトランザクションは送信されません。
+
+## 証明リクエスト {#proof-request}
+
+チェックポイント範囲に対して、プロポーザーは次の内容で `ProofRequest` を構築します。
+
+| フィールド                         | 値                                      |
+| ----------------------------- | -------------------------------------- |
+| `l1_head`                     | リクエスト構築時点における最新の L1 ブロックのハッシュ          |
+| `l1_head_number`              | リクエスト構築時点における最新の L1 ブロックの番号            |
+| `agreed_l2_head_hash`         | `parentL2BlockNumber` における L2 ブロックハッシュ |
+| `agreed_l2_output_root`       | L1 から復元した親の出力ルート                       |
+| `claimed_l2_output_root`      | `targetBlock` における Rollup RPC の出力ルート   |
+| `claimed_l2_block_number`     | `targetBlock`                          |
+| `proposer`                    | プロポーザルトランザクションを送信する L1 アドレス            |
+| `intermediate_block_interval` | `INTERMEDIATE_BLOCK_INTERVAL`          |
+| `image_hash`                  | 想定される TEE イメージハッシュ                     |
+
+プルーバーの RPC メソッドは次のとおりです。
+
+```text Prover RPC Method
+prover_prove(ProofRequest) -> ProofResult
+```
+
+プロポーザーがプロポーザルの作成時に受け付けるのは `ProofResult::Tee` です。ZK 証明の結果は、現在のプロポーザーのパスでは有効な入力になりません。
+
+## TEE Proposal Journal {#tee-proposal-journal}
+
+TEE プルーバーは次のものを返します。
+
+* チェックポイント範囲全体に対する集約プロポーザル
+* その範囲内の各ブロックに対するブロックごとのプロポーザル
+
+集約プロポーザルには次のものが含まれます。
+
+```text Aggregate Proposal Fields
+outputRoot
+signature
+l1OriginHash
+l1OriginNumber
+l2BlockNumber
+prevOutputRoot
+configHash
+```
+
+TEE 署名の対象は次のとおりです。
+
+```text TEE Signature Preimage
+keccak256(journal)
+```
+
+ここで、`journal` は次の形式でパックされます。
+
+```text Journal Packing lines wrap expandable
+proposer(20)
+|| l1OriginHash(32)
+|| prevOutputRoot(32)
+|| startingL2Block(8)
+|| outputRoot(32)
+|| endingL2Block(8)
+|| intermediateRoots(32 * N)
+|| configHash(32)
+|| teeImageHash(32)
+```
+
+集約プロポーザルの場合：
+
+```text Aggregate Proposal Values
+startingL2Block = parentL2BlockNumber
+endingL2Block = targetBlock
+prevOutputRoot = parentOutputRoot
+outputRoot = claimed root at targetBlock
+```
+
+順序付きの `intermediateRoots` は `INTERMEDIATE_BLOCK_INTERVAL` ブロックごとにサンプリングされ、
+最終ターゲットブロックのルートも含みます。
+
+## 提出前の検証 {#pre-submission-validation}
+
+L1 へ提出する直前に、プロポーザーは正規の L2
+状態と照らし合わせて証明を再検証しなければなりません。
+
+1. `targetBlock` におけるロールアップの出力ルートを取得します。
+2. それが集約プロポーザルの `outputRoot` と一致していることを確認します。
+3. ブロックごとのプロポーザルから中間ルートを抽出します。
+4. 各中間チェックポイントについて、正規の出力ルートを取得します。
+5. 提案されたすべての中間ルートが、それぞれ対応する正規のルートと一致していることを確認します。
+
+集約ルートまたはいずれかの中間ルートが正規の状態と一致しなくなった場合、プロポーザーは
+保留中の作業を破棄し、リカバリーをやり直します。これにより、L1
+または L2 のリオルグによって古くなった証明結果が使われるのを防ぎます。
+
+`TEEProverRegistry` が設定されている場合、プロポーザーは集約プロポーザルの署名から
+TEE 署名者を復元し、次を呼び出すべきです。
+
+```text Signer Validity Check
+TEEProverRegistry.isValidSigner(signer)
+```
+
+レジストリが `false` を返した場合、プロポーザーはその証明を送信してはなりません。その証明は破棄し、新しい証明を要求する必要があります。RPC やデプロイの問題によってレジストリのチェック自体が失敗した場合は、プロポーザーはそのまま送信に進み、署名者の有効性の担保をオンチェーンのベリファイアに委ねてもかまいません。
+
+## ゲームの作成 {#game-creation}
+
+プロポーザーは、以下を指定してゲームを作成します。
+
+```solidity Game Creation Call
+DisputeGameFactory.createWithInitData{value: initBond}(
+    gameType,
+    rootClaim,
+    extraData,
+    initData
+)
+```
+
+ここで、
+
+```text Root Claim
+rootClaim = aggregateProposal.outputRoot
+```
+
+`extraData` は ABI エンコードではなく、パック形式でエンコードされます。
+
+```text Extra Data Packing
+l2BlockNumber(32) || parentAddress(20) || intermediateRoots(32 * N)
+```
+
+`l2BlockNumber` は32バイトのビッグエンディアン整数としてエンコードされます。`parentAddress` は、復元された親ゲームのプロキシアドレスです。ただし、アンカー後の最初のゲームでは `AnchorStateRegistry` のアドレスになります。
+
+`initData` は、`AggregateVerifier.initializeWithInitData()` に渡す TEE 証明のバイト列です。
+
+```text Init Data Packing
+proofType(1) || l1OriginHash(32) || l1OriginNumber(32) || signature(65)
+```
+
+TEE 証明の場合：
+
+```text TEE Proof Type
+proofType = 0
+```
+
+署名の ECDSA `v` 値は、送信前に `27` または `28` に正規化する必要があります。
+
+`initBond` は起動時に `DisputeGameFactory.initBonds(gameType)` から読み取られ、トランザクションの
+value として送信されます。nonce の管理、手数料の引き上げ、署名、トランザクションの再送信は
+L1 トランザクションマネージャーが処理します。
+
+## 重複するゲーム {#duplicate-games}
+
+ゲームのファクトリーキーは次のとおりです。
+
+```text Factory Game Key
+gameType || rootClaim || extraData
+```
+
+`createWithInitData()` が `GameAlreadyExists` でリバートした場合、プロポーザーはその対象を
+提出済みとみなします。そのうえで L1 からリカバリー情報を再取得し、復元された先端から処理を再開します。これにより、
+以前のトランザクション自体は成功していたもののプロポーザーがレシートを確認できなかった場合や、
+別の正当なプロポーザーが同じゲームを先に提出していた場合にも対応できます。
+
+## リトライ動作 {#retry-behavior}
+
+プロポーザーは、一時的な障害が発生した場合、以降のティックでリトライします。
+
+| 障害                           | 必要な動作                                 |
+| ---------------------------- | ------------------------------------- |
+| リカバリー時の RPC またはコントラクト読み取りの失敗 | 現在のティックをスキップし、次のティックでリカバリーをリトライする     |
+| 証明リクエストの失敗                   | 以降のティックで対象をリトライする                     |
+| 証明の失敗が繰り返される                 | パイプラインの状態をリセットし、L1 からリカバリーする          |
+| L1 への送信失敗                    | 証明済みの結果を保持し、以降のティックで送信をリトライする         |
+| L1 への送信タイムアウト                | 送信失敗として扱い、リカバリー後にリトライする               |
+| `GameAlreadyExists`          | 成功として扱い、リカバリー情報を更新して処理を継続する           |
+| 正規ルートの不一致                    | パイプラインの状態をリセットし、リカバリーした L1 の状態から再証明する |
+| 無効な TEE 署名者                  | 証明を破棄し、新しい証明をリクエストする                  |
+
+現在の実装では、1 つの証明対象につき最大 3 回までリトライし、それでも失敗した場合はパイプラインの状態をリセットします。
+プロポーザルの送信には 10 分のタイムアウトが設定されています。
+
+## 管理インターフェース {#admin-interface}
+
+プロポーザーは、オプションで JSON-RPC 管理インターフェースを公開できます。有効にすると、次のメソッドが利用可能になります。
+
+| メソッド                    | 結果                  |
+| ----------------------- | ------------------- |
+| `admin_startProposer`   | 証明パイプラインを開始します      |
+| `admin_stopProposer`    | 証明パイプラインを停止します      |
+| `admin_proposerRunning` | パイプラインが実行中かどうかを返します |
+
+実行中のプロポーザーを開始しようとした場合や、停止済みのプロポーザーを停止しようとした場合はエラーになります。
+
+## ドライランモード {#dry-run-mode}
+
+ドライランモードでは、プロポーザーはリカバリー、チェックポイントの選択、証明の取得、および
+送信前の検証を行いますが、L1 トランザクションは送信しません。その代わりに、本来作成されるはずだった
+ゲームをログに出力します。
+
+ドライランモードはプルーバーや RPC の動作を検証するのに便利ですが、オンチェーンの
+プロポーザルチェーンは進みません。

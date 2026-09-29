@@ -1,0 +1,45 @@
+---
+title: Rendimiento del nodo
+sidebarTitle: Optimización del rendimiento
+description: Especificaciones de hardware, requisitos de almacenamiento, clientes recomendados y ajustes de configuración para ejecutar un nodo de Base de alto rendimiento.
+---
+
+Esta guía ofrece recomendaciones sobre hardware, software cliente y ajustes de configuración para optimizar el rendimiento de tu nodo de Base.
+
+## Hardware {#hardware}
+
+Para ejecutar un nodo de Base con buen rendimiento se necesita un hardware adecuado. Recomendamos las siguientes especificaciones mínimas:
+
+1. Una CPU moderna multinúcleo (8 o más núcleos) con buen rendimiento mononúcleo.
+2. Al menos 32 GB de RAM (se recomiendan 64 GB).
+3. Una unidad SSD NVMe conectada localmente. Las configuraciones RAID 0 pueden mejorar el rendimiento.
+4. Capacidad de almacenamiento suficiente, calculada de la siguiente manera:
+
+```
+  (2 × [tamaño actual de la cadena] + [tamaño de la instantánea] + 20 % de margen)
+```
+
+Esto tiene en cuenta el crecimiento de los datos de la cadena y el espacio necesario para restaurar instantáneas. Consulta [Base Stats](https://base.org/stats) para ver el tamaño actual de la cadena y Base Instantáneas(https://snapshots.base.org) para ver el tamaño de las instantáneas.
+
+<Note>
+  Si utilizas Amazon Elastic Block Store (EBS), se recomiendan los volúmenes io2 Block Express para garantizar una velocidad de lectura de disco suficiente y evitar problemas de latencia durante la sincronización inicial. No obstante, **para obtener un rendimiento óptimo, se recomienda encarecidamente usar SSD NVMe conectados localmente en lugar de almacenamiento en red.**
+</Note>
+
+### Ejemplos de hardware en producción {#production-hardware-examples}
+
+Estas son las especificaciones de hardware que se utilizan en los nodos de producción de Base:
+
+* **Nodo de archivo Reth:**
+  * Instancia: AWS `i7i.12xlarge` o superior
+  * Almacenamiento: RAID 0 con todas las unidades NVMe locales (`/dev/nvme*`)
+  * Sistema de archivos: ext4
+
+## Sincronización inicial {#initial-sync}
+
+Usar una [instantánea](/es/specifications/node-operators/snapshots) reciente puede reducir considerablemente el tiempo que requiere la sincronización inicial del nodo.
+
+## Software cliente {#client-software}
+
+El repositorio [Base Node](https://github.com/base/base) contiene las configuraciones estables actuales y las instrucciones para ejecutar distintas implementaciones de cliente.
+
+Actualmente, Reth es el cliente con mejor rendimiento para ejecutar nodos de Base, y las futuras optimizaciones se centrarán principalmente en él. Puedes obtener más información en [Scaling Base with Reth](https://blog.base.dev/scaling-base-with-reth).

@@ -1,0 +1,194 @@
+---
+title: '概要'
+sidebarTitle: '概要'
+description: 'Flashblocks 固有の RPC メソッド、WebSocket サブスクリプション、および Base の事前確認向けインフラストリームスキーマ。'
+---
+
+Base のすべてのパブリックエンドポイント (`mainnet.base.org` / `sepolia.base.org`) は Flashblocks に対応しており、標準の Ethereum JSON-RPC メソッドをすべて提供するほか、事前確認に特化したメソッドも追加で提供しています。これらを使えば、ブロックが確定する最大約 1.8 秒前の時点から、シーケンサーが順序付けしたデータを対象に、状態の読み取り、トランザクションのシミュレーション、イベントのストリーミングを行えます。
+
+<Warning>
+  今後予定されている Denim ハードフォークで、Flashblocks を非推奨にする予定です。このアップグレードは計画段階であり、まだ最終決定されていません。[Vibenet](/ja/build-on-base/test-on-vibenet) では、正規の 200ms ブロックの動作をいち早くテストできます。最終的に必要となるアプリケーションの変更については、[Flashblocks からの移行](/ja/upgrades/denim/migrate-from-flashblocks)を参照してください。
+</Warning>
+
+<Info>
+  すべての[標準 Ethereum JSON-RPC メソッド](/ja/base-chain/api-reference/rpc-overview)は `"pending"` ブロックタグに対応しており、トランザクションプールではなく事前確認済みの状態を基に結果を返します。エンドポイント URL については [RPC の概要](/ja/base-chain/api-reference/rpc-overview)を参照してください。
+</Info>
+
+## HTTP メソッド {#http-methods}
+
+| メソッド                                                                                           | 説明                                                   |
+| :--------------------------------------------------------------------------------------------- | :--------------------------------------------------- |
+| [eth&#95;simulateV1](/ja/base-chain/api-reference/flashblocks-api/eth_simulateV1)                 | 事前確認済みの状態に対してトランザクションバンドルをシミュレートします |
+| [base&#95;transactionStatus](/ja/base-chain/api-reference/flashblocks-api/base_transactionStatus) | トランザクションがノードのメンプールに受信されているかどうかを確認します                 |
+
+## WebSocket サブスクリプション {#websocket-subscriptions}
+
+Flashblocks の WSS エンドポイントでは、`newHeads` を指定した `eth_subscribe` が、2 秒ごとではなく Flashblock ごと (約 200ms 間隔) に新しいイベントを発行します。さらに、Flashblocks エンドポイント専用のサブスクリプションタイプが 3 種類用意されています。
+
+| サブスクリプション                                                                                        | 説明                                               |
+| :----------------------------------------------------------------------------------------------- | :----------------------------------------------- |
+| [newFlashblockTransactions](/ja/base-chain/api-reference/flashblocks-api/newFlashblockTransactions) | 個々のトランザクションを、事前確認されるたびにストリーミングします (それぞれ約 200ms)  |
+| [pendingLogs](/ja/base-chain/api-reference/flashblocks-api/pendingLogs)                             | 事前確認済みトランザクションのイベントログを、フィルタを適用してストリーミングします       |
+| [newFlashblocks](/ja/base-chain/api-reference/flashblocks-api/newFlashblocks)                       | シーケンサーから Flashblock ペイロードオブジェクト全体をストリーミングします     |
+
+## インフラストリーム {#infrastructure-stream}
+
+Flashblocks の生のインフラストリームは、Flashblocks 対応の RPC ノードが購読する上流の WebSocket フィードです。シーケンサーによるトランザクションの事前承認に合わせて、約 200ms ごとに新しいメッセージが送出されます。
+
+<Warning>
+  **アプリケーションからインフラストリームに直接接続しないでください。** これらのエンドポイントはノードオペレーター専用です。アプリ開発者は、Flashblocks 対応の RPC プロバイダー経由で、前述の [WebSocket サブスクリプションメソッド](#websocket-subscriptions)を使用してください。
+</Warning>
+
+| ネットワーク  | 生ストリームの URL                             |
+| :------ | :-------------------------------------- |
+| Mainnet | `wss://mainnet.flashblocks.base.org/ws` |
+| Sepolia | `wss://sepolia.flashblocks.base.org/ws` |
+
+### Flashblock オブジェクト {#flashblock-object}
+
+インフラストリームの各メッセージのルート構造です。
+
+<Card>
+  <ParamField path="payload_id" type="string">
+    構築中のブロックの一意な識別子です。1 つの完全なブロックに含まれるすべての Flashblocks で同じ値になります。
+  </ParamField>
+
+  <ParamField path="index" type="number">
+    現在のブロック内における Flashblock のインデックスです。0 から始まります (0 はシステムトランザクションのみ) 。ユーザートランザクションはインデックス 1 以降に含まれます。通常は 1 ブロックあたり 9～10 まで進みますが、シーケンサーのタイミングにずれが生じると [10 を超えることがあります](/ja/specifications/flashblocks#can-the-flashblock-index-exceed-10-is-that-a-bug)。
+  </ParamField>
+
+  <ParamField path="base" type="Base Object">
+    ブロックヘッダーのプロパティです。**`index` が `0` の場合にのみ含まれます。** 詳しくは [Base オブジェクト](#base-object)を参照してください。
+  </ParamField>
+
+  <ParamField path="diff" type="Diff Object">
+    この Flashblock におけるブロック状態の差分です。すべてのメッセージに含まれます。詳しくは [Diff オブジェクト](#diff-object)を参照してください。
+  </ParamField>
+
+  <ParamField path="metadata" type="Metadata Object">
+    補足データです。**不安定：フィールドは予告なく変更される可能性があります。** 詳しくは [Metadata オブジェクト](#metadata-object)を参照してください。
+  </ParamField>
+</Card>
+
+### Base Object {#base-object}
+
+ブロックヘッダーの全プロパティを含みます。**`index: 0` のメッセージ (各完全なブロックの最初の Flashblock) にのみ含まれます**。
+
+<Card>
+  <ParamField path="parent_hash" type="string">親ブロックのハッシュ。</ParamField>
+  <ParamField path="fee_recipient" type="string">トランザクション手数料を受け取るアドレス (coinbase) 。</ParamField>
+  <ParamField path="block_number" type="string">ブロック番号 (16 進数) 。</ParamField>
+  <ParamField path="gas_limit" type="string">このブロックで許容される最大ガス量 (16 進数) 。</ParamField>
+  <ParamField path="timestamp" type="string">ブロック作成時の Unix タイムスタンプ (16 進数) 。</ParamField>
+  <ParamField path="base_fee_per_gas" type="string">EIP-1559 におけるガスあたりのベースフィー (16 進数) 。</ParamField>
+  <ParamField path="prev_randao" type="string">オンチェーンの乱数生成に使用される前回の RANDAO 値。</ParamField>
+  <ParamField path="extra_data" type="string">シーケンサーが設定する任意のデータフィールド。</ParamField>
+  <ParamField path="parent_beacon_block_root" type="string">親ビーコンブロックのルート (EIP-4788) 。</ParamField>
+</Card>
+
+### Diff Object {#diff-object}
+
+この Flashblock におけるブロック状態の増分変更を含みます。すべてのメッセージに含まれます。
+
+<Card>
+  <ParamField path="state_root" type="string">この Flashblock のトランザクションを適用した後の状態トライのマークルルート。</ParamField>
+  <ParamField path="block_hash" type="string">この Flashblock インデックス時点での部分ブロックのハッシュ。事前確認 (pre-confirmed) されるトランザクションが増えるにつれ、Flashblock ごとに変化します。</ParamField>
+  <ParamField path="gas_used" type="string">この Flashblock までの (この Flashblock を含む) 累計ガス使用量 (16進数) 。</ParamField>
+  <ParamField path="blob_gas_used" type="string">blob ガスの累計使用量 (EIP-4844、16進数) 。</ParamField>
+  <ParamField path="transactions" type="string[]">この Flashblock に含まれる、RLP エンコードされたトランザクションの配列。</ParamField>
+  <ParamField path="withdrawals" type="array">バリデーターの引き出し (Base L2 では常に空) 。</ParamField>
+  <ParamField path="receipts_root" type="string">トランザクションレシートのマークルルート。</ParamField>
+  <ParamField path="logs_bloom" type="string">この Flashblock 内のログに対するブルームフィルター。</ParamField>
+  <ParamField path="withdrawals_root" type="string">引き出しのマークルルート。</ParamField>
+</Card>
+
+### Metadata オブジェクト {#metadata-object}
+
+<Warning>
+  **`metadata` オブジェクトは安定版ではありません。** フィールドは予告なく追加、変更、または削除される可能性があります。本番環境でこのオブジェクトに依存する実装は避けてください。代わりに [`diff`](#diff-object) オブジェクトを使用するか、標準の RPC 経由で確定済みのブロックデータをクエリしてください。
+</Warning>
+
+v0.8.0 以降、`new_account_balances` と `receipts` は `metadata` オブジェクトに含まれなくなりました。`block_number` は引き続き含まれます。`access_list` フィールドは存在しますが、常に空です。
+
+<Card>
+  <ParamField path="block_number" type="number">10 進整数で表したブロック番号。</ParamField>
+</Card>
+
+### Receipt Object {#receipt-object}
+
+<Note>
+  `metadata.receipts` は v0.8.0 で削除されました。このスキーマは、古いバージョンのノード向けの参考情報として残しています。v0.8.0 以降では、ポーリングでレシートデータを取得する場合は [`eth_getTransactionReceipt`](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionReceipt) を使用してください。ログを含む事前確認済みのトランザクションデータをリアルタイムのストリームで受け取る場合は、`full: true` を指定して [`newFlashblockTransactions`](/ja/base-chain/api-reference/flashblocks-api/newFlashblockTransactions) をサブスクライブしてください。
+</Note>
+
+<Card>
+  <ParamField path="type" type="string">トランザクションタイプ：`0x0` Legacy、`0x1` Access List、`0x2` EIP-1559、`0x7e` Deposit (L1→L2) 。</ParamField>
+  <ParamField path="status" type="string">トランザクションのステータス：成功の場合は `0x1`、失敗の場合は `0x0`。</ParamField>
+  <ParamField path="cumulativeGasUsed" type="string">ブロック内でこのトランザクションまで (このトランザクションを含む) に使用されたガスの合計 (16進数) 。</ParamField>
+  <ParamField path="logs" type="Log[]">トランザクションが発行したイベントログの配列。[Log Object](#log-object) を参照してください。</ParamField>
+  <ParamField path="logsBloom" type="string">このレシートに含まれるログのブルームフィルター。</ParamField>
+  <ParamField path="transactionIndex" type="string">ブロック内でのトランザクションのインデックス (16進数) 。</ParamField>
+</Card>
+
+### ログオブジェクト {#log-object}
+
+<Card>
+  <ParamField path="address" type="string">イベントを発行したコントラクトのアドレス。</ParamField>
+  <ParamField path="topics" type="string[]">インデックス付きイベントパラメータの配列。通常、トピック 0 はイベントシグネチャのハッシュです。</ParamField>
+  <ParamField path="data" type="string">ABI エンコードされた、インデックスなしのイベントパラメータ。</ParamField>
+  <ParamField path="blockHash" type="string">このログを含むブロックのハッシュ。</ParamField>
+  <ParamField path="blockNumber" type="string">ブロック番号 (16 進数) 。</ParamField>
+  <ParamField path="blockTimestamp" type="string">ブロックの Unix タイムスタンプ (16 進数文字列) 。標準の Ethereum ログスキーマに対する Base L2 独自の拡張です。</ParamField>
+  <ParamField path="transactionHash" type="string">このログを発行したトランザクションのハッシュ。</ParamField>
+  <ParamField path="transactionIndex" type="string">ブロック内におけるトランザクションのインデックス (16 進数) 。</ParamField>
+  <ParamField path="logIndex" type="string">ブロック内におけるログのインデックス位置 (16 進数) 。</ParamField>
+  <ParamField path="removed" type="boolean">チェーンの再編成 (reorg) によってログが削除された場合は `true`。</ParamField>
+</Card>
+
+### 完全な例 {#complete-examples}
+
+**Index 0** — `base` オブジェクト (ブロックヘッダー) を含みます：
+
+```json Index 0 (With Base Object) lines wrap expandable
+{
+  "payload_id": "0x03997352d799c31a",
+  "index": 0,
+  "base": {
+    "parent_hash": "0x9edc29b8b0a1e31d28616e40c16132ad0d58faa8bb952595b557526bdb9a960a",
+    "fee_recipient": "0x4200000000000000000000000000000000000011",
+    "block_number": "0x158a0e9",
+    "gas_limit": "0x3938700",
+    "timestamp": "0x67bf8332",
+    "base_fee_per_gas": "0xfa",
+    "parent_beacon_block_root": "0x15b9e7c8ac4cbe92dafc849ed30a23e91624bbe5cbe199c0ccea3f7de7fc6d49"
+  },
+  "diff": {
+    "state_root": "0x208fd63edc0681161105f27d03daf9f8c726d8c94e584a3c0696c98291c24333",
+    "block_hash": "0x5c330e55a190f82ea486b61e5b12e27dfb4fb3cecfc5746886ef38ca1281bce8",
+    "gas_used": "0xab3f",
+    "transactions": ["0x7ef8f8a0b4afc0b7ce10e150801bbaf08ac33fecb0f38311793abccb022120d321c6d276..."],
+    "withdrawals": []
+  },
+  "metadata": {
+    "block_number": 22585577
+  }
+}
+```
+
+**インデックス 1–N (差分のみ)&#x20;**&#x20;— `base` オブジェクトなし：
+
+```json Index 1-N (Diff Only) lines wrap expandable
+{
+  "payload_id": "0x03997352d799c31a",
+  "index": 4,
+  "diff": {
+    "state_root": "0x7a8f45038665072f382730e689f4a1561835c9987fca8942fa95872fb9367eaa",
+    "block_hash": "0x9b32f7a14cbd1efc8c2c5cad5eb718ec9e0c5da92c3ba7080f8d4c49d660c332",
+    "gas_used": "0x1234f",
+    "transactions": ["0x02f90133...", "0x02f90196..."],
+    "withdrawals": []
+  },
+  "metadata": {
+    "block_number": 22585577
+  }
+}
+```

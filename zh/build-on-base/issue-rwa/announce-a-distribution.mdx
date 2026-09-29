@@ -1,0 +1,190 @@
+---
+title: "向持有者公告变更"
+description: "使用 announce 为 B20 Asset 上影响持有者的变更附加链上披露，适用于增发、乘数更新、国库销毁，或不产生链上效果的通知。"
+keywords: ["公告分配", "公告公司行动", "B20 公告", "资产分配", "batchMint 分配", "乘数更新", "国库销毁", "链上披露"]
+---
+
+import { AssetDemo } from "/snippets/AssetDemo.jsx"
+import RwaDisclaimer from "/snippets/zh/RwaDisclaimer.mdx"
+
+B20 Asset 的发行方需要一条成熟的途径来披露影响持有人的变更，索引器则需要一种可靠的方式来识别哪些变更已经过公告。`announce` 将状态变更与披露合并在同一笔交易中完成：先触发 `Announcement`，再执行内部调用，最后触发 `EndAnnouncement`。本指南以股票股利为例进行讲解；这种首尾包围的结构同样适用于 B20 Asset 上任何由运营方发起的变更，包括乘数更新、国库销毁，以及不产生任何链上影响的通知。
+
+<RwaDisclaimer />
+
+## 演示 {#demo}
+
+<AssetDemo flow="dividend" />
+
+<Tip>
+  本演示使用在浏览器本地生成的账户，在 **Base Vibenet** 上提交真实交易。如果 Vibenet 或其 B20 功能不可用，演示会自动切换为仅供示意的离线版本。
+</Tip>
+
+<Note>
+  初次接触 B20？请参阅 [B20 代币标准](/zh/build-on-base/issue-rwa/create-an-asset-token)，了解相关概念和完整的发行流程指南。这些示例基于 `base-std@1505323`、`viem@2.55.11` 和 Base Foundry `v1.1.1`。
+</Note>
+
+## 开始之前 {#before-you-start}
+
+你需要准备好以下所有条件：
+
+* 一个由你管理的 B20 Asset，且你拥有 `DEFAULT_ADMIN_ROLE`，以便授予角色。
+* 一个用于调用 `announce` 的账户 (即运营方) ，并为其授予 `OPERATOR_ROLE`。
+* 被包装的调用所需的各项角色，同样授予该运营方。`batchMint` 和 `mintWithMemo` 需要 `MINT_ROLE`；`burnWithMemo` 需要 `BURN_ROLE`；乘数设置函数本身已使用 `OPERATOR_ROLE`。
+* 一个从未使用过的 `id`、一段面向持有者的 `description`，以及 (可选) 一个指向完整链下记录的 `uri`。
+
+此功能仅适用于 **B20 Asset**。Stablecoin 不支持公告。
+
+### 公告的工作原理 {#how-an-announcement-works}
+
+`announce(internalCalls, id, description, uri)` 按以下顺序执行：
+
+1. 触发 `Announcement(caller, id, description, uri)` 事件。
+2. 以原子方式执行 `internalCalls` 中的每一项。每一项都是针对该资产的 ABI 编码 calldata (至少 4 字节) ，而不是 `(target, calldata)` 对。内部调用仍受其自身的角色门控约束，并以运营方作为 `msg.sender` 执行。
+3. 触发 `EndAnnouncement(id)` 事件。
+
+如果任一内部调用失败，整个交易都会回滚，`id` 仍可使用。`announce` 一旦成功执行，`id` 即在该资产的整个生命周期内被占用，此后 `isAnnouncementIdUsed(id)` 将返回 `true`。`description` 和 `uri` 由运营方提供，资产不会对其进行校验。若在内部调用中嵌套 `announce`，将以 `AnnouncementInProgress` 回滚。
+
+索引器须知：应按 `id` 配对 `Announcement` 和 `EndAnnouncement`，而不能仅凭二者是否相邻来判断。这两条日志之间产生的所有影响均属于该公告操作。未包含在这一对日志之间的状态变更是直接调用产生的，而非通过 `announce` 执行。
+
+## 公告并分发额外份额 {#announce-and-distribute-additional-units}
+
+每个代币只需授予一次这些角色：
+
+```solidity Grant OPERATOR_ROLE and MINT_ROLE
+asset.grantRole(asset.OPERATOR_ROLE(), operator);
+asset.grantRole(asset.MINT_ROLE(), operator);
+```
+
+然后对内部调用进行编码并发布公告。以下示例封装了 `batchMint`，通过增发单位的方式发放股票股利：
+
+<CodeGroup>
+  {/* sample: stock-dividend-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={9,13}
+  import { encodeFunctionData, parseUnits, type Address } from "viem";
+  import { publicClient } from "../../shared/clients.js";
+  import { assetAbi } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function announceStockDividend(token: Address, holders: Address[]) {
+    const mint = encodeFunctionData({
+      abi: assetAbi,
+      functionName: "batchMint",
+      args: [holders, [parseUnits("30", 6), parseUnits("20", 6)]],
+    });
+    const id = `dividend-${Date.now()}`;
+    await sendContract({
+      address: token,
+      abi: assetAbi,
+      functionName: "announce",
+      args: [[mint], id, "Five-percent stock dividend", "https://example.com/actions/dividend"],
+    });
+    const used = await publicClient.readContract({ address: token, abi: assetAbi, functionName: "isAnnouncementIdUsed", args: [id] });
+    if (!used) throw new Error("Announcement was not recorded");
+  }
+  ```
+
+  {/* sample: stock-dividend-solidity */}
+
+  ```solidity Solidity lines wrap expandable highlight={3,4}
+  function announceDividend(address token, address[] memory recipients, uint256[] memory amounts) public {
+      bytes[] memory calls = new bytes[](1);
+      calls[0] = abi.encodeCall(IB20Asset.batchMint, (recipients, amounts));
+      IB20Asset(token).announce(
+          calls,
+          "2026-stock-dividend-01",
+          "Five-percent stock dividend",
+          "https://example.com/announcements/2026-01"
+      );
+      require(IB20Asset(token).isAnnouncementIdUsed("2026-stock-dividend-01"), "announcement missing");
+  }
+  ```
+</CodeGroup>
+
+接收方必须通过 `MINT_RECEIVER_POLICY` 校验，`MINT` 不得处于暂停状态，且 `batchMint` 为原子操作 (要么全部成功，要么全部失败) 。执行成功后，资产会先触发 `Announcement`，再为每个接收方各触发一个 `Transfer(address(0), recipient, amount)`，最后触发 `EndAnnouncement`。若改用 `mintWithMemo` 而非 `batchMint`，则事件顺序为 `Announcement`、`Transfer`、`Memo`、`EndAnnouncement`。
+
+<Check>
+  `Announcement` 和 `EndAnnouncement` 携带相同的 `id`，内部的 `Transfer` 事件位于两者之间，且 `isAnnouncementIdUsed(id)` 返回 `true`。
+</Check>
+
+<Note>
+  本示例通过增发单位发放股利，不涉及现金分配。若再投资股利仅需按比例调整显示余额，则应通过乘数更新实现；请参阅下一节及[应用乘数](/zh/build-on-base/issue-rwa/apply-a-multiplier)。
+</Note>
+
+## 公告其他变更 {#announce-other-changes}
+
+任何由运营方发起的变更，也通过同一公告框架进行披露。每个场景均列出运营方所需的角色，以及资产会发出的事件。
+
+### 乘数更新 {#multiplier-update}
+
+封装 `updateUIMultiplier(newMultiplier, effectiveAt)` 调用。1 拆 2 (2-for-1) 的拆股使用 `2e18`；反向拆股 (即合股) 使用小于 `1e18` 的值。运营方只需具备 `OPERATOR_ROLE` 角色即可。
+
+```solidity Announce a multiplier update lines wrap expandable highlight={3}
+function announceMultiplierUpdate(address token, uint256 newMultiplier, uint256 effectiveAt) public {
+    bytes[] memory calls = new bytes[](1);
+    calls[0] = abi.encodeCall(IB20Asset.updateUIMultiplier, (newMultiplier, effectiveAt));
+    IB20Asset(token).announce(
+        calls,
+        "2026-multiplier-01",
+        "2-for-1 multiplier update",
+        "https://example.com/announcements/2026-multiplier-01"
+    );
+}
+```
+
+成功时，该资产会依次触发 `Announcement`、`UIMultiplierUpdated` 和 `EndAnnouncement` 事件。`UIMultiplierUpdated` 仅表示该计划已被记录，并不代表乘数已经生效。不经 `announce` 直接调用 `updateUIMultiplier` 仍然可行，但索引器应将其标记为未披露。
+
+如需替换一个尚在排期中的待执行更新，请在同一个 `announce` 中完成取消和重新安排，使两次调用共享同一个运营方：
+
+```solidity Cancel and reschedule in one announcement wrap
+bytes[] memory calls = new bytes[](2);
+calls[0] = abi.encodeCall(IB20Asset.cancelUIMultiplierUpdate, ());
+calls[1] = abi.encodeCall(IB20Asset.updateUIMultiplier, (newMultiplier, effectiveAt));
+IB20Asset(token).announce(calls, id, description, uri);
+```
+
+### 国库销毁 {#treasury-burn}
+
+封装 `burnWithMemo(amount, memo)`。该调用销毁的是运营方自身的余额，不受策略管控。运营方需同时拥有 `OPERATOR_ROLE` 和 `BURN_ROLE`，且 `BURN` 不得处于暂停状态。
+
+```solidity Announce a treasury burn wrap
+bytes[] memory calls = new bytes[](1);
+calls[0] = abi.encodeCall(IB20Asset.burnWithMemo, (amount, memo));
+IB20Asset(token).announce(calls, id, "Treasury burn", uri);
+```
+
+成功后，该资产会依次触发 `Announcement`、`Transfer(operator, address(0), amount)`、`Memo` 和 `EndAnnouncement` 事件，`totalSupply` 随之减少。请勿使用已弃用的 `burnBlocked`。如需从持有者处收回份额再将其销毁，请先[扣押](/zh/build-on-base/issue-rwa/seize-and-cancel-units)，再从国库公告销毁操作。
+
+### 不产生链上效果的通知 {#notice-with-no-onchain-effect}
+
+传入空的 `internalCalls` 数组即可。运营方只需具备 `OPERATOR_ROLE`。资产会先后发出 `Announcement` 和 `EndAnnouncement`，二者之间不会有任何其他事件。该 `id` 仍会被消耗。
+
+```solidity Notice only
+IB20Asset(token).announce(new bytes[](0), id, description, uri);
+```
+
+## 常见错误 {#common-errors}
+
+以下错误按 `announce` 的检查顺序列出，其后为内部调用失败的情况。
+
+| 错误                                                        | 原因                              | 解决方法                          |
+| --------------------------------------------------------- | ------------------------------- | ----------------------------- |
+| `AccessControlUnauthorizedAccount(caller, OPERATOR_ROLE)` | 调用者未持有 `OPERATOR_ROLE`。         | 为运营方授予 `OPERATOR_ROLE`。       |
+| `AnnouncementIdAlreadyUsed(id)`                           | 该 `id` 已被此前一次成功的 `announce` 使用。 | 改用一个新的一次性 `id`。               |
+| `InternalCallMalformed(call)`                             | 某个内部调用的 blob 不足 4 字节。           | 传入包含函数选择器的 ABI 编码 calldata。   |
+| `AnnouncementInProgress()`                                | 某个内部调用的目标是 `announce`。          | 不要嵌套调用 `announce`。            |
+| `InternalCallFailed(call)`                                | 某个内部调用发生回滚，且回滚原因不会向上冒泡。         | 直接重放 `call` 以查看底层错误，然后排除根本原因。 |
+
+导致 `InternalCallFailed` 的常见内部原因包括：缺少 `MINT_ROLE` 或 `BURN_ROLE`、`MINT` 或 `BURN` 已暂停、`UIMultiplierUpdateExists`、`PolicyForbids`、`SupplyCapExceeded`，以及 `InsufficientBalance` (销毁时，针对运营方自身的余额) 。Solidity `Panic` (例如溢出) 会原样传播，不会被包装为 `InternalCallFailed`。
+
+## 另请参阅 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="应用乘数" icon="divide" href="/zh/build-on-base/issue-rwa/apply-a-multiplier">
+    安排、取消或覆盖乘数更新。
+  </Card>
+
+  <Card title="向持有者发行份额" icon="coins" href="/zh/build-on-base/issue-rwa/issue-units">
+    为持有者铸造资产份额。
+  </Card>
+</CardGroup>

@@ -1,0 +1,123 @@
+---
+title: "ステーブルコインを発行する"
+keywords: ["create B20 stablecoin", "issue stablecoin Base", "stablecoin variant B20", "createB20 stablecoin"]
+description: "B20 ファクトリーを 1 回呼び出すだけで、法定通貨担保型のステーブルコインを Base 上に作成できます。"
+---
+
+import { StablecoinDemo } from "/snippets/StablecoinDemo.jsx"
+
+`STABLECOIN` バリアントを指定して [B20 Factory](/specifications/b20/reference/interfaces/ib20-factory/create-b20) を1回呼び出すだけで、法定通貨に裏付けられたトークンを作成できます。小数点以下の桁数は `6` に固定され、トークンには `USD` などの自己申告による通貨コードが付与されます。この通貨コードは変更できません。タイプは作成時にトークンアドレスに組み込まれるため、後から変更することはできません。
+
+## デモ {#demo}
+
+<StablecoinDemo flow="issue" />
+
+<Tip>
+  このデモでは、ブラウザ上でローカルに生成したアカウントを使って、**Base Vibenet** に実際のトランザクションを送信します。Vibenet またはその B20 機能が利用できない場合は、説明用のオフライン版に自動で切り替わります。
+</Tip>
+
+<Note>
+  B20 を初めて使う方は、[B20 トークン標準](/ja/specifications/b20)で基本概念とローンチまでの一連の手順をご確認ください。これらのサンプルは `base-std@1505323`、`viem@2.55.11`、Base Foundry `v1.1.1` を対象としています。
+</Note>
+
+## ステーブルコイン バリアントの仕組み {#how-the-stablecoin-variant-works}
+
+`createB20` に `STABLECOIN` を渡すと、トークンアドレスの位置 `[10]` に識別バイト `0x01` が書き込まれます。呼び出しが完了すると、次のようになります。
+
+* `decimals()` は `6` を返します (ハードコードされているため、小数点以下の桁数を指定する必要はありません) 。
+* `currency()` は、指定したイミュータブルなコード (例: `"USD"`) を返します。B20 が検証するのは形式のみで、そのコードが実在する通貨かどうかは確認しません。
+* そのアドレスで `IB20Stablecoin` インターフェースが利用可能になります。
+* Asset 専用のセレクタ (`announce`、`updateUIMultiplier`、`batchMint`) は、このアドレスでは実行されません。
+
+`currency` フィールドは必須で、大文字の ASCII `A`～`Z` のみで構成する必要があります。空のコードを指定すると `MissingRequiredField` でリバートし、それ以外のバイトが含まれる場合は `InvalidCurrency` でリバートします。
+
+## ステーブルコインを作成して検証する {#create-and-verify-the-stablecoin}
+
+<CodeGroup>
+  {/* sample: stablecoin-create-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={26}
+  import { encodeAbiParameters, encodeFunctionData, keccak256, parseAbiParameters, parseEventLogs, stringToBytes } from "viem";
+  import { account } from "../../shared/clients.js";
+  import { B20_FACTORY, b20Abi, factoryAbi, role } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function createStablecoin() {
+    const salt = keccak256(stringToBytes("merchant-usd-v1"));
+    const params = encodeAbiParameters(
+      parseAbiParameters(
+        "(uint8 version,string name,string symbol,address initialAdmin,string currency)",
+      ),
+      [{ version: 1, name: "Merchant USD", symbol: "MUSD", initialAdmin: account.address, currency: "USD" }],
+    );
+    const initCalls = [
+      encodeFunctionData({
+        abi: b20Abi,
+        functionName: "grantRole",
+        args: [role("MINT_ROLE"), account.address],
+      }),
+      encodeFunctionData({
+        abi: b20Abi,
+        functionName: "updateSupplyCap",
+        args: [10_000_000n * 10n ** 6n],
+      }),
+    ];
+    const receipt = await sendContract({
+      address: B20_FACTORY,
+      abi: factoryAbi,
+      functionName: "createB20",
+      args: [1, salt, params, initCalls],
+    });
+    const [created] = parseEventLogs({ abi: factoryAbi, logs: receipt.logs, eventName: "B20Created" });
+    return created.args.token;
+  }
+  ```
+
+  {/* sample: stablecoin-create-solidity */}
+
+  ```solidity Solidity lines wrap expandable highlight={1}
+      function createStablecoin(address admin) public returns (address token) {
+          B20FactoryLib.B20RoleHolders memory holders = B20FactoryLib.B20RoleHolders({
+              minter: admin,
+              burner: admin,
+              burnBlocker: admin,
+              pauser: admin,
+              unpauser: admin,
+              metadataAdmin: admin
+          });
+          bytes[] memory roles = B20FactoryLib.buildRoleGrants(holders);
+          bytes[] memory settings = new bytes[](1);
+          settings[0] = B20FactoryLib.encodeUpdateSupplyCap(10_000_000e6);
+          token = StdPrecompiles.B20_FACTORY.createB20(
+              IB20Factory.B20Variant.STABLECOIN,
+              keccak256("merchant-usd-v1"),
+              B20FactoryLib.encodeStablecoinCreateParams("Merchant USD", "MUSD", admin, "USD"),
+              B20FactoryLib.concat(roles, settings)
+          );
+      }
+  ```
+</CodeGroup>
+
+`params` blobは、先頭に `version` バイト (現在は `1`) を付加した `B20StablecoinCreateParams` としてABIエンコードされ、`version`、`name`、`symbol`、`initialAdmin`、`currency` で構成されます。オプションの `initCalls` は同じトランザクション内で新しいトークンに対して実行され、その完了後、ファクトリーはアクセス権を手放します。
+
+インターフェース、ロール、ポリシーの詳細は、[B20トークン標準](/ja/specifications/b20)を参照してください。
+
+<Check>
+  ファクトリーが `B20Created` を発行し、返されたトークンアドレスですぐにミントを開始できます。
+</Check>
+
+<Warning>
+  B20トークンはデフォルトでオープンな状態です。価値を発行する前に、作成時にロール、ポリシー、供給上限を設定しておいてください。
+</Warning>
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="供給量をミントする" icon="plus" href="/ja/build-on-base/issue-stablecoins/mint-supply">
+    流通供給量を増やします。
+  </Card>
+
+  <Card title="保有者を制限する" icon="user-check" href="/ja/build-on-base/issue-stablecoins/restrict-who-can-hold">
+    保有資格のある保有者を許可リストに登録します。
+  </Card>
+</CardGroup>

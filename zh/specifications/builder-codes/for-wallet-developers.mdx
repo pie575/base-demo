@@ -1,0 +1,79 @@
+---
+title: "面向钱包开发者的 Builder Codes"
+sidebarTitle: "面向钱包开发者"
+description: "在钱包中实现 dataSuffix 能力，以支持 Builder Code 归因。"
+---
+
+## 概述 {#overview}
+
+钱包提供方需要支持 `dataSuffix` 能力才能启用归因。具体来说，就是接受该能力，并在签名前将后缀追加到 calldata 末尾。
+
+<Steps>
+  <Step title="支持 dataSuffix 能力">
+    你的钱包应能接受 `wallet_sendCalls` 的 `capabilities` 对象中的 `dataSuffix` 对象。
+
+    ```typescript DataSuffix capability type
+    type DataSuffixCapability = {
+      value: `0x${string}`;  // 由应用提供的十六进制编码字节
+      optional?: boolean;    // 该能力是否为可选
+    }
+    ```
+  </Step>
+
+  <Step title="将后缀追加到 Calldata">
+    在构造交易或 User Operation 时，提取 `dataSuffix` 并将其追加到 calldata 末尾。
+
+    <Tabs>
+      <Tab title="EOA 交易">
+        追加到 `tx.data`。
+
+        ```typescript apply-eoa-suffix.ts lines expandable wrap
+        // EOA 的最简示例
+        function applySuffixToEOA(tx, capabilities) {
+          const suffix = capabilities.dataSuffix?.value
+          if (!suffix) return tx
+
+          return {
+            ...tx,
+            // 追加后缀字节（如果 tx.data 已带 0x 前缀，则去掉后缀的 0x 前缀）
+            data: tx.data + suffix.slice(2)
+          }
+        }
+        ```
+      </Tab>
+
+      <Tab title="ERC-4337 User Operation">
+        追加到 `userOp.callData` (而非交易层级的 calldata) 。
+
+        ```typescript apply-user-operation-suffix.ts lines expandable wrap
+        // ERC-4337 的最简示例
+        function applySuffixToUserOp(userOp, capabilities) {
+          const suffix = capabilities.dataSuffix?.value
+          if (!suffix) return userOp
+
+          return {
+            ...userOp,
+            // 将后缀字节追加到 UserOp 的 callData
+            callData: userOp.callData + suffix.slice(2)
+          }
+        }
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="添加钱包归因（可选）">
+    钱包还可以加入自己的归因代码 (即钱包自身的 ERC-8021 后缀) ，做法是将钱包的后缀放在应用后缀之前。
+
+    * &#42;&#42;无需与应用交互：&#42;&#42;钱包可自行独立处理。
+    * &#42;&#42;支持多个代码：&#42;&#42;ERC-8021 原生支持多个归因代码。
+
+    **示例：**
+
+    ```typescript Compose app and wallet attribution
+    finalSuffix = walletSuffix + appSuffix
+    ```
+
+    这样，应用和钱包都能获得链上归因。
+  </Step>
+</Steps>

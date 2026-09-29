@@ -1,0 +1,86 @@
+---
+title: "监听支付"
+keywords: ["监听 Commerce Payments", "AuthCaptureEscrow 事件", "Base 支付监听器", "支付事件回填"]
+description: "监听托管事件，回填遗漏的区块，并以幂等方式处理已确认的生命周期状态变更。"
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+将 `AuthCaptureEscrow` 日志转化为持久可靠的支付数据流。WebSocket 订阅负责低延迟地唤醒处理流程，而区间相互重叠的已确认回填则在连接断开或发生 Reorg 后提供规范的权威数据源。
+
+<Info>
+  本指南中的支付流程基于 [Commerce Payments Protocol](https://github.com/base/commerce-payments)。
+</Info>
+
+## 演示 {#demo}
+
+<PaymentsDemo flow="watch" />
+
+<Tip>
+  上方演示仅为模拟效果。如需在 Vibenet 上体验链上演示，请前往 [Base 链演示](https://chain.base.org/demos)。
+</Tip>
+
+## 订阅与回填 {#subscribe-and-backfill}
+
+监听 v1.1.0 托管合约的 `PaymentAuthorized`、`PaymentCharged`、`PaymentCaptured`、`PaymentVoided`、`PaymentReclaimed` 和 `PaymentRefunded` 事件。这些事件共用同一个索引字段 `paymentInfoHash`。
+
+{/* sample: watch-payments-ts */}
+
+```typescript TypeScript worker lines wrap expandable highlight={13-18,22,26-29}
+export async function watchPayments(
+  startBlock: bigint,
+  store: PaymentEventStore,
+) {
+  async function backfillConfirmed() {
+    const head = await client.getBlockNumber();
+    if (head <= confirmations) return;
+    const toBlock = head - confirmations;
+    const cursor = await store.lastScannedBlock();
+    const fromBlock = cursor && cursor > startBlock + confirmations
+      ? cursor - confirmations
+      : startBlock;
+    const logs = await client.getContractEvents({
+      address: AUTH_CAPTURE_ESCROW,
+      abi: authCaptureEscrowAbi,
+      fromBlock,
+      toBlock,
+      strict: true,
+    });
+
+    // 在同一个数据库事务中替换重叠区间并推进游标。
+    await store.replaceRange(fromBlock, toBlock, logs);
+  }
+
+  await backfillConfirmed();
+  return client.watchContractEvent({
+    address: AUTH_CAPTURE_ESCROW,
+    abi: authCaptureEscrowAbi,
+    onLogs: backfillConfirmed,
+    onError: (error) => console.error("Payment watcher failed", error),
+  });
+}
+```
+
+将 `replaceRange` 实现为单个数据库事务：删除重叠区间内的行，插入当前规范链上的日志，重建受影响的支付状态，并且仅在所有写入均成功后才推进游标。
+
+<Check>
+  在重新连接或发生短程 Reorg 后，重叠扫描会收敛到规范的协议事件，且不会重复应用同一条日志。
+</Check>
+
+<Warning>
+  不要混用 v1.0 和 v1.1 的事件 ABI。结算方式从 `feeBps` 改为绝对值 `feeAmount` 后，`PaymentCharged` 和 `PaymentCaptured` 的事件 topic 已随之改变。
+</Warning>
+
+请根据自身的风险承受能力选择相应的确认策略。参见[交易最终性](/zh/specifications/transactions/transaction-finality)。
+
+## 另请参阅 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="验证支付" icon="shield-check" href="/zh/build-on-base/accept-payments/verify-a-payment">
+    根据对应订单逐一验证每个候选事件。
+  </Card>
+
+  <Card title="支付对账" icon="table" href="/zh/build-on-base/accept-payments/reconcile-payments">
+    生成扣款、捕获、手续费和退款记录。
+  </Card>
+</CardGroup>

@@ -1,0 +1,468 @@
+---
+title: "存款"
+description: "Base 上的存款如何运作——从用户体验，到协议层面的存款交易类型和保证 gas 市场。"
+---
+
+[g-transaction-type]: /specifications/reference/glossary#transaction-type
+
+[g-derivation]: /specifications/reference/glossary#L2-chain-derivation
+
+[g-deposited]: /specifications/reference/glossary#deposited
+
+[g-deposits]: /specifications/reference/glossary#deposits
+
+[g-l1-attr-deposit]: /specifications/reference/glossary#l1-attributes-deposited-transaction
+
+[g-user-deposited]: /specifications/reference/glossary#user-deposited-transaction
+
+[g-eoa]: /specifications/reference/glossary#eoa
+
+[g-exec-engine]: /specifications/reference/glossary#execution-engine
+
+存款是指在 Base 之外发起、最终成为 Base 上交易的一类交易。对于来自 Ethereum 的存款，L1 交易会发出数据，Base 节点据此派生出相应的 L2 存款交易。
+
+存款交易由协议本身纳入。它们不使用普通 L2 交易的签名、nonce 或费用字段，因为它们由 L1 存款事件授权，且其 L2 gas 费用已在 L1 上支付。对大多数用户而言，实际体验很简单：源链交易经确认并处理后，资产或消息就会出现在 Base 上。
+
+有关可用的跨链桥路线，请参阅[跨链到 Base](/zh/base-chain/network-information/ecosystem-bridges)。
+
+## 概述 {#overview}
+
+[存款交易][g-deposited] (deposited transaction) ，也称为[存款][g-deposits] (deposit) ，是在 L1 上发起、在 L2 上执行的交易。本文档为存款定义了一种新的[交易类型][g-transaction-type]，同时介绍了存款如何在 L1 上发起，以及存款在 L2 上的授权和验证条件。
+
+**术语说明**：*存款交易* (deposited transaction) 专指 L2 交易，而 *存款* (deposit) 则可以指处于不同阶段的该交易 (例如在 L1 上存入时) 。
+
+## 存款交易类型 {#the-deposited-transaction-type}
+
+[deposited-tx-type]: #the-deposited-transaction-type
+
+与现有交易类型相比，[存款交易][g-deposited]有以下几点显著区别：
+
+1. 它们派生自 Layer 1 区块，且必须作为协议的一部分被打包纳入。
+2. 它们不进行签名验证 (原因参见[用户存款交易][user-deposited]) 。
+3. 它们在 L1 上购买 L2 gas，因此 L2 gas 不可退还。
+
+我们定义了一种兼容 [EIP-2718] 的新交易类型，以 `0x7E` 为前缀，用于表示存款交易。
+
+存款包含以下字段
+(按此处列出的顺序进行 rlp 编码) ：
+
+[EIP-2718]: https://eips.ethereum.org/EIPS/eip-2718
+
+* `bytes32 sourceHash`：source-hash，唯一标识存款的来源。
+* `address from`：发送方账户地址。
+* `address to`：接收方账户地址；若该存款交易用于创建合约，则为空 (零长度) 地址。
+* `uint256 mint`：要在 L2 上铸造的 ETH 数量。
+* `uint256 value`：要发送给接收方账户的 ETH 数量。
+* `uint64 gas`：L2 交易的 gas 上限。
+* `bool isSystemTx`：若为 true，则该交易不与 L2 区块 gas 池交互。
+  * 该值已禁用，且 MUST 为 `false`。
+* `bytes data`：calldata。
+
+与 [EIP-155] 交易不同，此交易类型：
+
+* 不包含 `nonce`，因为它由 `sourceHash` 标识。
+  API 响应中仍包含 `nonce` 属性，其值为对应交易收据中的 `depositNonce` 值。
+* 不包含签名信息，而是显式给出 `from` 地址。
+  为保持向后兼容，API 响应中的签名值 `v`、`r`、`s` 均为零。
+* 新增 `sourceHash`、`from`、`mint` 和 `isSystemTx` 属性。
+  API 响应会将它们作为附加字段返回。
+
+[EIP-155]: https://eips.ethereum.org/EIPS/eip-155
+
+我们选择 `0x7E`，是因为交易类型标识符目前最大可取到 `0x7F`。
+选用较大的标识符，可以最大限度降低该标识符将来被 L1 链上其他交易类型占用的风险。之所以不直接选用 `0x7F`，是为了防止它将来被用于某种变长编码方案。
+
+### 源哈希计算 {#source-hash-computation}
+
+存款交易的 `sourceHash` 根据其来源计算：
+
+* 用户存款：
+  `keccak256(bytes32(uint256(0)), keccak256(l1BlockHash, bytes32(uint256(l1LogIndex))))`。
+  其中 `l1BlockHash` 和 `l1LogIndex` 均指存款日志事件在 L1 上被包含的位置。
+  `l1LogIndex` 是存款事件日志在该区块全部日志事件合并列表中的索引。
+* L1 属性存款：
+  `keccak256(bytes32(uint256(1)), keccak256(l1BlockHash, bytes32(uint256(seqNumber))))`。
+  其中 `l1BlockHash` 指所存入的信息属性对应的 L1 区块哈希。
+  并且 `seqNumber = l2BlockNum - l2EpochStartBlockNum`，
+  其中 `l2BlockNum` 是该存款交易在 L2 中被包含时所在的 L2 区块号，
+  `l2EpochStartBlockNum` 是该纪元中第一个 L2 区块的区块号。
+* 升级存款：`keccak256(bytes32(uint256(2)), keccak256(intent))`。
+  其中 `intent` 是用于标识升级意图的 UTF-8 字节串。
+
+如果存款中没有 `sourceHash`，两笔不同的存款交易可能会具有完全相同的哈希。
+
+外层 `keccak256` 将真正具有唯一标识作用的信息与一个域一并哈希，
+以避免不同类型的来源之间发生冲突。
+
+[Interop 派生规范](/zh/specifications/base-protocol/consensus/derivation)另外引入了两种系统存款，
+其域分别为 `3` 和 `4`。
+
+我们不使用发送者的 nonce 来确保唯一性，因为这样需要在区块派生期间从
+[执行引擎][g-exec-engine]额外读取一次 L2 EVM 状态。
+
+### 存款交易的种类 {#kinds-of-deposited-transactions}
+
+尽管我们只定义了一种新的交易类型，但根据存款交易在 L2 区块中的位置，可以将其分为两种：
+
+1. 第一笔交易 MUST 是 [L1 属性存款交易][l1-attr-deposit]，其后是
+2. 由零笔或多笔[用户存款交易][user-deposited]组成的数组，
+   这些交易提交至 L1 上的存款馈送合约 (即 `OptimismPortal`) 。
+   用户存款交易仅出现在 L2 epoch 的第一个区块中。
+
+之所以只定义一种新的交易类型，是为了尽量减少对 L1 客户端软件的改动，
+并从整体上降低复杂性。
+
+### 存款交易的验证与授权 {#validation-and-authorization-of-deposited-transactions}
+
+如上所述，存款交易类型不包含用于验证的签名，授权改由 [L2 链派生][g-derivation]过程负责：只要该过程执行正确，
+就只会派生出 `from` 地址经 [L1
+存款合约][deposit-contract]日志证实的交易。
+
+### 执行 {#execution}
+
+执行存款交易的步骤如下：
+
+首先，`from` 账户的余额 MUST 增加 `mint` 的数额。
+此操作是无条件的，即使存款失败也不会回滚。
+
+然后，根据交易的属性初始化存款交易的执行环境，
+其方式与 EIP-155 交易完全相同。
+
+存款交易的处理方式与 type-2 (EIP-1559) 交易完全相同，但以下几点除外：
+
+* 不验证任何费用字段：存款交易没有费用字段，因为它已在 L1 上支付 gas。
+* 不验证 `nonce` 字段：存款交易没有该字段，而是由其 `sourceHash` 唯一标识。
+* 不处理访问列表：存款交易没有访问列表，因此按访问列表为空处理。
+* 不检查 `from` 是否为外部拥有账户 (EOA) ：L1 地址掩码机制可确保存款方不是 EOA。
+  未来的 L1 合约部署可能会改变这一点，例如为了支持类似账户抽象的机制。
+* 不以 ETH 形式退还 gas。 (可以直接不退还，也可以利用存款交易的 gas 价格为 `0` 这一点来实现)
+* 不收取交易优先费，也不向区块费用接收方支付任何费用。
+* 不收取 L1 成本费用，因为存款交易本身派生自 L1，无需再作为数据提交回 L1。
+* 不收取基础费用，基础费用的总核算保持不变。
+
+请注意，这包括与常规交易相同的合约部署行为，并且 gas
+计量方式也相同 (上述与费用相关的变更除外) ，包括固有 gas
+的计量。
+
+EVM 执行过程中产生的任何非 EVM 状态转换错误都会以特殊方式处理：
+
+* 该错误会被转换为 EVM 错误：
+  即存款交易始终会被打包，但如果遇到非 EVM 状态转换错误，
+  其收据会标明执行失败，例如因账户余额不足而无法转移指定
+  `value` 数额的 ETH。
+* 世界状态会回滚到 EVM 处理开始时的状态，即存款的铸造部分完成之后。
+* 世界状态中 `from` 的 `nonce` 加 1，使该错误等同于原生 EVM 失败。
+  请注意，EVM 处理期间可能已发生过一次 `nonce` 递增，但该递增会先被回滚。
+
+最后，完成上述处理后，执行后处理流程照常进行：
+即 gas 池和收据的处理方式与常规交易完全相同。
+存款交易的收据会额外扩展一个
+`depositNonce` 值，用于存储 `from` 发送方在 EVM 处理*之前*所记录的 `nonce` 值。
+
+请注意，执行输出中所声明的已用 gas 会从 gas 池中扣除。
+
+应用开发者请注意：由于 `CALLER` 和 `ORIGIN` 都被设置为 `from`，
+在存款交易期间，无法通过 `tx.origin == msg.sender` 检查来判断
+调用方是否为 EOA。该检查仅可用于
+识别 L2 存款交易中的第一次调用。不过，开发者常用该检查来
+确保 `CALLER` 无法在调用前后执行代码，
+在这种常见场景下，该检查依然有效。
+
+#### Nonce 处理 {#nonce-handling}
+
+尽管存款交易不进行签名验证，但在执行存款交易时，我们仍会递增 `from` 账户的 nonce。在 deposit-only rollup 中，这一操作对于交易排序或防重放而言并非必需，但能与[合约创建][create-nonce]时 nonce 的用法保持一致，还可能简化与下游工具 (如钱包和区块浏览器) 的集成。
+
+[create-nonce]: https://github.com/ethereum/execution-specs/blob/617903a8f8d7b50cf71bf1aa733c37897c8d75c1/src/ethereum/frontier/utils/address.py#L40
+
+## 存款收据 {#deposit-receipt}
+
+交易收据遵循 [EIP-2718] 采用标准类型化方式。
+存款交易收据类型与常规收据相同，
+只是额外扩展了一个可选的 `depositNonce` 字段。
+
+经 RLP 编码、由共识强制执行的字段如下：
+
+* `postStateOrStatus` (标准) ：包含交易状态，参见 [EIP-658]。
+* `cumulativeGasUsed` (标准) ：截至目前区块中已使用的 gas (包括本交易) 。
+  * 实际使用的 gas 由 `CumulativeGasUsed` 与前一笔交易的差值推导得出。
+  * 与常规交易一样，这反映了存款的实际 gas 用量。
+* `bloom` (标准) ：交易日志的布隆过滤器。
+* `logs` (标准) ：EVM 处理过程中发出的日志事件。
+* `depositNonce` (独有扩展) ：可选字段。存款交易会持久保存执行期间使用的 nonce。
+* `depositNonceVersion` (独有扩展) ：可选字段。若该字段存在，其值必须为 1
+  * Canyon 之前，`depositNonce` 和 `depositNonceVersion` 字段必须始终省略。
+  * 自 Canyon 起，`depositNonce` 和 `depositNonceVersion` 字段必须始终包含。
+
+收据 API 响应借助上述收据变更，提供更准确的响应数据：
+
+* API 响应的收据 JSON 数据中包含 `depositNonce`
+* 对于合约部署 (即 `to == null` 时) ，可借助 `depositNonce` 推导出正确的 `contractAddress` 元数据，
+  而无需假定 nonce 为零。
+* `cumulativeGasUsed` 反映 EVM 处理中计量的实际 gas 用量。
+
+[EIP-658]: https://eips.ethereum.org/EIPS/eip-658
+
+## L1 属性存款交易 {#l1-attributes-deposited-transaction}
+
+[l1-attr-deposit]: #l1-attributes-deposited-transaction
+
+[L1 属性存款交易][g-l1-attr-deposit]是发送到 [L1 属性预部署合约][predeploy]的存款交易。
+
+该交易 MUST 具有以下值：
+
+1. `from` 为 `0xdeaddeaddeaddeaddeaddeaddeaddeaddead0001` (即 [L1 属性存款人账户][depositor-account]的地址)
+2. `to` 为 `0x4200000000000000000000000000000000000015` (即 [L1 属性预部署合约][predeploy]的地址) 。
+3. `mint` 为 `0`
+4. `value` 为 `0`
+5. `gasLimit` 设置为 `1,000,000`。
+6. `isSystemTx` 设置为 `false`。
+7. `data` 是对 [L1 属性预部署合约][predeploy]的编码调用，其具体内容取决于当前已激活的升级 (见下文) 。
+
+这笔由系统发起的 L1 属性交易被视为状态转换处理的一部分，因此不会就其分配的 `gasLimit` 收取任何 ETH。
+
+### L1 属性存款交易的 Calldata {#l1-attributes-deposited-transaction-calldata}
+
+#### L1 属性 - Bedrock、Canyon、Delta {#l1-attributes-bedrock-canyon-delta}
+
+L1 属性存款交易的 `data` 字段是对
+`setL1BlockValues()` 函数的 [ABI][ABI] 编码调用，所传参数为对应 L1 区块的正确值
+(参见[参考实现][l1-attr-ref-implem]) 。
+
+## L2 上的特殊账户 {#special-accounts-on-l2}
+
+L1 属性存入交易涉及两个专用账户：
+
+1. L1 属性存款人账户
+2. L1 属性预部署合约
+
+### L1 属性存款人账户 {#l1-attributes-depositor-account}
+
+[depositor-account]: #l1-attributes-depositor-account
+
+存款人账户是一个私钥未知的 [EOA][g-eoa]，其地址为
+`0xdeaddeaddeaddeaddeaddeaddeaddeaddead0001`。在执行 L1 属性存款交易期间，`CALLER` 和 `ORIGIN`
+操作码返回的值即为该地址。
+
+### L1 属性预部署合约 {#l1-attributes-predeployed-contract}
+
+[predeploy]: #l1-attributes-predeployed-contract
+
+一个部署在 L2 上地址 `0x4200000000000000000000000000000000000015` 处的预部署合约，它将对应 L1 区块的
+部分区块变量保存在存储中，以便在执行后续的存款交易时
+访问这些变量。
+
+该预部署合约存储以下值：
+
+* L1 区块属性：
+  * `number` (`uint64`)
+  * `timestamp` (`uint64`)
+  * `basefee` (`uint256`)
+  * `hash` (`bytes32`)
+* `sequenceNumber` (`uint64`)：表示相对于 epoch 起点的 L2 区块号，
+  即当前 L2 区块与 L1 属性上一次变化时所在 L2 区块高度之间的距离，
+  在新 epoch 开始时重置为 0。
+* 与 L1 区块绑定的系统可配置项，参见[系统配置规范](/zh/specifications/base-protocol/consensus/derivation#system-configuration)：
+  * `batcherHash` (`bytes32`)：对当前运行中的批次提交者的版本化承诺。
+  * `overhead` (`uint256`)：计算此 L2 区块中交易的 L1 成本时所采用的 L1 费用开销。
+  * `scalar` (`uint256`)：计算此 L2 区块中交易的 L1 成本时所采用的 L1 费用系数。
+
+该合约实现了一套授权机制，仅接受来自
+[存款人账户][depositor-account]的状态变更调用。
+
+该合约具有以下 Solidity 接口，可按照
+[合约 ABI 规范][ABI]与之交互。
+
+[ABI]: https://docs.soliditylang.org/en/v0.8.10/abi-spec.html
+
+#### L1 属性预部署合约：参考实现 {#l1-attributes-predeployed-contract-reference-implementation}
+
+[l1-attr-ref-implem]: #l1-attributes-predeployed-contract-reference-implementation
+
+L1 属性预部署合约的参考实现见 [L1Block.sol]。
+
+[L1Block.sol]: https://github.com/ethereum-optimism/optimism/blob/d48b45954c381f75a13e61312da68d84e9b41418/packages/contracts-bedrock/src/L2/L1Block.sol
+
+## 用户存款交易 {#user-deposited-transactions}
+
+[user-deposited]: #user-deposited-transactions
+
+[用户存款交易][g-user-deposited]是由 [L2 链派生][g-derivation]过程生成的[存款交易][deposited-tx-type]。每笔用户存款交易的内容由 L1 上[存款合约][deposit-contract]发出的对应 `TransactionDeposited` 事件决定。
+
+1. `from` 与事件发出的值相同 (不过它可能已在存款馈送合约 `OptimismPortal` 中被转换为别名) 。
+2. `to` 为任意 20 字节地址 (包括零地址)
+   * 如果是合约创建 (参见 `isCreation`) ，该地址设为 `null`。
+3. `mint` 设为事件发出的值。
+4. `value` 设为事件发出的值。
+5. `gaslimit` 与事件发出的值相同，且必须不小于 21000。
+6. 如果交易是合约创建，`isCreation` 设为 `true`，否则设为 `false`。
+7. `data` 与事件发出的值相同。根据 `isCreation` 的值，它会被当作 calldata 或合约初始化代码处理。
+8. `isSystemTx` 由 rollup 节点为某些不计量执行的交易设置。
+   对于用户存款交易，其值为 `false`
+
+### 存款合约 {#deposit-contract}
+
+[deposit-contract]: #deposit-contract
+
+存款合约部署在 L1 上。存款交易由存款合约发出的 `TransactionDeposited` 事件中的值派生而来。
+
+存款合约负责维护[保证 gas 市场](#guaranteed-gas-fee-market)，
+为存款收取将在 L2 上使用的 gas 费用，并确保单个 L1 区块中保证 gas 的总量
+不超过 L2 区块的 gas 上限。
+
+存款合约会处理两种特殊情况：
+
+1. 合约创建存款，通过将 `isCreation` 标志设为 `true` 来标识。
+   如果 `to` 地址不为零，合约将回滚 (revert) 。
+2. 来自合约账户的调用，此时 `from` 值会被转换为其 L2
+   [别名][address-aliasing]。
+
+#### 地址别名 {#address-aliasing}
+
+[address-aliasing]: #address-aliasing
+
+如果调用者是合约，则会在其地址上加上
+`0x1111000000000000000000000000000000001111` 进行转换。该运算为 `unchecked`，且基于
+Solidity `uint160` 执行，因此数值会溢出。这可以防范以下攻击：某个
+L1 上的合约与 L2 上的某个合约地址相同，但代码不同。对于 EOA，我们可以放心地忽略这一问题，
+因为它们必然具有相同的“代码” (即根本没有代码) 。此外，这也让
+用户即使在 Sequencer 宕机时，仍能与 L2 上的合约交互。
+
+#### 存款合约实现：Optimism Portal {#deposit-contract-implementation-optimism-portal}
+
+存款合约的参考实现见 [OptimismPortal.sol]。
+
+[OptimismPortal.sol]: https://github.com/ethereum-optimism/optimism/blob/d48b45954c381f75a13e61312da68d84e9b41418/packages/contracts-bedrock/src/L1/OptimismPortal.sol
+
+## 保证 Gas 费用市场 {#guaranteed-gas-fee-market}
+
+[存款交易][g-deposited]是指在 L1 上发起、在 L2 上执行的交易。它们在 L2 上消耗的 gas 通过在 L1 上销毁 gas 来购买 (未来可能改为直接支付) 。
+对于单个 L1 区块内所有存款可获得的 gas 总量，我们维护一个费用市场，
+并设有硬性上限。
+
+提供给存款交易的 gas 有时被称为&quot;保证 gas&quot; (guaranteed gas) 。这部分 gas
+的特殊之处在于它不可退还。原因是它有时通过销毁 gas 来支付，
+此时可能已没有剩余的 ETH 可供退还。
+
+**保证 gas** 由两部分组成：gas 补贴，以及用户在此基础上额外 (在 L1 上) 购买的保证 gas。
+
+L2 上的保证 gas 按以下方式购买：首先通过类 EIP-1559 算法计算出 L2 gas 价格，
+然后按 (`guaranteed gas * L2 deposit base fee`) 计算购买这些 gas 所需的 ETH 总量。
+接着，合约要么直接收取这笔 ETH (将在未来升级中支持) ，要么 (目前唯一的方式) 销毁与 L2 成本等值的
+L1 gas (`L2
+cost / L1 base fee`) 。保证 gas 的 L2 gas 价格与 L2 上的基础费用并不同步，
+二者很可能不同。
+
+### Gas 补贴 {#gas-stipend}
+
+为抵消存款事件所消耗的 gas，我们会将 `gas spent * L1 base fee` ETH 抵扣到 L2 gas 的费用中，其中 `gas spent` 是处理该存款所消耗的 L1 gas 数量。如果这笔抵扣额的 ETH
+价值大于所请求的保证 gas 的 ETH 价值 (`requested
+guaranteed gas * L2 gas price`) ，则不会燃烧任何 L1 gas。
+
+### 默认值 {#default-values}
+
+| 变量                                | 值                                              |
+| --------------------------------- | ---------------------------------------------- |
+| `MAX_RESOURCE_LIMIT`              | 20,000,000                                     |
+| `ELASTICITY_MULTIPLIER`           | 10                                             |
+| `BASE_FEE_MAX_CHANGE_DENOMINATOR` | 8                                              |
+| `MINIMUM_BASE_FEE`                | 1 gwei                                         |
+| `MAXIMUM_BASE_FEE`                | type(uint128).max                              |
+| `SYSTEM_TX_MAX_GAS`               | 1,000,000                                      |
+| `TARGET_RESOURCE_LIMIT`           | `MAX_RESOURCE_LIMIT` / `ELASTICITY_MULTIPLIER` |
+
+### 限制保证 gas {#limiting-guaranteed-gas}
+
+必须限制单个 L1 区块内可购买的保证 gas 总量，以
+防范针对 L2 的拒绝服务攻击，并确保保证 gas 总量
+始终低于 L2 区块 gas 上限。
+
+我们将保证 gas 上限设为每个 L1 区块 `MAX_RESOURCE_LIMIT` gas，目标值设为每个 L1 区块
+`MAX_RESOURCE_LIMIT` / `ELASTICITY_MULTIPLIER` gas。这样既能容纳
+偶发的大额交易，又能使 L2 上的 gas 用量保持在目标值和最大值以内。
+
+由于单个区块内可购买的保证 L2 gas 数量现已受限，
+我们引入了 EIP-1559 式的费用市场，以缓解存款拥堵。通过将上限设为
+目标值的倍数，存款可以在短时间内以更高的成本使用更多 L2 gas。
+
+```python Guaranteed Gas Market Pseudocode lines wrap expandable
+# 伪代码：更新 L2 存款基础费用，并限制单个区块内可购买的保证 gas 数量。
+# 调用方代码必须自行处理 gas 销毁，并校验账户是否有足够余额
+# 支付这些 gas。
+
+# prev_base fee 为 u128 类型，prev_bought_gas 和 prev_num 为 u64 类型
+prev_base_fee, prev_bought_gas, prev_num = <values from previous update>
+now_num = block.number
+
+# 将完整的基础费用限制在特定范围内。该范围的最小值应在 100-1000 左右，
+# 以便基础费用更快地做出响应。这取代了以太坊 1559 实现中的 `max` 机制
+#（同时也确保基础费用在极小时仍能上涨）。
+def clamp(v: i256, min: u128, max: u128) -> u128:
+    if v < i256(min):
+        return min
+    elif v > i256(max):
+        return max
+    else:
+        return u128(v)
+
+# 如果是新区块，则更新基础费用并重置 gas 总量
+# 否则，仅更新 gas 总量
+if prev_num == now_num:
+    now_base_fee = prev_base_fee
+    now_bought_gas = prev_bought_gas + requested_gas
+elif prev_num != now_num:
+    # 扩展位宽并转换为有符号整数运算
+    gas_used_delta = int128(prev_bought_gas) - int128(TARGET_RESOURCE_LIMIT)
+    # 使用截断除法（向 0 取整），即 solidity 的默认行为。
+    # 将 gas_used_delta 和 prev_base_fee 符号扩展至 256 位，以避免此处溢出。
+    base_fee_per_gas_delta = prev_base_fee * gas_used_delta / TARGET_RESOURCE_LIMIT / BASE_FEE_MAX_CHANGE_DENOMINATOR
+    now_base_fee_wide = prev_base_fee + base_fee_per_gas_delta
+
+    now_base_fee = clamp(now_base_fee_wide, min=MINIMUM_BASE_FEE, max=UINT_128_MAX_VALUE)
+    now_bought_gas =  requested_gas
+
+    # 如果上一个区块与当前区块之间跳过了多个区块，则再次更新基础费用。
+    # 这与迭代执行上述函数并不完全等价，但在合理的 gas 目标值下结果非常接近。
+    # 此外，其执行时间不随跳过的区块数量变化（常数时间），这对于
+    # 保持 gas 用量稳定至关重要。
+    if prev_num + 1 < now_num:
+        n = now_num - prev_num - 1
+        # 针对连续的 n 个空区块，对 prev_base_fee 应用 7/8 的衰减。
+        now_base_fee_wide = now_base_fee * pow(1-(1/BASE_FEE_MAX_CHANGE_DENOMINATOR), n)
+        now_base_fee = clamp(now_base_fee_wide, min=MINIMUM_BASE_FEE, max=type(uint128).max)
+
+require(now_bought_gas < MAX_RESOURCE_LIMIT)
+
+store_values(now_base_fee, now_bought_gas, now_num)
+```
+
+### 销毁 L1 Gas 的设计依据 {#rationale-for-burning-l1-gas}
+
+网络的使用必须具备抗女巫攻击机制。如果在 L2 上获取保证 gas 的成本极低，
+网络就可能遭到垃圾交易攻击。在 L1 上销毁动态数量的 gas 可以起到抗女巫攻击的作用，因为需求越高，成本也越高。
+
+如果直接收取 ETH 来支付 L2 gas，那么存款函数的每一个 (间接) 调用方都需要
+标记 payable 选择器，而许多现有项目无法做到这一点。遗憾的是，
+这种方式相当浪费。因此，我们将提供两种购买 L2 gas 的方式：
+
+1. 销毁 L1 Gas
+2. 向 Optimism Portal 发送 ETH (尚不支持)
+
+payable 版本 (方式 2) 可能会享有折扣 (反过来说，方式 1 则需支付
+一定溢价) 。
+
+bedrock 的首个版本仅支持方式 1。
+
+### 关于防范恶意干扰攻击 {#on-preventing-griefing-attacks}
+
+购买每个区块中全部存款 gas 的成本必须足够高昂，
+才能防止攻击者恶意干扰发往网络的所有存款。
+攻击者会在 mempool 中监视到某笔存款，并抢先提交另一笔存款，
+购买足够多的 gas，导致原存款回滚。
+最大资源限制越小，这种攻击就越容易得逞。
+设置较大的资源限制和较大的弹性乘数，可以缓解此类攻击。
+这样一来，目标资源使用量会保持在较低水平，
+当有人购买最大资源限制时，存款基础费用便有充足的上涨空间。
+
+在实践中，这种攻击的代价应当高到难以实施；但如果某个财力极其雄厚的
+攻击者确实决定长时间持续恶意干扰网络存款，
+我们将采取措施，确保存款仍能在网络上得到处理。

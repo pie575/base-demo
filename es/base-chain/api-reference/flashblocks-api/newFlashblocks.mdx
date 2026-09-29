@@ -1,0 +1,67 @@
+---
+title: 'newFlashblocks'
+sidebarTitle: 'newFlashblocks'
+description: 'Suscríbete para recibir el flujo completo de payloads de Flashblock a medida que se construye cada bloque preconfirmado. Solo disponible en endpoints WebSocket de Flashblocks.'
+---
+
+Suscríbete mediante `eth_subscribe` para recibir actualizaciones completas del estado del bloque a medida que se construye cada Flashblock. Cada mensaje contiene el estado preconfirmado acumulado del bloque en curso.
+
+<Info>
+  Esta suscripción requiere un endpoint RPC compatible con WebSocket. Los endpoints públicos de Base (`mainnet.base.org`, `sepolia.base.org`) solo admiten HTTP. Elige un proveedor de WebSocket compatible con Flashblocks en [Builder Stack](/es/get-started/builder-stack).
+</Info>
+
+<Note>
+  Requiere la versión v0.3.1 o posterior del cliente [base/base](https://github.com/base/base).
+</Note>
+
+<Warning>
+  Cada suscripción emite **un objeto Flashblock por mensaje de WebSocket**. Los eventos llegan aproximadamente cada 200 ms. Si tu controlador realiza un procesamiento intensivo en cada evento, aplícale throttling o debouncing para evitar bloqueos.
+</Warning>
+
+## Parámetros {#parameters}
+
+<ParamField body="subscriptionType" type="string" required>
+  Debe ser `"newFlashblocks"`.
+</ParamField>
+
+## Valor devuelto {#returns}
+
+<ResponseField name="result" type="string">
+  ID de suscripción codificado en hexadecimal. Cada notificación de evento envía un **objeto Flashblock**, no un objeto de bloque estándar. La carga útil contiene `payload_id`, `index`, `diff` y, en el índice 0, `base`. Consulta el [esquema de Infrastructure Stream](/es/base-chain/api-reference/flashblocks-api/flashblocks-api-overview#flashblock-object) para ver la estructura completa.
+</ResponseField>
+
+## Ejemplo {#example}
+
+<CodeGroup>
+  ```json Subscribe
+  {"jsonrpc": "2.0", "id": 1, "method": "eth_subscribe", "params": ["newFlashblocks"]}
+  ```
+
+  ```json Subscription ID Response
+  {"jsonrpc": "2.0", "id": 1, "result": "0x3b8cd9e5f4a7b2c1d0e3f4a5b6c7d8e9"}
+  ```
+
+  ```javascript JavaScript lines wrap expandable
+  import WebSocket from 'ws';
+
+  // Usa el endpoint WSS de un proveedor compatible con Flashblocks (consulta el Builder Stack)
+  const ws = new WebSocket('wss://your-flashblocks-provider.example/ws');
+
+  ws.on('open', () => {
+    ws.send(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'eth_subscribe',
+      params: ['newFlashblocks'],
+      id: 1
+    }));
+  });
+
+  ws.on('message', (data) => {
+    const msg = JSON.parse(data.toString());
+    if (msg.method === 'eth_subscription') {
+      // Se ejecuta cada ~200 ms con el estado más reciente del Flashblock
+      console.log('Flashblock update:', msg.params.result);
+    }
+  });
+  ```
+</CodeGroup>

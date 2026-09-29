@@ -1,0 +1,55 @@
+---
+title: 'debug_traceBlockByNumber'
+sidebarTitle: 'debug_traceBlockByNumber'
+description: 'Devuelve las trazas de ejecución de la EVM de todas las transacciones de un bloque a partir de su número.'
+---
+
+Devuelve las trazas de ejecución de la EVM de todas las transacciones de un bloque identificado por su número.
+
+<Warning>
+  Los métodos de depuración vuelven a ejecutar todas las transacciones del bloque y tienen un alto coste computacional. La disponibilidad varía según el proveedor del [Builder Stack](/es/get-started/builder-stack).
+</Warning>
+
+## Parámetros {#parameters}
+
+<ParamField body="block" type="string" required>
+  Número de bloque en hexadecimal, o bien `"latest"`, `"earliest"`, `"safe"` o `"finalized"`.
+</ParamField>
+
+<ParamField body="tracerConfig" type="object">
+  Configuración opcional del tracer. Consulta las opciones disponibles en [`debug_traceTransaction`](/es/base-chain/api-reference/debug-api/debug_traceTransaction).
+</ParamField>
+
+## Valores devueltos {#returns}
+
+<ResponseField name="result" type="array">
+  Array de objetos de traza, uno por cada transacción del bloque.
+</ResponseField>
+
+## Ejemplo {#example}
+
+<CodeGroup>
+  ```json Request
+  {
+    "jsonrpc": "2.0",
+    "method": "debug_traceBlockByNumber",
+    "params": ["latest", {"tracer": "callTracer"}],
+    "id": 1
+  }
+  ```
+
+  ```json Response lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": [
+      {
+        "result": {
+          "type": "CALL",
+          "gasUsed": "0xab3f"
+        }
+      }
+    ]
+  }
+  ```
+</CodeGroup>

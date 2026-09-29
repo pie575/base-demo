@@ -1,0 +1,337 @@
+---
+title: "派生"
+description: "Ecotone 升级中的派生变更：扩展检索阶段，以支持将 EIP-4844 blob 作为额外的数据可用性来源。"
+---
+
+## Ecotone：Blob 检索 {#ecotone-blob-retrieval}
+
+Ecotone 升级扩展了检索阶段，使其支持一种新增的 DA 来源：
+[EIP-4844] blob。Ecotone 升级之后，我们修改了对 batcher 交易的遍历逻辑，
+对交易类型 == `0x03` (`BLOB_TX_TYPE`) 的交易单独处理。如果 batcher
+交易是 blob 交易，则其 calldata (如有) MUST 被忽略，而是执行以下操作：
+
+* 对于 `blob_versioned_hashes` 中的每个 blob 哈希，检索与之匹配的 blob。blob 可以从
+  多种不同来源检索。推荐通过 `/eth/v1/beacon/blob_sidecars/` 端点从本地 beacon 节点检索，
+  并使用 `indices` 过滤器跳过无关的 blob。对于检索到的每个 blob：
+  * 该 blob SHOULD (如果来源不可信，则 MUST) 根据其版本化哈希进行密码学验证。
+  * 如果该 blob 采用[有效编码](#blob-encoding)，则将其解码为连续字节串，
+    并传递给下一阶段；否则忽略该 blob。
+
+请注意，blob 类型的 batcher 交易必须与其他 batcher 交易在同一循环中处理，
+以确保批次始终按其在区块中出现的顺序处理这一不变量。我们忽略 blob 交易中的 calldata，
+以便将来可将其用于批次元数据或其他用途。
+
+## Blob 编码 {#blob-encoding}
+
+[EIP-4844] 交易中的每个 blob 实际上由 `FIELD_ELEMENTS_PER_BLOB = 4096` 个域元素组成。
+
+每个域元素都是素数域中的一个数，该素数域的模数为
+`BLS_MODULUS = 52435875175126190479447740508185965837690552500527637822603658699938581184513`。
+该数不足以表示完整的 `uint256`：`math.log2(BLS_MODULUS) = 254.8570894...`
+
+[L1 共识规范](https://github.com/ethereum/consensus-specs/blob/master/specs/deneb/polynomial-commitments.md)
+描述了该多项式的编码方式。
+域元素按大端序整数编码 (`KZG_ENDIANNESS = big`) 。
+
+为节省计算开销，每个域元素仅用 `254` 位来承载 rollup 数据。
+
+为实现高效的数据编码，每个元素使用 `254` 位 (相当于 `31.75` 字节) ，
+`4` 个元素合起来即可有效利用 `127` 字节。
+
+每次将 `127` 字节的应用层 rollup 数据编码到 blob 中 4 个相邻的域元素里：
+
+```python Blob Encoding Pseudocode lines wrap expandable
+# read(N)：从应用层 rollup 数据中读取接下来的 N 个字节。每次读取都从上一次结束的位置继续。
+# write(V)：将 V（一个或多个字节）追加到原始 blob 末尾。
+bytes tailA = read(31)
+byte x = read(1)
+byte A = x & 0b0011_1111
+write(A)
+write(tailA)
+
+bytes tailB = read(31)
+byte y = read(1)
+byte B = (y & 0b0000_1111) | (x & 0b1100_0000) >> 2)
+write(B)
+write(tailB)
+
+bytes tailC = read(31)
+byte z = read(1)
+byte C = z & 0b0011_1111
+write(C)
+write(tailC)
+
+bytes tailD = read(31)
+byte D = ((z & 0b1100_0000) >> 2) | ((y & 0b1111_0000) >> 4)
+write(D)
+write(tailD)
+```
+
+每个写入的域元素结构如下：
+
+* 以一个预先准备好的、左侧填充的 6 位字节值开头，确保域元素处于有效范围内。
+* 后接 31 字节的应用层数据，填充域元素的低 31 字节。
+
+写入的输出应如下所示：
+
+```text Blob Element Layout
+<----- element 0 -----><----- element 1 -----><----- element 2 -----><----- element 3 ----->
+| byte A |  tailA...  || byte B |  tailB...  || byte C |  tailC...  || byte D |  tailD...  |
+```
+
+上述过程重复 1024 次，以填满全部 `4096` 个元素，
+总计 `(4 * 31 + 3) * 1024 = 130048` 字节的数据。
+
+解码 blob 时，每个域元素的最高两位必须为 0，
+以确保编码/解码为双射。
+
+rollup-data 的第一个字节 (即第一个域元素的第二个字节) 用作版本字节。
+
+在版本 `0` 中，随后的 3 个字节以大端序 `uint24` 格式编码 rollup-data 的长度。
+长度所界定范围之后的所有尾随数据都必须为 0，以保持编码/解码为双射。
+如果长度大于 `130048 - 4`，则该 blob 无效。
+
+只要编码中有任何部分无效，就必须忽略整个 blob。
+
+[EIP-4844]: https://eips.ethereum.org/EIPS/eip-4844
+
+## 网络升级自动化交易 {#network-upgrade-automation-transactions}
+
+Ecotone 硬分叉激活区块依次包含以下交易：
+
+* L1 属性交易，使用 Ecotone 之前的 `setL1BlockValues`
+* 来自 L1 的用户存款
+* 网络升级交易
+  * 部署 L1Block
+  * 部署 GasPriceOracle
+  * 更新 L1Block 代理的 ERC-1967 实现槽
+  * 更新 GasPriceOracle 代理的 ERC-1967 实现槽
+  * 在 GasPriceOracle 中启用 Ecotone
+  * 部署信标区块根合约 (EIP-4788) 
+
+为避免改变或中断与 gas 计算相关的系统行为，该区块将设置 `noTxPool: true`，
+从而不包含任何经排序器排序的交易。
+
+### L1Block 部署 {#l1block-deployment}
+
+`L1Block` 合约经过升级，用于处理新的 Ecotone L1 数据费参数和 L1 blob 基础费。
+
+派生出一笔具有以下属性的存款交易：
+
+* `from`: `0x4210000000000000000000000000000000000000`
+* `to`: `null`
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `375,000`
+* `data`: `0x60806040523480156100105...`
+* `sourceHash`: `0x877a6077205782ea15a6dc8699fa5ebcec5e0f4389f09cb8eda09488231346f8`，
+  使用 &quot;Upgrade-deposited&quot; 类型计算得出，其中 &#96;intent = &quot;Ecotone: L1 Block Deployment&quot;
+
+该交易会将 Ecotone L1Block 合约部署到 `0x07dbe8500fc591d1852B76feE44d5a05e13097Ff`，可通过以下方式验证：
+
+```bash Terminal
+cast compute-address --nonce=0 0x4210000000000000000000000000000000000000
+Computed Address: 0x07dbe8500fc591d1852B76feE44d5a05e13097Ff
+```
+
+验证 `sourceHash`：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Ecotone: L1 Block Deployment"))
+# 0x877a6077205782ea15a6dc8699fa5ebcec5e0f4389f09cb8eda09488231346f8
+```
+
+验证 `data`：
+
+```bash Terminal
+git checkout 5996d0bc1a4721f2169ba4366a014532f31ea932
+pnpm clean && pnpm install && pnpm build
+jq -r ".bytecode.object" packages/contracts-bedrock/forge-artifacts/L1Block.sol/L1Block.json
+```
+
+此交易 MUST 部署一个代码哈希为以下值的合约：
+`0xc88a313aa75dc4fbf0b6850d9f9ae41e04243b7008cf3eadb29256d4a71c1dfd`。
+
+### GasPriceOracle 部署 {#gaspriceoracle-deployment}
+
+`GasPriceOracle` 合约已升级，以支持新的 Ecotone L1 数据费参数。分叉后，该合约
+将使用 blob 基础费来计算 L1 数据费交易的 gas 价格。
+
+派生出的存款交易具有以下属性：
+
+* `from`: `0x4210000000000000000000000000000000000001`
+* `to`: `null`,
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `1,000,000`
+* `data`: `0x60806040523480156100...`
+* `sourceHash`: `0xa312b4510adf943510f05fcc8f15f86995a5066bd83ce11384688ae20e6ecf42`
+  使用 &quot;Upgrade-deposited&quot; 类型计算，其中 &#96;intent = &quot;Ecotone: Gas Price Oracle Deployment&quot;
+
+由此，Ecotone GasPriceOracle 合约将被部署到 `0xb528D11cC114E026F138fE568744c6D45ce6Da7A`，
+验证方法如下：
+
+```bash Terminal
+cast compute-address --nonce=0 0x4210000000000000000000000000000000000001
+Computed Address: 0xb528D11cC114E026F138fE568744c6D45ce6Da7A
+```
+
+验证 `sourceHash`：
+
+```bash Terminal
+❯ cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Ecotone: Gas Price Oracle Deployment"))
+# 0xa312b4510adf943510f05fcc8f15f86995a5066bd83ce11384688ae20e6ecf42
+```
+
+验证 `data`：
+
+```bash Terminal
+git checkout 5996d0bc1a4721f2169ba4366a014532f31ea932
+pnpm clean && pnpm install && pnpm build
+jq -r ".bytecode.object" packages/contracts-bedrock/forge-artifacts/GasPriceOracle.sol/GasPriceOracle.json
+```
+
+该交易 MUST 部署一个合约，其代码哈希为
+`0x8b71360ea773b4cfaf1ae6d2bd15464a4e1e2e360f786e475f63aeaed8da0ae5`。
+
+### L1Block Proxy 更新 {#l1block-proxy-update}
+
+此交易会更新 L1Block Proxy 的 ERC-1967 实现槽，使其指向新的 L1Block 部署。
+
+派生出的存款交易具有以下属性：
+
+* `from`: `0x0000000000000000000000000000000000000000`
+* `to`: `0x4200000000000000000000000000000000000015` (L1Block Proxy) 
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `50,000`
+* `data`: `0x3659cfe600000000000000000000000007dbe8500fc591d1852b76fee44d5a05e13097ff`
+* `sourceHash`: `0x18acb38c5ff1c238a7460ebc1b421fa49ec4874bdf1e0a530d234104e5e67dbc`
+  使用 &quot;Upgrade-deposited&quot; 类型计算，其中 &#96;intent = &quot;Ecotone: L1 Block Proxy Update&quot;
+
+验证数据：
+
+```bash Terminal
+cast concat-hex $(cast sig "upgradeTo(address)") $(cast abi-encode "upgradeTo(address)" 0x07dbe8500fc591d1852B76feE44d5a05e13097Ff)
+0x3659cfe600000000000000000000000007dbe8500fc591d1852b76fee44d5a05e13097ff
+```
+
+验证 `sourceHash`：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Ecotone: L1 Block Proxy Update"))
+# 0x18acb38c5ff1c238a7460ebc1b421fa49ec4874bdf1e0a530d234104e5e67dbc
+```
+
+### GasPriceOracle Proxy 更新 {#gaspriceoracle-proxy-update}
+
+此交易将 GasPriceOracle Proxy 的 ERC-1967 实现槽更新为指向新的 GasPriceOracle
+部署。
+
+由此派生出一笔具有以下属性的存款交易：
+
+* `from`: `0x0000000000000000000000000000000000000000`
+* `to`: `0x420000000000000000000000000000000000000F` (Gas Price Oracle Proxy) 
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `50,000`
+* `data`: `0x3659cfe6000000000000000000000000b528d11cc114e026f138fe568744c6d45ce6da7a`
+* `sourceHash`: `0xee4f9385eceef498af0be7ec5862229f426dec41c8d42397c7257a5117d9230a`
+  使用 &quot;Upgrade-deposited&quot; 类型计算，其中 `intent = "Ecotone: Gas Price Oracle Proxy Update"`
+
+验证数据：
+
+```bash Terminal
+cast concat-hex $(cast sig "upgradeTo(address)") $(cast abi-encode "upgradeTo(address)" 0xb528D11cC114E026F138fE568744c6D45ce6Da7A)
+0x3659cfe6000000000000000000000000b528d11cc114e026f138fe568744c6d45ce6da7a
+```
+
+验证 `sourceHash`：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Ecotone: Gas Price Oracle Proxy Update"))
+# 0xee4f9385eceef498af0be7ec5862229f426dec41c8d42397c7257a5117d9230a
+```
+
+### GasPriceOracle 启用 Ecotone {#gaspriceoracle-enable-ecotone}
+
+该交易通知 GasPriceOracle 开始使用 Ecotone gas 计算公式。
+
+据此派生出一笔具有以下属性的存款交易：
+
+* `from`: `0xDeaDDEaDDeAdDeAdDEAdDEaddeAddEAdDEAd0001` (Depositer 账户) 
+* `to`: `0x420000000000000000000000000000000000000F` (Gas Price Oracle 代理合约) 
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `80,000`
+* `data`: `0x22b90ab3`
+* `sourceHash`: `0x0c1cb38e99dbc9cbfab3bb80863380b0905290b37eb3d6ab18dc01c1f3e75f93`，
+  按 &quot;Upgrade-deposited&quot; 类型计算，其中 &#96;intent = &quot;Ecotone: Gas Price Oracle Set Ecotone&quot;
+
+验证数据：
+
+```bash Terminal
+cast sig "setEcotone()"
+0x22b90ab3
+```
+
+验证 `sourceHash`：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Ecotone: Gas Price Oracle Set Ecotone"))
+# 0x0c1cb38e99dbc9cbfab3bb80863380b0905290b37eb3d6ab18dc01c1f3e75f93
+```
+
+### 信标区块根 合约部署 (EIP-4788) {#beacon-block-roots-contract-deployment-eip-4788} 
+
+[EIP-4788] 引入了一个&quot;信标区块根&quot;合约，用于处理并对外提供信标区块根 (beacon-block-root) 值，
+其地址为 `BEACON_ROOTS_ADDRESS = 0x000F3df6D732807Ef1319fB7B8bB8522d0Beac02`。
+
+对于部署，[EIP-4788] 定义了一笔 [EIP-155] 之前的传统交易。该交易由一个经特殊推导的密钥发出，使得
+交易签名的有效性与消息哈希绑定，而消息哈希又与包含初始化代码 (init-code) 的输入数据绑定。
+
+然而，这类交易需要手动部署并支付 gas。
+由于该处理是链处理中不可或缺的一环，且必须在 Base 上重复执行，
+因此这里采用了不同的部署方式。
+
+某些链上可能已存在由用户提交的 [EIP-4788] 交易实例。
+其正确性由密码学保证，但这可能导致升级交易
+使用下一个 nonce 部署第二个合约。该部署的结果可以忽略。
+
+派生出的 Deposit 交易具有以下属性：
+
+* `from`：`0x0B799C86a49DEeb90402691F1041aa3AF2d3C875`，与 EIP 中的规定一致。
+* `to`：null
+* `mint`：`0`
+* `value`：`0`
+* `gasLimit`：`0x3d090`，与 EIP 中的规定一致。
+* `isCreation`：`true`
+* `data`：
+  `0x60618060095f395ff33373fffffffffffffffffffffffffffffffffffffffe14604d57602036146024575f5ffd5b5f35801560495762001fff810690815414603c575f5ffd5b62001fff01545f5260205ff35b5f5ffd5b62001fff42064281555f359062001fff015500`
+* `isSystemTx`：`false`，即便是系统生成的交易也会消耗 gas。
+* `sourceHash`：`0x69b763c48478b9dc2f65ada09b3d92133ec592ea715ec65ad6e7f3dc519dc00c`，
+  使用&quot;Upgrade-deposited&quot;类型计算，其中 `intent = "Ecotone: beacon block roots contract deployment"`
+
+部署后的合约地址按 `rlp([sender, nonce])` 计算，结果为：
+
+* 若正常部署，则为 `BEACON_ROOTS_ADDRESS`
+* 若 `nonce = 1`，则为另一个地址 (`0xE3aE1Ae551eeEda337c0BfF6C4c7cbA98dce353B`) ：
+  即用户在升级前已提交过该 EIP 交易的情况。
+
+验证 `BEACON_ROOTS_ADDRESS`：
+
+```bash Terminal
+cast compute-address --nonce=0 0x0B799C86a49DEeb90402691F1041aa3AF2d3C875
+# 计算出的地址： 0x000F3df6D732807Ef1319fB7B8bB8522d0Beac02
+```
+
+验证 `sourceHash`：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Ecotone: beacon block roots contract deployment"))
+# 0x69b763c48478b9dc2f65ada09b3d92133ec592ea715ec65ad6e7f3dc519dc00c
+```
+
+[EIP-4788]: https://eips.ethereum.org/EIPS/eip-4788
+
+[EIP-155]: https://eips.ethereum.org/EIPS/eip-155

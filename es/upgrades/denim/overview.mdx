@@ -1,0 +1,31 @@
+---
+title: "Descripción general"
+description: "Denim introduce bloques nativos cada 200 ms, tiempo onchain con precisión de milisegundos mediante BaseTime y marcas de tiempo RPC con resolución de milisegundos."
+---
+
+|         | Estado           | Fecha           |
+| ------- | ---------------- | --------------- |
+| Sepolia | En planificación | Octubre de 2026 |
+| Mainnet | En planificación | Octubre de 2026 |
+
+## Características {#features}
+
+<AccordionGroup>
+  <Accordion title="Bloques nativos de 200 ms">
+    **Base** · RPC
+
+    Denim hace que la producción de bloques de Base pase de un bloque canónico cada dos segundos a cinco bloques canónicos completos por segundo, cada uno con su propio hash, raíz de estado, recibos y ciclo de vida de forkchoice. Denim reemplaza a Flashblocks, por lo que las aplicaciones que usan Flashblocks deben migrar a los flujos de bloques canónicos y de RPC. Consulta [Bloques nativos de 200 ms](/es/upgrades/denim/200ms-blocks) y [Migrar desde Flashblocks](/es/upgrades/denim/migrate-from-flashblocks).
+  </Accordion>
+
+  <Accordion title="BaseTime">
+    **Base** · Predeploy
+
+    Denim incorpora tiempo onchain con precisión de milisegundos mediante el predeploy BaseTime. Un depósito de metadatos de BaseTime aporta la fracción de segundo de la marca de tiempo de cada bloque, lo que permite a los contratos leer la parte en milisegundos del bloque actual, mientras que `block.timestamp` de la EVM se sigue expresando en segundos.
+  </Accordion>
+
+  <Accordion title="Marcas de tiempo de RPC en milisegundos">
+    **Base** · RPC
+
+    Las respuestas de bloques, encabezados, transacciones, logs y recibos incorporan campos opcionales de marca de tiempo con resolución de milisegundos (`timestampMs`, `blockTimestampMs`), derivados de los metadatos autenticados de BaseTime. El campo `timestamp` existente, expresado en segundos, se mantiene sin cambios para garantizar la compatibilidad con versiones anteriores.
+  </Accordion>
+</AccordionGroup>

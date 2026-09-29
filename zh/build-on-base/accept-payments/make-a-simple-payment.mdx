@@ -1,0 +1,59 @@
+---
+title: "发起简单支付"
+keywords: ["在 Base 上发送 USDC", "USDC 转账", "Base 简单支付", "ERC-20 转账"]
+description: "在 Base 上将 USDC 从一个钱包直接转账到另一个钱包。"
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+通过标准的 ERC-20 转账，将 USDC 从一个钱包直接发送到另一个钱包。发送方提交交易并支付网络费用；交易确认后，USDC 即归接收方控制。
+
+## 演示 {#demo}
+
+<PaymentsDemo flow="simple" />
+
+<Tip>
+  以上演示仅为模拟效果。如需查看 Vibenet 上的链上演示，请前往 [Base 链演示](https://chain.base.org/demos)。
+</Tip>
+
+## 发送 USDC {#send-usdc}
+
+填写收款地址和金额，先模拟调用，再从发送方钱包提交交易。本示例使用 Base Sepolia 上的 USDC。
+
+{/* sample: simple-usdc-transfer-ts */}
+
+```typescript TypeScript lines wrap expandable highlight={6,10-11}
+export async function makeSimplePayment(recipient: Address, amount: string) {
+  const simulation = await publicClient.simulateContract({
+    account,
+    address: USDC,
+    abi: usdcAbi,
+    functionName: "transfer",
+    args: [recipient, parseUnits(amount, 6)],
+  });
+  const hash = await walletClient.writeContract(simulation.request);
+  const receipt = await publicClient.waitForTransactionReceipt({ hash, confirmations: 2 });
+  if (receipt.status !== "success") throw new Error("USDC transfer reverted");
+  return hash;
+}
+```
+
+<Check>
+  请先确认交易回执状态为成功，且其中的 USDC `Transfer` 事件与预期的发送方、接收方和金额一致，再将该笔付款视为已完成。
+</Check>
+
+<Warning>
+  签名前请核实网络和接收方地址。直接进行的 USDC 转账不提供托管、授权或由协议管理的退款流程。
+</Warning>
+
+## 另请参阅 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="发起收款请求" icon="money-bill-transfer" href="/zh/build-on-base/accept-payments/request-a-payment">
+    添加付款条款、结算验证和退款核算。
+  </Card>
+
+  <Card title="验证付款" icon="shield-check" href="/zh/build-on-base/accept-payments/verify-a-payment">
+    在履约前验证 Commerce Payments Protocol 的结算结果。
+  </Card>
+</CardGroup>

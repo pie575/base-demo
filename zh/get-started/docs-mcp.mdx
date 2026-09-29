@@ -1,0 +1,65 @@
+---
+title: MCP 服务器
+sidebarTitle: MCP 服务器
+description: 通过 Model Context Protocol 将你的 AI 编程助手连接到 Base 文档，实现实时访问。
+---
+
+[Model Context Protocol (MCP)](https://modelcontextprotocol.io/) 是一项开放标准，可让 AI 助手安全地访问外部数据源。Base MCP 服务器可将你的 AI 编程助手直接连接到我们的文档，使其能够实时搜索和获取你所需的确切信息。
+
+## 在 Cursor 中配置 {#setup-with-cursor}
+
+[Cursor](https://cursor.com/) 是一款 AI 驱动的代码编辑器，基于 VS Code 的分叉版本构建，提供 AI 代码补全、自然语言编辑等功能。
+
+<Steps>
+  <Step title="打开 MCP 设置">
+    在 Cursor 中打开 **Settings**，进入 **Tools &amp; MCP**，然后点击 **Add MCP Server**。
+  </Step>
+
+  <Step title="添加 Base 文档服务器">
+    在 `mcp.json` 配置文件中添加以下内容：
+
+    ```json mcp.json
+    {
+      "mcpServers": {
+        "base-docs": {
+          "url": "https://docs.base.org/mcp"
+        }
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="保存并重启">
+    保存文件并重启 Cursor，使更改生效。
+  </Step>
+
+  <Step title="开始构建">
+    现在，你的 AI 助手已经可以实时访问 Base 文档了。不妨试着问它：“How do I deploy a 智能合约 on Base?”
+  </Step>
+</Steps>
+
+## 在 Claude Code 中设置 {#setup-with-claude-code}
+
+[Claude Code](https://docs.claude.com/en/docs/claude-code/overview) 是一款运行在终端中的智能体编程工具，能够理解你的代码库。
+
+<Steps>
+  <Step title="添加 Base 文档 MCP 服务器">
+    在终端中运行以下命令：
+
+    ```bash Terminal
+    claude mcp add --transport http base-docs https://docs.base.org/mcp
+    ```
+  </Step>
+
+  <Step title="验证安装">
+    检查服务器是否已成功添加：
+
+    ```bash Terminal
+    claude mcp list
+    ```
+  </Step>
+
+  <Step title="开始构建">
+    启动 Claude Code 并开始提问。例如，可以试着问：“如何在 Base 上部署智能合约？”
+  </Step>
+</Steps>

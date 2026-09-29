@@ -1,0 +1,823 @@
+---
+title: "用語集"
+description: "Base Chain プロトコル仕様全体で使用される用語とその定義をまとめた一覧です。"
+---
+
+## 一般条項 {#general-terms}
+
+### レイヤー1 (L1) {#layer-1-l1}
+
+[L1]: glossary#layer-1-L1
+
+Ethereum ブロックチェーンを指します。Base を指す[レイヤー2][L2]と対比して使われる用語です。
+
+### レイヤー2 (L2) {#layer-2-l2}
+
+[L2]: glossary#layer-2-L2
+
+Base Chain (本リポジトリで仕様を規定) を指し、Ethereum ブロックチェーンを指す [レイヤー 1][L1] と対比して用いられます。
+
+### ブロック {#block}
+
+[block]: glossary#block
+
+[L1] ブロックと [L2] ブロックのどちらを指す場合もあり、両者は同様の構造を持ちます。
+
+ブロックとは、トランザクションを順に並べたリストと、ブロックの *ヘッダー* に格納されるいくつかのプロパティで構成されるものです。これらのプロパティの
+説明は、[こちら][nano-header]のコードコメント、または [Ethereum イエローペーパー
+(pdf)][yellow] のセクション 4.3 を参照してください。
+
+ブロックのプロパティは、ブロック内のトランザクションを実行する前にわかっている入力プロパティと、トランザクションの実行後に導出される
+出力プロパティに分けて考えると便利です。出力プロパティには、さまざまな [Merkle Patricia Trie のルート][mpt]が含まれ、中でも
+L2 の状態と、実行中に発行されたログイベントへのコミットメントとして機能するものが重要です。
+
+### EOA {#eoa}
+
+[EOA]: glossary#EOA
+
+「Externally Owned Account」 (外部所有アカウント) の略です。コントラクトアドレスと対比して、ユーザーが操作するアドレスを指す Ethereum の用語です。
+
+### Merkle Patricia Trie {#merkle-patricia-trie}
+
+[mpt]: glossary#merkle-patricia-trie
+
+[Merkle Patricia Trie (MPT)][mpt-details] は疎なトライ、つまりキーを値にマッピングする木構造のデータ構造です。
+MPT のルートハッシュはツリーの内容に対するコミットメントであり、これを用いることで、ツリー内にエンコードされた任意のキーと値のマッピングについて
+証明を構築できます。このような証明は Merkle 証明と呼ばれ、
+Merkle ルートと照合して検証できます。
+
+### チェーンのリオルグ {#chain-re-organization}
+
+[reorg]: glossary#chain-re-organization
+
+リオルグ (re-organization、略して re-org) とは、ブロックチェーンのヘッド (最新のブロック) が、 ([フォーク選択ルール][fork-choice-rule]に従って)
+直前のヘッドの子ではないブロックに切り替わることを指します。
+
+L1 のリオルグは、ネットワークの状況や攻撃によって発生する可能性があります。L2 のリオルグは L1 のリオルグに起因して発生し、
+[L2 チェーンの導出][derivation]を通じて L2 に波及します。
+
+### 事前デプロイ済みコントラクト (「Predeploy」) {#predeployed-contract-predeploy}
+
+[predeploy]: glossary#predeployed-contract-predeploy
+
+L2 のジェネシス状態 (つまりチェーンの開始時点) に配置されるコントラクトです。
+
+すべての predeploy コントラクトは、[predeploys 仕様](/ja/specifications/base-protocol/execution/predeploys)で定義されています。
+
+### プリインストールコントラクト (「Preinstall」) {#preinstalled-contract-preinstall}
+
+[preinstall]: glossary#preinstalled-contract-preinstall
+
+L2 のジェネシス状態 (つまりチェーンの開始時点) に配置されるコントラクトです。これらのコントラクトは
+[プリデプロイ](#predeployed-contract-predeploy)と同等のセキュリティ保証を備えていませんが、L2 の UX を向上させるために
+提供される汎用コントラクトです。
+
+すべてのプリインストールコントラクトは、[プリインストール仕様](/ja/specifications/base-protocol/execution/preinstalls)で定義されています。
+
+### プリコンパイル済みコントラクト (「プリコンパイル」) {#precompiled-contract-precompile}
+
+[precompile]: glossary#precompiled-contract-precompile
+
+EVM にネイティブ実装されたコントラクトで、特定の処理をバイトコード (Solidity など) による実装よりも効率的に実行します。プリコンパイルはあらかじめ定められたアドレスに存在し、ネットワークアップグレードによって作成・変更されます。
+
+すべてのプリコンパイルコントラクトは、[プリコンパイル仕様](/ja/specifications/base-protocol/execution/precompiles)で定義されています。
+
+### Receipt {#receipt}
+
+[receipt]: glossary#receipt
+
+レシートとは、トランザクションによって生成される出力であり、ステータスコード、使用されたガス量、ログエントリのリスト、およびこれらのエントリをインデックス化する[ブルームフィルター][bloom filter]で構成されます。ログエントリの代表的な用途は、[Solidity イベント][Solidity events]のエンコードです。
+
+レシート自体はブロックに格納されません。その代わり、ブロックには、ブロック内の全トランザクションのレシートを含むツリーの[Merkle Patricia Trie ルート][mpt]が格納されます。
+
+レシートの仕様は、[イエローペーパー (pdf)][yellow]のセクション 4.3.1 に記載されています。
+
+### トランザクションタイプ {#transaction-type}
+
+[transaction-type]: glossary#transaction-type
+
+Ethereum には、複数のトランザクションタイプを定義するための仕組みがあります ([EIP-2718] を参照) 。
+トランザクションタイプごとに異なるペイロードを持たせることができ、プロトコル側での処理方法も変えることができます。
+
+[EIP-2718]: https://eips.ethereum.org/EIPS/eip-2718
+
+### フォーク選択ルール {#fork-choice-rule}
+
+[fork-choice-rule]: glossary#fork-choice-rule
+
+フォーク選択ルールとは、どのブロックをブロックチェーンのヘッドとみなすかを決定するためのルールです。L1 では、
+プルーフ・オブ・ステークのルールによって決定されます。
+
+L2 にもフォーク選択ルールがありますが、[safe L2 ヘッド][safe-l2-head]、
+[unsafe L2 ヘッド][unsafe-l2-head]、[finalized L2 ヘッド][finalized-l2-head]のどれを求めるかによってルールが異なります。
+
+### Priority Gas Auction {#priority-gas-auction}
+
+Ethereum のトランザクションは、マイナーに支払う価格に基づいて順序付けされます。Priority Gas Auction
+(PGA) は、複数の参加者がブロック内の最初のトランザクションの座を争うときに発生します。各参加者は、自身のトランザクションの
+ガス価格を絶えず引き上げ続けます。PGA は、他の参加者より先にトランザクションを送信することに価値がある場合 (最初のデポジットになりたい場合や、
+保証されたガスがなくなる前にデポジットを送信したい場合など) に発生します。
+PGA では、ごく短時間に大量のトランザクションが送信されるため、ネットワークに負の外部性をもたらす
+傾向があります。
+
+## シーケンシング {#sequencing}
+
+[sequencing]: glossary#sequencing
+
+ロールアップにトランザクションを含める方法は、次の2つです。
+
+* システムによって強制される[デポジットトランザクション](#deposited-transaction)として含める
+* [シーケンサーバッチ](#sequencer-batch)に埋め込まれた通常のトランザクションとして含める
+
+トランザクションをバッチに含めるよう送信すると、オーバーヘッドが減ってコストを抑えられるうえ、L1がデータを確定する前に、シーケンサーが
+トランザクションを事前確認 (pre-confirm) できるようになります。
+
+### シーケンサー {#sequencer}
+
+[sequencer]: glossary#sequencer
+
+シーケンサーとは、シーケンサーモードで動作する[ロールアップノード][rollup-node]、またはそのロールアップノードのオペレーターを指します。
+
+シーケンサーは特権的なアクターであり、L2 ユーザーから L2 トランザクションを受け取り、それらをもとに L2 ブロックを作成して、 ([バッチャー][batcher]を介して) [データ可用性プロバイダー][avail-provider]に提出します。
+また、[アウトプットルート][l2-output]を L1 に提出する役割も担います。
+
+### シーケンシングウィンドウ {#sequencing-window}
+
+[sequencing-window]: glossary#sequencing-window
+
+シーケンシングウィンドウとは、[シーケンシングエポック][sequencing-epoch]の導出元となる L1 ブロックの範囲です。
+
+最初の L1 ブロックの番号が `N` であるシーケンシングウィンドウには、エポック
+`N` の[バッチャートランザクション][batcher-transaction]が含まれます。ウィンドウはブロック `[N, N + SWS)` で構成されます (`SWS` はシーケンサーウィンドウサイズ) 。
+
+現在の `sws` のデフォルト値は 3600 エポックです。
+
+また、ウィンドウの最初のブロックによって[デポジットトランザクション][depositing-tx]が定まり、これによってエポックの最初の L2 ブロックに含める
+[デポジット][deposits]が決まります。
+
+### シーケンシングエポック {#sequencing-epoch}
+
+[sequencing-epoch]: glossary#sequencing-epoch
+
+シーケンシングエポックとは、L1 ブロックの[シーケンシングウィンドウ](#sequencing-window)から導出される、連続した一連の L2 ブロックです。
+
+各エポックはエポック番号で識別されます。エポック番号は、
+シーケンシングウィンドウ内の最初の L1 ブロックのブロック番号と同じです。
+
+エポックのサイズは、一定の制約のもとで可変です。詳細については、[L2 チェーン導出仕様][derivation-spec]
+を参照してください。
+
+### L1 Origin {#l1-origin}
+
+[l1-origin]: glossary#l1-origin
+
+L2ブロックのL1 originとは、そのブロックの[シーケンシングエポック][sequencing-epoch]に対応するL1ブロックを指します。
+
+## デポジット {#deposits}
+
+[deposits]: glossary#deposits
+
+一般に、デポジットとは、 ([rollup driver] によって) L1 ブロックから導出される L2 トランザクションを指します。
+
+デポジットトランザクションは、主に (ただしそれに限らず) ETH やトークンを L2 に「デポジット」 (ブリッジ) するために使用されますが、
+*デポジット* という語は「L1 から L2 へ *デポジットされた* トランザクション」という意味で理解してください。
+
+これらの「トランザクション」は複数のレベルに存在するため、*デポジット* という用語にはやや曖昧さがあります。このセクションでは、
+デポジットに関連する用語をすべて整理して区別します。
+
+具体的には、*デポジット* は次のいずれかを指す場合があります。
+
+* デポジットブロックに含まれる (L2 上の) [デポジットトランザクション][deposited]。
+* [デポジットトランザクション][deposited]の導出を引き起こす[デポジット呼び出し][depositing-call]。
+* [デポジット呼び出し][depositing-call]によって生成されるイベント/ログデータ。[rollup driver] はこれを読み取って
+  [デポジットトランザクション][deposited]を導出します。
+
+また、*ユーザーデポジット* という用語を使うこともあります。これは類似の用語ですが、[L1 属性デポジット済み
+トランザクション][l1-attr-deposit]を明示的に除外したものです。
+
+デポジットの詳細は[デポジット仕様][deposits-spec]で規定されています。
+
+### デポジットトランザクション {#deposited-transaction}
+
+[deposited]: glossary#deposited-transaction
+
+*デポジットトランザクション* とは、L1 から導出され、L2 ブロックに含められた L2 トランザクションのことです。
+
+デポジットトランザクションには次の 2 種類があります。
+
+* [L1 属性デポジットトランザクション][l1-attr-deposit]：L1 ブロックの属性を [L1 属性事前デプロイ済みコントラクト][l1-attr-predeploy]に送信するトランザクションです。
+* [ユーザーデポジットトランザクション][user-deposited]：[デポジットコントラクト][deposit-contract]に対する L1 上の呼び出しから導出されるトランザクションです。
+
+### L1 属性デポジットトランザクション {#l1-attributes-deposited-transaction}
+
+[l1-attr-deposit]: glossary#l1-attributes-deposited-transaction
+
+*L1 属性デポジットトランザクション* とは、[L1 属性事前デプロイ済みコントラクト][l1-attr-predeploy]を呼び出して、L1 ブロックの
+属性 (ブロック番号、タイムスタンプなど) を L2 上に登録するための[デポジットトランザクション][deposited]です。
+このコントラクトを利用すると、現在の L2 ブロックに対応する L1 ブロックの属性を読み取れます。
+
+L1 属性デポジットトランザクションの詳細は、デポジット仕様の [L1 属性デポジット][l1-attributes-tx-spec]セクションで
+規定されています。
+
+[l1-attributes-tx-spec]: /specifications/base-protocol/bridging/deposits#l1-attributes-deposited-transaction
+
+### ユーザーデポジットトランザクション {#user-deposited-transaction}
+
+[user-deposited]: glossary#user-deposited-transaction
+
+*ユーザーデポジットトランザクション*とは、[デポジットコントラクト][deposit-contract]へのL1呼び出し ([デポジット呼び出し][depositing-call]) から導出される[デポジットトランザクション][deposited]のことです。
+
+ユーザーデポジットトランザクションの仕様は、デポジット仕様の[トランザクションデポジット][tx-deposits-spec]セクションに記載されています。
+
+[tx-deposits-spec]: /specifications/base-protocol/bridging/deposits#user-deposited-transactions
+
+### Depositing Call (デポジット呼び出し) {#depositing-call}
+
+[depositing-call]: glossary#depositing-call
+
+*デポジット呼び出し* (デポジット呼び出し) とは、[デポジットコントラクト][deposit-contract]に対する L1 コールのことで、[rollup driver] によって
+[ユーザーデポジットトランザクション][user-deposited]として導出されます。
+
+このコールでは、デポジットトランザクションに必要なすべてのデータ (宛先、value、calldata など) を指定します。
+
+### デポジットトランザクション {#depositing-transaction}
+
+[depositing-tx]: glossary#depositing-transaction
+
+*デポジットトランザクション* (depositing transaction) とは、1つ以上の[デポジット呼び出し][depositing-call]を実行する L1 トランザクションです。
+
+### Depositor {#depositor}
+
+[depositor]: glossary#depositor
+
+*depositor* (デポジター) とは、[デポジット呼び出し][depositing-call]を行う (つまりその `msg.sender` である) L1 アカウント (コントラクトまたは [EOA]) を指します。*depositor* は、デポジットトランザクションの発信元 (すなわち `tx.origin`) では**ありません**。
+
+### Deposited Transaction Type {#deposited-transaction-type}
+
+[deposit-tx-type]: glossary#deposited-transaction-type
+
+*デポジットトランザクションタイプ* (deposited transaction type) は [EIP-2718] の[トランザクションタイプ][transaction-type]の一つで、[デポジットトランザクション][deposited]の入力フィールドと正しい処理方法を規定します。
+
+詳細については、デポジット仕様の[該当セクション][spec-deposit-tx-type]を参照してください。
+
+[spec-deposit-tx-type]: /specifications/base-protocol/bridging/deposits#the-deposited-transaction-type
+
+### デポジットコントラクト {#deposit-contract}
+
+[deposit-contract]: glossary#deposit-contract
+
+*デポジットコントラクト* とは、[EOA][EOA] やコントラクトが [デポジット][deposits] を送信できる [L1] 上のコントラクトです。デポジットは、[ロールアップノード][rollup-node] が取り込めるよう、
+ログレコード (Solidity では *イベント* と呼ばれます) として発行されます。
+
+発展的な補足：デポジットは calldata には保存されません。デポジットはコントラクトから送信される場合があり、その場合の calldata
+はコントラクト間の *内部* 実行の一部となります。こうした中間的な calldata は、L1 ブロックに含まれるどの
+[Merkle Patricia Trie ルート][mpt] にも記録されないためです。
+
+参照：[デポジット仕様][deposits-spec]
+
+## 出金 {#withdrawals}
+
+[withdrawals]: glossary#withdrawals
+
+一般に、出金とは L2 から L1 へ送信されるトランザクションであり、データと価値のいずれか、またはその両方を転送できます。
+
+これらの「トランザクション」は複数のレベルに存在するため、*出金* という用語はやや曖昧です。出金の L1 側と L2 側の構成要素を区別するため、
+以下の用語を導入します。
+
+* *出金開始トランザクション* は、L2 上で Withdrawals predeploy に送信されるトランザクションを特に指します。
+* *出金確定トランザクション* は、出金を確定してリレーする L1 トランザクションを特に
+  指します。
+
+### リレイヤー {#relayer}
+
+[relayer]: glossary#relayer
+
+L2に含まれていることを検証するために必要なデータを送信し、出金を確定させるL1上のEOA。
+
+### ファイナライゼーション期間 {#finalization-period}
+
+[finalization-period]: glossary#finalization-period
+
+ファイナライゼーション期間 (*出金遅延* とも呼ばれます) とは、[出金][withdrawals]をファイナライズできるようになるまでに
+経過しなければならない最小時間 (秒単位) です。
+
+ファイナライゼーション期間は、[バリデーター][validator]が[フォルトプルーフ][fault-proof]を作成するのに十分な時間を確保するために必要です。
+
+## 設定 {#configuration}
+
+### Batch Inbox {#batch-inbox}
+
+[batch-inbox]: glossary#batch-inbox
+
+**Batch Inbox** は、シーケンサーのトランザクションバッチの公開先となるアドレスです。シーケンサーは、
+バッチ化された L2 トランザクションを calldata または blobdata として含むトランザクションを作成し、その `to` アドレスに
+Batch Inbox を指定することで、Batch Inbox にトランザクションを公開します。
+
+### バッチャーハッシュ {#batcher-hash}
+
+[batcher-hash]: glossary#batcher-hash
+
+**バッチャーハッシュ (Batcher Hash)&#x20;**&#x20;は、特定の Base チェーンにおいて、L2 クライアントが [Batch Inbox](#batch-inbox) 宛てのトランザクションを有効なものとして認識する送信者を識別します。
+
+バッチャーハッシュは、ハッシュの先頭バイトによってバージョン管理されます。V0 バッチャーハッシュは 32 バイトのハッシュで、次の構造で定義されます。
+
+| 1 バイト        | 11 バイト | 20 バイト |
+| ------------ | ------ | ------ |
+| バージョン (0x00) | 空      | アドレス   |
+
+これは次のように表すこともできます。
+
+```solidity Batcher Hash
+bytes32(address(batcher))
+```
+
+ここで `batcher` は、Batch Inbox にトランザクションを送信するアカウントのアドレスです。簡単に
+言えば、V0 ハッシュは、L2 クライアントがトランザクションバッチを認識する対象となる*単一の*アドレスを特定するものです。
+このハッシュにはバージョンが付与されているため、たとえば許可されたアカウントのリストに対するコミットメントや、
+その他の形式のバッチャー識別手段として転用することもできます。
+
+### Fee Scalars {#fee-scalars}
+
+[fee-scalars]: glossary#fee-scalars
+
+**Fee Scalars**は、L2トランザクションのL1データ手数料を算出するために使用されるパラメータです。これらの
+パラメータは、Gas Price Oracle (GPO) パラメータとも呼ばれます。
+
+#### Ecotone 以前のパラメータ {#pre-ecotone-parameters}
+
+Ecotone アップグレード以前は、以下のパラメータが含まれます。
+
+* **Scalar**：L1 のベースフィーに掛ける乗数。ビッグエンディアンの `uint256` として解釈されます
+* **Overhead**：固定のガスオーバーヘッド。ビッグエンディアンの `uint256` として解釈されます
+
+#### Ecotone以降のパラメータ {#post-ecotone-parameters}
+
+Ecotoneアップグレード以降は、次のようになります。
+
+* **Scalar**属性は、バージョン管理されたエンコード方式で追加のスカラー情報をエンコードします
+* **Overhead**の値は無視され、L2の状態遷移の出力には影響しません
+
+#### Ecotone 以降のスカラーのエンコーディング {#post-ecotone-scalar-encoding}
+
+Scalar はビッグエンディアンの `uint256` としてエンコードされ、`bytes32` として解釈されます。構成は次のとおりです。
+
+* バイト `0`：スカラーバージョンバイト
+* バイト `[1, 32)`：スカラーバージョンに応じて以下のとおり
+  * スカラーバージョン `0`：
+    * バイト `[1, 28)`：パディング。ゼロであるべき (should)
+    * バイト `[28, 32)`：ビッグエンディアンの `uint32`。L1 手数料の `baseFeeScalar` をエンコードする
+    * このバージョンでは、L1 手数料の `blobBaseFeeScalar` は 0 に設定されているものとみなされる
+    * パディング領域にゼロ以外のバイトが含まれる場合、`baseFeeScalar` は MaxUint32 に設定されなければならない (must)
+  * スカラーバージョン `1`：
+    * バイト `[1, 24)`：パディング。ゼロでなければならない (must)
+    * バイト `[24, 28)`：ビッグエンディアンの `uint32`。`blobBaseFeeScalar` をエンコードする
+    * バイト `[28, 32)`：ビッグエンディアンの `uint32`。`baseFeeScalar` をエンコードする
+
+`baseFeeScalar` は、バッチサブミッターのデータトランザクションが消費する通常の L1 EVM ガスの総使用量のうち、
+ユーザートランザクションが (1 バイトあたりで) 占める割合に相当します。blob
+トランザクションの場合、これは L1 トランザクションの固定の固有ガスコストを表します。
+
+`blobBaseFeeScalar` は、バッチサブミッターのデータトランザクションによって追加される blobdata の総量のうち、
+ユーザートランザクションが (1 バイトあたりで) 占める割合に相当します。
+
+### Unsafe Block Signer {#unsafe-block-signer}
+
+[unsafe-block-signer]: glossary#unsafe-block-signer
+
+**Unsafe Block Signer** は Ethereum アドレスであり、これに対応する秘密鍵は、「unsafe」ブロックを L1 に公開する前に署名するために使用されます。この署名によって、P2P ネットワーク内のノードはこれらのブロックを正規の unsafe ブロックとして認識できるため、P2P レイヤーに対するサービス拒否攻撃を防止できます。
+
+ストレージレイアウトに依存せず、ストレージ証明によって値を取得できるようにするため、この値は
+`keccak256("systemconfig.unsafeblocksigner")` に対応する特別なストレージスロットに格納されます。
+
+他のシステム設定パラメータとは異なり、Unsafe Block Signer はブロックチェーンのポリシーにのみ関わるものであり、コンセンサスレベルのパラメータではありません。
+
+### L2 Gas Limit {#l2-gas-limit}
+
+[l2-gas-limit]: glossary#l2-gas-limit
+
+**L2 Gas Limit** は、1 つの L2 ブロックで使用できるガスの最大量を定めます。
+このパラメータにより、L2 ブロックのサイズは処理および証明が可能な妥当な範囲に保たれます。
+
+L2 ガスリミットの変更は、その変更を導入した L1 origin を持つ最初の L2 ブロックから
+完全に適用されます。
+
+ガスリミットを
+[最大ガスリミット](/ja/specifications/base-protocol/consensus/derivation#system-configuration)より大きな値に設定することはできません。これは、L2 ブロックを証明可能にし、コンセンサスソフトウェアおよび実行ソフトウェアで確実に処理できるようにするためです。
+
+## バッチ送信 {#batch-submission}
+
+[batch-submission]: glossary#batch-submission
+
+### データ可用性 {#data-availability}
+
+[data-availability]: glossary#data-availability
+
+データ可用性とは、あるデータが十分に長い期間にわたって「利用可能」 (すなわち *取得可能*) であることの保証です。Base の場合、対象となるデータは [シーケンサーバッチ][sequencer-batch] です。[バリデーター][validator] は、シーケンサーの処理を検証して L2 チェーンの正当性を確認するために、このデータを必要とします。
+
+[ファイナライゼーション期間][finalization-period] は、可用性ウィンドウの下限とみなすべきです。この期間は [フォールトプルーフ][fault-proof] の実行にデータが必要となるため、データ可用性が最も重要になるからです。
+
+「可用性」は、データが長期にわたって保存されることを保証するもの**ではありません**。
+
+### データ可用性プロバイダー {#data-availability-provider}
+
+[avail-provider]: glossary#data-availability-provider
+
+データ可用性プロバイダーとは、データを利用可能な状態にするために使用できるサービスです。これが何を意味するかについて詳しくは、[データ
+可用性][data-availability]を参照してください。
+
+理想的なデータ可用性プロバイダーは、データ可用性について強力かつ *検証可能な* 保証を提供します
+
+現在サポートされているデータ可用性プロバイダーは、Ethereum の calldata と blob データです。
+
+### シーケンサーバッチ {#sequencer-batch}
+
+[sequencer-batch]: glossary#sequencer-batch
+
+シーケンサーバッチとは、 (シーケンサーに送信された) L2 トランザクションのリストに、[エポック番号](#sequencing-epoch)と L2 ブロックのタイムスタンプを付与したものです (ブロック時間は一定であるため、タイムスタンプは容易にブロック番号へ変換できます) 。
+
+シーケンサーバッチは [L2 導出入力][deriv-inputs]の一部です。各バッチは、 (既存の L2 チェーン状態を前提として) L2 ブロックを **1 つ**構築するために必要な入力を表します。ただし、各エポックの最初のブロックは例外で、デポジットに関する情報も必要になります ([L2 導出入力][deriv-inputs]のセクションを参照) 。
+
+### チャネル {#channel}
+
+[channel]: glossary#channel
+
+チャネルとは、 (連続するブロックの) [シーケンサーバッチ][sequencer-batch]の列をまとめて圧縮したものです。複数のバッチを
+まとめる理由は単純で、圧縮率を高めてデータ可用性の
+コストを削減するためです。
+
+チャネルは、[バッチャー
+トランザクション][batcher-transaction]で送信するために[フレーム][channel-frame]に分割できます。チャネルをフレームに分割するのは、チャネルが大きすぎて
+1 つのバッチャートランザクションに収まらない場合があるためです。
+
+チャネルは、タイムスタンプ (チャネルが作成された UNIX 時刻) とランダムな値によって一意に識別されます。詳細については、
+L2 チェーン導出仕様の[フレームフォーマット][frame-format]セクションを参照してください。
+
+[frame-format]: /specifications/base-protocol/consensus/derivation#frame-format
+
+(チャネルを消費する) [ロールアップノード][rollup-node]側では、最終フレーム (明示的に最終フレームとしてマークされたもの) がまだ読み取られていないチャネルは
+*オープン* 状態、読み取られたチャネルはクローズ状態とみなされます。
+
+### Channel Frame {#channel-frame}
+
+[channel-frame]: glossary#channel-frame
+
+チャネルフレームとは、[チャネル][channel]を構成するデータの一部分です。[バッチャートランザクション][batcher-transaction]には、1つまたは
+複数のフレームが含まれます。チャネルをフレームに分割するのは、チャネルが大きすぎて1つの
+バッチャートランザクションに収まらない場合があるためです。
+
+### バッチャー {#batcher}
+
+[batcher]: glossary#batcher
+
+バッチャーは、データ可用性プロバイダー上でチャネルを利用可能にする役割を担うソフトウェアコンポーネント (独立したプログラム) です。
+バッチャーはロールアップノードと通信してチャネルを取得し、
+[バッチャートランザクション][batcher-transaction]を使ってそれらのチャネルを利用可能にします。
+
+### バッチャートランザクション {#batcher-transaction}
+
+[batcher-transaction]: glossary#batcher-transaction
+
+バッチャートランザクションとは、チャネルを利用可能にするために[batcher]がデータ可用性プロバイダーに送信するトランザクションです。これらのトランザクションには1つ以上の完全なフレームが含まれ、各フレームは異なるチャネルに属する場合があります。
+1つのチャネルのフレームが、複数のバッチャートランザクションに分けて格納されることもあります。
+
+Ethereumのcalldataとして送信する場合、バッチャートランザクションの受信者はシーケンサーインボックスアドレスでなければなりません。また、
+トランザクションは承認済みのバッチ送信者アカウントによって署名されていなければなりません。承認済みのバッチ送信者アカウントは
+[システム設定][system-config]に保存されています。
+
+### バッチ送信頻度 {#batch-submission-frequency}
+
+プロトコル上、バッチャーは [sequencing-window] の制約の範囲内であれば、データ可用性のために L2 ブロックをいつでも
+送信できます。バッチャーソフトウェアでは、オペレーターがポリシーを動的に設定できます。
+バッチャーが割り当てられた時間内にデータを送信しなかった場合でも、ロールアップはシーケンシングウィンドウによって
+安全性とライブネスを保証します。
+
+新しい L2 データを小さな単位で頻繁に送信すると、L2 ブロック入力が確認されるまでの遅延が
+短くなります。これにより、検証者は L2 ブロックの安全性をより早く確認できます。また、L1 上のデータがファイナリティに
+達するまでの時間も短縮され、その結果、L2 の入力ファイナリティまでの時間も短くなります。
+
+新しい L2 データを大きな単位で間隔を空けて送信すると、より多くの L2 データを集約する時間を確保でき、
+バッチ送信作業の固定オーバーヘッドを削減できます。これによりバッチ送信コストを抑えられます。特に、
+データトランザクション (通常は calldata で 128 KB、blob データで 800 KB) がなかなか埋まらない、
+スループットの低いチェーンで効果を発揮します。
+
+### チャネルタイムアウト {#channel-timeout}
+
+[channel-timeout]: glossary#channel-timeout
+
+チャネルタイムアウトとは、[チャネルフレーム][channel-frame]が[バッチャートランザクション][batcher-transaction]に含まれて L1 に取り込まれることが許される期間 (L1 ブロック数で表す) です。
+
+[チャネル][channel]のフレームに許容される時間範囲は `[channel_id.timestamp, channel_id.timestamp +
+CHANNEL_TIMEOUT]` です。これらのフレームに許容される L1 ブロック範囲は、タイムスタンプがこの時間範囲内に収まるすべての L1 ブロックです。 (なお、`channel_id.timestamp` は、そのチャネルのフレームが含まれるどの L1 ブロックのタイムスタンプよりも小さくなければなりません。そうでない場合、それらのフレームは無視されます。)
+
+チャネルタイムアウトには 2 つの目的があります。
+
+* クローズされていない古いチャネルデータが際限なく残り続けるのを防ぐこと (クローズされていないチャネルとは、最終フレームが送信されていないチャネルを指します) 。
+* チャネルから[シーケンサーバッチ][sequencer-batch]をデコードする際に遡る必要のある L1 ブロック数に上限を設けること。これは特に L1 のリオーグ発生時に重要です。詳細は、L2 チェーン導出仕様の [Resetting Channel Buffering][reset-channel-buffer] セクションを参照してください。
+
+[reset-channel-buffer]: /specifications/base-protocol/consensus/derivation#resetting-channel-buffering
+
+## L2出力ルートの提案 {#l2-output-root-proposals}
+
+[l2-output-root-proposals]: glossary#l2-output-root-proposals
+
+### プロポーザー {#proposer}
+
+[proposer]: glossary#proposer
+
+プロポーザーの役割は、L2 の状態に対するコミットメントである出力ルートを構築し、L1 (決済レイヤー) 上の
+L2OutputOracle コントラクトに提出することです。そのためにプロポーザーは、ロールアップノードに定期的に問い合わせて、
+最新のファイナライズ済み L1 ブロックから導出された最新の出力ルートを取得します。そして、取得した出力ルートを
+決済レイヤー (L1) 上の L2OutputOracle コントラクトに提出します。
+
+## L2チェーン導出 {#l2-chain-derivation}
+
+[derivation]: glossary#L2-chain-derivation
+
+L2チェーン導出とは、L1から[L2導出入力][deriv-inputs]を読み取ってL2チェーンを導出するプロセスです。
+
+詳細については、[L2チェーン導出仕様][derivation-spec]を参照してください。
+
+### L2 導出入力 {#l2-derivation-inputs}
+
+[deriv-inputs]: glossary#l2-derivation-inputs
+
+この用語は、L1 ブロックに含まれるデータのうち、[ロールアップノード][rollup-node]が[ペイロード属性][payload-attr]を構築するために読み取るデータを指します。
+
+L2 導出入力には次のものが含まれます。
+
+* L1 ブロック属性
+  * ブロック番号
+  * タイムスタンプ
+  * basefee
+  * blob base fee
+* [デポジット][deposits] (ログデータとして)
+* [シーケンサーバッチ][sequencer-batch] (トランザクションデータとして)
+* [システム設定][system-config]の更新 (ログデータとして)
+
+### システム設定 {#system-configuration}
+
+この用語は、L1 上の [`SystemConfig`](/ja/specifications/base-protocol/consensus/derivation#system-configuration) コントラクトで管理され、L2 の [derivation] プロセスによって読み取られる、動的に変更可能なロールアップパラメータの集合を指します。
+これらのパラメータを使うことで、ハードフォークによるネットワークアップグレードの手間をかけずに、鍵を定期的にローテーションしたり、外部コストパラメータを調整したりできます。
+
+詳しい概要については、[システム設定](/ja/specifications/base-protocol/consensus/derivation#system-configuration)のセクションを参照してください。
+
+### ペイロード属性 {#payload-attributes}
+
+[payload-attr]: glossary#payload-attributes
+
+この用語は、L1 上にある [L2 チェーン導出入力][deriv-inputs] から導出できるオブジェクトを指します。このオブジェクトは
+[実行エンジン][execution-engine] に渡され、L2 ブロックの構築に使用されます。
+
+ペイロード属性オブジェクトは、実質的には [出力プロパティを除いたブロック][block] をエンコードしたものです。
+
+ペイロード属性は元々 [Ethereum Engine API 仕様][engine-api] で定義されており、
+[実行エンジン仕様][exec-engine] ではこれを拡張しています。
+
+ロールアップノード仕様の [ペイロード属性の構築][building-payload-attr] セクションも参照してください。
+
+[building-payload-attr]: /specifications/base-protocol/consensus/specification#building-the-payload-attributes
+
+### L2 ジェネシスブロック {#l2-genesis-block}
+
+[l2-genesis]: glossary#l2-genesis-block
+
+L2 ジェネシスブロックは、現行バージョンの L2 チェーンにおける最初のブロックです。
+
+L2 ジェネシスブロックの状態は、以下で構成されます。
+
+* 以前のバージョンの L2 チェーンから引き継いだ状態。
+  * この状態は「ステートサージェリー」によって変更されている可能性があります。たとえば、Bedrock への移行では、
+    ネイティブ ETH 残高をストレージトライに格納する方法が変更されました。
+* [事前デプロイ済みコントラクト][predeploy]
+
+L2 ジェネシスブロックのタイムスタンプは、[ブロック時間][block-time]の倍数でなければなりません (ブロック時間は 2 秒であるため、
+すなわち偶数となります) 。
+
+ロールアッププロトコルを新しいバージョンに更新する際には、*スカッシュフォーク* (squash fork) を実施することがあります。これは新しい
+L2 ジェネシスブロックを作成するプロセスです。この新しい L2 ジェネシスブロックのブロック番号は `X + 1` となります。ここで `X` は、
+更新前の最後の L2 ブロックのブロック番号です。
+
+スカッシュフォークを *リジェネシス* (re-genesis) と混同しないでください。リジェネシスは過去に採用していた類似のプロセスで、
+L2 ブロック番号もリセットされるため、新しい L2 ジェネシスブロックの番号は 0 になります。今後、リジェネシスを採用することはありません。
+
+スカッシュフォークは L2 ブロック番号の重複を避けられる点で、リジェネシスよりも優れています。ブロック番号が重複すると、多くの外部
+ツールが正常に動作しなくなるためです。
+
+### L2 Chain Inception {#l2-chain-inception}
+
+[l2-chain-inception]: glossary#L2-chain-inception
+
+[ジェネシスブロック][l2-genesis]の出力ルートが[出力オラクル][output-oracle]コントラクトに提案された時点のL1ブロック番号です。
+
+現在の実装では、出力オラクルコントラクトがデプロイまたはアップグレードされた時点のL1ブロック番号がこれに該当します。
+
+### セーフ L2 ブロック {#safe-l2-block}
+
+[safe-l2-block]: glossary#safe-l2-block
+
+セーフ L2 ブロックとは、[ロールアップノード][rollup-node]が L1 のみから完全に導出できる L2 ブロックのことです。これは各ノードが L1 チェーンをどのように認識しているかによって、
+ノードごとに異なる場合があります。
+
+### safe L2 ヘッド {#safe-l2-head}
+
+[safe-l2-head]: glossary#safe-l2-head
+
+safe L2 ヘッド とは、[ロールアップノード][rollup-node]が把握している[セーフ L2 ブロック][safe-l2-block]のうち、ブロック高が最も高いものを指します。
+
+### Unsafe L2 Block {#unsafe-l2-block}
+
+[unsafe-l2-block]: glossary#unsafe-l2-block
+
+unsafe L2 ブロックとは、[ロールアップノード][rollup-node]が認識しているものの、L1
+チェーンから導出されていない L2 ブロックのことです。シーケンサーモードでは、シーケンサー自身がシーケンスしたブロックがこれに当たります。バリデーターモードでは、[unsafe sync][unsafe-sync] によってシーケンサーから取得した
+ブロックがこれに当たります。
+
+### Unsafe L2 Head {#unsafe-l2-head}
+
+[unsafe-l2-head]: glossary#unsafe-l2-head
+
+unsafe L2 headとは、[ロールアップノード][rollup-node]が把握している最も高い[unsafe L2ブロック][unsafe-l2-block]のことです。
+
+### Unsafe ブロックの統合 {#unsafe-block-consolidation}
+
+[consolidation]: glossary#unsafe-block-consolidation
+
+Unsafe ブロックの統合とは、[ロールアップノード][rollup-node]が[safe L2
+ヘッド][safe-l2-head]を 1 ブロック進めることで、最も古い[unsafe L2 ブロック][unsafe-l2-block]を新たな safe L2 ヘッドにしようとするプロセスです。
+
+統合を行う際、ノードは L1
+チェーンから導出された[ペイロード属性][payload-attr]が、最も古い unsafe L2 ブロックと完全に一致するかどうかを検証します。
+
+詳細は、L2 チェーン導出仕様の[Engine Queue セクション][engine-queue]を参照してください。
+
+[engine-queue]: /specifications/base-protocol/consensus/derivation#engine-queue
+
+### ファイナライズされたL2ヘッド {#finalized-l2-head}
+
+[finalized-l2-head]: glossary#finalized-l2-head
+
+ファイナライズされたL2ヘッドとは、*[ファイナライズ済み][finality]* のL1ブロック (すなわち、2 L1エポック (64 L1 [タイムスロット][time-slot]) より前のL1ブロック) から導出できる、最も高いL2ブロックのことです。
+
+[finality]: https://hackmd.io/@prysmaticlabs/finality
+
+## L2 チェーンに関するその他の概念 {#other-l2-chain-concepts}
+
+### アドレスエイリアシング {#address-aliasing}
+
+[address-aliasing]: glossary#address-aliasing
+
+コントラクトが L1 から L2 へ[デポジット][deposits]を送信すると、そのアドレス (`ORIGIN` および `CALLER` が返すアドレス) は、
+コントラクトのアドレスに変換を加えた値でエイリアス化されます。
+
+* 参照：[デポジット仕様](/ja/specifications/base-protocol/bridging/deposits#address-aliasing)
+
+### ロールアップノード {#rollup-node}
+
+[rollup-node]: glossary#rollup-node
+
+ロールアップノードは、L1 チェーン (L1 の[ブロック][block]とそれに
+関連する[レシート][receipt]) から [L2 チェーンを導出する][derivation]役割を担います。
+
+ロールアップノードは、*バリデーター* モードと *シーケンサー* モードのいずれかで動作します。
+
+シーケンサーモードでは、ロールアップノードはユーザーから L2 トランザクションを受け取り、それらを使って L2 ブロックを作成します。作成されたブロックは
+[バッチ送信][batch-submission]によって[データ可用性プロバイダー][avail-provider]に送信されます。このとき L2 チェーンの
+導出は、健全性チェックとして、また L1 チェーンの[リオルグ][reorg]を検出する手段として機能します。
+
+バリデーターモードでは、ロールアップノードは上記と同様に導出を行いますが、シーケンサーから直接ブロックを取得することで L1
+チェーンより「先行する」こともできます。この場合、導出はシーケンサーの
+動作を検証する役割を果たします。
+
+バリデーターモードで動作するロールアップノードは、*レプリカ* と呼ばれることもあります。
+
+詳細については、[ロールアップノード仕様][rollup-node-spec]を参照してください。
+
+### Rollup Driver {#rollup-driver}
+
+[rollup driver]: glossary#rollup-driver
+
+ロールアップドライバーは、L1チェーン (L1の[ブロック][block]およびそれに関連付けられた[レシート][receipt]) から[L2チェーンを導出する][derivation]役割を担う、[ロールアップノード][rollup-node]のコンポーネントです。
+
+### L1 属性事前デプロイ済みコントラクト {#l1-attributes-predeployed-contract}
+
+[l1-attr-predeploy]: glossary#l1-attributes-predeployed-contract
+
+L2 上の[事前デプロイ済みコントラクト][predeploy]であり、ブロック番号またはブロックハッシュを指定して、該当する L1 ブロックの
+L1 ブロック属性を取得できます。
+
+参照: [L1 属性事前デプロイ済みコントラクトの仕様](/ja/specifications/base-protocol/bridging/deposits#l1-attributes-predeployed-contract)
+
+### L2 出力ルート {#l2-output-root}
+
+[l2-output]: glossary#l2-output-root
+
+L2 チェーンの現在の状態に対するコミットメントとなる 32 バイトの値です。
+
+### L2 Output Oracle Contract {#l2-output-oracle-contract}
+
+[output-oracle]: glossary#l2-output-oracle-contract
+
+[シーケンサー][sequencer]が[L2出力ルート][l2-output]を送信する先のL1コントラクトです。
+
+### バリデーター {#validator}
+
+[validator]: glossary#validator
+
+バリデーターとは、[ロールアップノード][rollup-node]をバリデーターモードで実行するエンティティ (個人または組織) です。
+
+バリデーターモードで実行すると、Ethereum ノードを実行する場合と同様に多くのメリットが得られます。たとえば、レート制限を受けずに L2 トランザクションを
+ローカルでシミュレートできます。
+
+さらにバリデーターは、[出力ルート][l2-output]を再導出して[シーケンサー][sequencer]が提出したものと照合することで、
+シーケンサーの処理結果を検証できます。不一致が見つかった場合、バリデーターは[フォールトプルーフ][fault-proof]を実行できます。
+
+### フォールトプルーフ {#fault-proof}
+
+[fault-proof]: glossary#fault-proof
+
+[シーケンサー][sequencer]が誤った[出力ルート][l2-output]を提出したことを立証するために、[バリデーター][validator]がオンチェーンで実行する *インタラクティブ* な証明。
+
+### タイムスロット {#time-slot}
+
+[time-slot]: glossary#time-slot
+
+L2 では、2 秒ごとにブロックが生成されます (この間隔を[ブロック時間][block-time]と呼びます) 。
+
+[L2 ジェネシスブロック][l2-genesis]のタイムスタンプを起点として、2 秒の倍数ごとに「タイムスロット」があるものとします。
+
+L1 では、[merge] 以降、タイムスロットは 12 秒ごとです。ただし、軽微なものであってもコンセンサスの問題が発生した場合には、
+すべてのタイムスロットで L1 ブロックが生成されるとは限りません。
+
+### ブロック時間 {#block-time}
+
+[block-time]: glossary#block-time
+
+L2 のブロック時間は 2 秒です。つまり、2 秒ごとの各[タイムスロット][time-slot]に L2 ブロックが 1 つずつ生成されます。
+
+[マージ][merge]後は、L1 の[タイムスロット][time-slot]が 12 秒であることから、L1 のブロック時間は 12 秒だと言うこともできます。ただし、
+実際には一部のタイムスロットがスキップされる場合があるため、ブロック時間は一定ではありません。
+
+マージ前の L1 のブロック時間は一定ではなく、平均すると約 13 秒でした。
+
+### Unsafe Sync {#unsafe-sync}
+
+[unsafe-sync]: glossary#unsafe-sync
+
+Unsafe sync とは、[バリデーター][validator]が[シーケンサー][sequencer]から[unsafe L2 ブロック][unsafe-l2-block]の情報を取得するプロセスです。
+
+これらの unsafe ブロックは、後で ([unsafe ブロックの統合][consolidation]によって) L1 チェーン上で確定される必要があります。
+
+## 実行エンジンの概念 {#execution-engine-concepts}
+
+### 実行エンジン {#execution-engine}
+
+[execution-engine]: glossary#execution-engine
+
+実行エンジンは、ブロック内のトランザクションを実行し、その結果として得られるステートルート、
+レシートルート、およびブロックハッシュを計算する役割を担います。
+
+L1 ([merge] 以降) と L2 には、どちらも実行エンジンが存在します。
+
+L1 では、実行されるブロックは、L1 のブロック同期によって取得されたものか、L1 コンセンサスレイヤーの要求を受けて実行エンジンが
+(L1 の [mempool] 内のトランザクションを使用して) 新たに生成したもののいずれかです。
+
+L2 では、実行されるブロックは、[ロールアップノード][rollup-node]の要求を受けて、
+[L1 ブロックから導出された][derivation]トランザクションを使用して実行エンジンが新たに生成したものです。
+
+本仕様において「実行エンジン」は、特に明記しない限り、常に L2 の実行エンジンを指します。
+
+* 参照: [実行エンジン仕様][exec-engine]
+
+[deposits-spec]: /specifications/base-protocol/bridging/deposits
+
+[system-config]: /specifications/base-protocol/consensus/derivation#system-configuration
+
+[exec-engine]: /specifications/base-protocol/execution/l2-execution-engine
+
+[derivation-spec]: /specifications/base-protocol/consensus/derivation
+
+[rollup-node-spec]: /specifications/base-protocol/consensus/specification
+
+[mpt-details]: https://github.com/norswap/nanoeth/blob/d4c0c89cc774d4225d16970aa44c74114c1cfa63/src/com/norswap/nanoeth/trees/patricia/README.md
+
+[trie]: https://en.wikipedia.org/wiki/Trie
+
+[bloom filter]: https://en.wikipedia.org/wiki/Bloom_filter
+
+[Solidity events]: https://docs.soliditylang.org/en/latest/contracts.html?highlight=events#events
+
+[nano-header]: https://github.com/norswap/nanoeth/blob/cc5d94a349c90627024f3cd629a2d830008fec72/src/com/norswap/nanoeth/blocks/BlockHeader.java#L22-L156
+
+[yellow]: https://ethereum.github.io/yellowpaper/paper.pdf
+
+[engine-api]: https://github.com/ethereum/execution-apis/blob/main/src/engine/shanghai.md#PayloadAttributesV2
+
+[merge]: https://ethereum.org/en/eth2/merge/
+
+[mempool]: https://www.quicknode.com/guides/defi/how-to-access-ethereum-mempool
+
+[L1 consensus layer]: https://github.com/ethereum/consensus-specs/#readme
+
+[cannon]: https://github.com/ethereum-optimism/cannon
+
+[eip4844]: https://www.eip4844.com/

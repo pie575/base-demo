@@ -1,0 +1,79 @@
+---
+title: "ウォレット開発者向け Builder Codes"
+sidebarTitle: "ウォレット開発者向け"
+description: "ウォレットに dataSuffix ケイパビリティを実装して、Builder Code によるアトリビューションを有効にします。"
+---
+
+## 概要 {#overview}
+
+アトリビューションを有効にするには、ウォレットプロバイダーが `dataSuffix` ケイパビリティをサポートする必要があります。具体的には、このケイパビリティを受け付け、署名前にサフィックスを calldata の末尾に付加します。
+
+<Steps>
+  <Step title="dataSuffix ケイパビリティをサポートする">
+    ウォレットは、`wallet_sendCalls` の `capabilities` オブジェクト内で `dataSuffix` オブジェクトを受け付ける必要があります。
+
+    ```typescript DataSuffix capability type
+    type DataSuffixCapability = {
+      value: `0x${string}`;  // アプリから提供される16進エンコードされたバイト列
+      optional?: boolean;    // ケイパビリティが任意かどうか
+    }
+    ```
+  </Step>
+
+  <Step title="calldata にサフィックスを付加する">
+    トランザクションまたは User Operation を構築する際に、`dataSuffix` を取り出して calldata の末尾に付加します。
+
+    <Tabs>
+      <Tab title="EOA トランザクション">
+        `tx.data` の末尾に付加します。
+
+        ```typescript apply-eoa-suffix.ts lines expandable wrap
+        // EOA 向けの最小限の例
+        function applySuffixToEOA(tx, capabilities) {
+          const suffix = capabilities.dataSuffix?.value
+          if (!suffix) return tx
+
+          return {
+            ...tx,
+            // サフィックスのバイト列を付加（tx.data に 0x プレフィックスがある場合はサフィックスから 0x を除去）
+            data: tx.data + suffix.slice(2)
+          }
+        }
+        ```
+      </Tab>
+
+      <Tab title="ERC-4337 User Operation">
+        `userOp.callData` の末尾に付加します (トランザクションレベルの calldata ではない点に注意してください) 。
+
+        ```typescript apply-user-operation-suffix.ts lines expandable wrap
+        // ERC-4337 向けの最小限の例
+        function applySuffixToUserOp(userOp, capabilities) {
+          const suffix = capabilities.dataSuffix?.value
+          if (!suffix) return userOp
+
+          return {
+            ...userOp,
+            // UserOp の callData にサフィックスのバイト列を付加
+            callData: userOp.callData + suffix.slice(2)
+          }
+        }
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="ウォレットのアトリビューションを追加する（任意）">
+    ウォレットは、アプリのサフィックスの前に自身のサフィックスを配置することで、独自のアトリビューションコード (ウォレット独自の ERC-8021 サフィックス) を含めることもできます。
+
+    * **アプリ側との調整は不要：** ウォレット単独で対応できます。
+    * **複数コードに対応：** ERC-8021 は複数のアトリビューションコードをネイティブにサポートしています。
+
+    **例：**
+
+    ```typescript Compose app and wallet attribution
+    finalSuffix = walletSuffix + appSuffix
+    ```
+
+    これにより、アプリとウォレットの両方がオンチェーンでアトリビューションを獲得できます。
+  </Step>
+</Steps>

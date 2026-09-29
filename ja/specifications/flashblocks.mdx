@@ -1,0 +1,210 @@
+---
+title: Flashblocks
+sidebarTitle: Flashblocks
+description: Base の Flashblocks に関するリファレンス。主要な概念とアーキテクチャに加え、ブロック構築、WebSocket データ、RPC の利用、ノードのセットアップに関するよくある質問を扱います。
+---
+
+<Warning>
+  今後予定されている Denim ハードフォークで、Flashblocks を非推奨にする計画です。これは計画段階のアップグレードであり、まだ確定していません。正規の 200ms ブロックの動作は、[Vibenet](/ja/build-on-base/test-on-vibenet) ですでに先行してテストできます。最終的に必要となるアプリケーション側の変更については、[Flashblocks からの移行](/ja/upgrades/denim/migrate-from-flashblocks)を参照してください。
+</Warning>
+
+<Info>
+  Flashblocks がブロック構築とトランザクションの順序付けに与える影響については、[トランザクションの順序付け](/ja/specifications/transactions/transaction-ordering#flashblocks)を参照してください。
+</Info>
+
+Flashblocks は、[Flashbots](https://www.flashbots.net/) と共同で構築された機能で、Base に **200ms** 間隔の段階的なブロック更新をもたらします。標準の 2 秒のブロック間隔内でサブブロックをストリーミングすることで、アプリケーションはシーケンサーによるプレコンファメーションをほぼ即座に受け取れます。
+
+## 主要な概念 {#key-concepts}
+
+| 用語                               | 定義                                              |
+| -------------------------------- | ----------------------------------------------- |
+| **Flashblock**                   | フルブロックに含まれるトランザクションの一部を格納する、200msのサブブロック        |
+| **プレコンファメーション&#x20;**&#x20;| フルブロックが確定する前に、トランザクションがブロックに取り込まれることを示す超高速のシグナル |
+| **Full Block (フルブロック)&#x20;**&#x20;   | 10個のFlashblockを組み合わせて構成される、2秒間の完全なブロック          |
+
+## アーキテクチャ {#architecture}
+
+Base は高可用性のシーケンサーシステムを運用しています。
+
+| コンポーネント            | 役割                                        |
+| ------------------ | ----------------------------------------- |
+| **base-consensus** | コンセンサスレイヤー (CL) — Azul 以降、op-node に代わって使用 |
+| **base-reth-node** | 実行レイヤー (EL) — Azul 以降、op-geth に代わって使用     |
+| **op-conductor**   | リーダー選出に Raft コンセンサスを用いる高可用性コントローラー        |
+
+1 つのシーケンサーインスタンスが**リーダー**としてブロックを構築し、P2P 経由で伝播します。残りのインスタンスは**フォロワー**としてチェーンを同期します。現在のリーダーがブロックを生成しなくなると、リーダーの役割は別のインスタンスに引き継がれます。
+
+Flashblocks では、このシステムに以下のインフラストラクチャコンポーネントが追加されます。
+
+| コンポーネント                                  | 目的                            | 実現できること                                                                          |
+| ---------------------------------------- | ----------------------------- | -------------------------------------------------------------------------------- |
+| **rollup-boost**                         | CL↔EL 間の Engine API プロキシ      | CL に手を加えることなく Flashblocks を EL と共有し、今後のブロック構築の発展 (マルチビルダーなど) に向けた安定したインターフェースを提供 |
+| **base-builder**                         | 200ms 間隔で動作するプロトコル外のビルダー      | EL から切り離された形で 1 秒未満の Flashblocks を生成し、ビルダーの仕組みを差し替え可能にする                         |
+| **websocket-proxy**                      | Flashblocks ストリームのファンアウト      | ビルダーに過度な負荷をかけることなく、多数のコンシューマーがストリームを読み取れるようにするブロードキャスト層                          |
+| **[base](https://github.com/base/base)** | プレコンファメーションを公開する RPC インターフェース | ストリーミングされた Flashblocks を使い慣れた RPC に変換し、アプリやウォレットがプレコンファメーション状態を利用できるようにする        |
+
+[rollup-boost](https://github.com/flashbots/rollup-boost) は Flashbots が開発・保守しており、[base-builder](https://github.com/base/base/tree/main/crates/builder)、websocket-proxy、[base](https://github.com/base/base) の各コンポーネントは Base が保守しています。
+
+## ブロック構築 {#block-building}
+
+<AccordionGroup>
+  <Accordion title="Flashblocks は任意ですか？">
+    Base のすべてのブロックは Flashblocks ビルダーによって構築されるため、**Flashblocks は常に稼働しています**。ただし、アプリはプレコンファメーションに依存しない選択も可能で、Flashblocks を統合せずに標準の RPC をそのまま使い続けることができます。
+  </Accordion>
+
+  <Accordion title="Flashblocks と 2 秒ブロックでトランザクションの取り込みに違いはありますか？">
+    大きな違いはありません。どちらもトランザクションを手数料順に並べます。主な違いはタイミングで、Flashblocks は 2 秒ごとではなく 200ms ごとに生成されます。
+
+    詳細は [トランザクションの順序付け](/ja/specifications/transactions/transaction-ordering#flashblocks) を参照してください。
+  </Accordion>
+
+  <Accordion title="シーケンサーが Flashblocks の配信を停止することはありますか？">
+    Flashblocks の運用が安全でなくなるような極端な状況でない限り、シーケンサーが Flashblocks の配信を停止することはありません。万一そのような事態が発生した場合は、ネットワーク全体でプレコンファメーションが無効化され、確認は標準の 2 秒ブロックにフォールバックします。シーケンサー自体は通常どおり稼働し続けます。
+  </Accordion>
+
+  <Accordion title="トランザクションがなかなか取り込まれないのはなぜですか？">
+    取り込みのタイミングを主に左右するのは、トランザクションのサイズではなく priority fee です。ビルダーはガスを累積的に割り当てます。各 Flashblock `j` はブロック全体のガスリミットの最大 `j/10` まで使用できるため、理論上は、非常に大きなトランザクションほど最初の Flashblock に入りにくくなります。ただし、実際にこれが問題になることはほとんどありません。Base の [トランザクションあたりのガス上限](/ja/specifications/transactions/throughput-and-limits#per-transaction-gas-maximum) (16,777,216 gas、約 16.7M) は Flashblock 1 の容量 (約 40M) を下回っているため、有効なトランザクションであれば、サイズの面では必ず最初の Flashblock に収まります。取り込みが遅い場合、多くは同じ 200ms の枠内で競合する他のトランザクションよりも priority fee が低いことが原因です。
+
+    ガスリミットやスループット関連のネットワークパラメータについては、[スループットと制限](/ja/specifications/transactions/throughput-and-limits) を参照してください。
+  </Accordion>
+
+  <Accordion title="トランザクションを確実に最初の Flashblock に入れるにはどうすればよいですか？">
+    特定のブロックへの取り込みを保証できないのと同様に、トランザクションがどの Flashblock に入るかを保証する方法はありません。なお、ガスサイズは制約になりません。[トランザクションあたりのガス上限](/ja/specifications/transactions/throughput-and-limits#per-transaction-gas-maximum) (約 16.7M) は Flashblock 1 の容量 (約 40M) を下回っているため、有効なトランザクションであればどれも最初の Flashblock に入る可能性があります。早く取り込まれる可能性を高めるには、priority fee を高めに設定してください。
+  </Accordion>
+
+  <Accordion title="トランザクションが手数料順に並んでいないことがあるのはなぜですか？">
+    Flashblock ビルダーは、構築中も新しいトランザクションを継続的に受け付ける **動的なメモリプール** を使用しています。この設計では、厳密な手数料順よりも **取り込みレイテンシの低さ** を優先しています。
+
+    **これが意味すること:**
+
+    * トランザクションは、取り込み対象として *選択された時点* の手数料に基づいて順序付けられます
+    * 低手数料のトランザクションがすでに現在の Flashblock にコミットされた後に高手数料のトランザクションが到着した場合、高手数料のトランザクションはその後ろ (または次の Flashblock) に配置されます
+    * これはバグではなく想定どおりの動作です。ビルダーはコミット済みのトランザクションを「並べ替え」ません
+
+    **なぜこのトレードオフを採用しているのか？**
+
+    「スナップショット」方式のメモリプール (各ブロックの開始時にトランザクションプールを固定する方式) であれば厳密な手数料順を保証できますが、取り込みレイテンシが増加します。動的な方式では、想定されるプライオリティガスオークション (PGA) の順序が時折「崩れる」ことと引き換えに、トランザクションをより速く取り込めます。
+
+    **トレーダーやボット向け:** ユースケース上、手数料に基づく厳密な順序付けが重要な場合は、200ms の Flashblock の枠内では手数料の額と同じくらい到着タイミングも重要であることに留意してください。
+  </Accordion>
+
+  <Accordion title="Flashblock のリオーグはどのくらいの頻度で発生しますか？">
+    Base は Flashblock のリオーグ率 0.1% 未満を目標としています。リオーグはまれですが、アプリケーションは重要な処理に対してフォールバックロジックを実装する必要があります。
+
+    現在の指標は [base.org/stats](https://base.org/stats) で確認できます。
+  </Accordion>
+
+  <Accordion title="Flashblock がリオーグされるとはどういう意味ですか？">
+    リオーグとは、プレコンファメーションとして配信された Flashblock が、最終的なブロックに含まれなかったことを意味します。rollup-boost のアーキテクチャ改善によって末尾の Flashblock のリオーグが防止されているため、発生することはまれです。アプリはこの可能性を適切に処理すべきですが、実際に起こることはごくわずかです。
+  </Accordion>
+</AccordionGroup>
+
+***
+
+## WebSocket {#websocket}
+
+<AccordionGroup>
+  <Accordion title="Flashblocks WebSocket ストリームに直接接続できますか？">
+    **いいえ。** 生の Flashblocks WebSocket (`wss://mainnet.flashblocks.base.org/ws`) は、インフラストラクチャからノードへのデータ同期専用です。アプリケーションから直接接続しないでください。
+
+    代わりに、ご自身の RPC ノードまたはノードプロバイダー (例：QuickNode、Alchemy、Infura、dRPC) に対して、以下の方法で Flashblocks データを照会してください。
+
+    * **RPC API**：`pending` タグを指定した標準の JSON-RPC メソッド
+    * **WebSocket サブスクリプション**：ノードプロバイダーの WebSocket エンドポイント経由で `eth_subscribe` を使用
+
+    実装の詳細については、[RPC の概要](/ja/base-chain/api-reference/rpc-overview#flashblocks)を参照してください。
+  </Accordion>
+
+  <Accordion title="Flashblock のインデックスが 11 個（0〜10）あるのはなぜですか？">
+    インデックス 0 にはシステムトランザクションのみが含まれ、ガスリミットを一切消費しません。インデックス 1〜10 が実際の Flashblocks で、txpool から保留中のトランザクションを取り込みます。
+  </Accordion>
+
+  <Accordion title="Flashblocks が 10 個未満になることがあるのはなぜですか？">
+    これは想定どおりの動作です。前のブロックの構築に時間がかかると、システムはその分、次のブロックに割り当てる時間を減らして調整します。その結果、Flashblocks の数が少なくなります。
+  </Accordion>
+
+  <Accordion title="Flashblock のインデックスが 10 を超えることはありますか？それはバグですか？">
+    **いいえ、バグではありません。** インデックスが 10、11、またはそれ以上になるのは想定どおりの動作です。
+
+    単純に計算すると、2 秒のブロック時間 ÷ Flashblock あたり 200ms で、Flashblocks はちょうど 10 個 (インデックス 0〜9) になります。しかし実際には、ある L2 ブロックから次の L2 ブロックへの切り替わりが、200ms のタイマーと常に完全に同期しているとは限りません。インデックスが余分に発生する原因は次の 2 つです。
+
+    1. **シーケンサーの遅延：** シーケンサーがブロック全体の確定・封印に 2000ms をわずかに超える時間を要した場合、Flashblock ストリームはストリームを途切れさせないよう、現在のブロックに対する増分更新を引き続き送出します。
+    2. **タイミングのずれ：** 内部の 200ms クロックがずれたり、L2 ブロックの正規の開始時刻より早く始まったりした場合、2 秒の枠内に追加の更新が 1 つ収まることがあります。
+
+    **実装上の注意点：**
+
+    * 最終インデックスとして `9` や `10` をハードコードしないでください。あるブロックの最後の Flashblock がどれかは、インデックスだけでは判断できません。
+    * 代わりに `payloadId` を監視してください。ブロックの完了を示す最も確実なシグナルは、`payloadId` が変わったとき、または標準 RPC でブロック全体が確認されたときです。インデックスがいくつになっても、同じ `payloadId` を持つ Flashblocks はすべて同じブロックに属します。
+    * シーケンサーが次のブロックに進むと、`payloadId` がリセットされ、`index` は `0` に戻ります。
+  </Accordion>
+
+  <Accordion title="トランザクションデータのエンコード形式は何ですか？">
+    [`diff.transactions`](/ja/base-chain/api-reference/flashblocks-api/flashblocks-api-overview#diff-object) 配列内のトランザクションデータは、Recursive Length Prefix (RLP) 形式でエンコードされています。
+  </Accordion>
+
+  <Accordion title="WebSocket でレート制限がかかるのはなぜですか？">
+    Base は無料の公開 WebSocket RPC エンドポイントを提供していません。そのため WebSocket へのアクセスはノードまたはプロバイダー経由となり、それぞれに独自の接続数制限やレート制限があります。本番環境では、次のいずれかをおすすめします。
+
+    1. 独自の [Flashblocks 対応 RPC ノード](/ja/specifications/node-operators/run-a-node#enable-flashblocks)を運用する
+    2. Flashblocks をサポートするサードパーティのノードプロバイダーを利用する
+  </Accordion>
+</AccordionGroup>
+
+***
+
+## RPC {#rpc}
+
+<AccordionGroup>
+  <Accordion title="mainnet.base.org を使用するとレート制限がかかるのはなぜですか？">
+    パブリックエンドポイントには明示的なレート制限が設けられています。本番環境では、次のいずれかの方法をご利用ください。
+
+    * Flashblocks に対応したサードパーティのノードプロバイダー (Alchemy、Infura、QuickNode、dRPC) を利用する
+    * 独自の [Flashblocks 対応 RPC ノード](/ja/specifications/node-operators/run-a-node#enable-flashblocks)を運用する
+  </Accordion>
+
+  <Accordion title="eth_call を 'pending' で呼び出すと、ブロック番号が最新ブロックより数ブロック遅れて表示されるのはなぜですか？">
+    これは想定どおりの動作です。Flashblocks 対応ノードは、競合状態を防ぐために最大 5 ブロック分の過去の Flashblocks 状態を保持しています。`eth_call "pending"` を呼び出すと、この過去のベースブロックを基点として処理が行われるため、呼び出しコンテキストで参照できるブロック番号 (例：`block.number`) が N-5 と表示される場合があります。
+
+    `eth_call "pending"` の実行時、ブロックコンテキスト全体 (`block.number`、`block.timestamp`、`block.basefee`、およびその他すべてのブロックプロパティ) は、現在のチェーンの先端ではなく、その過去のベースブロック (N-5 の可能性あり) に対応します。受信済みのすべての Flashblocks 状態がその上に適用されているため、**呼び出し結果自体は正確です**。ただし、ブロックコンテキストのプロパティに依存するコントラクトでは、これらの値が数ブロック遅れている可能性があることに注意してください。
+
+    P2P のレイテンシが WebSocket ストリームのレイテンシと比べて大きく劣らない地域でノードを運用している場合は、`MAX_PENDING_BLOCKS_DEPTH` の設定値を下げることで、この差を縮められます。この値は、ノードが保持する Flashblocks の過去ブロック数の上限を決めるものです。値を小さくするとブロックコンテキストが先端に近づく一方、P2P レイテンシの急上昇に対する耐性は低下します。
+  </Accordion>
+
+  <Accordion title="Flashblocks に対応している RPC メソッドはどれですか？">
+    以下のメソッドが Flashblocks に対応しています。
+
+    | メソッド                        | 使用方法                           |
+    | --------------------------- | ------------------------------ |
+    | `eth_getBlockByNumber`      | `pending` タグを使用                |
+    | `eth_getBalance`            | `pending` タグを使用                |
+    | `eth_getTransactionReceipt` | 事前承認済みのレシートを返す                 |
+    | `eth_getTransactionByHash`  | `pending` タグを使用                |
+    | `eth_getTransactionCount`   | `pending` タグを使用                |
+    | `eth_call`                  | `pending` タグを使用                |
+    | `eth_simulateV1`            | `pending` タグを使用                |
+    | `eth_estimateGas`           | `pending` タグを使用                |
+    | `eth_getLogs`               | `toBlock` に `pending` を指定      |
+    | `eth_subscribe`             | Flashblock データをリアルタイムでストリーミング  |
+    | `base_transactionStatus`    | トランザクションがメモリプールにあるかを確認 (ベータ版)  |
+
+    各メソッドの詳細と使用例については、[Flashblocks API リファレンス](/ja/base-chain/api-reference/flashblocks-api/flashblocks-api-overview)を参照してください。
+  </Accordion>
+</AccordionGroup>
+
+***
+
+## ノードのセットアップ {#node-setup}
+
+<AccordionGroup>
+  <Accordion title="Flashblocks対応のRPCノードをセットアップするにはどうすればよいですか？">
+    [Base Rethリポジトリ](https://github.com/base/reth)で提供されているRethバイナリを使用してください。セットアップ手順の詳細は、[Flashblocksの有効化ガイド](/ja/specifications/node-operators/run-a-node#enable-flashblocks)を参照してください。
+  </Accordion>
+</AccordionGroup>
+
+***
+
+## 関連資料 {#further-reading}
+
+* [Flashblocks を有効にする](/ja/specifications/node-operators/run-a-node#enable-flashblocks) — Flashblocks 対応の RPC ノードを自分で運用する
+* [Flashblocks API リファレンス](/ja/base-chain/api-reference/flashblocks-api/flashblocks-api-overview) — RPC メソッド、WebSocket サブスクリプション、インフラストラクチャ向けストリームのスキーマ
+* [Flashblocks Deep Dive](https://blog.base.dev/flashblocks-deep-dive) — 実装の詳細を解説したエンジニアリングブログ記事 (Flashblocks は [Flashbots](https://www.flashbots.net/) と共同で構築)

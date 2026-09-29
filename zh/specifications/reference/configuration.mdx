@@ -1,0 +1,61 @@
+---
+title: "配置"
+description: "Base Chain 配置参数参考，涵盖共识、策略、管理员和 sequencer 四类。"
+---
+
+Base 的配置分为以下四类：
+
+* **共识参数 (Consensus Parameters)&#x20;**：在创世时固定，或可通过特权账户或协议升级进行更改。
+* **策略参数 (Policy Parameters)&#x20;**：可在协议规定的约束范围内更改，不会破坏共识。
+* **管理员角色 (Admin Roles)&#x20;**：可升级合约、变更角色所有者或更新协议参数的账户，通常为冷钱包或多签钱包。
+* **服务角色 (Service Roles)&#x20;**：用于日常运营的账户，通常为热钱包。
+
+## 共识参数 {#consensus-parameters}
+
+| 参数                                                                                | 描述                                                                               | 管理者                                 |
+| --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ----------------------------------- |
+| [Batch Inbox 地址](/zh/specifications/reference/glossary#batch-inbox)                  | 用于发布 [batcher 交易](/zh/specifications/reference/glossary#batcher-transaction)的 L1 地址 | 静态                                  |
+| [Batcher 哈希](/zh/specifications/reference/glossary#batcher-hash)                     | 已授权 batcher 发送方的版本化哈希                                                            | [System Config Owner](#admin-roles) |
+| 链 ID                                                                              | 用于交易签名验证的唯一链 ID                                                                  | 静态                                  |
+| 证明成熟延迟                                                                            | 提款从证明到最终确定之间的时间间隔。1 天。                                                           | [L1 Proxy Admin](#admin-roles)      |
+| 受认可的博弈类型                                                                          | `OptimismPortal` 在最终确定提款时接受的博弈类型。聚合验证器 (`621`) 。                                 | [Guardian](#service-roles)          |
+| 保证金提取延迟                                                                           | 争议游戏保证金可提取前需等待的时间。1 天。                                                           | 静态                                  |
+| [费用标量](/zh/specifications/reference/glossary#fee-scalars)                            | 交易费用相对于原始 L1 数据成本的加价。费用利润率介于 0%–50% 之间。                                          | [System Config Owner](#admin-roles) |
+| [Gas 上限](/zh/specifications/base-protocol/consensus/derivation#system-configuration) | L2 区块 gas 上限。≤ 200,000,000 gas。                                                  | [System Config Owner](#admin-roles) |
+| [创世状态](/zh/specifications/base-protocol/execution/predeploys#overview)               | 初始链状态，包含所有预部署合约的代码和存储。仅限标准预部署合约和预安装合约。                                           | 静态                                  |
+| L2 出块时间                                                                           | 通过[推导](/zh/specifications/base-protocol/consensus/derivation)生成 L2 区块的时间间隔。1 或 2 秒。 | [L1 Proxy Admin](#admin-roles)      |
+| [排序窗口大小](/zh/specifications/reference/glossary#sequencing-window)                    | 触发 L1 回退前允许的最大批次提交间隔。3,600 个 L1 区块 (按 L1 出块时间 12 秒计，即 12 小时) 。                   | 静态                                  |
+| 起始区块                                                                              | `SystemConfig` 首次初始化时所在的 L1 区块                                                   | [L1 Proxy Admin](#admin-roles)      |
+| Superchain 目标                                                                     | 用于跨 L2 配置的 `SuperchainConfig` 和 `ProtocolVersions` 地址。主网或 Sepolia。               | 静态                                  |
+| 治理代币                                                                              | OP 治理代币。已禁用。                                                                     | 不适用                                 |
+| [运营方费用参数](/zh/upgrades/isthmus/exec-engine#operator-fee)                             | 用于计算费用的运营方费用标量和常量。标准值为 0；op-succinct 等非标准配置则为非零值。                                | [System Config Owner](#admin-roles) |
+| [DA 占用 Gas 标量](/zh/upgrades/jovian/exec-engine)                                      | 用于计算 DA 占用的标量                                                                    | [System Config Owner](#admin-roles) |
+| [最低基础费用](/zh/upgrades/jovian/exec-engine#minimum-base-fee)                           | L2 上的最低基础费用                                                                      | [System Config Owner](#admin-roles) |
+
+## 策略参数 {#policy-parameters}
+
+| 参数                                                                       | 描述                                                                                                                         | 管理者                      |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| [数据可用性类型](/zh/specifications/reference/glossary#data-availability-provider) | batcher 以 blob 还是 calldata 形式发布数据。Ethereum (Blobs 或 Calldata) ；不支持 Alt-DA。                                                 | [Batch Submitter](#service-roles)  |
+| 批次提交频率                                                                   | 向 L1 提交 [batcher 交易](/zh/specifications/reference/glossary#batcher-transaction)的频率。≤ 1,800 个 L1 区块 (按 L1 出块时间 12 秒计，即 6 小时) 。 | [Batch Submitter](#service-roles)  |
+| 输出频率                                                                     | 向 L1 提交输出根的频率。≤ 43,200 个 L2 区块 (按 L2 出块时间 2 秒计，即 24 小时) ；不得为零。启用故障证明后弃用。                                                   | [L1 Proxy Admin](#admin-roles) |
+
+## 管理员角色 {#admin-roles}
+
+| 角色                                                                                             | 描述                                                                                                                                                                                                                                         | 管理对象                                                                                                            |
+| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| L1 Proxy Admin                                                                                 | 最新 `op-contracts` 版本中的 `ProxyAdmin`，有权升级 L1 合约                                                                                                                                                                                             | L1 合约                                                                                                           |
+| L1 ProxyAdmin Owner                                                                            | 有权更新 L1 Proxy Admin。[0x5a0Aae59D09fccBdDb6C6CcEB07B7279367C3d2A](https://etherscan.io/address/0x5a0Aae59D09fccBdDb6C6CcEB07B7279367C3d2A)                                                                                                  | [L1 Proxy Admin](#admin-roles)                                                                                  |
+| L2 Proxy Admin                                                                                 | 部署于 `0x4200000000000000000000000000000000000018` 的 `ProxyAdmin`，有权升级 L2 合约                                                                                                                                                                 | [预部署合约](/zh/specifications/base-protocol/execution/predeploys#overview)                                            |
+| L2 ProxyAdmin Owner                                                                            | L1 ProxyAdmin Owner 的[别名地址](/zh/specifications/reference/glossary#address-aliasing)；通过 `ProxyAdmin` 升级 L2 合约。[0x6B1BAE59D09fCcbdDB6C6cceb07B7279367C4E3b](https://optimistic.etherscan.io/address/0x6B1BAE59D09fCcbdDB6C6cceb07B7279367C4E3b) | [L2 Proxy Admin](#admin-roles)                                                                                  |
+| [System Config Owner](/zh/specifications/base-protocol/consensus/derivation#system-configuration) | 有权修改 `SystemConfig` 合约中的配置值                                                                                                                                                                                                                | [Batch Submitter](#service-roles)、[Sequencer P2P Signer](#service-roles)、费用标量 (Fee Scalar) 、Gas 上限 (Gas Limit)  |
+
+## 服务角色 {#service-roles}
+
+| 角色                                                                             | 描述                                                                                                                                                                         | 管理者                                 |
+| ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| [Batch Submitter](/zh/specifications/reference/glossary#batcher)                  | 对提交至 L1 的批次进行认证                                                                                                                                                            | [System Config Owner](#admin-roles) |
+| Challenger                                                                     | 与许可型争议游戏进行交互。[0x9BA6e03D8B90dE867373Db8cF1A58d2F7F006b3A](https://etherscan.io/address/0x9BA6e03D8B90dE867373Db8cF1A58d2F7F006b3A)                                         | [L1 Proxy Admin](#admin-roles)      |
+| Guardian                                                                       | 暂停 L1 提款、将争议游戏列入黑名单，以及在 `OptimismPortal` 中设置受认可的游戏类型。[0x09f7150D8c019BeF34450d6920f6B3608ceFdAf2](https://etherscan.io/address/0x09f7150D8c019BeF34450d6920f6B3608ceFdAf2) | [L1 Proxy Admin](#admin-roles)      |
+| Proposer                                                                       | 在 L1 上创建许可型争议游戏。                                                                                                                                                           | [L1 Proxy Admin](#admin-roles)      |
+| [Sequencer P2P Signer](/zh/specifications/reference/glossary#unsafe-block-signer) | 在 P2P 层对不安全 (预提交) 区块进行签名                                                                                                                                                   | [System Config Owner](#admin-roles) |

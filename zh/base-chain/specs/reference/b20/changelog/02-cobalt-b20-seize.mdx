@@ -1,0 +1,148 @@
+---
+title: "B20：Seize 接口与 burnBlocked 弃用"
+description: "介绍 Cobalt 中的 B20 seize 接口以及 burnBlocked 的弃用，并为基于 Beryl seize 路径集成的团队提供迁移说明。"
+---
+
+> **目标读者：** 基于 Beryl (现已上线) 上的基础 B20 接口进行集成、需要执行管理性余额移除操作
+>  (目前通过已弃用的 `burnBlocked` 实现) 的团队。本说明仅涉及将随 Cobalt 硬分叉上线的
+> seize 接口，及其对 `burnBlocked` 的影响。由于该接口为共享接口，因此同时适用于 B20 Asset 和 B20 Stablecoin。
+
+## 概述 {#summary}
+
+自 Cobalt 起，基础 B20 接口新增原生的没收 (seize) 操作。`seizeWithMemo(from, to,
+amount, memo)` 只需一次管理员调用，即可将持有者的余额转移到目标地址。该操作受新增的
+`SEIZE_ROLE`、新增的 `SEIZE` 暂停向量以及两个新策略槽 (`SEIZE_EXEMPT_POLICY`、
+`SEIZE_RECEIVER_POLICY`) 共同管控。
+
+你目前调用的接口均不受影响：所有 Beryl 选择器、事件主题和错误都保持原有的 4 字节
+选择器或 topic0 不变，在 Cobalt 中仍可调用。其中，`burnBlocked` 虽已弃用，但保持不变 (选择器、事件和行为均相同) ，仍可正常调用。
+
+迁移时，请将管理性的余额移除操作从 `burnBlocked` 改为 `seizeWithMemo`：先将余额没收至
+国库地址或自身地址；如需销毁这部分供应量，再调用 `burn`。
+
+没收功能需按代币单独启用。该接口在 Cobalt 中已经存在，但在发行方配置 `SEIZE_EXEMPT_POLICY` 之前，没收不会生效。若该槽未设置 (即始终允许) ，则没有任何账户可被没收，所有 `seizeWithMemo` 调用都会以 `AccountNotSeizable` 回滚。换言之，如果发行方从未设置该策略，该代币实际上就不具备没收能力。
+
+Cobalt 尚未上线。在其激活之前，链上仅存在 Beryl 接口，下文所有
+`seize*`/`SEIZE_*` 选择器均无法调用。
+
+## 映射表 {#mapping-table}
+
+下列选择器 (selector) 和 topic0 均取自冻结 ABI 中的真实值：
+Beryl 对应 `crates/common/precompiles/src/common/abi/v1.rs`，
+Cobalt 对应 `crates/common/precompiles/src/common/abi/v2.rs`。所有 Beryl 符号在 Cobalt 中均沿用原有选择器。
+Seize 定义在共享的 `IB20` 接口上，因此在 Asset 和 Stablecoin 中完全一致。
+
+### 函数 {#functions}
+
+| Beryl 符号 (选择器)                              | Cobalt (选择器)                                                  | 状态       | 原因                                                                                                                             |
+| ------------------------------------------- | ------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `burnBlocked(address,uint256)` `0xec0cf3dc` | `burnBlocked(address,uint256)` `0xec0cf3dc`                   | 已弃用但仍可调用 | 为保持向后兼容而原样保留。建议先调用 `seizeWithMemo`，再调用 `burn`。该函数会销毁供应量，并读取 `TRANSFER_SENDER_POLICY`。                                          |
+| `BURN_BLOCKED_ROLE()` `0x32ad9be8`          | `BURN_BLOCKED_ROLE()` `0x32ad9be8`                            | 原样沿用     | 仍仅用于控制 `burnBlocked` 的调用权限。                                                                                                    |
+| —                                           | `seizeWithMemo(address,address,uint256,bytes32)` `0xf916d81b` | 新增       | 由管理员重新分配余额。本质上是转账，而非销毁。                                                                                                        |
+| —                                           | `SEIZE_ROLE()` `0x3c7e9ba5`                                   | 新增       | 调用 `seizeWithMemo` 所需的角色。值为 `keccak256("SEIZE_ROLE")` = `0x3469b8b0d89e9604f8510ed143f74a8336d22955d4f83e23bf53d9414e27f432`。  |
+| —                                           | `SEIZE_EXEMPT_POLICY()` `0xfeb346ec`                          | 新增       | 用于检查 `from` 的策略槽。值为 `keccak256("SEIZE_EXEMPT_POLICY")` = `0xedb5da348cfb67af08746d3afd1be81034b50d5c8576f31aff688f39dfd540ed`。 |
+| —                                           | `SEIZE_RECEIVER_POLICY()` `0xb31da27f`                        | 新增       | 用于检查 `to` 的策略槽。值为 `keccak256("SEIZE_RECEIVER_POLICY")` = `0xbf15b19caf5c77422c038bc25f26b8b815c3a14f6d04c6616076b81bcfe07b3d`。 |
+
+### 事件 {#events}
+
+| Beryl 事件 (topic0)                                                                                             | Cobalt (topic0)                                                                                                | 状态                       | 原因                                                                                  |
+| ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------ | ----------------------------------------------------------------------------------- |
+| `BurnedBlocked(address,address,uint256)` `0x0b552e96653fd6842da37c477005d3b5c08a8c7d3631b1f43787b2dc9a1006a3` | 未变更                                                                                                            | deprecated-still-emitted | `burnBlocked` 仍会触发该事件，同时触发 `Transfer(from, address(0), amount)`。                    |
+| —                                                                                                             | `Seized(address,address,address,uint256)` `0xa9aec5d8b86e2fa2fd6ac3af62f2622e3dfdab1967d4cbbb56a5df7d74cb887c` | new                      | 由 `seizeWithMemo` 触发，触发顺序位于 `Transfer(from, to, amount)` 和 `Memo(caller, memo)` 之后。 |
+
+### 错误 {#errors}
+
+| Beryl 错误 (选择器)                            | Cobalt (选择器)                               | 状态        | 原因                                                                          |
+| ----------------------------------------- | ------------------------------------------ | --------- | --------------------------------------------------------------------------- |
+| `AccountNotBlocked(address)` `0x64a5cb46` | 未变更                                        | Beryl 中已有 | 当 `from` 在 `TRANSFER_SENDER_POLICY` 下为已授权状态 (即未被封禁) 时，`burnBlocked` 会抛出此错误。 |
+| —                                         | `AccountNotSeizable(address)` `0x91dbbc8d` | 新增        | 当 `from` 在 `SEIZE_EXEMPT_POLICY` 下为已授权状态 (即不可扣押) 时，`seizeWithMemo` 会抛出此错误。  |
+
+### 暂停功能 {#pause-features}
+
+`PausableFeature` 仅支持追加。Cobalt 新增了一个序号。
+
+| Beryl 序号                       | Cobalt 新增项 | 存储位          | 原因                                                                     |
+| ------------------------------ | ---------- | ------------ | ---------------------------------------------------------------------- |
+| `TRANSFER=0`、`MINT=1`、`BURN=2` | `SEIZE=3`  | `1 << 3 = 8` | 为 `seizeWithMemo` 提供独立的暂停向量。`ALL_FEATURES_PAUSED` 变为 `15` (`0b1111`) 。 |
+
+`seizeWithMemo` 受新增的 `SEIZE` 向量控制，而非 `BURN`。`burnBlocked` 仍受 `BURN` 控制。
+
+## Cobalt 新增内容：建议采用以下内容 {#new-at-cobalt-adopt-these}
+
+### `seizeWithMemo(from, to, amount, memo)` {#seizewithmemofrom-to-amount-memo}
+
+这是规范的管理员余额移除路径。它本质上是一次转账：余额从
+`from` 转移到 `to`，`totalSupply` 保持不变。它以管理员操作的形式执行，会跳过授权额度 (allowance) 
+检查以及转账策略 (`TRANSFER_SENDER/RECEIVER/EXECUTOR_POLICY`) 。它按以下顺序触发事件：
+
+1. `Transfer(from, to, amount)`
+2. `Memo(caller, memo)` (允许 memo 为 `bytes32(0)`) 
+3. `Seized(caller, from, to, amount)`
+
+要求与防护检查：
+
+* **角色**：调用者必须持有 `SEIZE_ROLE`，否则调用会以 `AccessControlUnauthorizedAccount` 回滚。
+* **暂停**：`SEIZE` 不得处于暂停状态，否则调用会以 `ContractPaused(SEIZE)` 回滚。
+* **地址**：必须满足 `to != address(0)` 且 `from != to`，否则调用会以 `InvalidReceiver` 回滚。
+  必须满足 `from != address(0)`，否则调用会以 `InvalidSender` 回滚。
+* **持有者门控**：`from` 必须被 `SEIZE_EXEMPT_POLICY` 阻止，即未获该策略授权，
+  否则调用会以 `AccountNotSeizable` 回滚。未设置的槽位会被视为始终允许，因此在发行方配置
+  `SEIZE_EXEMPT_POLICY` 之前，任何账户都无法被扣押。
+* **目标门控**：`to` 必须获得 `SEIZE_RECEIVER_POLICY` 授权。该策略与
+  `MINT_RECEIVER_POLICY` 相对应，且始终强制执行。不过，未设置的槽位同样视为始终允许，因此在该槽位被设置之前，代币可以
+  扣押至任意目标地址 (金库无需加入允许名单) 。
+* **余额**：`from` 的余额必须 `>= amount`，否则调用会以 `InsufficientBalance` 回滚。
+
+当多项防护检查同时不通过时，按以下优先级处理：先是持有者门控，其次是目标门控，
+最后是余额。也就是说，`AccountNotSeizable` 先于 `PolicyForbids(SEIZE_RECEIVER_POLICY,
+...)` 触发，而后者又先于 `InsufficientBalance` 触发。
+
+## `burnBlocked` 已弃用，但行为不变且仍可调用 {#burnblocked-is-deprecated-but-unchanged-and-still-dialable}
+
+`burnBlocked(from, amount)` 的行为与在 Beryl 上完全一致：
+
+* 它从在 `TRANSFER_SENDER_POLICY` 下被封禁的 `from` 中销毁 `amount`，且无需消耗
+  授权额度。它会触发 `Transfer(from, address(0), amount)` 和 `BurnedBlocked(caller, from, amount)`
+   (不触发 `Memo`) 。
+* 它受 `BURN_BLOCKED_ROLE` 和 `BURN` 暂停向量控制。
+* 当 `from` 在 `TRANSFER_SENDER_POLICY` 下处于 authorized 状态时，它会以 `AccountNotBlocked` 回滚。
+
+迁移时，请将 `burnBlocked(from, amount)` 替换为 `seizeWithMemo(from, treasury, amount, memo)`；
+如果仍需销毁这部分供应量，再从 treasury 调用 `burn(amount)`。这一过程会跨越两套
+策略、角色和暂停域 (参见下文的边界情况) ，因此无法通过直接替换选择器来完成。
+
+## 保证与边界情况 {#guarantees-and-edge-cases}
+
+**问：seize 会改变 `totalSupply` 吗？它算销毁吗？**
+不会。seize 是一种转账：它将 `amount` 从 `from` 重新分配给 `to`，`totalSupply`
+保持不变。`burnBlocked` 才是销毁：它将代币发送到 `address(0)` 并减少供应量。如需复现
+旧版 burn-blocked 的效果，请先 seize 到国库地址或自身地址，再调用 `burn`。
+
+**问：`seizeWithMemo` 和 `burnBlocked` 都针对“不良”账户，它们读取的是同一个集合吗？**
+不是，这是有意为之。`seizeWithMemo` 读取 `SEIZE_EXEMPT_POLICY`，`burnBlocked` 读取
+`TRANSFER_SENDER_POLICY`。因此，代币可以定义一个与
+转账封禁集合不同的可扣押集合。在这两种情况下，“符合条件”都表示未获得相应策略的授权；而
+未设置的策略 (始终允许) 意味着没有任何账户符合条件。
+
+**问：能否只暂停 seize 而不暂停销毁，或者反过来？**
+可以。`SEIZE` (序号 3) 和 `BURN` (序号 2) 是相互独立的暂停位。暂停 `BURN` 不会
+阻止 `seizeWithMemo`，暂停 `SEIZE` 也不会阻止 `burn`、`burnWithMemo` 或 `burnBlocked`。
+
+**问：`SEIZE_ROLE` 和 `BURN_BLOCKED_ROLE` 是否有重叠？**
+没有。`seizeWithMemo` 需要 `SEIZE_ROLE`，`burnBlocked` 需要 `BURN_BLOCKED_ROLE`。授予其中一个角色
+并不会同时授予另一个。
+
+**问：我从未配置过 seize 策略，这时调用 `seizeWithMemo` 会怎样？**
+无论 `from` 是什么，调用都会以 `AccountNotSeizable(from)` 回滚。这是因为未设置的 `SEIZE_EXEMPT_POLICY`
+默认始终允许，所以没有任何账户可被扣押。你必须先配置 `SEIZE_EXEMPT_POLICY` 来指定
+可扣押的持有者，seize 才会生效。 (`SEIZE_RECEIVER_POLICY` 保持未设置只意味着允许
+任意目标地址。) 
+
+**问：seize 会检查转账策略或消耗授权额度吗？**
+不会。它属于管理操作：会绕过 `TRANSFER_SENDER/RECEIVER/EXECUTOR_POLICY` 和授权额度，
+仅强制执行 `SEIZE_EXEMPT_POLICY` (针对 `from`) 和 `SEIZE_RECEIVER_POLICY` (针对 `to`) 。
+
+**问：B20 Stablecoin 和 B20 Asset 是否都支持 seize？**
+是的。它定义在共享的 `IB20` 接口上，因此自 Cobalt 起，两种变体都公开完全相同的
+`seizeWithMemo` 选择器、`Seized` topic0、`AccountNotSeizable` 选择器、`SEIZE_*` getter 以及
+`SEIZE` 暂停位。

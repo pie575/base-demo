@@ -1,0 +1,348 @@
+---
+title: "Proponente"
+description: "Especificación del proponente, un servicio fuera de la cadena que convierte rangos canónicos de puntos de control de L2 en juegos AggregateVerifier en L1."
+---
+
+El proponente es un servicio fuera de la cadena que convierte rangos canónicos de puntos de control de L2 en
+juegos `AggregateVerifier` en L1. Selecciona el siguiente punto de control a partir del estado padre más reciente
+registrado en la cadena, obtiene una prueba TEE para ese rango, valida la prueba contra el estado canónico de L2 y
+crea el siguiente juego de disputa a través de `DisputeGameFactory`.
+
+El proponente de producción está controlado por el firmante de transacciones de L1 que tenga configurado. Aun así, su salida es
+autovalidable: cada juego se identifica de forma única por el tipo de juego, el output root declarado, el padre,
+el número de bloque de L2 y los output roots intermedios, y tanto el verificador en la cadena como los impugnadores
+independientes pueden comprobar la prueba.
+
+## Responsabilidades {#responsibilities}
+
+Un proposer conforme realiza las siguientes tareas:
+
+1. Leer desde L1 la implementación activa de `AggregateVerifier` y los parámetros de propuesta.
+2. Recuperar el estado padre onchain más reciente a partir de `AnchorStateRegistry` y `DisputeGameFactory`.
+3. Seleccionar el siguiente bloque de checkpoint que no sea posterior al safe head elegido.
+4. Construir una solicitud `prover_prove` para el rango de checkpoints.
+5. Aceptar únicamente resultados de pruebas TEE para crear propuestas.
+6. Revalidar el output root agregado y todos los roots intermedios con respecto al estado canónico de L2
+   justo antes del envío a L1.
+7. Opcionalmente, comprobar de antemano el firmante TEE en `TEEProverRegistry`.
+8. Enviar `DisputeGameFactory.createWithInitData()` con el bond requerido.
+9. Reintentar ante fallos transitorios de pruebas, RPC y transacciones sin crear juegos fuera de orden.
+
+El proposer no impugna juegos, no los resuelve, no reclama bonds ni decide la finalidad de los retiros.
+Esas responsabilidades corresponden al challenger y a los contratos de pruebas.
+
+## Configuración de inicio {#startup-configuration}
+
+Al iniciarse, el proposer se conecta a:
+
+* un RPC de ejecución de L1 para leer contratos y enviar transacciones
+* un RPC de ejecución de L2 para obtener los encabezados de bloques de L2 acordados
+* un RPC de rollup para consultar el estado de sincronización y los output roots
+* un RPC de prover que implementa `prover_prove`
+* `AnchorStateRegistry`
+* `DisputeGameFactory`
+* un `TEEProverRegistry` opcional
+
+El proposer lee la dirección de la implementación del juego desde:
+
+```text Game Implementation Lookup
+DisputeGameFactory.gameImpls(gameType)
+```
+
+La dirección de implementación debe ser distinta de cero. A continuación, el proponente lee:
+
+```text Startup Reads
+AggregateVerifier.BLOCK_INTERVAL()
+AggregateVerifier.INTERMEDIATE_BLOCK_INTERVAL()
+DisputeGameFactory.initBonds(gameType)
+```
+
+`BLOCK_INTERVAL` debe ser como mínimo `2`, `INTERMEDIATE_BLOCK_INTERVAL` debe ser distinto de cero y
+`BLOCK_INTERVAL % INTERMEDIATE_BLOCK_INTERVAL` debe ser `0`. El número de raíces intermedias de una
+propuesta es:
+
+```text Intermediate Root Count
+BLOCK_INTERVAL / INTERMEDIATE_BLOCK_INTERVAL
+```
+
+De forma predeterminada, el proposer utiliza el estado finalizado de L2. Si se configura explícitamente para permitir
+propuestas no finalizadas, puede usar en su lugar el estado seguro de L2 del nodo de rollup.
+
+## Recuperación del estado padre {#parent-recovery}
+
+El proposer recupera de L1 el estado padre onchain más reciente antes de planificar nuevo trabajo. El estado
+padre es:
+
+```text Parent State Fields
+parentAddress
+parentOutputRoot
+parentL2BlockNumber
+```
+
+Si no existe ningún juego coincidente, el padre es la raíz de anclaje de `AnchorStateRegistry`:
+
+```text Anchor Parent State
+parentAddress = AnchorStateRegistry address
+parentOutputRoot = AnchorStateRegistry.getAnchorRoot().root
+parentL2BlockNumber = AnchorStateRegistry.getAnchorRoot().l2BlockNumber
+```
+
+Si existen juegos, el proponente realiza un recorrido determinista hacia adelante desde el anchor root, o desde un
+extremo recuperado en caché si la caché sigue siendo válida. En cada paso:
+
+1. Calcula:
+
+   ```text
+   expectedBlock = parentL2BlockNumber + BLOCK_INTERVAL
+   ```
+
+2. Obtiene el output root canónico de cada punto de control intermedio:
+
+   ```text
+   parentL2BlockNumber + INTERMEDIATE_BLOCK_INTERVAL * i
+   ```
+
+   para `i` en `1..=BLOCK_INTERVAL / INTERMEDIATE_BLOCK_INTERVAL`.
+
+3. Toma la última raíz intermedia como la root claim canónica para `expectedBlock`.
+
+4. Codifica `extraData` a partir de `expectedBlock`, `parentAddress` y las raíces intermedias ordenadas.
+
+5. Busca el juego esperado:
+
+   ```text
+   DisputeGameFactory.games(gameType, rootClaim, extraData)
+   ```
+
+6. Si la búsqueda devuelve `address(0)`, se detiene. El padre actual es el último estado recuperado.
+
+7. De lo contrario, avanza el padre al proxy del juego devuelto y continúa.
+
+Este método de recuperación no recorre los índices de la factory en busca del &quot;mejor&quot; juego. Utiliza la clave única
+del juego en la factory, de modo que solo el siguiente juego canónico para el padre recuperado puede hacer avanzar la cadena de
+padres. Un juego con una raíz, un padre, un número de bloque de L2 o unas raíces intermedias incorrectos tiene una clave
+distinta, por lo que la recuperación de padres lo ignora.
+
+## Selección de checkpoints {#checkpoint-selection}
+
+Tras la recuperación, el siguiente objetivo de propuesta es:
+
+```text Target Block Formula
+targetBlock = parentL2BlockNumber + BLOCK_INTERVAL
+```
+
+El proponente no debe solicitar ni enviar una prueba para `targetBlock` a menos que:
+
+```text Safe Head Constraint
+targetBlock <= safeHead
+```
+
+donde `safeHead` es uno de los siguientes:
+
+* `finalized_l2.number`, por defecto
+* `safe_l2.number`, solo cuando las propuestas no finalizadas se habilitan explícitamente
+
+Cuando la generación de pruebas en paralelo está habilitada, el proposer puede solicitar pruebas para varios objetivos
+de checkpoint futuros, pero los envíos a L1 siguen siendo estrictamente secuenciales. Como máximo, puede haber una transacción de propuesta
+en curso, y la siguiente transacción no se envía hasta que todos los juegos de checkpoint anteriores se hayan recuperado
+o confirmado.
+
+## Solicitud de prueba {#proof-request}
+
+Para un rango de checkpoints, el proposer construye un `ProofRequest` con:
+
+| Campo                         | Valor                                                                        |
+| ----------------------------- | ---------------------------------------------------------------------------- |
+| `l1_head`                     | Hash del bloque de L1 más reciente en el momento de construir la solicitud   |
+| `l1_head_number`              | Número del bloque de L1 más reciente en el momento de construir la solicitud |
+| `agreed_l2_head_hash`         | Hash del bloque de L2 en `parentL2BlockNumber`                               |
+| `agreed_l2_output_root`       | Output root padre recuperado de L1                                           |
+| `claimed_l2_output_root`      | Output root del RPC de rollup en `targetBlock`                               |
+| `claimed_l2_block_number`     | `targetBlock`                                                                |
+| `proposer`                    | Dirección de L1 que enviará la transacción de propuesta                      |
+| `intermediate_block_interval` | `INTERMEDIATE_BLOCK_INTERVAL`                                                |
+| `image_hash`                  | Hash esperado de la imagen TEE                                               |
+
+El método RPC del prover es:
+
+```text Prover RPC Method
+prover_prove(ProofRequest) -> ProofResult
+```
+
+El proposer acepta `ProofResult::Tee` para crear propuestas. Un resultado de prueba ZK no es una entrada válida
+para la ruta actual del proposer.
+
+## Registro de propuestas del TEE {#tee-proposal-journal}
+
+El probador TEE devuelve:
+
+* una propuesta agregada para todo el rango de checkpoints
+* propuestas individuales por bloque para los bloques de dicho rango
+
+La propuesta agregada contiene:
+
+```text Aggregate Proposal Fields
+outputRoot
+signature
+l1OriginHash
+l1OriginNumber
+l2BlockNumber
+prevOutputRoot
+configHash
+```
+
+La firma del TEE se calcula sobre:
+
+```text TEE Signature Preimage
+keccak256(journal)
+```
+
+donde `journal` se empaqueta de la siguiente forma:
+
+```text Journal Packing lines wrap expandable
+proposer(20)
+|| l1OriginHash(32)
+|| prevOutputRoot(32)
+|| startingL2Block(8)
+|| outputRoot(32)
+|| endingL2Block(8)
+|| intermediateRoots(32 * N)
+|| configHash(32)
+|| teeImageHash(32)
+```
+
+Para las propuestas agregadas:
+
+```text Aggregate Proposal Values
+startingL2Block = parentL2BlockNumber
+endingL2Block = targetBlock
+prevOutputRoot = parentOutputRoot
+outputRoot = claimed root at targetBlock
+```
+
+Los `intermediateRoots` ordenados se muestrean cada `INTERMEDIATE_BLOCK_INTERVAL` bloques e incluyen
+la raíz del bloque de destino final.
+
+## Validación previa al envío {#pre-submission-validation}
+
+Inmediatamente antes de enviar a L1, el proponente debe volver a verificar la prueba con respecto al estado canónico de L2:
+
+1. Obtener el output root del rollup en `targetBlock`.
+2. Exigir que sea igual al `outputRoot` de la propuesta agregada.
+3. Extraer los roots intermedios de las propuestas por bloque.
+4. Obtener el output root canónico de cada checkpoint intermedio.
+5. Exigir que cada root intermedio propuesto sea igual a su root canónico.
+
+Si el root agregado o cualquier root intermedio ya no coincide con el estado canónico, el proponente
+descarta el trabajo pendiente y reinicia la recuperación. Esto evita usar resultados de prueba obsoletos tras reorgs de L1
+o L2.
+
+Cuando `TEEProverRegistry` está configurado, el proponente debería recuperar el firmante TEE a partir de la
+firma de la propuesta agregada y llamar a:
+
+```text Signer Validity Check
+TEEProverRegistry.isValidSigner(signer)
+```
+
+Si el registro devuelve `false`, el proponente no debe enviar esa prueba. Debe descartarla
+y solicitar una nueva. Si la propia comprobación del registro falla por un problema de RPC o de
+despliegue, el proponente puede continuar con el envío y confiar en que el verificador onchain garantice la validez
+del firmante.
+
+## Creación del juego {#game-creation}
+
+El proponente crea un juego con:
+
+```solidity Game Creation Call
+DisputeGameFactory.createWithInitData{value: initBond}(
+    gameType,
+    rootClaim,
+    extraData,
+    initData
+)
+```
+
+donde:
+
+```text Root Claim
+rootClaim = aggregateProposal.outputRoot
+```
+
+`extraData` está empaquetado, no codificado en ABI:
+
+```text Extra Data Packing
+l2BlockNumber(32) || parentAddress(20) || intermediateRoots(32 * N)
+```
+
+`l2BlockNumber` se codifica como un entero big-endian de 32 bytes. `parentAddress` es la dirección recuperada del proxy
+del juego padre, o la dirección de `AnchorStateRegistry` en el caso del primer juego posterior al anclaje.
+
+`initData` contiene los bytes de la prueba TEE para `AggregateVerifier.initializeWithInitData()`:
+
+```text Init Data Packing
+proofType(1) || l1OriginHash(32) || l1OriginNumber(32) || signature(65)
+```
+
+Para las pruebas TEE:
+
+```text TEE Proof Type
+proofType = 0
+```
+
+El valor `v` de ECDSA en la firma debe normalizarse a `27` o `28` antes del envío.
+
+`initBond` se lee de `DisputeGameFactory.initBonds(gameType)` durante el arranque y se envía como
+valor de la transacción. El administrador de transacciones de L1 se encarga de la gestión del nonce, el aumento de comisiones, la firma
+y el reenvío de transacciones.
+
+## Juegos duplicados {#duplicate-games}
+
+La clave de un juego en la factory es:
+
+```text Factory Game Key
+gameType || rootClaim || extraData
+```
+
+Si `createWithInitData()` revierte con `GameAlreadyExists`, el proponente da por hecho que el objetivo
+ya se envió. Vuelve a ejecutar la recuperación desde L1 y continúa a partir de la punta recuperada. Así se cubre
+el caso en que una transacción anterior se ejecutó correctamente pero el proponente no llegó a ver el recibo, o
+aquel en que otro proponente válido envió antes el mismo juego.
+
+## Comportamiento de reintento {#retry-behavior}
+
+El proponente reintenta los fallos transitorios en ticks posteriores:
+
+| Fallo                                                  | Comportamiento requerido                                                                             |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| Fallo de RPC de recuperación o de lectura del contrato | Omitir el tick actual y reintentar la recuperación en el siguiente tick                              |
+| Fallo de la solicitud de prueba                        | Reintentar el objetivo en un tick posterior                                                          |
+| Fallo reiterado de la prueba                           | Restablecer el estado del pipeline y recuperarse desde L1                                            |
+| Fallo del envío a L1                                   | Conservar el resultado probado y reintentar el envío en un tick posterior                            |
+| Tiempo de espera agotado en el envío a L1              | Tratarlo como un fallo de envío y reintentar tras la recuperación                                    |
+| `GameAlreadyExists`                                    | Tratarlo como un éxito, actualizar la recuperación y continuar                                       |
+| Discrepancia en la raíz canónica                       | Restablecer el estado del pipeline y volver a generar la prueba a partir del estado de L1 recuperado |
+| Firmante de TEE no válido                              | Descartar la prueba y solicitar una nueva                                                            |
+
+La implementación actual reintenta un mismo objetivo de prueba hasta tres veces antes de restablecer el estado
+del pipeline. El envío de propuestas tiene un tiempo de espera máximo de diez minutos.
+
+## Interfaz de administración {#admin-interface}
+
+El proposer puede exponer, de forma opcional, una interfaz de administración JSON-RPC. Cuando está habilitada, ofrece los siguientes métodos:
+
+| Método                  | Resultado                                    |
+| ----------------------- | -------------------------------------------- |
+| `admin_startProposer`   | Inicia el pipeline de generación de pruebas  |
+| `admin_stopProposer`    | Detiene el pipeline de generación de pruebas |
+| `admin_proposerRunning` | Indica si el pipeline está en ejecución      |
+
+Se considera un error iniciar un proposer que ya está en ejecución o detener uno que ya está detenido.
+
+## Modo de simulación {#dry-run-mode}
+
+En el modo de simulación, el proponente realiza la recuperación, la selección de checkpoints, la obtención de pruebas y la
+validación previa al envío, pero no envía transacciones a L1. En su lugar, registra en los logs el juego que
+se habría creado.
+
+El modo de simulación es útil para validar el comportamiento del prover y del RPC, pero no hace avanzar la cadena de
+propuestas onchain.

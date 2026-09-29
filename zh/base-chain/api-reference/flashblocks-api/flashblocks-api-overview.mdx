@@ -1,0 +1,194 @@
+---
+title: '概述'
+sidebarTitle: '概述'
+description: 'Flashblocks 专用的 RPC 方法、WebSocket 订阅，以及 Base 预确认的基础设施数据流模式。'
+---
+
+所有 Base 公共端点 (`mainnet.base.org` / `sepolia.base.org`) 均已启用 Flashblocks，不仅提供所有标准以太坊 JSON-RPC 方法，还额外提供一组预确认专用方法。借助这些方法，你可以基于排序器 (sequencer) 排序后的数据读取状态、模拟交易和订阅事件流，最多可比区块封装提前约 1.8 秒。
+
+<Warning>
+  我们计划在即将到来的 Denim 硬分叉中弃用 Flashblocks。该升级仍在规划中，尚未最终确定。你现在就可以在 [Vibenet](/zh/build-on-base/test-on-vibenet) 上提前测试规范的 200ms 出块行为。有关最终需要对应用进行的更改，请参阅[从 Flashblocks 迁移](/zh/upgrades/denim/migrate-from-flashblocks)。
+</Warning>
+
+<Info>
+  所有[标准以太坊 JSON-RPC 方法](/zh/base-chain/api-reference/rpc-overview)均支持 `"pending"` 区块标签，可基于预确认状态 (而非交易池) 进行解析。端点 URL 请参阅 [RPC 概述](/zh/base-chain/api-reference/rpc-overview)。
+</Info>
+
+## HTTP 方法 {#http-methods}
+
+| 方法                                                                                             | 描述               |
+| :--------------------------------------------------------------------------------------------- | :--------------- |
+| [eth&#95;simulateV1](/zh/base-chain/api-reference/flashblocks-api/eth_simulateV1)                 | 基于预确认状态模拟交易包     |
+| [base&#95;transactionStatus](/zh/base-chain/api-reference/flashblocks-api/base_transactionStatus) | 检查节点内存池是否已收到某笔交易 |
+
+## WebSocket 订阅 {#websocket-subscriptions}
+
+在 Flashblocks WSS 端点上，以 `newHeads` 调用 `eth_subscribe` 时，每个 Flashblock 约 200ms 就会发出一个新事件，而非每 2 秒一次。此外，还提供三种 Flashblocks 端点独有的订阅类型：
+
+| 订阅                                                                                               | 描述                                        |
+| :----------------------------------------------------------------------------------------------- | :---------------------------------------- |
+| [newFlashblockTransactions](/zh/base-chain/api-reference/flashblocks-api/newFlashblockTransactions) | 在交易被预确认时逐笔流式推送 (每笔约 200ms)                |
+| [pendingLogs](/zh/base-chain/api-reference/flashblocks-api/pendingLogs)                             | 流式推送预确认交易中经过筛选的事件日志                       |
+| [newFlashblocks](/zh/base-chain/api-reference/flashblocks-api/newFlashblocks)                       | 流式推送来自排序器 (sequencer) 的完整 Flashblock 负载对象 |
+
+## 基础设施流 {#infrastructure-stream}
+
+原始 Flashblocks 基础设施流是上游 WebSocket 数据流，供支持 Flashblocks 的 RPC 节点消费。排序器在预确认交易的过程中，大约每 200ms 推送一条新消息。
+
+<Warning>
+  **应用程序不应直接连接基础设施流。** 这些端点仅供节点运营者使用。应用开发者应通过支持 Flashblocks 的 RPC 提供商，使用上文介绍的 [WebSocket 订阅方法](#websocket-subscriptions)。
+</Warning>
+
+| 网络      | 原始流 URL                                 |
+| :------ | :-------------------------------------- |
+| 主网      | `wss://mainnet.flashblocks.base.org/ws` |
+| Sepolia | `wss://sepolia.flashblocks.base.org/ws` |
+
+### Flashblock 对象 {#flashblock-object}
+
+每条基础设施流消息的根结构。
+
+<Card>
+  <ParamField path="payload_id" type="string">
+    正在构建的区块的唯一标识符。在同一完整区块内的所有 Flashblocks 中保持不变。
+  </ParamField>
+
+  <ParamField path="index" type="number">
+    Flashblock 在当前区块中的索引。从 0 开始 (仅包含系统交易) ，用户交易从索引 1 开始。每个区块通常最多达到 9–10，但在排序器出现时序漂移时[可能超过 10](/zh/specifications/flashblocks#can-the-flashblock-index-exceed-10-is-that-a-bug)。
+  </ParamField>
+
+  <ParamField path="base" type="Base Object">
+    区块头属性。**仅在 `index` 为 `0` 时存在。** 参见 [Base 对象](#base-object)。
+  </ParamField>
+
+  <ParamField path="diff" type="Diff Object">
+    此 Flashblock 的增量区块状态变更。每条消息中都会包含。参见 [Diff 对象](#diff-object)。
+  </ParamField>
+
+  <ParamField path="metadata" type="Metadata Object">
+    补充数据。**不稳定：字段可能随时变更，恕不另行通知。** 参见 [Metadata 对象](#metadata-object)。
+  </ParamField>
+</Card>
+
+### Base 对象 {#base-object}
+
+包含完整的区块头属性。**仅出现在 `index: 0` 消息中** (即每个完整区块的第一个 Flashblock) 。
+
+<Card>
+  <ParamField path="parent_hash" type="string">父区块的哈希值。</ParamField>
+  <ParamField path="fee_recipient" type="string">接收交易费用的地址 (coinbase) 。</ParamField>
+  <ParamField path="block_number" type="string">区块号 (十六进制) 。</ParamField>
+  <ParamField path="gas_limit" type="string">该区块允许使用的最大 gas 量 (十六进制) 。</ParamField>
+  <ParamField path="timestamp" type="string">区块创建时的 Unix 时间戳 (十六进制) 。</ParamField>
+  <ParamField path="base_fee_per_gas" type="string">EIP-1559 每单位 gas 的基础费用 (十六进制) 。</ParamField>
+  <ParamField path="prev_randao" type="string">上一个 RANDAO 值，用于生成链上随机数。</ParamField>
+  <ParamField path="extra_data" type="string">由排序器设置的任意数据字段。</ParamField>
+  <ParamField path="parent_beacon_block_root" type="string">父信标区块的根 (EIP-4788) 。</ParamField>
+</Card>
+
+### Diff 对象 {#diff-object}
+
+包含该 Flashblock 对应的增量区块状态变更。每条消息中都会包含此对象。
+
+<Card>
+  <ParamField path="state_root" type="string">应用此 Flashblock 中的交易后，状态树的 Merkle 根。</ParamField>
+  <ParamField path="block_hash" type="string">此 Flashblock 索引处部分区块的哈希。随着更多交易被预确认，该值会随每个 Flashblock 更新。</ParamField>
+  <ParamField path="gas_used" type="string">截至此 Flashblock (含) 的累计 gas 用量 (十六进制) 。</ParamField>
+  <ParamField path="blob_gas_used" type="string">累计 blob gas 用量 (EIP-4844，十六进制) 。</ParamField>
+  <ParamField path="transactions" type="string[]">此 Flashblock 所含交易的数组，每笔交易均为 RLP 编码。</ParamField>
+  <ParamField path="withdrawals" type="array">验证者提款 (在 Base L2 上始终为空) 。</ParamField>
+  <ParamField path="receipts_root" type="string">交易收据的 Merkle 根。</ParamField>
+  <ParamField path="logs_bloom" type="string">此 Flashblock 中日志的布隆过滤器。</ParamField>
+  <ParamField path="withdrawals_root" type="string">提款的 Merkle 根。</ParamField>
+</Card>
+
+### Metadata 对象 {#metadata-object}
+
+<Warning>
+  **`metadata` 对象尚不稳定。** 其字段可能会在不事先通知的情况下新增、修改或移除。请勿让生产环境依赖该对象，应改用 [`diff`](#diff-object) 对象，或通过标准 RPC 查询已最终确定的区块数据。
+</Warning>
+
+自 v0.8.0 起，`metadata` 对象中不再包含 `new_account_balances` 和 `receipts`，但仍保留 `block_number`。`access_list` 字段虽然存在，但始终为空。
+
+<Card>
+  <ParamField path="block_number" type="number">区块号，以十进制整数表示。</ParamField>
+</Card>
+
+### Receipt 对象 {#receipt-object}
+
+<Note>
+  `metadata.receipts` 已在 v0.8.0 中移除。此 schema 仅保留供旧版本节点参考。在 v0.8.0 及更高版本中，如需以轮询方式获取收据数据，请使用 [`eth_getTransactionReceipt`](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionReceipt)；如需实时获取包含日志的预确认交易数据流，请使用 `full: true` 订阅 [`newFlashblockTransactions`](/zh/base-chain/api-reference/flashblocks-api/newFlashblockTransactions)。
+</Note>
+
+<Card>
+  <ParamField path="type" type="string">交易类型：`0x0` Legacy、`0x1` Access List、`0x2` EIP-1559、`0x7e` Deposit (L1→L2) 。</ParamField>
+  <ParamField path="status" type="string">交易状态：`0x1` 表示成功，`0x0` 表示失败。</ParamField>
+  <ParamField path="cumulativeGasUsed" type="string">区块中截至本交易 (含本交易) 累计消耗的 gas 总量 (十六进制) 。</ParamField>
+  <ParamField path="logs" type="Log[]">该交易触发的事件日志数组。参见 [Log 对象](#log-object)。</ParamField>
+  <ParamField path="logsBloom" type="string">本收据中日志的布隆过滤器。</ParamField>
+  <ParamField path="transactionIndex" type="string">交易在区块中的索引 (十六进制) 。</ParamField>
+</Card>
+
+### Log 对象 {#log-object}
+
+<Card>
+  <ParamField path="address" type="string">触发该事件的合约地址。</ParamField>
+  <ParamField path="topics" type="string[]">已索引事件参数组成的数组。Topic 0 通常为事件签名哈希。</ParamField>
+  <ParamField path="data" type="string">经 ABI 编码的非索引事件参数。</ParamField>
+  <ParamField path="blockHash" type="string">包含该日志的区块的哈希。</ParamField>
+  <ParamField path="blockNumber" type="string">区块号 (十六进制) 。</ParamField>
+  <ParamField path="blockTimestamp" type="string">区块的 Unix 时间戳，以十六进制字符串表示。该字段是 Base L2 在标准以太坊日志结构基础上新增的扩展字段。</ParamField>
+  <ParamField path="transactionHash" type="string">触发该日志的交易的哈希。</ParamField>
+  <ParamField path="transactionIndex" type="string">交易在区块中的索引 (十六进制) 。</ParamField>
+  <ParamField path="logIndex" type="string">日志在区块中的索引位置 (十六进制) 。</ParamField>
+  <ParamField path="removed" type="boolean">若该日志因链重组而被移除，则为 `true`。</ParamField>
+</Card>
+
+### 完整示例 {#complete-examples}
+
+**索引 0**：包含 `base` 对象 (区块头) ：
+
+```json Index 0 (With Base Object) lines wrap expandable
+{
+  "payload_id": "0x03997352d799c31a",
+  "index": 0,
+  "base": {
+    "parent_hash": "0x9edc29b8b0a1e31d28616e40c16132ad0d58faa8bb952595b557526bdb9a960a",
+    "fee_recipient": "0x4200000000000000000000000000000000000011",
+    "block_number": "0x158a0e9",
+    "gas_limit": "0x3938700",
+    "timestamp": "0x67bf8332",
+    "base_fee_per_gas": "0xfa",
+    "parent_beacon_block_root": "0x15b9e7c8ac4cbe92dafc849ed30a23e91624bbe5cbe199c0ccea3f7de7fc6d49"
+  },
+  "diff": {
+    "state_root": "0x208fd63edc0681161105f27d03daf9f8c726d8c94e584a3c0696c98291c24333",
+    "block_hash": "0x5c330e55a190f82ea486b61e5b12e27dfb4fb3cecfc5746886ef38ca1281bce8",
+    "gas_used": "0xab3f",
+    "transactions": ["0x7ef8f8a0b4afc0b7ce10e150801bbaf08ac33fecb0f38311793abccb022120d321c6d276..."],
+    "withdrawals": []
+  },
+  "metadata": {
+    "block_number": 22585577
+  }
+}
+```
+
+**索引 1–N (仅含差异)&#x20;**——不含 `base` 对象：
+
+```json Index 1-N (Diff Only) lines wrap expandable
+{
+  "payload_id": "0x03997352d799c31a",
+  "index": 4,
+  "diff": {
+    "state_root": "0x7a8f45038665072f382730e689f4a1561835c9987fca8942fa95872fb9367eaa",
+    "block_hash": "0x9b32f7a14cbd1efc8c2c5cad5eb718ec9e0c5da92c3ba7080f8d4c49d660c332",
+    "gas_used": "0x1234f",
+    "transactions": ["0x02f90133...", "0x02f90196..."],
+    "withdrawals": []
+  },
+  "metadata": {
+    "block_number": 22585577
+  }
+}
+```

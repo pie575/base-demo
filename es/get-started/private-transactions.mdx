@@ -1,0 +1,72 @@
+---
+title: "Transacciones privadas"
+keywords: ["Base Ledgers", "pagos privados Base", "transacciones confidenciales Base", "liquidación empresarial con stablecoins", "contrato Portal Base"]
+description: "Realiza pagos empresariales confidenciales en Base con Base Ledgers: los saldos, las transferencias y las contrapartes se mantienen privados mientras los fondos se liquidan onchain."
+---
+
+import { LedgersDemo } from "/snippets/LedgersDemo.jsx"
+
+<Warning>
+  Base Ledgers está en acceso anticipado. [Solicita acceso](https://www.coinbase.com/developer-platform/developer-interest) para operar tu propio libro contable, o usa [Coinbase Managed](https://docs.cdp.coinbase.com/payments/overview) si prefieres un servicio gestionado basado en él.
+</Warning>
+
+Opera tu propio producto de pagos privados en Base con **Base Ledgers**. Los saldos, las transferencias y las contrapartes no aparecen en los exploradores de bloques públicos, mientras que los fondos se liquidan en Base a través de un único contrato `Portal`. El cumplimiento normativo se aplica en el propio libro contable mediante tus controles KYC, los fondos permanecen en autocustodia en un contrato que tú controlas y cada depósito y retiro es una llamada onchain que puedes agrupar de forma atómica con otras acciones en Base.
+
+## Demostración {#demo}
+
+<LedgersDemo />
+
+<Tip>
+  La demostración anterior es solo una simulación. Si quieres ver demostraciones onchain en Vibenet, visita [Base chain demos](https://chain.base.org/demos).
+</Tip>
+
+## Guías {#guides}
+
+<CardGroup cols={2}>
+  <Card title="Depositar en un libro contable" icon="arrow-down-to-line" href="/es/build-on-base/ledgers/deposit">
+    Transfiere fondos de Base al libro contable con un destinatario cifrado.
+  </Card>
+
+  <Card title="Transferir dentro de un libro contable" icon="shuffle" href="/es/build-on-base/ledgers/transfer">
+    Mueve saldos dentro del libro contable sin dejar rastro en la cadena pública.
+  </Card>
+
+  <Card title="Retirar de un libro contable" icon="arrow-up-from-line" href="/es/build-on-base/ledgers/withdraw">
+    Devuelve fondos a Base sin dejar de mantener la privacidad de la cuenta.
+  </Card>
+</CardGroup>
+
+## Por qué elegir libros contables de Base {#why-base-ledgers}
+
+* **Privado por defecto.** Los saldos, las transacciones y las transferencias no aparecen en los exploradores de bloques públicos. Los depósitos ocultan al destinatario y los retiros ocultan al remitente, de modo que no es posible vincular unos con otros.
+* **Conforme a la normativa.** Un operador restringe el acceso al libro contable mediante sus propios controles de KYC y de cumplimiento normativo.
+* **Componible con Base.** Los depósitos y retiros son llamadas onchain que puedes agrupar con otras acciones (depositar y actuar, o retirar e intercambiar), de forma que todas se liquidan juntas o ninguna se liquida.
+* **Configurable.** Gestiona un libro contable a tu manera, con fondos en autocustodia y lógica personalizada para procesar las transacciones.
+
+## Diseñado para {#built-for}
+
+<CardGroup cols={2}>
+  <Card title="Pagos B2B" icon="building">
+    Paga a tus proveedores sin exponer su lista en la cadena pública.
+  </Card>
+
+  <Card title="Nóminas y pagos" icon="money-check-dollar">
+    Gestiona nóminas onchain sin revelar cuánto gana cada empleado o contratista.
+  </Card>
+
+  <Card title="Operaciones de tesorería" icon="vault">
+    Mueve saldos de forma privada entre cuentas corporativas, custodios y contrapartes.
+  </Card>
+
+  <Card title="Remesas transfronterizas" icon="globe">
+    Opera corredores con verificación KYC sin exponer el remitente, el destinatario ni el importe.
+  </Card>
+</CardGroup>
+
+## Cómo funciona {#how-it-works}
+
+Un pago pasa por tres etapas: los fondos entran a través del contrato Portal, se mueven de forma privada dentro del libro contable y vuelven a salir a Base. El operador ejecuta los servicios que procesan cada paso y decide cómo se autorizan los retiros.
+
+1. **[Depósito](/es/build-on-base/ledgers/deposit).** Un usuario transfiere fondos de Base al libro contable. El destinatario está cifrado, por lo que los depósitos a una misma cuenta no quedan vinculados entre sí.
+2. **[Transferencia dentro de un libro contable](/es/build-on-base/ledgers/transfer).** Dentro del libro contable, los usuarios pueden transferir, hacer intercambios y obtener rendimientos, mientras sus saldos y su actividad se mantienen privados.
+3. **[Retiro](/es/build-on-base/ledgers/withdraw).** Un usuario devuelve fondos a Base. Onchain, un retiro revela el activo y el monto, pero no la cuenta que lo origina.

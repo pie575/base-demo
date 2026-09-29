@@ -1,0 +1,55 @@
+---
+title: 静的ドキュメントファイル
+sidebarTitle: 静的ドキュメントファイル
+description: llms.txt と llms-full.txt を使って、AI アシスタントが Base のドキュメントを参照できるようにします。
+---
+
+## ドキュメントインデックス {#documentation-index}
+
+ドキュメントの完全なインデックスは次の URL から取得できます：[https://docs.base.org/llms.txt](https://docs.base.org/llms.txt)
+
+詳しく調べる前に、このファイルで利用可能なすべてのページを確認してください。
+
+## ドキュメント全文ファイル {#full-documentation-file}
+
+お使いの AI ツールがまだ MCP に対応していない場合は、代わりに静的なドキュメントファイルを利用できます。このファイルを使うと、Base のドキュメント全体を 1 つのテキストファイルとして AI アシスタントに渡せます。
+
+<Warning>
+  静的な `llms-full.txt` ファイルはある時点のスナップショットであるため、最新の更新が反映されていない場合があります。常に最新のドキュメントを参照できるよう、可能な限り [MCP](/ja/get-started/docs-mcp) を使用してください。
+</Warning>
+
+### Cursor でのセットアップ {#setup-with-cursor}
+
+[Cursor](https://cursor.com/) は、VS Code のフォークとして開発された AI 搭載のコードエディターです。AI によるコード補完や自然言語での編集などの機能を備えています。
+
+<Steps>
+  <Step title="Docs 設定を開く">
+    **Settings** &gt; **Features** &gt; **Docs** に移動します。
+  </Step>
+
+  <Step title="Base のドキュメントを追加する">
+    **Add new doc** をクリックし、`https://docs.base.org/llms-full.txt` を貼り付けます。
+  </Step>
+
+  <Step title="チャットで参照する">
+    AI チャットで `@docs -> Base` と入力すると、ドキュメントを参照できます。
+  </Step>
+</Steps>
+
+### Claude Code でのセットアップ {#setup-with-claude-code}
+
+[Claude Code](https://docs.claude.com/en/docs/claude-code/overview) は、ターミナル上で動作し、コードベースを理解するエージェント型のコーディングツールです。
+
+<Steps>
+  <Step title="ドキュメントファイルをダウンロードする">
+    次の URL から静的ドキュメントファイルをダウンロードします：[https://docs.base.org/llms-full.txt](https://docs.base.org/llms-full.txt)
+  </Step>
+
+  <Step title="プロジェクトに追加する">
+    ファイルをプロジェクトディレクトリ、またはシステム上の把握しやすい場所に保存します。
+  </Step>
+
+  <Step title="チャットで参照する">
+    `/read` コマンドを使うか、ファイルパスをドラッグ＆ドロップして、ドキュメントを会話に読み込ませます。これで Claude Code は、そのセッション中 Base の全ドキュメントを参照できるようになります。
+  </Step>
+</Steps>

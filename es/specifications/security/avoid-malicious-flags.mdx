@@ -1,0 +1,33 @@
+---
+sidebarTitle: 'Evitar marcas de app maliciosa'
+title: Cómo evitar que tu aplicación se marque como maliciosa
+description: El programa de recompensas por errores de Base y los procedimientos para informar vulnerabilidades.
+---
+
+Para que tu aplicación se perciba como confiable y no se marque como maliciosa, es necesario seguir las buenas prácticas. Aquí tienes una guía rápida para crear una aplicación segura y que cumpla con las normativas desde el primer día.
+
+## 1. Verifica tu contrato inteligente y reduce sus riesgos {#1-verify-and-reduce-the-risk-of-your-smart-contract}
+
+* **Verifica el contrato inteligente**: asegúrate de que el código fuente de tus contratos esté verificado y sea público en alguno de los exploradores de bloques que figuran en el [Builder Stack](/es/get-started/builder-stack). Por ejemplo, puedes verificar un contrato en [Etherscan](https://etherscan.io/verifyContract) o [Basescan](https://basescan.org/verifyContract), en la sección «Verify Contract».
+* **Limita la exposición de los fondos de los usuarios**: diseña tus contratos de forma que los fondos de los usuarios queden lo menos expuestos posible. Apuesta por un diseño eficiente para evitar riesgos innecesarios. Por ejemplo, solicita solo la cantidad mínima necesaria para completar la transacción.
+
+## 2. Enviar una solicitud de verificación {#2-submit-a-verification-request}
+
+Después de verificar tu contrato inteligente, te recomendamos [enviar una solicitud de verificación](https://report.blockaid.io/). Este paso ayuda a que fuentes de confianza del ecosistema reconozcan tu aplicación como segura y verificada.
+
+## 3. Sigue las prácticas recomendadas para aplicaciones {#3-follow-app-best-practices}
+
+* **Accesibilidad en todas las regiones**: evita el bloqueo geográfico o las restricciones de acceso que impidan que determinadas regiones o países accedan a tu aplicación. Si esto fuera necesario por motivos legales o de cumplimiento normativo, puedes indicarlo al enviar tu solicitud de verificación.
+* **Comportamiento coherente**: evita cambios bruscos o injustificados en la interfaz de usuario que puedan hacer dudar a los usuarios de la fiabilidad de la aplicación.
+* **Interacciones onchain transparentes**: asegúrate de que las interacciones onchain de tu aplicación sean claras y se correspondan con las acciones de la interfaz. Por ejemplo, un botón «Mint» debe emitir claramente una transacción de acuñación.
+* **Métodos de inicio de sesión estándar**: ofrece todos los métodos de conexión estándar para que los usuarios inicien sesión, como WalletConnect / Coinbase Wallet SDK o las billeteras de extensión de navegador más populares.
+* **Audita tus contratos**: encarga la auditoría de tus contratos a una empresa de prestigio. Publica el informe de auditoría y proporciona un enlace para que los usuarios puedan encontrarlo fácilmente. Las auditorías demuestran que has tomado medidas adicionales para proteger tus contratos inteligentes.
+
+Si sigues estas recomendaciones, reducirás considerablemente las probabilidades de que tu aplicación se marque como maliciosa y fomentarás un entorno seguro y confiable para tus usuarios.
+
+***
+
+**¿Sigues teniendo problemas?**
+Coinbase Wallet puede generar falsos positivos al marcar aplicaciones. Para evitarlos, asegúrate de haber completado las acciones recomendadas anteriormente. Si tu aplicación sigue marcada como sospechosa o maliciosa, [notifícalo a Blockaid](https://report.blockaid.io/mistake).
+
+***

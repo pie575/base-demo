@@ -1,0 +1,90 @@
+---
+title: "APIを有料化する"
+keywords: ["x402 exact payment", "charge API USDC", "x402 seller Base", "agent payment endpoint"]
+description: "Base上でx402のexactスキームを使用し、固定価格のAPIルートを保護します。"
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+API レスポンスを返す前に、あらかじめ決まった金額を課金します。ここで扱う Base の USDC フローでは、x402 が HTTP の `402 Payment Required` ハンドシェイクを介して EIP-3009 の承認を受け渡し、ファシリテーターがその承認を検証して決済します。
+
+## デモ {#demo}
+
+<PaymentsDemo flow="x402" />
+
+<Tip>
+  上記のデモはモックです。Vibenet 上のオンチェーンデモをご覧になりたい場合は、[Base chain demos](https://chain.base.org/demos) をご確認ください。
+</Tip>
+
+これらの例は、Base Sepolia (`eip155:84532`) と公開テスト用ファシリテーターを対象としています。実環境でテストする前に、ファシリテーターが対応しているネットワーク、アセット、決済コントラクトを確認してください。
+
+<Steps>
+  <Step title="支払い要件を返す">未払いのリクエストに対しては、スキーム、ネットワーク、トークン、価格、受取人を含む 402 レスポンスが返されます。</Step>
+  <Step title="署名して再試行する">購入者は自身の支出ポリシーを適用したうえで、提示された支払いに署名し、`PAYMENT-SIGNATURE` を付けてリクエストを再試行します。</Step>
+  <Step title="処理前に検証する">保護対象のハンドラーが実行される前に、販売者側のミドルウェアがペイロードを検証します。</Step>
+  <Step title="決済する">ファシリテーターが支払いを送信し、決済の詳細をレスポンスとともに返します。</Step>
+</Steps>
+
+## 固定価格のルートを設定する {#price-a-fixed-route}
+
+<CodeGroup>
+  {/* sample: x402-exact-ts */}
+
+  ```typescript TypeScript · Express lines wrap expandable highlight={1,3}
+  app.use(paymentMiddleware({
+    "GET /fixed": {
+      accepts: [{ scheme: "exact", price: "$0.01", network, payTo }],
+      description: "Fixed-price market report",
+      mimeType: "application/json",
+    },
+  }, resourceServer));
+  app.get("/fixed", (_request, response) => response.json({ report: "Base market summary" }));
+  ```
+
+  {/* sample: x402-exact-go */}
+
+  ```go Go · net/http lines wrap expandable highlight={3}
+  routes := x402http.RoutesConfig{
+  	"GET /fixed": {
+  		Accepts: x402http.PaymentOptions{{Scheme: "exact", Price: "$0.01", Network: network, PayTo: payTo}},
+  		Description: "Fixed-price market report", MimeType: "application/json",
+  	},
+  }
+  mux := http.NewServeMux()
+  mux.HandleFunc("GET /fixed", func(w http.ResponseWriter, _ *http.Request) {
+  	_ = json.NewEncoder(w).Encode(map[string]string{"report": "Base market summary"})
+  })
+  ```
+
+  {/* sample: x402-exact-python */}
+
+  ```python Python · FastAPI lines wrap expandable highlight={3}
+  routes = {
+      "GET /fixed": RouteConfig(
+          accepts=[PaymentOption(scheme="exact", price="$0.01", network=network, pay_to=pay_to)],
+          description="Fixed-price market report",
+          mime_type="application/json",
+      )
+  }
+
+
+  @app.get("/fixed")
+  async def fixed() -> dict[str, str]:
+      return {"report": "Base market summary"}
+  ```
+</CodeGroup>
+
+<Check>
+  未払いのリクエストには 402 が返されます。有効な支払いを付けて再試行すると、リクエストがハンドラーに到達し、リソースが一度だけ返されます。
+</Check>
+
+<Warning>
+  ファシリテーターのレスポンスと自前のフルフィルメント記録は、それぞれ別個に確認してください。ルートは冪等に実装し、支払い済みリクエストが再試行されても、一度限りのリソースが二重に提供されないようにしてください。
+</Warning>
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="従量課金の支払いを確定する" icon="gauge" href="/ja/build-on-base/accept-payments/settle-usage-based-payments">処理の成功後に最終的な請求額を確定します。</Card>
+  <Card title="有料サービスを呼び出す" icon="robot" href="/ja/build-on-base/accept-payments/call-a-paid-service">購入者側でネットワーク、アセット、支出ポリシーを設定します。</Card>
+</CardGroup>

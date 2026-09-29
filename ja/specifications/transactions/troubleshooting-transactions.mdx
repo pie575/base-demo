@@ -1,0 +1,110 @@
+---
+title: トランザクションのトラブルシューティング
+slug: /troubleshooting-transactions
+description: Base で発生するトランザクションの問題を診断・解決するためのガイドです。
+---
+
+## トランザクションがブロックに取り込まれない場合 {#transaction-not-being-included}
+
+トランザクションが想定より長く保留状態のままになっている場合は、以下の点を確認してください。
+
+### 最大手数料が低すぎる {#max-fee-too-low}
+
+`maxFeePerGas` が現在のベース手数料を下回っている場合、ベース手数料が指定した水準まで下がるまで、トランザクションは保留状態のままになります。
+
+**解決策**: `maxFeePerGas` は、ベース手数料と優先手数料の両方を賄える値にする必要があります。ベース手数料はブロックごとに変動する可能性があるため、トランザクションの保留中にベース手数料が上昇しても有効な状態を保てるよう、`maxFeePerGas` を十分に高く設定してください。一般的な方法は次のとおりです。
+
+```text Max Fee Formula
+maxFeePerGas = baseFee * 2 + maxPriorityFeePerGas
+```
+
+この計算式 ([ethers.js](https://github.com/ethers-io/ethers.js/blob/98c49d091eb84a9146dfba8476f18e4c3e3d1d31/src.ts/providers/abstract-provider.ts#L945-L950) で使用されているもの) を使うと、ベースフィーが 2 倍に上昇してもトランザクションが実行不能にならないだけの余裕を確保できます。実際に支払うのはブロックへの取り込み時点のベースフィーのみで、上限額が請求されるわけではありません。
+
+<Note>
+  Base には[最低ベースフィー](/ja/specifications/transactions/network-fees#minimum-base-fee)が設定されています。ベースフィーがこの最低値を下回ることはないため、`maxFeePerGas` がこの値未満のトランザクションは決して取り込まれません。
+</Note>
+
+### 優先手数料が低すぎる {#priority-fee-too-low}
+
+需要が高まっている時期には、トランザクションは優先手数料によってブロックスペースを奪い合います。他のトランザクションと比べて優先手数料が低すぎると、ブロックへの取り込みが遅れる可能性があります。
+
+**解決策**: ほとんどのユーザーは、混雑が解消されるまで待つだけで問題ありません。急ぎのトランザクションの場合は、`eth_maxPriorityFeePerGas` を使用して優先手数料の見積もりを取得してください。この見積もりは、取り込まれるのに十分な数の直近のトランザクションを上回る水準になります。
+
+<Note>
+  DA スロットリングが実施されている間は、スロットリングを考慮して優先手数料の見積もりを算出する RPC エンドポイントはありません。DA スロットリング中は、シーケンサーが L1 のデータ可用性スループットを管理するために L2 トランザクションを制限するため、優先手数料が高いトランザクションでも遅延する場合があります。
+</Note>
+
+### nonceのギャップ {#nonce-gap}
+
+nonceがNのトランザクションが保留中の場合、nonceがN+1以上のトランザクションは、手数料の高さにかかわらず、すべてその後ろのキューで待機することになります。
+
+**解決策**: 保留中のトランザクションがブロックに取り込まれるのを待つか、同じnonceでより高い手数料を設定した新しいトランザクションを送信して置き換えてください (`maxPriorityFeePerGas`と`maxFeePerGas`をいずれも10%以上引き上げる必要があります) 。
+
+### nonce が低すぎる {#nonce-too-low}
+
+すでに使用済みの nonce でトランザクションを送信すると、そのトランザクションは拒否されます。
+
+**解決策**：`eth_getTransactionCount` に `pending` タグを指定して現在の nonce を照会し、次に使用可能な nonce を取得してください。
+
+## トランザクションが拒否された {#transaction-rejected}
+
+### ガスリミットが上限を超えている {#gas-limit-exceeds-maximum}
+
+Base では、[トランザクションごとのガス上限](/ja/specifications/transactions/throughput-and-limits#per-transaction-gas-maximum)として **16,777,216 gas (2^24)** が適用されます。これを超えるガスリミットを指定したトランザクションは、ブロック検証時に拒否されます。
+
+**エラー**: `exceeds maximum per-transaction gas limit`
+
+**解決策**: ガスリミットを 16,777,216 (2^24) 以下に設定してください。トランザクションにどうしてもそれ以上のガスが必要な場合は、複数のトランザクションに分割する必要があります。
+
+## トランザクションがブロックに取り込まれたが失敗した場合 {#transaction-included-but-failed}
+
+トランザクションがブロックに取り込まれたにもかかわらず、ステータスが「失敗」と表示される場合：
+
+### ガス不足 {#out-of-gas}
+
+トランザクションの実行中にガスが不足しました。
+
+**解決策**: ガスリミットを引き上げてください。`eth_estimateGas` でガスの見積もりを取得し、変動に備えてバッファ (例: 20%) を上乗せしてください。
+
+### コントラクトによるリバート {#reverted-by-contract}
+
+コントラクトの実行中にリバート条件に該当しました。
+
+**解決策**: [Basescan](https://basescan.org) でトランザクションを確認し、リバートの理由を調べてください。よくある原因としては、require 文の失敗、算術エラー、無効な状態遷移などがあります。
+
+## 承認の遅延 {#slow-confirmation}
+
+### 承認時間について {#understanding-confirmation-times}
+
+Base のブロック生成間隔は 2 秒ですが、[Flashblocks](/ja/specifications/transactions/transaction-ordering#flashblocks) により 200ms ごとに事前承認 (プレコンファメーション) が得られます。
+
+| 承認レベル              | 時間      | 説明                          |
+| ------------------ | ------- | --------------------------- |
+| Flashblock による事前承認 | 約 200ms | トランザクションが事前承認に含まれる          |
+| L2 ブロックへの取り込み      | 約 2 秒   | トランザクションが封印済みの L2 ブロックに含まれる |
+| L1 バッチへの取り込み       | 約 2 分   | トランザクションが Ethereum に投稿される   |
+| L1 ファイナリティ         | 約 20 分  | Ethereum 上のバッチがファイナライズされる   |
+
+詳しくは、[トランザクションのファイナリティ](/ja/specifications/transactions/transaction-finality)を参照してください。
+
+### Flashblocksで承認を高速化する {#using-flashblocks-for-faster-confirmations}
+
+承認を最速で得るには、Flashblocks対応のRPCエンドポイントを使用してください。
+
+| ネットワーク  | Flashblocks RPC            |
+| ------- | -------------------------- |
+| Mainnet | `https://mainnet.base.org` |
+| Sepolia | `https://sepolia.base.org` |
+
+これらのエンドポイントは、L2ブロック全体の完成を待たず、トランザクションがFlashblockに取り込まれた時点でトランザクションレシートを返します。
+
+## デバッグツール {#debugging-tools}
+
+* **[Basescan](https://basescan.org)**: トランザクションのステータス、ログ、リバート理由を確認できます
+* **[Tenderly](https://tenderly.co)**: トランザクションのシミュレーションとデバッグを行えます
+* **`eth_call`**: トランザクションを送信せずにコントラクト呼び出しをテストできます
+* **`eth_estimateGas`**: 送信前にガス使用量を見積もることができます
+
+## サポートを受ける {#getting-help}
+
+それでも問題が解決しない場合は、[Base Discord](https://base.org/discord)の`#developer-chat`チャンネルでご相談ください。

@@ -1,0 +1,104 @@
+---
+title: "Crear una transacción de validez"
+description: "Firma y envía una transacción de validez con Viem."
+---
+
+En esta guía se utiliza una transacción EIP-1559 con Viem, ya que es el tipo de transacción recomendado. La API también admite transacciones legacy y EIP-2930 firmadas.
+
+<Warning>
+  Las transacciones de validez son experimentales. Por ahora, `base_sendRawTransactionValidity` solo está disponible en Vibenet.
+</Warning>
+
+## 1. Crear predicados {#1-create-predicates}
+
+Usa `balance` o `storage` para esperar a que una cuenta o un contrato alcance un estado determinado. Usa `block_number` y `flashblock_index` para restringir la posición candidata. Deben cumplirse todos los predicados.
+
+```ts Predicate setup lines wrap expandable
+import type { Address, Hex } from 'viem';
+
+const validity = [
+  {
+    type: 'balance',
+    params: {
+      address: '0x8ba1f109551bD432803012645Ac136ddd64DBA72' as Address,
+      op: '>=',
+      value: '0x1' as Hex,
+    },
+  },
+  {
+    type: 'storage',
+    params: {
+      address: '0x8ba1f109551bD432803012645Ac136ddd64DBA72' as Address,
+      slot: '0x8' as Hex,
+      op: '=',
+      value: '0x2a' as Hex,
+    },
+  },
+  {
+    type: 'block_number',
+    params: { op: '<=', value: '0x11a6a1' as Hex },
+  },
+  {
+    type: 'flashblock_index',
+    params: { op: '<=', value: '0x2' as Hex },
+  },
+] as const;
+```
+
+Omite `mask` para comparar la palabra de almacenamiento completa. Usa `flashblock_index` para seleccionar una posición concreta dentro de un Flashblock.
+
+## 2. Firmar una transacción EIP-1559 {#2-sign-an-eip-1559-transaction}
+
+Usa el siguiente nonce del remitente. El payload firmado será el primer parámetro de la llamada RPC.
+
+```ts Sign transaction lines wrap expandable
+import { createPublicClient, http, type Chain } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+
+const client = createPublicClient({ chain, transport: http(rpcUrl) });
+const account = privateKeyToAccount(privateKey);
+const fees = await client.estimateFeesPerGas();
+const nonce = await client.getTransactionCount({
+  address: account.address,
+  blockTag: 'latest',
+});
+
+const rawTransaction = await account.signTransaction({
+  chainId: (chain as Chain).id,
+  type: 'eip1559',
+  nonce,
+  to: '0x...' as Address,
+  data: '0x...' as Hex,
+  value: 0n,
+  gas: 100_000n,
+  maxFeePerGas: fees.maxFeePerGas,
+  maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
+});
+```
+
+## 3. Enviar la transacción {#3-submit-the-transaction}
+
+Pasa la transacción firmada y `validity` como parámetros separados.
+
+```ts Submit transaction lines wrap expandable
+const response = await fetch(rpcUrl, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'base_sendRawTransactionValidity',
+    params: [rawTransaction, { validity }],
+  }),
+});
+
+const body = await response.json();
+if (body.error) throw new Error(body.error.message);
+const hash = body.result;
+```
+
+## 4. Comprobar la inclusión {#4-check-inclusion}
+
+El RPC devuelve un hash de transacción. Usa [`eth_getTransactionReceipt`](/es/base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionReceipt) para comprobar si hay un recibo onchain.
+
+Para ver las definiciones de los campos, consulta [RPC de transacción de validez](/es/specifications/build-transaction/base_sendRawTransactionValidity).

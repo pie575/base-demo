@@ -1,0 +1,82 @@
+---
+title: "Enviar un pago"
+keywords: ["pago por lotes en USDC", "desembolso a comerciantes en Base", "contrato de pagos ERC-20", "pagar a varios destinatarios"]
+description: "Envía un lote de pagos en tokens con referencia en una sola transacción, sin dejar fondos en el contrato de pagos."
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+Envía un único lote con referencia a empleados, creadores, proveedores o vendedores. El contrato transfiere cada importe directamente del remitente a su destinatario, por lo que no conserva un saldo común de tokens entre transacciones.
+
+## Demostración {#demo}
+
+<PaymentsDemo flow="payout" />
+
+<Tip>
+  La demostración anterior es solo una simulación. Si quieres ver demostraciones onchain en Vibenet, visita [Demostraciones de la cadena Base](https://chain.base.org/demos).
+</Tip>
+
+## Despliega el contrato de pagos {#deploy-the-payout-contract}
+
+{/* sample: payout-batch-solidity */}
+
+```solidity Payout.sol lines wrap expandable highlight={2-4,8-9}
+function sendPayouts(bytes32 batchId, address[] calldata recipients, uint256[] calldata amounts) external {
+    if (processed[batchId]) revert BatchAlreadyProcessed(batchId);
+    if (recipients.length == 0 || recipients.length != amounts.length) revert InvalidArrayLengths();
+    if (recipients.length > MAX_RECIPIENTS) revert TooManyRecipients();
+    processed[batchId] = true;
+
+    for (uint256 i; i < recipients.length; ++i) {
+        require(token.transferFrom(msg.sender, recipients[i], amounts[i]), "transfer failed");
+        emit PayoutSent(batchId, msg.sender, recipients[i], amounts[i]);
+    }
+}
+```
+
+Aprueba el contrato desplegado por el importe total del lote y, a continuación, envía los destinatarios y los importes desde el mismo remitente.
+
+{/* sample: send-payout-ts */}
+
+```typescript TypeScript backend lines wrap expandable highlight={2,4-8}
+export async function sendPayouts(
+  payout: Address,
+  batchReference: string,
+  recipients: Address[],
+  amounts: string[],
+) {
+  if (recipients.length !== amounts.length) throw new Error("Recipient and amount counts differ");
+  const batchId = keccak256(toHex(batchReference));
+  const simulation = await publicClient.simulateContract({
+    account,
+    address: payout,
+    abi: payoutAbi,
+    functionName: "sendPayouts",
+    args: [batchId, recipients, amounts.map((amount) => parseUnits(amount, 6))],
+  });
+  const hash = await walletClient.writeContract(simulation.request);
+  return publicClient.waitForTransactionReceipt({ hash, confirmations: 2 });
+}
+```
+
+<Check>
+  La transacción emite un evento `PayoutSent` por cada destinatario con el mismo `batchId`, y la suma de las transferencias de tokens coincide con el total aprobado del lote.
+</Check>
+
+<Warning>
+  Limita el tamaño del lote según el consumo de gas medido y conserva el límite `MAX_RECIPIENTS` del contrato. Basta con que falle una sola transferencia de tokens para que se revierta todo el lote.
+</Warning>
+
+No apruebes el contrato público `Multicall3` como *spender* de ERC-20. Las llamadas posteriores a los tokens ven a Multicall3 como `msg.sender`, y cualquier llamante puede pedir a ese contrato de uso general que invoque `transferFrom` sobre la asignación (*allowance*) que le concedas. Usa un contrato específico que establezca quién puede iniciar los pagos y cómo se seleccionan los destinatarios.
+
+## Consulta también {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="Dividir un pago" icon="divide" href="/es/build-on-base/accept-payments/split-a-payment">
+    Calcula las participaciones en puntos básicos y asigna el redondeo con exactitud.
+  </Card>
+
+  <Card title="Conciliar pagos" icon="table" href="/es/build-on-base/accept-payments/reconcile-payments">
+    Vincula los eventos de pago con la referencia de tu libro contable.
+  </Card>
+</CardGroup>

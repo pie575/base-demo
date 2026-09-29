@@ -1,0 +1,68 @@
+---
+title: 'pendingLogs'
+sidebarTitle: 'pendingLogs'
+description: 'Suscríbete a los logs de transacciones preconfirmadas que coincidan con un filtro opcional. Solo disponible en endpoints WebSocket de Flashblocks.'
+---
+
+Suscríbete mediante `eth_subscribe` para recibir logs de transacciones preconfirmadas que coincidan con un filtro opcional. Resulta útil para monitorizar eventos de contratos con una latencia inferior a la de un bloque.
+
+<Info>
+  Esta suscripción requiere un endpoint RPC compatible con WebSocket. Los endpoints públicos de Base (`mainnet.base.org`, `sepolia.base.org`) solo admiten HTTP. Elige un proveedor WebSocket compatible con Flashblocks en el [Builder Stack](/es/get-started/builder-stack).
+</Info>
+
+<Note>
+  Requiere la versión v0.3.1 o posterior del cliente [base/base](https://github.com/base/base).
+</Note>
+
+<Warning>
+  Cada suscripción emite **un elemento por mensaje WebSocket**. Los eventos llegan aproximadamente cada 200 ms. Si tu manejador realiza un procesamiento intensivo por evento, aplícale throttling o debouncing para evitar bloqueos.
+</Warning>
+
+## Parámetros {#parameters}
+
+<ParamField body="subscriptionType" type="string" required>
+  Debe ser `"pendingLogs"`.
+</ParamField>
+
+<ParamField body="filterOptions" type="object">
+  Filtro de logs opcional.
+
+  <Expandable title="Opciones de filtro">
+    <ParamField body="address" type="string | array">
+      Una sola dirección de contrato o un array de direcciones por las que filtrar.
+    </ParamField>
+
+    <ParamField body="topics" type="array">
+      Array de filtros de topics, con el mismo formato que en `eth_getLogs`.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Valor devuelto {#returns}
+
+<ResponseField name="result" type="string">
+  ID de suscripción codificado en hexadecimal.
+</ResponseField>
+
+## Ejemplo {#example}
+
+<CodeGroup>
+  ```json Suscribirse (con filtro) lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "eth_subscribe",
+    "params": [
+      "pendingLogs",
+      {
+        "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "topics": ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"]
+      }
+    ]
+  }
+  ```
+
+  ```json Respuesta con ID de suscripción
+  {"jsonrpc": "2.0", "id": 1, "result": "0x2a7bc8d4e3f5a6b1c2d3e4f5a6b7c8d9"}
+  ```
+</CodeGroup>

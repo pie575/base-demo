@@ -1,0 +1,131 @@
+---
+title: "転送を開始できるアカウントを制限する"
+description: "TRANSFER_EXECUTOR_POLICY に許可リストをバインドすると、送信者や受信者とは別に、B20 転送を開始できるアカウントを制御できます。たとえば、すべての転送をトランスファーエージェント経由にすることも可能です。"
+keywords: ["TRANSFER_EXECUTOR_POLICY", "トランスファーエージェント", "B20 エグゼキューターポリシー", "転送イニシエーターの制限", "transferFrom 許可リスト"]
+---
+
+import RwaDisclaimer from "/snippets/ja/RwaDisclaimer.mdx"
+
+発行者によっては、送信者と受信者がともに適格な保有者であっても、すべての送金を指定されたアカウントから実行させる必要があります。`TRANSFER_EXECUTOR_POLICY` は、送信者スコープや受信者スコープとは別に、すべての送金経路 (`transfer`、`transferFrom`、およびそれぞれの memo 付きバリアント) で `msg.sender` を制限します。その一例がトランスファーエージェントモデルです。このモデルでは、保有者がエージェントを承認し、エージェントが `transferFrom` でトークンを移転します。保有者自身が直接 `transfer` を呼び出すことはできません。同じ制御は、オペレーターコントラクト、決済システム、カストディアンなどが必ず実行主体となるべきあらゆる構成に活用できます。
+
+<RwaDisclaimer />
+
+<Note>
+  B20 を初めて利用する場合は、[B20 Token Standard](/ja/build-on-base/issue-rwa/create-an-asset-token) で基本概念と発行手順の全体を確認してください。これらのサンプルは `base-std@1505323`、`viem@2.55.11`、Base Foundry `v1.1.1` を対象としています。この機能は B20 Asset と B20 Stablecoin の両方で利用できます。
+</Note>
+
+## 始める前に {#before-you-start}
+
+以下のすべてが必要です。
+
+* 自身が管理する B20 トークン (`updatePolicy` を呼び出せるよう `DEFAULT_ADMIN_ROLE` を保有していること) 。
+* Policy Registry でポリシーを作成・管理できるポリシー管理者。トークン管理者とポリシー管理者は別のロールですが、同じアカウントが両方を兼ねることもできます。
+* 想定する各イニシエーター (例: トランスファーエージェントのコントラクト) のアドレス。
+* `TRANSFER` が一時停止されていないこと。
+
+### チェック対象のアカウント {#which-account-is-checked}
+
+Transfer には互いに独立した 3 つのポリシースコープがあり、いずれも同じ共通パス上で適用されます。
+
+| スコープ                       | チェック対象のアカウント | 未設定時のデフォルト |
+| -------------------------- | ------------ | ---------- |
+| `TRANSFER_SENDER_POLICY`   | `from`       | 常に許可       |
+| `TRANSFER_RECEIVER_POLICY` | `to`         | 常に許可       |
+| `TRANSFER_EXECUTOR_POLICY` | `msg.sender` | 常に許可       |
+
+エグゼキュータースコープがチェックするのは、保有者ではなく操作のイニシエーターです。`transfer` の場合、イニシエーターは `from` でもあります。`transferFrom` の場合、イニシエーターは呼び出し元であり、`from` とは別のアカウントであることもあります。保有者が自分自身のために操作する場合でも、例外扱いにはなりません。制限的なエグゼキューターポリシーを設定すると、保有者が `transfer` を呼び出すときや、自分自身を `from` に指定して `transferFrom` を呼び出すときにも、その保有者がポリシーで許可されている必要があります。
+
+### アローワンスは別のゲート {#allowance-is-a-separate-gate}
+
+`transferFrom` では、引き続き `from` からの ERC-20 アローワンスが必要です。アローワンスが示すのは「この呼び出し元はこの額まで使用できる」ということであり、エグゼキューターポリシーが示すのは「この呼び出し元はそもそも転送を開始できる」ということです。トランスファーエージェントには、その両方が必要です。つまり、ユニットを移動する対象となる各保有者からのアローワンスと、エグゼキューター許可リストへの登録です。一方を付与しても、もう一方が付与されるわけではありません。
+
+## イニシエーター許可リストの作成とバインド {#create-and-bind-the-initiator-allowlist}
+
+イニシエーターを初期メンバーとする許可リストを作成し、`TRANSFER_EXECUTOR_POLICY` にアタッチします。
+
+<CodeGroup>
+  {/* sample: stock-executor-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={8,10}
+  import { parseEventLogs, type Address } from "viem";
+  import { account } from "../../shared/clients.js";
+  import { POLICY_REGISTRY, b20Abi, policyRegistryAbi, scope } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function restrictTransferInitiators(token: Address, transferAgent: Address) {
+    const receipt = await sendContract({ address: POLICY_REGISTRY, abi: policyRegistryAbi, functionName: "createPolicyWithAccounts", args: [account.address, 1, [transferAgent]] });
+    const [created] = parseEventLogs({ abi: policyRegistryAbi, logs: receipt.logs, eventName: "PolicyCreated" });
+    await sendContract({ address: token, abi: b20Abi, functionName: "updatePolicy", args: [scope("TRANSFER_EXECUTOR_POLICY"), created.args.policyId] });
+    return created.args.policyId;
+  }
+  ```
+
+  {/* sample: stock-executor-solidity */}
+
+  ```solidity Solidity lines wrap expandable highlight={4,7}
+  function restrictTransferInitiators(address token, address admin, address transferAgent) public returns (uint64 id) {
+      address[] memory initiators = new address[](1);
+      initiators[0] = transferAgent;
+      id = StdPrecompiles.POLICY_REGISTRY.createPolicyWithAccounts(
+          admin, IPolicyRegistry.PolicyType.ALLOWLIST, initiators
+      );
+      IB20(token).updatePolicy(B20Constants.TRANSFER_EXECUTOR_POLICY, id);
+  }
+  ```
+
+  {/* sample: stock-executor-cli */}
+
+  ```bash CLI lines wrap expandable highlight={2,6}
+  CREATE_TX=$(base-cast send "$POLICY_REGISTRY" \
+    "createPolicyWithAccounts(address,uint8,address[])" "$ADMIN" 1 "[$TRANSFER_AGENT]" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" --json | jq -r .transactionHash)
+  POLICY_TOPIC=$(base-cast receipt "$CREATE_TX" --rpc-url "$RPC_URL" --json | jq -r '.logs[0].topics[1]')
+  EXECUTOR_ID=$(base-cast to-dec "$POLICY_TOPIC")
+  base-cast send "$TOKEN_ADDRESS" "updatePolicy(bytes32,uint64)" "$(base-cast keccak TRANSFER_EXECUTOR_POLICY)" "$EXECUTOR_ID" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  ```
+</CodeGroup>
+
+`updatePolicy` を呼び出した時点から、このトークンに対するすべての `transfer` および `transferFrom` で `msg.sender` が許可リストと照合されます。ポリシーは作成しただけでは効力を持たず、アタッチして初めて適用されます。1 回のバッチで扱えるのは最大 64 アカウントまでで、`updateAllowlist` によるメンバーの変更はポリシー管理者のみが行えます。
+
+続いて、各保有者は、イニシエーターが自分に代わって移動する金額を承認します。
+
+```solidity Holder approves the transfer agent
+token.approve(transferAgent, amount);
+```
+
+イニシエーターは `transferFrom(holder, recipient, amount)` を使ってユニットを移動します。保有者自身が `transfer(recipient, amount)` を呼び出すと、残高のチェックより前に `PolicyForbids(TRANSFER_EXECUTOR_POLICY, executorId)` でリバートします。
+
+<Check>
+  イニシエーターが `transferFrom` を実行すると `Transfer(from, to, amount)` が発行されます。保有者が直接 `transfer` を呼び出すと `PolicyForbids(TRANSFER_EXECUTOR_POLICY, executorId)` でリバートします。このリバートは制限が有効に機能していることを示すものであり、設定ミスを意味するものではありません。Policy Registry の `isAuthorized(executorId, account)` は、イニシエーターに対しては `true`、保有者に対しては `false` を返します。
+</Check>
+
+<Warning>
+  許可リストをバインドする前に、想定しているイニシエーターをすべて登録しておいてください。バインド後は、発行者を含め、リストに登録されていないアカウントは追加されるまで転送を開始できません。
+</Warning>
+
+## よくあるエラー {#common-errors}
+
+以下のエラーは、共通の転送パスでチェックされる順に記載しています。
+
+| エラー                                                 | 原因                                                                                    | 対処法                                                  |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `PolicyForbids(TRANSFER_EXECUTOR_POLICY, policyId)` | 呼び出し元が実行者の許可リストに含まれていません。`transfer`、`transferFrom`、および保有者自身による `transferFrom` で発生します。 | 呼び出し元を許可リストに追加するか、認可されたイニシエーターを経由して呼び出してください。        |
+| `InsufficientAllowance(spender, allowance, needed)` | アローワンスが `needed` に満たない状態で `transferFrom` が実行されました。実行者チェックを通過しても、支出権限が付与されるわけではありません。  | `from` から `approve(spender, amount)` を呼び出してもらってください。 |
+| `PolicyForbids(TRANSFER_SENDER_POLICY, policyId)`   | `from` が送信者ポリシーで認可されていません。このチェックは実行者チェックとは独立しています。                                    | `from` を送信者の許可リストに追加するか、そのスコープを `0` にクリアしてください。      |
+| `PolicyForbids(TRANSFER_RECEIVER_POLICY, policyId)` | `to` が受信者ポリシーで認可されていません。このチェックは実行者チェックとは独立しています。                                      | `to` を受信者の許可リストに追加するか、そのスコープを `0` にクリアしてください。        |
+| `InsufficientBalance(sender, balance, needed)`      | `from` の保有量が `needed` に満たない状態です。                                                      | `balanceOf(from)` 以下の量を転送してください。                     |
+| `PolicyNotFound(policyId)`                          | レジストリに存在しない ID が `updatePolicy` に渡されました。                                              | 先にポリシーを作成し、返された ID を紐付けてください。                        |
+| `Unauthorized()`                                    | 管理者以外が `updateAllowlist` を呼び出しました。                                                    | ポリシーの管理者として呼び出してください。                                |
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="保有資格者の制限" icon="user-check" href="/ja/build-on-base/issue-rwa/restrict-eligible-holders">
+    送信者スコープと受信者スコープを使って、送受信できるアドレスを制限します。
+  </Card>
+
+  <Card title="ポリシー" icon="shield-check" href="/ja/specifications/b20/concepts/policies">
+    ポリシースコープ、許可リスト、ブロックリストの仕組みを説明します。
+  </Card>
+</CardGroup>

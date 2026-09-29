@@ -1,0 +1,56 @@
+---
+title: "Canyon"
+description: "Canyon 硬分叉概述：该硬分叉将以太坊 Shanghai 升级中的 EIP（EIP-3651、EIP-3855、EIP-3860）引入 Base 执行层。"
+---
+
+## 激活时间戳 {#activation-timestamps}
+
+| 网络        | 激活时间戳                                  |
+| --------- | -------------------------------------- |
+| `mainnet` | `1704992401` (2024-01-11 17:00:01 UTC) |
+| `sepolia` | `1699981200` (2023-11-14 17:00:00 UTC) |
+
+[eip3651]: https://eips.ethereum.org/EIPS/eip-3651
+
+[eip3855]: https://eips.ethereum.org/EIPS/eip-3855
+
+[eip3860]: https://eips.ethereum.org/EIPS/eip-3860
+
+[eip4895]: https://eips.ethereum.org/EIPS/eip-4895
+
+[eip6049]: https://eips.ethereum.org/EIPS/eip-6049
+
+[block-validation]: /specifications/base-protocol/consensus/p2p#block-validation
+
+[payload-attributes]: /specifications/base-protocol/consensus/derivation#building-individual-payload-attributes
+
+[1559-params]: /specifications/base-protocol/execution/l2-execution-engine#1559-parameters
+
+[channel-reading]: /specifications/base-protocol/consensus/derivation#reading
+
+[deposit-reading]: /specifications/base-protocol/bridging/deposits#deposit-receipt
+
+[create2deployer]: /specifications/base-protocol/execution/predeploys#create2deployer
+
+Canyon 升级纳入了 L1 的 Shapella 升级，并包含若干小的协议修复。
+Canyon 升级采用 *L2 区块时间戳* 激活规则，需同时在
+rollup 节点 (`canyon_time`) 和执行引擎 (`config.canyonTime`) 中配置。执行引擎中的
+Shanghai 时间应与 Canyon 时间设置为同一时间。
+
+## 执行层 {#execution-layer}
+
+* Shapella 升级
+  * [EIP-3651：预热 COINBASE][eip3651]
+  * [EIP-3855：PUSH0 指令][eip3855]
+  * [EIP-3860：限制 initcode 并对其进行计量][eip3860]
+  * [EIP-4895：将信标链推送式提款作为操作处理][eip4895]
+    * [P2P 区块中禁止包含提款][block-validation]
+    * [自 Canyon 起，提款应设为空数组][payload-attributes]
+  * [EIP-6049：弃用 SELFDESTRUCT][eip6049]
+* [修改 EIP-1559 分母][1559-params]
+* [在存款收据哈希中加入存款 nonce 及存款 nonce 版本][deposit-reading]
+* [将 create2Deployer 部署至 `0x13b0D85CcB8bf860b6b79AF3029fCA081AE9beF2`][create2deployer]
+
+## 共识层 {#consensus-layer}
+
+* [通道排序修复][channel-reading]

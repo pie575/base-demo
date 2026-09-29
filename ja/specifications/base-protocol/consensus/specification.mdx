@@ -1,0 +1,70 @@
+---
+title: "仕様"
+description: "Base ロールアップノードの仕様です。ノードの構成要素と、L2 ブロックの導出およびコンセンサスにおける役割について説明します。"
+---
+
+[g-rollup-node]: /specifications/reference/glossary#rollup-node
+
+[g-derivation]: /specifications/reference/glossary#L2-chain-derivation
+
+[g-payload-attr]: /specifications/reference/glossary#payload-attributes
+
+[g-block]: /specifications/reference/glossary#block
+
+[g-exec-engine]: /specifications/reference/glossary#execution-engine
+
+[g-reorg]: /specifications/reference/glossary#re-organization
+
+[g-rollup-driver]: /specifications/reference/glossary#rollup-driver
+
+[g-receipts]: /specifications/reference/glossary#receipt
+
+## 概要 {#overview}
+
+[ロールアップノード][g-rollup-node]は、L1 ブロック (および関連する[レシート][g-receipts]) から
+[L2 チェーンを導出する][g-derivation]役割を担うコンポーネントです。
+
+ロールアップノードのうち、L2 チェーンを導出する部分を[ロールアップドライバー][g-rollup-driver]と呼びます。本ドキュメントでは
+現時点で、ロールアップドライバーの仕様のみを扱います。
+
+## ドライバー {#driver}
+
+[ロールアップノード][g-rollup-node]における[ドライバー][g-rollup-driver]の役割は、[導出][g-derivation]プロセスを管理することです。
+
+* L1のヘッドブロックを追跡する
+* L2チェーンの同期の進捗を追跡する
+* 新しい入力が利用可能になるたびに、導出ステップを繰り返し実行する
+
+### 導出 {#derivation}
+
+このプロセスは次の3つのステップで行われます。
+
+1. 最後の L2 ブロックを起点として、L1 チェーンから入力を選択します。
+   入力とは、トランザクション、関連データ、レシートを含むブロックのリストです。
+2. L1 の情報、デポジット、シーケンシングバッチを読み取り、[ペイロード属性][g-payload-attr]
+   (実質的には[出力プロパティを持たないブロック][g-block]) を生成します。
+3. ペイロード属性を[実行エンジン][g-exec-engine]に渡し、L2 ブロック ([出力ブロック
+   プロパティ][g-block]を含む) を計算します。
+
+このプロセスは概念上は L1 チェーンから L2 チェーンへの純粋関数ですが、実際にはインクリメンタルに実行されます。
+L1 チェーンに新しい L1 ブロックが追加されるたびに、L2 チェーンも延長されます。同様に、L1 チェーンで[リオルグ][g-reorg]が発生するたびに、
+L2 チェーンでもリオルグが発生します。
+
+L2 ブロック導出の完全な仕様については、[L2 ブロック導出ドキュメント](/ja/specifications/base-protocol/consensus/derivation)を参照してください。
+
+ロールアップノードの RPC インターフェースは、[RPC](/ja/specifications/base-protocol/consensus/rpc) ドキュメントで規定されています。
+
+## プロトコルバージョンの追跡 {#protocol-version-tracking}
+
+rollup-node は、L1 上の Protocol Versions コントラクトを監視し、
+推奨プロトコルバージョンと必須プロトコルバージョンを追跡する必要があります。
+
+これは [Driver](#driver) ループ内でのポーリングによって実装できます。
+プロトコルバージョンをポーリングした後、ロールアップノードは
+[`engine_signalSuperchainV1`](/ja/specifications/base-protocol/execution/l2-execution-engine) 呼び出しを通じて、そのバージョンを実行エンジンに伝えるべきです (SHOULD) 。
+
+推奨バージョンが、ロールアップノードが現在サポートしているバージョンより新しい場合、
+ロールアップノードはユーザーに警告するべきです (SHOULD) 。
+
+ロールアップノードが必須プロトコルバージョンを満たしていない場合、ロールアップノードは安全のための予防措置を講じるべきです (SHOULD) 。
+この措置には、ロールアップノードのオペレーターの同意を得たうえでエンジンを停止することも含まれます。

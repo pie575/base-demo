@@ -1,0 +1,166 @@
+---
+title: Instantáneas de nodos
+sidebarTitle: Instantáneas
+description: Descarga y restaura instantáneas de nodos de Base para reducir considerablemente el tiempo de sincronización inicial de los nodos.
+---
+
+Usar una instantánea reduce considerablemente el tiempo necesario para la sincronización inicial de un nodo de Base. Las instantáneas se actualizan con regularidad.
+
+Si ya operas un nodo de Base o piensas hacerlo, puedes restaurarlo a partir de una instantánea para acelerar la sincronización inicial. Sigue atentamente los pasos que se indican a continuación.
+
+<Warning>
+  **Acción requerida: migra al almacenamiento V2 de reth.** Los operadores de Base Mainnet deben actualizar y migrar al almacenamiento V2 de reth **antes de mediados de agosto**. Las instantáneas V1 se irán retirando en las próximas semanas, así que planifica la migración cuanto antes.
+
+  Tienes dos opciones de migración:
+
+  * **Descargar una nueva instantánea V2** (recomendado y más rápido): usa `base-reth-node download` como se describe en [Restaurar desde una instantánea](#restoring-from-snapshot) más abajo.
+  * **Migrar in situ los datos V1 existentes**: ejecuta `base-reth-node db migrate-v2`. Este proceso tardará previsiblemente **mucho** más que la descarga, y no es compatible con nodos que no sean de archivo.
+
+  Como la migración puede llevar bastante tiempo, te recomendamos encarecidamente que empieces ya. Para más información, consulta las [notas de la versión v1.2.0](https://github.com/base/base/releases/tag/v1.2.0).
+</Warning>
+
+## Restauración desde una instantánea {#restoring-from-snapshot}
+
+En estos pasos se da por hecho que te encuentras en el directorio clonado de [base/base](https://github.com/base/base) (el que contiene `docker-compose.yml`).
+
+<Note>
+  Estos pasos utilizan la CLI `base-reth-node` para descargar instantáneas. Si aún no la tienes, primero instálala siguiendo las [instrucciones de instalación](https://github.com/base/base#install-binaries).
+</Note>
+
+1. **Preparar el directorio de datos**:
+   * **Antes de ejecutar Docker por primera vez**, crea en tu máquina anfitriona el directorio de datos que se asignará al contenedor de Docker. Este directorio debe coincidir con la asignación de `volumes` del archivo `docker-compose.yml`.
+     ```bash
+     mkdir ./reth-data
+     ```
+   * Si ya has ejecutado el nodo anteriormente y tienes un directorio de datos existente, **detén el nodo** (`docker compose down`), elimina el *contenido* de ese directorio (p. ej., `rm -rf ./reth-data/*`) y continúa.
+
+2. **Elegir la cadena**: Usa el flag `--chain` para seleccionar la red
+
+   | Red          | Valor de `--chain` |
+   | ------------ | ------------------ |
+   | Base Mainnet | `base`             |
+   | Base Sepolia | `base-sepolia`     |
+
+3. **Descargar la instantánea**: Las instantáneas V2 se dividen en muchos archivos pequeños y segmentados en lugar de un único archivo comprimido. La CLI muestra una sola instantánea `archive` porque contiene todos los archivos disponibles. Las opciones `full` y `minimal` seleccionan subconjuntos cada vez más pequeños de ese archivo:
+
+   | Configuración | Flag        | Qué obtienes                                                                                                                                                                     | Cuándo usarla                                                                    |
+   | ------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+   | **Minimal**   | `--minimal` | El conjunto mínimo necesario para arrancar: el estado más reciente + las cabeceras (además del historial mínimo imprescindible).                                                 | Quieres la descarga más rápida y ligera y no necesitas datos históricos.         |
+   | **Full**      | `--full`    | Datos de nodo completo acordes con la configuración de poda predeterminada de un nodo completo (estado, cabeceras y una ventana limitada de transacciones, recibos e historial). | Quieres un nodo completo estándar sin conservar todo el archivo.                 |
+   | **Archive**   | `--archive` | Todo lo disponible: todas las transacciones, recibos e historial de cuentas y almacenamiento, sin poda.                                                                          | Necesitas datos históricos completos (p. ej., consultas de archivo, indexación). |
+
+   <Note>
+     Asegúrate de tener suficiente espacio libre en disco para descargar la instantánea *y* extraer su contenido. Los datos extraídos ocuparán bastante más que el archivo comprimido.
+   </Note>
+
+   Estos preajustes son valores predeterminados prácticos disponibles en [chain.base.org/snapshots](https://chain.base.org/snapshots). Aun así, puedes configurar flags de poda personalizados con la [variable `RETH_PRUNING_ARGS`](https://github.com/base/base/blob/main/.env.mainnet#L34) en `.env.mainnet` (o `.env.sepolia`). Para ello, debes descargar la instantánea de archivo y, después, configurar tus argumentos de poda personalizados.
+
+   ```bash
+   # Nodo mínimo en Base Mainnet
+   base-reth-node download --minimal --datadir ./reth-data --chain base --resumable
+
+   # Nodo completo en Base Sepolia
+   base-reth-node download --full --datadir ./reth-data --chain base-sepolia --resumable
+   ```
+
+   Como alternativa, y solo para nodos de archivo, puedes ejecutar `base-reth-node db migrate-v2`. Sin embargo, este proceso tardará previsiblemente **mucho** más que la descarga. Además, `migrate-v2` no admite `--resumable`.
+
+4. **(Opcional) - ajustar la concurrencia de descarga:**
+
+   El flag `--download-concurrency` controla cuántas descargas HTTP simultáneas se ejecutan en todo
+   el proceso de la instantánea. Su valor predeterminado es `8`, un buen punto de partida para la mayoría de las máquinas.
+
+   Si dispones de hardware de gama alta, puedes aumentarlo sin riesgo para acelerar la descarga. Como regla
+   general, usa **2× el número de núcleos físicos de CPU**:
+
+   ```bash
+   # Ejemplo: una máquina con 16 núcleos físicos
+   base-reth-node download --full --datadir ./reth-data --chain base --download-concurrency 32
+   ```
+
+5. <span id="start-the-node" />**Iniciar el nodo**: Ahora que los datos de la instantánea están en su sitio, vuelve a la raíz de la carpeta de tu nodo de Base e inicia el nodo:
+
+   ```bash
+   cd ..
+
+   # Descargar la imagen publicada
+   docker compose up
+
+   # O compilar el árbol base/base localmente
+   docker compose up --build
+   ```
+
+   Tu nodo debería empezar a sincronizarse desde el último bloque de la instantánea.
+
+6. **Verificar**: Supervisa los registros del nodo (`docker compose logs -f <service_name>`) o usa el comando de [supervisión de la sincronización](/es/specifications/node-operators/run-a-node#syncing) para comprobar que el nodo empieza a sincronizarse desde la altura de bloque de la instantánea.
+
+## Instantáneas de pruebas {#proofs-snapshots}
+
+<Note>
+  Las instantáneas de pruebas V2 estarán disponibles próximamente.
+</Note>
+
+Si ejecutas la [ExEx de pruebas históricas](/es/specifications/node-operators/run-a-node#enable-historical-proofs-rpcs), puedes usar instantáneas de la base de datos de pruebas para ahorrarte el backfill de 24 a 48 horas.
+
+Las instantáneas de pruebas se siguen distribuyendo como archivos comprimidos, así que necesitarás `aria2c`, un gestor de descargas que permite reanudarlas y soporta los cortes de conexión periódicos que impone Cloudflare. Si no lo tienes instalado:
+
+<CodeGroup>
+  ```bash macOS
+  brew install aria2
+  ```
+
+  ```bash Ubuntu / Debian
+  sudo apt-get install aria2
+  ```
+</CodeGroup>
+
+| Red     | Comando de descarga                                                                                                                       |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Testnet | `aria2c -c -x 16 -s 16 "https://sepolia-reth-proofs-snapshots.base.org/$(curl -s https://sepolia-reth-proofs-snapshots.base.org/latest)"` |
+| Mainnet | `aria2c -c -x 16 -s 16 "https://mainnet-reth-proofs-snapshots.base.org/$(curl -s https://mainnet-reth-proofs-snapshots.base.org/latest)"` |
+
+<Note>
+  Asegúrate de tener suficiente espacio libre en disco para descargar el archivo comprimido de la instantánea (archivo `.tar.gz` / `.tar.zst`) *y* extraer su contenido. Los datos extraídos ocuparán bastante más que el archivo comprimido.
+</Note>
+
+Una vez descargado, extrae el archivo comprimido. Sustituye `snapshot-filename` por el nombre real del archivo descargado:
+
+```bash Extract the Snapshot
+tar -xzvf <snapshot-filename.tar.gz>
+
+# Para archivos .tar.zst
+tar -I zstd -xvf <snapshot-filename.tar.zst>
+```
+
+Es probable que el proceso de extracción cree un directorio `reth`. Mueve el *contenido* de ese directorio al directorio de datos que creaste en el paso [**Preparar el directorio de datos**](#restoring-from-snapshot) de la sección anterior:
+
+```bash Move Chain Data
+mv ./reth/* ./reth-data/
+rm -rf ./reth    # Elimina la carpeta extraída, que ya está vacía
+```
+
+El objetivo es que los directorios de datos de la cadena (p. ej., `chaindata`, `nodes`, `segments`, etc.) queden directamente dentro de `./reth-data` y no en una subcarpeta anidada. Una vez que lo hayas comprobado, puedes eliminar sin riesgo el archivo comprimido de la instantánea descargada (el archivo `.tar.gz`) para liberar espacio en disco.
+
+A continuación, sigue desde **Iniciar el nodo** en la sección anterior.
+
+## Preguntas frecuentes {#faq}
+
+<AccordionGroup>
+  <Accordion title="¿Cuál es la diferencia entre un nodo completo y uno mínimo?">
+    En Reth, un nodo &quot;completo&quot; (full) no es un tipo de nodo distinto, sino simplemente un nodo podado con una configuración predefinida específica. La configuración predefinida `--full` de Reth conserva los últimos **10.064 bloques** (~1,4 días en Ethereum; ~5-6 horas en Base, ya que sus tiempos de bloque son más rápidos).
+
+    Para obtener más información sobre la diferencia entre un nodo completo y uno mínimo, consulta la [documentación de Reth](https://reth.rs/run/storage/minimal).
+  </Accordion>
+
+  <Accordion title="¿Cómo ejecuto mi configuración anterior de nodo podado con el almacenamiento v2?">
+    Si tu nodo podado con almacenamiento v1 tenía una distancia de poda superior a 10064 bloques, debes descargar una instantánea de archivo (Archival) y luego añadir los argumentos de poda.
+
+    La opción completa (Full) no servirá, ya que solo contendrá los últimos 10064 bloques.
+  </Accordion>
+
+  <Accordion title="Aparece el mensaje: Archive Extracted, but Output Verification Failed.">
+    Esto ocurre porque se subió una instantánea más reciente mientras se realizaba la descarga. Interrumpe el comando de descarga y vuelve a ejecutarlo.
+
+    Nota: La descarga es idempotente, así que no volverá a descargar los archivos que ya se hayan descargado; solo obtendrá las diferencias.
+  </Accordion>
+</AccordionGroup>

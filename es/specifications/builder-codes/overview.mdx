@@ -1,0 +1,124 @@
+---
+title: "Base Builder Codes"
+sidebarTitle: "Descripción general"
+description: "Atribuye la actividad onchain a tu app, billetera o agente con los Builder Codes."
+---
+
+Los Base Builder Codes son una colección de NFT ERC-721 en la que se acuñan códigos únicos (p. ej., «abc123») que ayudan a identificar a los builders onchain.
+
+Cada código tiene metadatos asociados. Los metadatos onchain incluyen principalmente una «dirección de pago», en la que cada código indica adónde deben enviarse las posibles recompensas. Los metadatos offchain incluyen más información sobre la app, como su nombre y su sitio web.
+
+<Tip>
+  Obtén tu Builder Code registrándote en [base.dev](https://base.dev/). Encontrarás tu código en **Settings** → **Builder Code**.
+</Tip>
+
+## Guías de integración {#integration-guides}
+
+<CardGroup cols={3}>
+  <Card title="Para desarrolladores de aplicaciones" icon="code" href="/es/specifications/builder-codes/for-app-developers">
+    Integra Builder Codes con Wagmi o Viem
+  </Card>
+
+  <Card title="Para desarrolladores de billeteras" icon="wallet" href="/es/specifications/builder-codes/for-wallet-developers">
+    Implementa la capacidad dataSuffix
+  </Card>
+
+  <Card title="Para desarrolladores de agentes" icon="robot" href="/es/specifications/builder-codes/for-agent-developers">
+    Atribuye las transacciones de tu agente de IA a través de la API
+  </Card>
+</CardGroup>
+
+## Beneficios {#benefits}
+
+* **Recompensas:** si tu aplicación genera transacciones, los Builder Codes permiten que Base te atribuya automáticamente ese uso, lo que te da acceso a recompensas a medida que el programa se amplíe.
+* **Analíticas:** haz un seguimiento fiable del uso onchain, la adquisición de usuarios y las métricas de conversión en Base.dev.
+* **Visibilidad:** las aplicaciones con Builder Codes pueden aparecer en espacios de descubrimiento como App Leaderboards, la tienda de Base App y las secciones destacadas del ecosistema.
+
+## Preguntas frecuentes {#faq}
+
+### ¿Necesito modificar mis contratos inteligentes? {#do-i-need-to-modify-my-smart-contracts}
+
+**No.** El sufijo de atribución se añade al final del calldata de la transacción. Los contratos inteligentes se ejecutan con normalidad e ignoran los datos adicionales. Posteriormente, los indexadores offchain extraen la atribución.
+
+Esto significa que:
+
+* Cualquier contrato inteligente existente es compatible automáticamente con ERC-8021
+* No es necesario actualizar ni volver a desplegar nada
+* La ejecución del contrato no se ve afectada en absoluto
+
+### ¿Cuánto gas adicional consumen los Builder Codes? {#how-much-additional-gas-do-builder-codes-cost}
+
+El sufijo ERC-8021 añade una cantidad insignificante de gas a cada transacción: 16 unidades de gas por cada byte distinto de cero.
+
+### ¿Los Builder Codes revelan mi identidad? {#will-builder-codes-expose-my-identity}
+
+**No.** Los Builder Codes solo vinculan las transacciones con tu aplicación; no revelan ninguna información de la billetera que no sea ya pública onchain.
+
+### ¿Puedo usar ERC-8021 con cuentas de propiedad externa (EOA)? {#can-i-use-erc-8021-with-externally-owned-accounts-eoas}
+
+**Sí.** ERC-8021 funciona tanto con EOA como con billeteras de contrato inteligente.
+
+### ¿Cómo verifico que mi transacción se atribuyó correctamente? {#how-do-i-verify-that-my-transaction-was-properly-attributed}
+
+**1. Consulta base.dev**
+
+* Visita [base.dev](https://base.dev)
+* Selecciona **Onchain** en el menú desplegable de tipo de transacción
+* En la sección Total Transactions, el recuento de atribuciones aumenta a medida que se procesan transacciones con tu código
+
+**2. Usa un explorador de bloques (Basescan, Etherscan, etc.)**
+
+* Busca el hash de tu transacción
+* Consulta el campo de datos de entrada (input data)
+* Verifica que los últimos 16 bytes correspondan a `8021` repetido
+* Decodifica el sufijo para confirmar que incluye tu Builder Code
+
+**3. Herramientas de código abierto**
+
+* Usa la herramienta [Builder Code Validation](https://builder-code-checker.vercel.app/)
+* Selecciona el tipo de transacción
+* Introduce el hash de la transacción o de la UserOperation
+* Haz clic en el botón **Check Attribution**
+
+### ¿Qué billeteras son compatibles actualmente con ERC-8021? {#which-wallets-currently-support-erc-8021}
+
+**EOA:**
+
+Todas las billeteras EOA admiten `dataSuffix` de forma predeterminada.
+
+**Billeteras inteligentes:**
+
+Las billeteras compatibles con ERC-5792 pueden usar `DataSuffixCapability` para añadir el sufijo de forma limpia.
+
+<Accordion title="Código de ejemplo">
+  ```javascript Wallet send calls with attribution lines expandable wrap
+  await wallet.sendCalls({
+    calls: [
+      // tus llamadas de transacción
+    ],
+    capabilities: {
+      dataSuffix: {
+        value: "0x07626173656170700080218021802180218021802180218021",
+        optional: true
+      }
+    }
+  });
+  ```
+</Accordion>
+
+**Billeteras integradas:**
+
+* **Privy**: solución de billetera integrada compatible con ERC-8021
+* **Turnkey**: infraestructura para billeteras programáticas
+
+## Recursos adicionales {#additional-resources}
+
+* [Propuesta oficial de ERC-8021](https://eip.tools/eip/8021)
+* [Herramienta de Builder Code Validation](https://builder-code-checker.vercel.app/)
+
+## ¡Envíanos tus comentarios! {#give-feedback}
+
+<Note>
+  Base trabaja constantemente para mejorar la experiencia de Builder Codes. Si
+  tienes algún comentario, [compártelo con el equipo](https://t.co/zwvtmXXzGz).
+</Note>

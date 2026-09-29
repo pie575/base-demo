@@ -1,0 +1,103 @@
+---
+title: "Aceptar pagos"
+keywords: ["Commerce Payments Protocol", "aceptar pagos en USDC en Base", "autorizar y capturar en Base", "pagos agénticos x402"]
+description: "Elige un ciclo de vida de pagos onchain para checkouts de comercio, pagos agénticos, conciliación, reembolsos y desembolsos en Base."
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+Acepta pagos en Base con el ciclo de vida que necesita tu producto. Usa el [Commerce Payments Protocol](https://github.com/base/commerce-payments) para cobrar de inmediato o retener fondos en custodia (escrow) antes de la entrega y, después, capturarlos, anularlos, recuperarlos o reembolsarlos según las condiciones aprobadas por el pagador. Esta misma área de soluciones también incluye cobros programados, conciliación, pagos a terceros, reparto de pagos y API x402.
+
+## Demostración {#demo}
+
+<PaymentsDemo />
+
+<Tip>
+  La demostración anterior es solo una simulación. Si quieres ver demostraciones onchain en Vibenet, visita [demostraciones de la cadena Base](https://chain.base.org/demos).
+</Tip>
+
+## Ciclo de vida del pago {#payment-lifecycle}
+
+| Etapa                     | Qué sucede                                                                                   | Por dónde empezar                                                                    |
+| ------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Cobro                     | El operador cobra y liquida un pago del protocolo de forma atómica                           | [Solicitar un pago](/es/build-on-base/accept-payments/request-a-payment)                |
+| Autorización              | El operador transfiere los fondos del pagador a una custodia (escrow)                      | [Autorizar un pago](/es/build-on-base/accept-payments/authorize-a-payment)              |
+| Captura                   | El operador liquida la totalidad o una parte del importe en custodia (escrow)                         | [Capturar una autorización](/es/build-on-base/accept-payments/capture-an-authorization) |
+| Confirmación              | Tu backend verifica los eventos confirmados del protocolo y registra el pedido una única vez | [Verificar un pago](/es/build-on-base/accept-payments/verify-a-payment)                 |
+| Devolución o distribución | Reembolsas al pagador o pagas a los destinatarios finales                                    | [Reembolsar un pago](/es/build-on-base/accept-payments/refund-a-payment)                |
+
+## Recibir un pago {#take-a-payment}
+
+<CardGroup cols={2}>
+  <Card title="Solicitar un pago" icon="credit-card" href="/es/build-on-base/accept-payments/request-a-payment">
+    Cobra y liquida al instante en una sola transacción.
+  </Card>
+
+  <Card title="Autorizar un pago" icon="signature" href="/es/build-on-base/accept-payments/authorize-a-payment">
+    Retiene fondos en custodia (escrow) con condiciones de pago inmutables.
+  </Card>
+
+  <Card title="Capturar una autorización" icon="check" href="/es/build-on-base/accept-payments/capture-an-authorization">
+    Liquida la totalidad o parte de los fondos en custodia antes de que venza la autorización.
+  </Card>
+
+  <Card title="Cobrar de forma periódica" icon="calendar" href="/es/build-on-base/accept-payments/charge-on-a-schedule">
+    Crea un cobro del protocolo por cada período de facturación mediante un permiso de gasto.
+  </Card>
+</CardGroup>
+
+## Confirmar y conciliar {#confirm-and-reconcile}
+
+<CardGroup cols={2}>
+  <Card title="Verificar un pago" icon="shield-check" href="/es/build-on-base/accept-payments/verify-a-payment">
+    Valida los eventos de liquidación y reclama cada pago una sola vez.
+  </Card>
+
+  <Card title="Supervisar pagos" icon="eye" href="/es/build-on-base/accept-payments/watch-for-payments">
+    Suscríbete a los eventos de custodia (escrow) y procesa retroactivamente los bloques confirmados.
+  </Card>
+
+  <Card title="Conciliar pagos" icon="table" href="/es/build-on-base/accept-payments/reconcile-payments">
+    Exporta cargos, capturas, comisiones, anulaciones, recuperaciones y reembolsos.
+  </Card>
+</CardGroup>
+
+## Reembolsos y pagos salientes {#refund-and-pay-out}
+
+<CardGroup cols={2}>
+  <Card title="Reembolsar un pago" icon="rotate-left" href="/es/build-on-base/accept-payments/refund-a-payment">
+    Obtén liquidez para el reembolso y devuelve al pagador el importe capturado.
+  </Card>
+
+  <Card title="Anular una autorización" icon="ban" href="/es/build-on-base/accept-payments/void-an-authorization">
+    Devuelve el saldo restante al instante o deja que el pagador lo recupere tras el vencimiento.
+  </Card>
+
+  <Card title="Enviar un pago saliente" icon="money-bill-transfer" href="/es/build-on-base/accept-payments/send-a-payout">
+    Paga a un lote limitado de destinatarios con una única referencia.
+  </Card>
+
+  <Card title="Dividir un pago" icon="divide" href="/es/build-on-base/accept-payments/split-a-payment">
+    Reparte participaciones exactas en puntos básicos sin dejar restos inmovilizados.
+  </Card>
+</CardGroup>
+
+## Aceptar pagos agénticos {#accept-agentic-payments}
+
+<CardGroup cols={2}>
+  <Card title="Cobrar por una API" icon="server" href="/es/build-on-base/accept-payments/charge-for-an-api">
+    Protege una ruta de precio fijo con el esquema `exact` de x402.
+  </Card>
+
+  <Card title="Liquidar pagos por uso" icon="gauge" href="/es/build-on-base/accept-payments/settle-usage-based-payments">
+    Autoriza un importe máximo y liquida el uso medido con `upto`.
+  </Card>
+
+  <Card title="Agrupar pagos de alta frecuencia" icon="layer-group" href="/es/build-on-base/accept-payments/batch-high-frequency-payments">
+    Actualiza los vales en cada solicitud y liquida los canales por lotes.
+  </Card>
+
+  <Card title="Llamar a un servicio de pago" icon="robot" href="/es/build-on-base/accept-payments/call-a-paid-service">
+    Aplica políticas de red, activo y gasto antes de que un agente firme.
+  </Card>
+</CardGroup>

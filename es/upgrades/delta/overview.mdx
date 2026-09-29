@@ -1,0 +1,20 @@
+---
+title: "Delta"
+sidebarTitle: "Descripción general"
+description: "Descripción general del hardfork Delta, que introduce los span batches para reducir los costos de datos en L1 al comprimir varios bloques de L2 en una sola transacción del batcher."
+---
+
+## Marcas de tiempo de activación {#activation-timestamps}
+
+| Red       | Marca de tiempo de activación          |
+| --------- | -------------------------------------- |
+| `mainnet` | `1708560000` (2024-02-22 00:00:00 UTC) |
+| `sepolia` | `1703203200` (2023-12-22 00:00:00 UTC) |
+
+La actualización Delta usa una regla de activación basada en la *marca de tiempo del bloque de L2* y solo se especifica en el nodo de rollup (`delta_time`).
+
+## Capa de consenso {#consensus-layer}
+
+[span-batches]: span-batches
+
+La actualización Delta incluye una única funcionalidad de la capa de consenso: [Span Batches][span-batches].

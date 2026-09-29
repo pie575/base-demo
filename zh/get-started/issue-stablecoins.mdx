@@ -1,0 +1,53 @@
+---
+title: "发行稳定币"
+keywords: ["在 Base 上发行稳定币", "B20 稳定币", "Base 稳定币发行方", "Base 法币支持代币"]
+description: "在 Base 上运营法币支持稳定币，铸造、合规与对账功能均已原生内置于链上。"
+---
+
+import { StablecoinDemo } from "/snippets/StablecoinDemo.jsx"
+
+使用 Base 的原生代币标准 [B20](/zh/specifications/b20)，即可在 Base 上发行法币支持的稳定币。铸造、赎回、合规控制和对账功能均已内置于链上，无需自行开发或审计定制合约，且完全兼容 ERC-20。
+
+## 演示 {#demo}
+
+<StablecoinDemo />
+
+<Tip>
+  本演示使用在浏览器本地生成的账户，在 **Base Vibenet** 上提交真实交易。如果 Vibenet 或其 B20 功能不可用，演示将自动切换为离线示意版本。
+</Tip>
+
+## 指南 {#guides}
+
+<CardGroup cols={2}>
+  <Card title="发行您的稳定币" icon="coins" href="/zh/build-on-base/issue-stablecoins/issue-your-stablecoin">
+    只需一次调用，即可创建由法币支持的代币。
+  </Card>
+
+  <Card title="铸造供应量" icon="plus" href="/zh/build-on-base/issue-stablecoins/mint-supply">
+    随储备增长增发新代币。
+  </Card>
+
+  <Card title="销毁供应量" icon="fire" href="/zh/build-on-base/issue-stablecoins/burn-supply">
+    在赎回时注销代币。
+  </Card>
+
+  <Card title="限制持有者" icon="user-check" href="/zh/build-on-base/issue-stablecoins/restrict-who-can-hold">
+    仅允许已获批准的账户进行转账。
+  </Card>
+
+  <Card title="封禁账户" icon="ban" href="/zh/build-on-base/issue-stablecoins/block-an-account">
+    因合规冻结而封禁单个地址。
+  </Card>
+
+  <Card title="追回资金" icon="arrow-rotate-left" href="/zh/build-on-base/issue-stablecoins/recover-funds">
+    收回被封禁的余额并重新发行。
+  </Card>
+
+  <Card title="暂停活动" icon="pause" href="/zh/build-on-base/issue-stablecoins/pause-activity">
+    暂停转账、铸造或销毁操作。
+  </Card>
+
+  <Card title="使用 Memo 对账" icon="receipt" href="/zh/build-on-base/issue-stablecoins/reconcile-with-memos">
+    将链上活动与您的账目逐一核对。
+  </Card>
+</CardGroup>

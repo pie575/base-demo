@@ -1,0 +1,55 @@
+---
+title: Archivos estáticos de documentación
+sidebarTitle: Archivos estáticos de documentación
+description: Usa llms.txt y llms-full.txt para que los asistentes de IA puedan acceder a la documentación de Base.
+---
+
+## Índice de la documentación {#documentation-index}
+
+Consulta el índice completo de la documentación en: [https://docs.base.org/llms.txt](https://docs.base.org/llms.txt)
+
+Usa este archivo para ver todas las páginas disponibles antes de seguir explorando.
+
+## Archivo de documentación completa {#full-documentation-file}
+
+Si tu herramienta de IA aún no es compatible con MCP, puedes usar en su lugar un archivo de documentación estático. Así, tu asistente de IA dispondrá de toda la documentación de Base en un único archivo de texto.
+
+<Warning>
+  El archivo estático `llms-full.txt` es una instantánea y es posible que no incluya las actualizaciones más recientes. Siempre que sea posible, usa [MCP](/es/get-started/docs-mcp) para tener la documentación siempre al día.
+</Warning>
+
+### Configuración con Cursor {#setup-with-cursor}
+
+[Cursor](https://cursor.com/) es un editor de código impulsado por IA, creado como un fork de VS Code, que ofrece funciones como el autocompletado de código con IA y la edición en lenguaje natural.
+
+<Steps>
+  <Step title="Abrir la configuración de Docs">
+    Ve a **Settings** &gt; **Features** &gt; **Docs**.
+  </Step>
+
+  <Step title="Agregar la documentación de Base">
+    Haz clic en **Add new doc** y pega: `https://docs.base.org/llms-full.txt`
+  </Step>
+
+  <Step title="Hacer referencia en el chat">
+    Usa `@docs -> Base` en el chat de IA para hacer referencia a la documentación.
+  </Step>
+</Steps>
+
+### Configuración con Claude Code {#setup-with-claude-code}
+
+[Claude Code](https://docs.claude.com/en/docs/claude-code/overview) es una herramienta de programación agéntica que se ejecuta en tu terminal y entiende tu base de código.
+
+<Steps>
+  <Step title="Descarga el archivo de documentación">
+    Descarga el archivo de documentación estático desde: [https://docs.base.org/llms-full.txt](https://docs.base.org/llms-full.txt)
+  </Step>
+
+  <Step title="Añádelo a tu proyecto">
+    Guarda el archivo en el directorio de tu proyecto o en una ubicación conocida de tu sistema.
+  </Step>
+
+  <Step title="Haz referencia a él en el chat">
+    Usa el comando `/read` o arrastra y suelta la ruta del archivo para incluir la documentación en tu conversación. Así, Claude Code tendrá acceso a toda la documentación de Base durante esa sesión.
+  </Step>
+</Steps>

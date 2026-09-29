@@ -1,0 +1,131 @@
+---
+title: "Sistema de pruebas"
+description: "Especificación del sistema de múltiples pruebas de Azul, que reemplaza al proponente único de salidas por un contrato AggregateVerifier para la seguridad de los checkpoints de L2."
+---
+
+Azul introduce un sistema de múltiples pruebas para los checkpoints de L2 que protegen los retiros hacia L1. Un
+checkpoint es un intervalo fijo de bloques de L2 resumido en una raíz de salida. Cada propuesta sobre ese
+checkpoint se envía a `AggregateVerifier`, un juego de disputa en L1 que puede verificar una o dos
+pruebas de la misma propuesta antes de que los retiros dependan de ella.
+
+En el flujo habitual, un probador TEE genera la prueba de la propuesta inicial. Más adelante, un probador ZK sin permisos puede
+respaldar esa misma propuesta o impugnar una que no sea válida. `AggregateVerifier` delega las verificaciones de pruebas
+en contratos verificadores dedicados, mientras que un registrador de probadores mantiene actualizado el registro onchain de identidades
+de firmantes TEE aceptadas.
+
+## Por qué cambiar el sistema de pruebas {#why-change-the-proof-system}
+
+El sistema actual de pruebas de fallos de Base es optimista e interactivo: una propuesta se resuelve a menos que alguien
+la impugne. Este modelo tiene dos limitaciones.
+
+* Los retiros tardan al menos 7 días porque cada propuesta hereda la ventana de impugnación completa.
+* Cada propuesta incorrecta debe impugnarse activamente. Esto crea una superficie de ataque económica: si
+  los impugnadores no pueden financiar todas las disputas, un estado incorrecto podría finalizarse. Hoy en día, las salvaguardas centralizadas
+  mitigan ese riesgo, pero no constituyen un modelo viable a largo plazo para alcanzar la descentralización de Stage 2.
+
+Azul sustituye ese modelo por un diseño de pruebas múltiples basado en probadores TEE y ZK. Las pruebas TEE
+cubren el caso habitual, las pruebas ZK ofrecen un respaldo sin permisos y la arquitectura deja
+margen para adoptar sistemas de prueba más robustos con el tiempo.
+
+## Modelo de finalidad {#finality-model}
+
+El diseño de Azul admite tres vías de liquidación para una propuesta en Ethereum:
+
+| Pruebas presentes | Vía de liquidación | Ventana objetivo | Qué significa                                        |
+| ----------------- | ------------------ | ---------------- | ---------------------------------------------------- |
+| Solo TEE          | Ventana larga      | 7 días           | Vía habitual, aunque ZK aún puede anularla           |
+| Solo ZK           | Ventana larga      | 7 días           | Vía sin permisos que no depende de TEE               |
+| TEE + ZK          | Ventana corta      | 1 día            | Finalidad más rápida cuando ambos sistemas coinciden |
+
+La ventana larga da tiempo a los probadores independientes para verificar una afirmación e impugnarla si es necesario. La
+ventana corta solo está disponible cuando ambos sistemas de prueba respaldan la misma propuesta. Un probador ZK también puede
+impugnar una afirmación inválida respaldada por TEE y quedarse con la fianza del probador TEE como recompensa. En Azul, ese retraso
+reside en el propio `AggregateVerifier`. `OptimismPortal2` y `AnchorStateRegistry` ya no añaden un
+retraso adicional de 3,5 días, ya que mantener cualquiera de esos retrasos heredados eliminaría la vía de finalidad rápida
+incluso cuando ambas pruebas están presentes.
+
+## Seguridad y descentralización {#security-and-decentralization}
+
+* La ruta TEE es permisionada y está optimizada para el caso habitual.
+* La ruta ZK no requiere permisos y puede anular una afirmación no válida respaldada por TEE.
+* La capa de pruebas sigue siendo modular y puede evolucionar hacia implementaciones TEE más robustas, otros sistemas ZK
+  o diseños multi-ZK.
+
+## Descripción general {#overview}
+
+### Componentes onchain nuevos o modificados {#newchanged-onchain-components}
+
+* `AggregateVerifier`: contrato de juego de disputa de Azul para propuestas de checkpoints. Cada propuesta se
+  inicializa con una prueba; más adelante puede añadirse una segunda prueba para la misma raíz reclamada, y el
+  contrato invoca contratos verificadores específicos de cada tipo de prueba y agrega sus resultados para determinar cómo se
+  resuelve la propuesta. Ahora es también aquí donde reside el retraso de finalidad de Azul.
+* `TEEVerifier` y `ZKVerifier`: contratos verificadores específicos de cada tipo de prueba a los que invoca `AggregateVerifier`.
+  Sus direcciones son inmutables en la implementación de `AggregateVerifier`, por lo que cada despliegue cuenta con
+  un conjunto explícito de verificadores.
+* `DelayedWETH`: sigue custodiando la fianza de la propuesta de cada juego, pero Azul reduce su retraso de retiro
+  a 1 día. Esto basta en este caso, porque las únicas fianzas en juego son las de los proponentes.
+* `OptimismPortal2`: ya no añade el retraso adicional de maduración de pruebas de 3,5 días para estas propuestas.
+  Ese control de tiempos pasa a `AggregateVerifier`, lo que mantiene viable la ruta de 1 día en lugar de
+  obligar a que cada propuesta herede al menos 3,5 días de retraso adicional.
+* `AnchorStateRegistry`: al igual que `OptimismPortal2`, ya no aplica un retraso de finalización de 3,5 días
+  a las propuestas, lo que permite una finalidad rápida.
+
+### Flujo de pruebas {#proof-flow}
+
+El flujo de pruebas de Azul es el siguiente:
+
+1. El proponente identifica el siguiente rango canónico de checkpoints y solicita una prueba TEE.
+2. El probador TEE vuelve a ejecutar ese rango de bloques de L2 dentro de un AWS Nitro Enclave y firma la
+   raíz de salida resultante.
+3. El proponente contrasta el resultado con el estado canónico de L2 de Base y envía un nuevo
+   juego `AggregateVerifier` a L1.
+4. Un impugnador puede recalcular de forma independiente las mismas raíces de los checkpoints y, si detecta una
+   afirmación no válida, obtiene la prueba ZK necesaria para impugnarla.
+
+Esta arquitectura mantiene sencilla la ruta habitual, conserva una vía de disputa sin permisos y
+permite una liquidación más rápida cuando ambos sistemas de pruebas están disponibles.
+
+## Roles en el sistema de pruebas {#proof-roles}
+
+* El proponente convierte los checkpoints canónicos de L2 en nuevos juegos `AggregateVerifier` en L1.
+* Un impugnador contrasta los juegos en curso con el estado canónico de L2 y disputa las afirmaciones incorrectas.
+* Los probadores TEE sustentan la ruta habitual de propuestas.
+* Los probadores ZK ofrecen la ruta de verificación y anulación sin permisos.
+* El registrador mantiene el registro onchain de las identidades de firmantes TEE aceptadas.
+* `AggregateVerifier` y sus contratos verificadores validan las afirmaciones antes de que los retiros en L1 puedan basarse en
+  ellas.
+
+## Proponente {#proposer}
+
+El proponente convierte los checkpoints seguros o finalizados de la L2 de Base en juegos `AggregateVerifier` en la L1. Para ello,
+localiza el estado padre canónico más reciente, solicita una prueba TEE para el siguiente intervalo de checkpoints,
+verifica la raíz de salida devuelta con respecto al estado canónico de la L2 y envía la siguiente propuesta junto con
+la fianza requerida.
+
+## Impugnador {#challenger}
+
+Cualquiera puede ejecutar un impugnador. Un impugnador recalcula de forma independiente las raíces de salida de los checkpoints de
+los juegos en curso, identifica la primera afirmación no válida y envía la transacción de disputa
+correspondiente. La vía de disputa sin permisos es un desafío mediante prueba ZK. Base ejecutará un impugnador como
+salvaguarda de seguridad, y el impugnador de Base también tiene acceso a una vía de anulación mediante TEE para propuestas
+no válidas respaldadas por TEE.
+
+## Probadores TEE {#tee-provers}
+
+Los probadores TEE son servicios respaldados por AWS Nitro Enclaves que se utilizan en la ruta habitual de propuestas. El host recopila
+los datos de testigo a través de RPC, el enclave vuelve a ejecutar de forma aislada el rango de bloques de L2 solicitado y, por último,
+firma las salidas de checkpoint resultantes con una clave que nunca sale del enclave.
+
+## Probadores ZK {#zk-provers}
+
+Los probadores ZK son el backend de generación de pruebas sin permisos de Azul. Se utilizan cuando una disputa requiere una
+prueba ZK, sobre todo para impugnar una propuesta inválida respaldada por TEE o para invalidar una afirmación ZK incorrecta.
+En condiciones normales, el proponente no depende de los probadores ZK para crear nuevos juegos. En el
+futuro, el proponente podría integrar directamente los probadores ZK para que las nuevas raíces incorporen ambas vías de prueba desde
+el principio, lo que permitiría una finalidad más rápida para todas las raíces.
+
+## Registrador de probadores {#prover-registrar}
+
+El registrador de probadores mantiene el `TEEProverRegistry` onchain sincronizado con el conjunto activo de firmantes
+de los probadores Nitro. Detecta los probadores activos, certifica onchain las identidades de sus firmantes y elimina los firmantes
+huérfanos, con salvaguardas frente a interrupciones transitorias.

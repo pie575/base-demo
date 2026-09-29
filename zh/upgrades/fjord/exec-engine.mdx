@@ -1,0 +1,64 @@
+---
+title: "L2 执行引擎"
+description: "Fjord 升级对执行引擎的变更：以基于 FastLZ 的压缩模型取代 L1 成本费用估算器。"
+---
+
+## 费用 {#fees}
+
+### L1 成本费用 (L1 Fee Vault) {#l1-cost-fees-l1-fee-vault}
+
+#### Fjord L1 成本费用变更 (FastLZ 估算器) {#fjord-l1-cost-fee-changes-fastlz-estimator} 
+
+Fjord 更新了 L1 成本计算函数，改用基于 FastLZ 的压缩估算器。
+L1 成本的计算公式如下：
+
+```pseudocode L1 Cost Formula
+l1FeeScaled = l1BaseFeeScalar*l1BaseFee*16 + l1BlobFeeScalar*l1BlobBaseFee
+estimatedSizeScaled = max(minTransactionSize * 1e6, intercept + fastlzCoef*fastlzSize)
+l1Fee = estimatedSizeScaled * l1FeeScaled / 1e12
+```
+
+最终的 `l1Fee` 计算采用无限精度无符号整数运算，结果以 Wei 为单位，
+取值范围为 `uint256`。该计算中使用的各项值如下：
+
+| 输入参数                 | 类型        | 描述                                 | 值                   |
+| -------------------- | --------- | ---------------------------------- | ------------------- |
+| `l1BaseFee`          | `uint256` | L2 链中记录的最新 L1 origin 的 L1 基础费用     | 可变，L1 费用            |
+| `l1BlobBaseFee`      | `uint256` | L2 链中记录的最新 L1 origin 的 blob gas 价格 | 可变，L1 费用            |
+| `fastlzSize`         | `uint256` | 经 RLP 编码的已签名交易在 FastLZ 压缩后的大小      | 可变，因交易而异            |
+| `l1BaseFeeScalar`    | `uint32`  | L1 基础费用标量，按 `1e6` 缩放               | 可变，由 L2 配置          |
+| `l1BlobFeeScalar`    | `uint32`  | L1 blob 费用标量，按 `1e6` 缩放            | 可变，由 L2 配置          |
+| `intercept`          | `int32`   | 截距常量，按 `1e6` 缩放 (可为负数)             | -42&#95;585&#95;600 |
+| `fastlzCoef`         | `uint32`  | FastLZ 系数，按 `1e6` 缩放               | 836&#95;500         |
+| `minTransactionSize` | `uint32`  | 交易大小下限，单位为字节                       | 100                 |
+
+此前，由于 L1 成本函数不够精确，`l1BaseFeeScalar` 和 `l1BlobFeeScalar` 被用来编码压缩率。
+而新的成本函数已将压缩率纳入考量，因此应相应调整这些标量，
+以消除其中此前编码的压缩率。
+
+##### FastLZ 实现 {#fastlz-implementation}
+
+所有压缩算法的实现都必须与以下 [commit](https://github.com/ariya/FastLZ/blob/344eb4025f9ae866ebf7a2ec48850f7113a97a42/fastlz.c#L482-L506) 中
+`fastlz.c` 文件内的 `fastlz_compress` 函数等效。
+
+##### L1 成本线性回归详情 {#l1-cost-linear-regression-details}
+
+`intercept` 和 `fastlzCoef` 常量是基于以往 L2 交易构成的数据集，通过线性回归计算得出的。该数据集的生成方式是：遍历给定时间范围内的所有交易，
+并对每笔交易执行以下操作：
+
+1. 使用 FastLZ 压缩交易负载，并将压缩后的负载大小记为 `fastlzSize`。
+2. 模拟将该交易加入批次 (使用 Brotli 10 压缩) 所引起的批次大小变化，并将该变化量
+   记为 `bestEstimateSize`。
+
+数据集生成后，即可将 `bestEstimateSize` 作为因变量、`fastlzSize` 作为自变量
+进行线性回归计算。
+
+我们选取了 Optimism Mainnet 上 Ecotone 升级后两周的交易来生成数据集，因为我们发现，该数据集
+最能代表多条链、多个时间段内的性能表现。有关线性回归及所用数据集的更多详情，
+请参阅此[代码仓库](https://github.com/roberto-bayardo/compression-analysis/tree/main)。
+
+### L1 Gas 用量估算 {#l1-gas-usage-estimation}
+
+`L1GasUsed` 属性已被弃用，因为它未计入交易消耗的 L1 blob gas，该属性将在
+未来的网络升级中移除。用户可以继续使用 `L1Fee` 字段获取指定
+交易的 L1 费用。

@@ -1,0 +1,67 @@
+---
+title: 'eth_getStorageAt'
+sidebarTitle: 'eth_getStorageAt'
+description: 'Devuelve el valor de una ranura de almacenamiento en una dirección. Usa pending para leer el almacenamiento preconfirmado.'
+---
+
+Devuelve el valor almacenado en una posición de almacenamiento de una dirección determinada.
+
+<Tip>
+  **Flashblocks:** Consulta `https://mainnet.base.org` con `"pending"` para leer el almacenamiento actualizado por las transacciones preconfirmadas, que se actualiza cada ~200 ms.
+</Tip>
+
+## Parámetros {#parameters}
+
+<ParamField body="address" type="string" required>
+  La dirección de 20 bytes del almacenamiento.
+</ParamField>
+
+<ParamField body="position" type="string" required>
+  La posición de la ranura de almacenamiento, expresada como un entero hexadecimal.
+</ParamField>
+
+<ParamField body="block" type="string" required>
+  Número de bloque en hexadecimal, o bien `"latest"`, `"pending"`, `"safe"`, `"finalized"` o `"earliest"`.
+</ParamField>
+
+## Valor de retorno {#returns}
+
+<ResponseField name="result" type="string">
+  El valor almacenado en la posición de almacenamiento, como una cadena hexadecimal de 32 bytes.
+</ResponseField>
+
+## Ejemplo {#example}
+
+<CodeGroup>
+  ```bash Estándar (latest) lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_getStorageAt",
+      "params": ["0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", "0x0", "latest"],
+      "id": 1
+    }'
+  ```
+
+  ```bash Flashblocks (pending, ~200ms) lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_getStorageAt",
+      "params": ["0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", "0x0", "pending"],
+      "id": 1
+    }'
+  ```
+
+  ```json Respuesta
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x0000000000000000000000000000000000000000000000000000000000000001"
+  }
+  ```
+</CodeGroup>

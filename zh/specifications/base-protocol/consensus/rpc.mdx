@@ -1,0 +1,77 @@
+---
+title: "RPC"
+description: "Rollup 节点 RPC 接口规范，包括用于获取 L2 输出根（output root）的 optimism_outputAtBlock 方法。"
+---
+
+## L2 输出 RPC 方法 {#l2-output-rpc-method}
+
+Rollup 节点提供专属的 RPC 方法 `optimism_outputAtBlock`，该方法返回一个 32
+字节的哈希，对应 [L2 输出根](/zh/specifications/reference/glossary#l2-output-root)。
+
+### 结构 {#structures}
+
+以下定义了 rollup 节点 API 方法所使用的类型。
+此处定义的类型扩展自 [Engine API 规范][engine-structures]。
+
+#### BlockID {#blockid}
+
+* `hash`：`DATA`，32 字节
+* `number`：`QUANTITY`，64 位
+
+#### L1BlockRef {#l1blockref}
+
+* `hash`：`DATA`，32 字节
+* `number`：`QUANTITY`，64 位
+* `parentHash`：`DATA`，32 字节
+* `timestamp`：`QUANTITY`，64 位
+
+#### L2BlockRef {#l2blockref}
+
+* `hash`: `DATA`，32 字节
+* `number`: `QUANTITY`，64 位
+* `parentHash`: `DATA`，32 字节
+* `timestamp`: `QUANTITY`，64 位
+* `l1origin`: `BlockID`
+* `sequenceNumber`: `QUANTITY`，64 位 - 与所在纪元 (epoch) 第一个区块的距离
+
+#### SyncStatus {#syncstatus}
+
+表示 rollup 驱动程序的状态快照。
+
+* `current_l1`: `Object` - [`L1BlockRef`](#l1blockref) 的实例。
+* `current_l1_finalized`: `Object` - [`L1BlockRef`](#l1blockref) 的实例。
+* `head_l1`: `Object` - [`L1BlockRef`](#l1blockref) 的实例。
+* `safe_l1`: `Object` - [`L1BlockRef`](#l1blockref) 的实例。
+* `finalized_l1`: `Object` - [`L1BlockRef`](#l1blockref) 的实例。
+* `unsafe_l2`: `Object` - [`L2BlockRef`](#l2blockref) 的实例。
+* `safe_l2`: `Object` - [`L2BlockRef`](#l2blockref) 的实例。
+* `finalized_l2`: `Object` - [`L2BlockRef`](#l2blockref) 的实例。
+* `pending_safe_l2`: `Object` - [`L2BlockRef`](#l2blockref) 的实例。
+* `queued_unsafe_l2`: `Object` - [`L2BlockRef`](#l2blockref) 的实例。
+
+### Output 方法 API {#output-method-api}
+
+此处的输入和返回类型均以 [Engine API 规范][engine-structures]中的定义为准。
+
+[engine-structures]: https://github.com/ethereum/execution-apis/blob/main/src/engine/paris.md#structures
+
+#### `optimism_outputAtBlock` {#optimism_outputatblock}
+
+返回指定 L2 区块的输出根 (output root) 及相关元数据。
+
+**参数**
+
+| 名称            | 类型              | 描述           |
+| :------------ | :-------------- | :----------- |
+| `blockNumber` | `QUANTITY`，64 位 | L2 区块号 (整数)  |
+
+**返回值**
+
+| 名称                      | 类型           | 描述                             |
+| :---------------------- | :----------- | :----------------------------- |
+| `version`               | `DATA`，32 字节 | 输出根版本号，从 `0` 开始                |
+| `outputRoot`            | `DATA`，32 字节 | 输出根                            |
+| `blockRef`              | `Object`     | [`L2BlockRef`](#l2blockref) 实例 |
+| `withdrawalStorageRoot` | `DATA`，32 字节 | `L2ToL1MessagePasser` 合约的存储根   |
+| `stateRoot`             | `DATA`，32 字节 | 状态根                            |
+| `syncStatus`            | `Object`     | [`SyncStatus`](#syncstatus) 实例 |

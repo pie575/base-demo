@@ -1,0 +1,89 @@
+---
+title: "面向 AI 智能体的资源"
+description: "专为 Base 打造的 AI 智能体资源，包括文档索引、MCP 访问、技能以及推荐的入门路径"
+keywords: ["AI agents", "LLM", "MCP", "Model Context Protocol", "llms.txt", "skills", "Claude Code", "Cursor", "agent wallet", "onchain AI", "Base documentation", "x402"]
+---
+
+<Note>
+  完整的文档索引可在 [https://docs.base.org/llms.txt](https://docs.base.org/llms.txt) 获取。
+  在进一步浏览之前，请先通过此文件了解所有可用页面。
+</Note>
+
+如果你希望借助 AI 助手在 Base 上进行构建，可以从本页入手。本页介绍了为助手提供 Base 上下文的三种方式：静态文档文件、实时 MCP 连接以及可安装的技能。此外，本页还针对常见工作流程提供了推荐的入口。
+
+## 快速设置 {#quick-setup}
+
+只需一条命令，即可将你的智能体接入 Base 文档。请根据你使用的工具选择合适的方式。
+
+### MCP 服务器 {#mcp-server}
+
+建立实时连接后，你的 AI 助手可以按需搜索和阅读 Base 文档，始终掌握最新信息。
+
+<CodeGroup>
+  ```sh Claude Code
+  claude mcp add --transport http base-docs https://docs.base.org/mcp
+  ```
+
+  ```sh Codex CLI
+  codex mcp add base-docs --url https://docs.base.org/mcp
+  ```
+
+  ```json Cursor / manual config
+  {
+    "mcpServers": {
+      "base-docs": {
+        "url": "https://docs.base.org/mcp"
+      }
+    }
+  }
+  ```
+</CodeGroup>
+
+如需了解 Cursor、Windsurf 及其他编辑器的配置方法，请参阅[完整的 MCP 设置指南](/zh/get-started/docs-mcp)。
+
+### 静态文档文件 {#static-docs-files}
+
+如果你希望一次请求就加载完上下文，而无需维持实时连接，可以使用以下文件。
+
+| 文件                                                     | 内容           | 适用场景           |
+| ------------------------------------------------------ | ------------ | -------------- |
+| [`llms.txt`](https://docs.base.org/llms.txt)           | 页面索引，含标题和描述  | 在深入阅读前了解有哪些文档  |
+| [`llms-full.txt`](https://docs.base.org/llms-full.txt) | 合并为单个文件的完整文档 | 一次性为助手提供全面的上下文 |
+
+每个文档页面也都提供纯 Markdown 版本，只需在任意 URL 末尾加上 `.md`：
+
+```txt Markdown URL
+https://docs.base.org/get-started/resources-for-ai-agents.md
+```
+
+### 技能 {#skills}
+
+技能是可安装的智能体工作流，适用于连接 Base、部署合约、运行节点等常见的 Base 任务。它们能为你的助手提供分步操作指导，助手无需再自行从各处文档中拼凑信息。
+
+```sh Terminal
+npx skills install base/skills -g
+```
+
+可前往 [Base 技能仓库](https://github.com/base/skills)浏览可用的技能。
+
+## 推荐的入门起点 {#recommended-starting-points}
+
+智能体获得文档上下文后，请根据你要构建的内容，引导它查阅对应的章节：
+
+| 你要做什么        | 从这里开始                                                            |
+| ------------ | ---------------------------------------------------------------- |
+| 将助手连接到实时文档   | [MCP 服务器](/zh/get-started/docs-mcp)                                 |
+| 以静态文件形式加载文档  | [静态文档文件](/zh/get-started/docs-llms)                                 |
+| 添加支付或链上交易功能  | [进行 x402 支付](/zh/build-on-base/accept-payments/call-a-paid-service) |
+| 部署合约         | [在 Base 上部署](/zh/get-started/make-a-transaction)                    |
+| 在 Base 上构建应用 | [构建 Base 应用](/zh/build-on-base/overview)                            |
+
+## 示例提示词 {#example-prompts}
+
+将以下提示词复制到你的 AI 助手中，测试一切是否正常：
+
+* “将我的 ERC-20 合约部署到 Base Sepolia，并在 Basescan 上完成验证。”
+* “使用 wagmi 为我的 Next.js 应用添加 Sign in with Base。”
+* “为我的 AI 智能体配置一个钱包，使其能够持有 USDC 并自主签署交易。”
+* “创建一个包含 USDC 支付流程的应用。”
+* “构建一个通过 x402 协议为 API 请求付费的智能体。”

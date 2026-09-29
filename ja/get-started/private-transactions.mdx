@@ -1,0 +1,72 @@
+---
+title: "プライベートトランザクション"
+keywords: ["Base Ledgers", "private payments Base", "confidential transactions Base", "enterprise stablecoin settlement", "Portal contract Base"]
+description: "Base Ledgers を使えば、Base 上で企業向けの機密決済を実行できます。残高、送金内容、取引相手を非公開に保ったまま、資金はオンチェーンで決済されます。"
+---
+
+import { LedgersDemo } from "/snippets/LedgersDemo.jsx"
+
+<Warning>
+  Base Ledgersは現在アーリーアクセス中です。独自の台帳を運用するには[アクセスをリクエスト](https://www.coinbase.com/developer-platform/developer-interest)してください。または、Base Ledgersを基盤としたマネージドサービスである[Coinbase Managed](https://docs.cdp.coinbase.com/payments/overview)をご利用いただけます。
+</Warning>
+
+**Base Ledgers**を使えば、Base上で独自のプライベート決済プロダクトを運用できます。残高、送金、取引相手は公開ブロックエクスプローラーに表示されず、資金は単一の`Portal`コントラクトを通じてBase上で決済されます。コンプライアンスは独自のKYC管理によって台帳レベルで適用され、資金はお客様が管理するコントラクトでセルフカストディされます。さらに、入金と出金はすべてオンチェーンの呼び出しとして実行されるため、Base上の他の操作とまとめてアトミックに実行できます。
+
+## デモ {#demo}
+
+<LedgersDemo />
+
+<Tip>
+  上記のデモはモックです。Vibenet 上で動作するオンチェーンデモを見るには、[Base chain demos](https://chain.base.org/demos) をご覧ください。
+</Tip>
+
+## ガイド {#guides}
+
+<CardGroup cols={2}>
+  <Card title="台帳への入金" icon="arrow-down-to-line" href="/ja/build-on-base/ledgers/deposit">
+    受取人を暗号化した状態で、Base から台帳へ資金を移動します。
+  </Card>
+
+  <Card title="台帳内での送金" icon="shuffle" href="/ja/build-on-base/ledgers/transfer">
+    パブリックチェーン上に一切の記録を残さずに、台帳内で残高を移動します。
+  </Card>
+
+  <Card title="台帳からの出金" icon="arrow-up-from-line" href="/ja/build-on-base/ledgers/withdraw">
+    アカウントを秘匿したまま、資金を Base に戻します。
+  </Card>
+</CardGroup>
+
+## Base Ledgers を選ぶ理由 {#why-base-ledgers}
+
+* **デフォルトでプライベート。** 残高、トランザクション、送金はパブリックなブロックエクスプローラーに表示されません。入金時には受取人が、出金時には送信者が秘匿されるため、入金と出金が紐付けられることはありません。
+* **コンプライアンスに対応。** オペレーターが独自の KYC とコンプライアンス管理によって台帳へのアクセスを制御します。
+* **Base とのコンポーザビリティ。** 入金と出金はオンチェーンの呼び出しなので、他のアクションとまとめて実行できます (入金してそのまま操作する、出金してスワップするなど) 。まとめた処理はすべて一括で決済されるか、いずれも決済されないかのどちらかです。
+* **柔軟にカスタマイズ可能。** 資金を自己管理しながら、トランザクションの処理方法を独自のロジックで定義し、自社の条件に合わせて台帳を運用できます。
+
+## 想定ユースケース {#built-for}
+
+<CardGroup cols={2}>
+  <Card title="B2B 決済" icon="building">
+    仕入先リストをパブリックチェーン上に公開することなく、取引先に支払いができます。
+  </Card>
+
+  <Card title="給与・報酬の支払い" icon="money-check-dollar">
+    従業員や業務委託先ごとの報酬額を公開することなく、オンチェーンで給与を支払えます。
+  </Card>
+
+  <Card title="財務オペレーション" icon="vault">
+    法人口座、カストディアン、取引相手の間で、残高を秘匿したまま移動できます。
+  </Card>
+
+  <Card title="国際送金" icon="globe">
+    送金者、受取人、金額を公開することなく、KYC を必須とする送金ルートを運用できます。
+  </Card>
+</CardGroup>
+
+## 仕組み {#how-it-works}
+
+支払いは3つの段階を経て処理されます。資金はPortalコントラクトを通じて入金され、台帳内で秘匿的に移動し、最終的にBaseへ出金されます。オペレーターは各ステップを処理するサービスを運用し、出金の承認方法を決定します。
+
+1. **[入金](/ja/build-on-base/ledgers/deposit)。** ユーザーが資金をBaseから台帳へ移動します。受取人は暗号化されるため、同一アカウントへの複数の入金が互いに紐付けられることはありません。
+2. **[台帳内での送金](/ja/build-on-base/ledgers/transfer)。** 台帳内では、残高やアクティビティを秘匿したまま、送金、スワップ、利回りの獲得を行えます。
+3. **[出金](/ja/build-on-base/ledgers/withdraw)。** ユーザーが資金をBaseへ戻します。オンチェーン上では出金の資産と金額は公開されますが、どのアカウントによる出金かは公開されません。

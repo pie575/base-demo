@@ -1,0 +1,42 @@
+---
+title: 'web3_clientVersion'
+sidebarTitle: 'web3_clientVersion'
+description: '現在のクライアントのバージョン文字列を返します。'
+---
+
+ノードのクライアントソフトウェアのバージョン文字列を返します。
+
+<Note>
+  このメソッドは、すべてのパブリックエンドポイントで利用できるわけではありません。Sepolia のパブリックノード (`sepolia.base.org`) では `-32601 Method not found` が返されますが、メインネットでは正常に動作します。
+</Note>
+
+## パラメーター {#parameters}
+
+パラメーターはありません。
+
+## 戻り値 {#returns}
+
+<ResponseField name="result" type="string">
+  クライアントのバージョン文字列です。形式：`<client>/<version>-<commit>/<platform>/base/<base-version>`。この文字列はノードソフトウェアの更新に伴って変わるため、文字列を解析して利用する処理には依存しないでください。
+</ResponseField>
+
+## 例 {#example}
+
+<CodeGroup>
+  ```json Request
+  {
+    "jsonrpc": "2.0",
+    "method": "web3_clientVersion",
+    "params": [],
+    "id": 1
+  }
+  ```
+
+  ```json Response
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "reth/v1.11.3-2ac58a2/x86_64-unknown-linux-gnu/base/v0.9.0"
+  }
+  ```
+</CodeGroup>

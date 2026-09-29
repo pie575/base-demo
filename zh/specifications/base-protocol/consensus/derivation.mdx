@@ -1,0 +1,1041 @@
+---
+title: "派生"
+description: "L2 链派生流水线规范，阐述如何根据 L1 数据和 sequencer 批次确定性地派生出 L2 区块。"
+---
+
+[g-derivation]: /specifications/reference/glossary#l2-chain-derivation
+
+[g-payload-attr]: /specifications/reference/glossary#payload-attributes
+
+[g-block]: /specifications/reference/glossary#block
+
+[g-exec-engine]: /specifications/reference/glossary#execution-engine
+
+[g-reorg]: /specifications/reference/glossary#chain-re-organization
+
+[g-receipts]: /specifications/reference/glossary#receipt
+
+[g-deposit-contract]: /specifications/reference/glossary#deposit-contract
+
+[g-deposited]: /specifications/reference/glossary#deposited-transaction
+
+[g-l1-attr-deposit]: /specifications/reference/glossary#l1-attributes-deposited-transaction
+
+[g-l1-origin]: /specifications/reference/glossary#l1-origin
+
+[g-user-deposited]: /specifications/reference/glossary#user-deposited-transaction
+
+[g-deposits]: /specifications/reference/glossary#deposits
+
+[g-sequencing]: /specifications/reference/glossary#sequencing
+
+[g-sequencer]: /specifications/reference/glossary#sequencer
+
+[g-sequencing-epoch]: /specifications/reference/glossary#sequencing-epoch
+
+[g-sequencing-window]: /specifications/reference/glossary#sequencing-window
+
+[g-sequencer-batch]: /specifications/reference/glossary#sequencer-batch
+
+[g-l2-genesis]: /specifications/reference/glossary#l2-genesis-block
+
+[g-l2-chain-inception]: /specifications/reference/glossary#l2-chain-inception
+
+[g-l2-genesis-block]: /specifications/reference/glossary#l2-genesis-block
+
+[g-batcher-transaction]: /specifications/reference/glossary#batcher-transaction
+
+[g-avail-provider]: /specifications/reference/glossary#data-availability-provider
+
+[g-batcher]: /specifications/reference/glossary#batcher
+
+[g-l2-output]: /specifications/reference/glossary#l2-output-root
+
+[g-fault-proof]: /specifications/reference/glossary#fault-proof
+
+[g-channel]: /specifications/reference/glossary#channel
+
+[g-channel-frame]: /specifications/reference/glossary#channel-frame
+
+[g-rollup-node]: /specifications/reference/glossary#rollup-node
+
+[g-block-time]: /specifications/reference/glossary#block-time
+
+[g-time-slot]: /specifications/reference/glossary#time-slot
+
+[g-consolidation]: /specifications/reference/glossary#unsafe-block-consolidation
+
+[g-safe-l2-head]: /specifications/reference/glossary#safe-l2-head
+
+[g-safe-l2-block]: /specifications/reference/glossary#safe-l2-block
+
+[g-unsafe-l2-head]: /specifications/reference/glossary#unsafe-l2-head
+
+[g-unsafe-l2-block]: /specifications/reference/glossary#unsafe-l2-block
+
+[g-unsafe-sync]: /specifications/reference/glossary#unsafe-sync
+
+[g-deposit-tx-type]: /specifications/reference/glossary#deposited-transaction-type
+
+[g-finalized-l2-head]: /specifications/reference/glossary#finalized-l2-head
+
+[g-system-config]: /specifications/reference/glossary#system-configuration
+
+## 概述 {#overview}
+
+> **注意**：以下内容假设只有单个 sequencer 和 batcher。未来将调整该设计，以
+> 支持多个此类实体。
+
+[L2 链派生][g-derivation] (即从 L1 数据派生 L2 [区块][g-block]) 是
+[rollup 节点][g-rollup-node]的主要职责之一，在验证者模式和 sequencer 模式下都是如此 (在 sequencer 模式下，派生可用于对排序进行健全性
+检查，并可检测 L1 链[重组][g-reorg]) 。
+
+L2 链派生自 L1 链。具体而言，[L2 链
+创世][g-l2-chain-inception]之后的每个 L1 区块都会映射到一个[排序纪元][g-sequencing-epoch]，每个纪元包含
+至少一个 L2 区块。每个 L2 区块恰好属于一个纪元，我们将对应的 L1
+区块称为该 L2 区块的 [L1 origin][g-l1-origin]。纪元编号与其 L1 origin 区块的编号相同。
+
+要派生编号为 `E` 的纪元中的 L2 区块，需要以下输入：
+
+* 范围 `[E, E + SWS)` 内的 L1 区块，称为该纪元的[排序窗口][g-sequencing-window]，其中 `SWS`
+  为排序窗口大小。 (注意，排序窗口之间会相互重叠。)
+* 排序窗口内各区块中的 [Batcher 交易][g-batcher-transaction]。
+  * 借助这些交易，我们可以重建该纪元的 [sequencer 批次][g-sequencer-batch]，每个批次
+    都会生成一个 L2 区块。注意：
+    * L1 origin 中永远不会包含构建 sequencer 批次所需的任何数据，因为
+      每个批次都[必须包含](#batch-format) L1 origin 的哈希。
+    * 一个纪元中可能没有任何 sequencer 批次。
+* 在 L1 origin 中发生的[存款][g-deposits] (以[存款
+  合约][g-deposit-contract]发出的事件形式呈现) 。
+* L1 origin 的 L1 区块属性 (用于派生 [L1 属性存款交易][g-l1-attr-deposit]) 。
+* 上一纪元最后一个 L2 区块之后的 L2 链状态；若 `E` 是第一个纪元，则为 [L2 创世状态][g-l2-genesis]。
+
+要从头派生整条 L2 链，需以 [L2 创世状态][g-l2-genesis]为起点，并将
+[L2 创世区块][g-l2-genesis-block]作为第一个 L2 区块。随后，从 [L2 链创世][g-l2-chain-inception]之后的第一个 L1 区块开始，
+依次从每个纪元派生 L2 区块。有关实际实现方式的更多信息，请参阅
+[架构部分][architecture]。
+L2 链可能包含 Bedrock 之前的历史，但此处的 L2 创世指的是 Bedrock L2
+创世区块。
+
+每个 origin 为 `l1_origin` 的 L2 `block` 都须满足以下约束 (其值
+均以秒为单位) ：
+
+* `block.timestamp = prev_l2_timestamp + l2_block_time`
+
+  * `prev_l2_timestamp` 是紧邻当前区块之前的 L2 区块的时间戳。如果
+    不存在前一个区块，则当前区块为创世区块，其时间戳需显式
+    指定。
+  * `l2_block_time` 是一个可配置参数，表示 L2 区块之间的时间间隔 (在 Base 上为 2 秒) 。
+
+* `l1_origin.timestamp <= block.timestamp <= max_l2_timestamp`，其中
+  * `max_l2_timestamp = max(l1_origin.timestamp + max_sequencer_drift, prev_l2_timestamp + l2_block_time)`
+    * `max_sequencer_drift` 是一个可配置参数，用于限制 sequencer 最多可领先
+      L1 多少。
+
+最后，每个纪元必须至少包含一个 L2 区块。
+
+第一个约束意味着，自 L2 链创世起，每隔 `l2_block_time` 秒必须有一个 L2 区块。
+
+第二个约束确保 L2 区块的时间戳永远不会早于其 L1 origin 的时间戳，
+且领先幅度永远不会超过 `max_sequencer_drift`；唯一的例外是在少数特殊情况下，该限制
+可能导致无法每隔 l2&#95;block&#95;time 秒生成一个 L2 区块。 (例如，当 L1 采用工作量证明
+且在一段时间内快速出块时，就可能出现这种情况。) 无论哪种
+情况，只要超出 `max_sequencer_drift`，sequencer 都会强制执行 `len(batch.transactions) == 0`。
+更多详情请参阅[批次队列](#batch-queue)。
+
+最后一项要求——每个纪元必须至少包含一个 L2 区块——确保了来自 L1 的所有相关
+信息 (例如存款) 都能在 L2 中得到体现，即使该纪元没有任何 sequencer
+批次。
+
+合并 (merge) 之后，以太坊的[出块时间][g-block-time]固定为 12 秒，但某些槽位 (slot) 可能会被
+跳过。因此，在 L2 出块时间为 2 秒的情况下，我们预期每个纪元通常包含 `12/2 = 6` 个 L2
+区块。不过，当 L1 出现槽位被跳过或与 L1 的连接暂时中断时，sequencer 会生成更大的纪元，
+以维持活性 (liveness) 。在连接中断的情况下，连接恢复后可能会生成更小的纪元，以防止 L2 时间戳
+越来越超前。
+
+## 提前区块派生 {#eager-block-derivation}
+
+要派生一个 L2 区块，必须先构建出它的 sequencer 批次，并派生出它之前的所有 L2
+区块和状态更新。这意味着我们通常可以*提前*派生一个纪元的 L2 区块，
+而无需等待完整的排序窗口。只有在最坏的情况下，即该纪元第一个区块的 sequencer 批次有一部分
+出现在窗口的最后一个 L1 区块中时，才需要等完整的排序窗口结束后再进行派生。请注意，这仅
+适用于*区块*派生。即使不从 sequencer 批次派生区块，也仍然可以先派生这些批次，并将其暂时放入队列。
+
+## 协议参数 {#protocol-parameters}
+
+下表概述了部分协议参数，以及协议升级对它们的影响。
+
+| 参数                             | Bedrock (默认) 值 | 最新 (默认) 值     | 变更                                                                                                         | 备注                 |
+| ------------------------------ | -------------- | ------------- | ---------------------------------------------------------------------------------------------------------- | ------------------ |
+| `max_sequencer_drift`          | 600            | 1800          | [Fjord](/zh/upgrades/fjord/derivation#constant-maximum-sequencer-drift)                                       | 自 Fjord 起由链参数改为常量。 |
+| `MAX_RLP_BYTES_PER_CHANNEL`    | 10,000,000     | 100,000,000   | [Fjord](/zh/upgrades/fjord/derivation#increasing-max_rlp_bytes_per_channel-and-max_channel_bank_size)         | 该常量在 Fjord 中调高。    |
+| `MAX_CHANNEL_BANK_SIZE`        | 100,000,000    | 1,000,000,000 | [Fjord](/zh/upgrades/fjord/derivation#increasing-max_rlp_bytes_per_channel-and-max_channel_bank_size)         | 该常量在 Fjord 中调高。    |
+| `MAX_SPAN_BATCH_ELEMENT_COUNT` | 10,000,000     | 10,000,000    | 实际于 [Fjord](/zh/upgrades/fjord/derivation#increasing-max_rlp_bytes_per_channel-and-max_channel_bank_size) 中引入 | 元素数量               |
+
+## 系统配置 {#system-configuration}
+
+`SystemConfig` 是一个 L1 合约，它以日志事件的形式发出 rollup 配置变更。
+派生管道会捕获这些事件并将其应用到 L2 状态，从而确保所有
+节点都在同一 L2 区块高度收敛到相同的配置。`SystemConfig` 是
+Base 中配置值的唯一可信来源。
+
+### 系统配置更新 {#system-config-updates}
+
+系统配置更新通过 `ConfigUpdate(uint256,uint8,bytes)` 事件发出信号。该事件的结构包括：
+
+* 第一个主题 (topic) 决定版本
+* 第二个主题决定更新类型
+* 其余事件数据用于编码配置更新内容
+
+在版本 `0` 中，支持以下更新类型：
+
+* 类型 `0`：覆盖 `batcherHash`，载荷为 `bytes32`
+* 类型 `1`：Ecotone 之前，覆盖 `overhead` 和 `scalar`，载荷为两个紧密打包的 `uint256` 条目。Ecotone 升级之后，`overhead` 将被忽略，`scalar` 则被解释为一种带版本的编码，用于更新 `baseFeeScalar` 和 `blobBaseFeeScalar`
+* 类型 `2`：覆盖 `gasLimit`，载荷为 `uint64`
+* 类型 `3`：覆盖 `unsafeBlockSigner`，载荷为 `address`
+* 类型 `4`：覆盖 `eip1559Params`，载荷为编码了 denomination 和 elasticity 的 `uint256`
+* 类型 `5`：覆盖 `operatorFeeParams`，载荷为编码了 scalar 和 constant 的 `uint256`
+* 类型 `6`：覆盖 `minBaseFee`，载荷为 `uint64`
+* 类型 `7`：覆盖 `daFootprintGasScalar`，载荷为 `uint16`
+
+如果系统配置更新因任何原因无法解析，则不会应用该更新，而是直接跳过。
+
+***
+
+## 批次提交 {#batch-submission}
+
+## 排序与批次提交概述 {#sequencing-batch-submission-overview}
+
+[sequencer][g-sequencer] 接收用户提交的 L2 交易，并负责将这些交易打包成区块。对于每个区块，它还会创建一个对应的 [sequencer 批次][g-sequencer-batch]。此外，它还负责通过其 [batcher][g-batcher] 组件，将每个批次提交给[数据可用性提供方][g-avail-provider] (例如 Ethereum calldata) 。
+
+L2 区块与批次之间的区别虽然细微，却十分重要：区块包含 L2 状态根，而批次仅对给定 L2 时间戳 (亦即 L2 区块号) 下的交易做出承诺。区块还包含对前一个区块的引用 (*)。
+
+(*) 这一点在某些边缘情况下至关重要：发生 L1 reorg 时，某个批次可能会被重新发布到 L1 链上，而其前一个批次却没有；相比之下，L2 区块的前驱区块则不可能发生变化。
+
+这意味着，即使 sequencer 错误地执行了状态转换，批次中的交易仍会被视为规范 L2 链的一部分。批次仍需通过有效性检查 (即必须正确编码) ，批次中的每笔交易也是如此 (例如签名必须有效) 。对于无效批次，以及本身有效的批次中所含的无效交易，正确的节点都会将其丢弃。
+
+如果 sequencer 错误地执行了状态转换并发布了 [output root][g-l2-output]，那么该 output root 就是错误的。错误的 output root 将通过[证明][g-fault-proof]受到挑战，随后被替换为**基于现有 sequencer 批次**的正确 output root。
+
+更多信息请参阅[批次提交规范][batcher-spec]。
+
+[batcher-spec]: /specifications/base-protocol/batcher
+
+## 批次提交的传输格式 {#batch-submission-wire-format}
+
+[wire-format]: #batch-submission-wire-format
+
+批次提交与 L2 链派生密切相关，因为派生过程必须解码那些为批次提交而编码的批次。
+
+[batcher][g-batcher] 会将 [batcher 交易][g-batcher-transaction]提交至[数据可用性提供方][g-avail-provider]。每笔此类交易包含一个或多个 [channel 帧][g-channel-frame]，即隶属于某个 [channel][g-channel] 的数据块。
+
+[channel][g-channel] 是由一系列[排序器批次][g-sequencer-batch] (可对应任意 L2 区块) 压缩而成的整体。将多个批次组合在一起，目的很简单：获得更高的压缩率，从而降低数据可用性成本。
+
+channel 可能过大，单个 [batcher 交易][g-batcher-transaction]无法容纳，因此需要将其拆分
+为若干数据块，即 [channel 帧][g-channel-frame]。单个 batcher 交易也可以携带多个帧
+(这些帧可以属于同一个 channel，也可以属于不同的 channel) 。
+
+这种设计让我们在将批次聚合为 channel、以及将 channel 拆分到多笔 batcher
+交易时拥有最大的灵活性。尤其值得一提的是，它使我们能够最大限度地提高 batcher 交易的数据利用率：例如，我们可以
+将一个 channel 的最后一个 (较小的) frame 与下一个 channel 的一个或多个 frame 打包在一起。
+
+另请注意，我们采用的是流式压缩方案，因此在开启一个 channel 时，乃至发送该 channel 的前几个 frame 时，
+都无需知道该 channel 最终会包含多少个批次。
+
+此外，通过将 channel 拆分到多笔数据交易中，L2 的区块数据量可以超出数据可用性层所能支持的上限。
+
+下图展示了上述全部内容，详细说明见下文。
+
+<img src="/static/assets/batch-deriv-chain.svg" alt="批次派生链示意图" width="10662" height="6124" style={{ margin: 0 }} />
+
+第一行表示 L1 区块及其编号。L1 区块下方的方框表示该区块中包含的 [batcher
+交易][g-batcher-transaction]。L1 区块下方的波浪线表示
+[存款][g-deposits] (确切地说，是[存款合约][g-deposit-contract]发出的事件) 。
+
+方框内每个彩色块代表一个 [channel 帧][g-channel-frame]。也就是说，`A` 和 `B` 是
+[channel][g-channel]，而 `A0`、`A1`、`B0`、`B1`、`B2` 是帧。请注意：
+
+* 多个 channel 交错传输
+* frame 无需按顺序传输
+* 单笔 batcher 交易可携带来自多个 channel 的 frame
+
+下一行中的圆角方框表示从 channel 中提取出的各个 [sequencer 批次][g-sequencer-batch]。其中四个蓝色/紫色/粉色的批次派生自 channel `A`，其余批次则派生自 channel `B`。
+这里的批次按其被解码出来的先后顺序排列 (本例中先解码 `B`) 。
+
+> **注意** 此处的图注写着&quot;Channel B was seen first and will be decoded into batches first&quot; (channel B 最先被看到，因此将最先被解码为 batch) ，但这并非
+> 强制要求。例如，实现也完全可以先查看各个 channel 的内容，再优先解码
+> 包含最早 batch 的那个 channel。
+
+图中其余部分在概念上与第一部分相互独立，描述的是 channel 完成重新排序后的 L2 链推导过程。
+
+第一行展示的是 batcher 交易。请注意，在本例中，存在一种批次排序方式，能让各 channel 内的所有 frame 都连续排列。但一般情况下并非如此。例如，在第二笔
+交易中，即使将 `A1` 和 `B0` 的位置互换，结果也完全相同，图中其余部分无需任何改动。
+
+第二行按正确顺序展示了重建后的 channel。第三行展示了从 channel 中提取出的批次。由于 channel 是有序的，且同一 channel 内的批次是连续的，
+因此批次同样是有序的。第四行展示了由每个批次派生出的 [L2 区块][g-block]。请注意，这里的批次与区块是一一对应的；但如后文所述，
+当 L1 上发布的批次存在&quot;间隙&quot;时，可以插入不对应任何批次的空区块。
+
+第五行是 [L1 属性存款交易][g-l1-attr-deposit]，每个 L2 区块中都包含该交易，用于记录与该 L2 区块所属纪元 (epoch) 对应的
+L1 区块信息。第一个数字表示纪元/L1x 编号，第二个数字 (即“序列号”) 表示在该纪元内的位置。
+
+最后，第六行显示的是从前面提到的[存款
+合约][g-deposit-contract]事件中派生出的[用户存款交易][g-user-deposited]。
+
+请注意图中右下角的 `101-0` L1 属性交易。只有当 frame `B2` 表明自己是该 channel 中的最后一个 frame，并且 (2) 无需插入空区块时，
+该交易才可能出现在那个位置。
+
+图中并未指明所用的排序窗口大小，但我们可以据此推断它至少为 4
+个区块，因为 channel `A` 的最后一个 frame 出现在区块 102 中，却属于纪元 99。
+
+至于关于“安全类型”的注释，它说明了 L1 和 L2 上所使用的区块分类。
+
+* [不安全 L2 区块][g-unsafe-l2-block]：
+* [安全 L2 区块][g-safe-l2-block]：
+* 已最终确定的 L2 区块：指从[已最终确定][g-finalized-l2-head]的 L1 数据派生出的区块。
+
+这些安全级别分别对应与[执行引擎 API][exec-engine] 交互时所传输的 `headBlockHash`、`safeBlockHash` 和 `finalizedBlockHash` 值。
+
+### Batcher 交易格式 {#batcher-transaction-format}
+
+Batcher 交易的编码格式为 `version_byte ++ rollup_payload` (其中 `++` 表示拼接) 。
+
+| `version_byte` | `rollup_payload`                 |
+| -------------- | -------------------------------- |
+| 0              | `frame ...` (一个或多个 frame，依次拼接)   |
+| 1              | `da_commitment` (实验性的数据可用性承诺格式)  |
+
+版本未知的 batcher 交易无效 (rollup 节点必须忽略该交易) 。
+batcher 交易中的所有 frame 都必须能够解析。只要其中任一 frame 解析失败，该交易中的所有 frame 都会被拒绝。
+
+批次交易的认证方式如下：验证交易的 `to` 地址是否与 batch inbox 地址一致，以及 `from` 地址是否与 [系统配置][g-system-config] 中的 batch-sender 地址一致。其中，系统配置以读取该交易数据的 L1 区块所处时间点为准。
+
+### Frame 格式 {#frame-format}
+
+[channel 帧][g-channel-frame] 的编码格式如下：
+
+```text Frame Format
+frame = channel_id ++ frame_number ++ frame_data_length ++ frame_data ++ is_last
+
+channel_id        = bytes16
+frame_number      = uint16
+frame_data_length = uint32
+frame_data        = bytes
+is_last           = bool
+```
+
+其中 `uint32` 和 `uint16` 均为大端序无符号整数。类型名称应按照 [Solidity ABI][solidity-abi] 进行解释和
+编码。
+
+[solidity-abi]: https://docs.soliditylang.org/en/v0.8.16/abi-spec.html
+
+除 `frame_data` 外，frame 中的所有数据均为固定大小。固定开销为 `16 + 2 + 4 + 1 = 23 bytes`。
+frame 元数据采用固定大小，可避免与目标总数据长度之间形成循环依赖，
+从而简化内容长度不一的 frame 的打包。
+
+其中：
+
+* `channel_id` 是 channel 的不透明标识符。它不应被重复使用，建议采用随机值；不过，
+  除超时规则外，不会对其有效性进行校验
+* `frame_number` 表示该 frame 在 channel 中的索引
+* `frame_data_length` 是 `frame_data` 的字节长度，上限为 1,000,000 字节。
+* `frame_data` 是属于该 channel 的字节序列，在逻辑上紧接在之前各 frame 的字节之后
+* `is_last` 是单个字节：若该 frame 是 channel 中的最后一个，则值为 1；若 channel 中还有后续 frame，
+  则值为 0。任何其他值都会使该 frame 无效 (rollup 节点必须忽略该 frame) 。
+
+### Channel 格式 {#channel-format}
+
+[channel-format]: #channel-format
+
+channel 的编码方式是对批次 (batch) 列表应用流式压缩算法：
+
+```text Batch Encoding
+encoded_batches = []
+for batch in batches:
+    encoded_batches ++ batch.encode()
+rlp_batches = rlp_encode(encoded_batches)
+```
+
+其中：
+
+* `batches` 为输入，是一个批次序列，每个批次都带有一个字节编码函数
+  `.encode()`，详见下一节 (&quot;批次编码&quot;)
+* `encoded_batches` 是一个字节数组，由各个已编码的批次拼接而成
+* `rlp_batches` 是对拼接后的已编码批次进行 RLP 编码的结果
+
+```text Channel Encoding
+channel_encoding = zlib_compress(rlp_batches)
+```
+
+其中 zlib&#95;compress 是不使用字典的 ZLIB 算法 (如 [RFC-1950][rfc1950] 中所规定) 。
+
+[rfc1950]: https://www.rfc-editor.org/rfc/rfc1950.html
+
+Fjord 升级引入了一种额外的[版本化 channel 编码
+格式](/zh/upgrades/fjord/derivation#brotli-channel-compression)，以支持其他压缩
+算法。
+
+解压 channel 时，我们会将解压后的数据量限制在 `MAX_RLP_BYTES_PER_CHANNEL` 以内 (定义见
+[协议参数表](#protocol-parameters)) ，以防范“zip 炸弹”类攻击 (即很小的
+压缩输入解压后产生海量数据) 。
+如果解压后的数据超出该限制，则视为该 channel 仅包含
+前 `MAX_RLP_BYTES_PER_CHANNEL` 个解压字节，并据此继续处理。该限制作用于 RLP 解码，因此只要批次能够
+在 `MAX_RLP_BYTES_PER_CHANNEL` 范围内完成解码，即使 channel 的大小超过
+`MAX_RLP_BYTES_PER_CHANNEL`，也都会被接受。确切的要求是 `length(input) <= MAX_RLP_BYTES_PER_CHANNEL`。
+
+尽管上述伪代码暗示所有批次都是预先已知的，但实际上可以对 RLP 编码的批次进行流式
+压缩和解压。也就是说，即使尚不清楚 channel 最终会包含多少个批次 (以及多少个 frame) ，也可以先开始将 channel frame 放入
+[batcher 交易][g-batcher-transaction]中。
+
+### 批次格式 {#batch-format}
+
+[batch-format]: #batch-format
+
+回顾一下，批次包含一组将被打包进某个特定 L2 区块的交易。
+
+批次编码为 `batch_version ++ content`，其中 `content` 取决于 `batch_version`。
+在 Delta 升级之前，所有批次的 batch&#95;version 均为 0，编码方式如下所述。
+
+| `batch_version` | `content`                                                                          |
+| --------------- | ---------------------------------------------------------------------------------- |
+| 0               | `rlp_encode([parent_hash, epoch_number, epoch_hash, timestamp, transaction_list])` |
+
+其中：
+
+* `batch_version` 为单个字节，置于 RLP 内容之前，与交易类型标识的做法类似。
+* `rlp_encode` 是按照 [RLP format] 对批次进行编码的函数，`[x, y, z]` 表示
+  包含元素 `x`、`y` 和 `z` 的列表
+* `parent_hash` 是前一个 L2 区块的区块哈希
+* `epoch_number` 和 `epoch_hash` 是该 L2 区块所属[排序纪元][g-sequencing-epoch]
+  对应的 L1 区块的编号和哈希
+* `timestamp` 是该 L2 区块的时间戳
+* `transaction_list` 是经 RLP 编码的列表，其元素为经 [EIP-2718] 编码的交易。
+
+[RLP format]: https://ethereum.org/en/developers/docs/data-structures-and-encoding/rlp/
+
+[EIP-2718]: https://eips.ethereum.org/EIPS/eip-2718
+
+Delta 升级新增了一种批次类型，即[跨度批次][span-batches]。
+
+[span-batches]: /upgrades/delta/span-batches
+
+版本未知的批次无效 (rollup 节点必须将其忽略) ，内容格式错误的批次同样无效。
+
+> **注意**：如果批次版本和内容能够被正确 RLP 解码，但批次之后还存在额外内容，
+> 则解析时可以忽略这些额外数据。RLP 编码批次&#95;之间&#95;的数据不可忽略
+> (因为它们会被视为格式错误的批次) ，但只要某个批次能够通过 RLP 解码被完整描述，
+> 额外内容就不会导致已解码的批次失效。
+
+`epoch_number` 和 `timestamp` 还必须满足[批次队列][batch-queue]
+一节中列出的约束条件，否则该批次将被视为无效并被忽略。
+
+***
+
+## 架构 {#architecture}
+
+[architecture]: #architecture
+
+上文主要介绍了 L2 链派生中使用的通用编码方式，
+尤其是批次在 [batcher 交易][g-batcher-transaction]中的编码方式。
+
+本节介绍如何采用流水线架构，从 L1 批次生成 L2 链。
+
+验证者可以采用不同的实现方式，但必须在语义上与之等价，以免与 L2 链产生分歧。
+
+## L2 链派生流水线 {#l2-chain-derivation-pipeline}
+
+我们的架构将派生过程拆分为一条由以下阶段组成的流水线：
+
+1. L1 遍历 (L1 Traversal)
+2. L1 检索 (L1 Retrieval)
+3. Frame Queue
+4. Channel Bank
+5. Channel 读取器 (Channel Reader，批次解码)
+6. 批次队列 (Batch Queue)
+7. 载荷属性派生 (Payload Attributes Derivation)
+8. 引擎队列 (Engine Queue)
+
+数据从流水线的起点 (外层) 流向终点 (内层) 。
+数据由最内层阶段从最外层阶段拉取。
+
+然而，数据的*处理*顺序恰好相反：如果最后一个阶段中有待处理的数据，它
+会被优先处理。处理以每个阶段可执行的“步骤”为单位推进。我们会先在最后 (最内层) 阶段执行尽可能多的步骤，
+然后才在其外层阶段执行步骤，依此类推。
+
+这样可以确保在拉取更多数据之前先用完已有的数据，并将数据穿过
+派生流水线的延迟降到最低。
+
+每个阶段都可以按需维护自己的内部状态。具体而言，每个阶段都会维护一个 L1 区块引用
+(编号 + 哈希) ，指向满足以下条件的最新 L1 区块：源自之前区块的所有数据均已处理完毕，且
+该区块的数据正在处理或已处理完毕。借此，最内层阶段能够追踪用于生成 L2 链的
+L1 数据可用性的最终确定情况，从而在 L2 链输入变得不可逆时，将其反映到 L2 链的 forkchoice 中。
+
+下面简要介绍流水线的各个阶段。
+
+### L1 遍历 {#l1-traversal}
+
+在 *L1 遍历* (L1 Traversal) 阶段，我们只需读取下一个 L1 区块的区块头。正常运行时，读取的是随时新产生的
+L1 区块；不过在同步期间或发生 L1 [重组][g-reorg]时，也可能读取旧区块。
+
+每遍历一个 L1 区块，L1 检索阶段所使用的[系统配置][g-system-config]副本都会随之
+更新，从而确保批次发送者的身份验证始终与该阶段所读取的那个 L1 区块精确对应。
+
+### L1 检索 {#l1-retrieval}
+
+在 *L1 检索* 阶段，我们读取从外层阶段 (L1 遍历) 获取的区块，并从其中的 [batcher 交易][g-batcher-transaction]中提取数据。batcher 交易是指满足以下条件的交易：
+
+* [`to`] 字段等于所配置的 batcher 收件箱地址。
+
+* 交易类型为 `0`、`1`、`2`、`3` 或 `0x7e` 之一 (`0x7e` 即 L2 [存款交易类型][g-deposit-tx-type]，用于支持在 Base 上强制包含 batcher 交易) 。
+
+* 从交易签名 (`v`、`r` 和 `s`) 恢复出的发送方，必须是从该数据所在 L1 区块对应的系统配置中加载的 batcher
+  地址。
+
+每笔 batcher 交易都带有版本号，并包含一系列供 Frame Queue 读取的 [channel frame][g-channel-frame]，详见[批次提交传输格式][wire-format]。区块中的 batcher
+交易按其在区块中出现的顺序依次处理，其 calldata 会被传递给下一阶段。
+
+[`to`]: https://github.com/ethereum/execution-specs/blob/3fe6514f2d9d234e760d11af883a47c1263eff51/src/ethereum/frontier/fork_types.py#L52C31-L52C31
+
+### Frame Queue {#frame-queue}
+
+Frame Queue 每次缓冲一笔数据交易，
+将其解码为 [channel frame][g-channel-frame]，供下一阶段消费。
+请参阅 [Batcher 交易格式](#batcher-transaction-format)和[frame 格式](#frame-format)规范。
+
+### Channel Bank {#channel-bank}
+
+*Channel Bank* 阶段负责管理 channel bank 中的缓冲数据，这些数据由 L1
+检索阶段写入。channel bank 阶段每执行一步，都会尝试从处于“就绪”状态的 channel 中读取数据。
+
+目前，channel 在被读取或丢弃之前会被完整缓冲；
+未来版本的 ChannelBank 可能会支持流式 channel。
+
+为了限制资源占用，Channel Bank 会根据 channel 大小进行修剪，并让旧的 channel 超时。
+
+channel 按 FIFO 顺序记录在一个名为 *channel queue* 的结构中。首次遇到属于某个 channel 的 frame 时，该 channel 就会被加入 channel
+queue。
+
+#### 修剪 {#pruning}
+
+成功插入新的 frame 后，会对 ChannelBank 进行修剪：
+按 FIFO 顺序丢弃 channel，直到满足 `total_size <= MAX_CHANNEL_BANK_SIZE`，其中：
+
+* `total_size` 为所有 channel 的大小之和，每个 channel 的大小是该 channel 中全部已缓冲 frame 数据的总和，
+  另外每个 frame 还需额外计入 `200` 字节的 frame 开销。
+* `MAX_CHANNEL_BANK_SIZE` 是一个协议常量，定义见[协议参数表](#protocol-parameters)。
+
+#### 超时 {#timeouts}
+
+channel 打开时所在的 L1 origin 会作为 `channel.open_l1_block` 随 channel 一起记录，
+它决定了 channel 数据在被清理之前最多可保留多少个 L1 区块。
+
+当满足 `current_l1_block.number > channel.open_l1_block.number + CHANNEL_TIMEOUT` 时，channel 即超时，其中：
+
+* `current_l1_block` 是该阶段当前正在遍历的 L1 origin。
+* `CHANNEL_TIMEOUT` 是一个可由 rollup 配置的参数，以 L1 区块数量表示。
+
+已超时 channel 的新 frame 会被直接丢弃，而不会进入缓冲。
+
+#### 读取 {#reading}
+
+读取时，只要第一个打开的 channel 已超时，就将其从 channel bank 中移除。
+
+在 Canyon 网络升级之前，如果存在第一个打开的 channel，且该 channel 未超时并已就绪，
+则读取该 channel 并将其从 channel bank 中移除。在 Canyon 网络升级之后，将按 FIFO 顺序 (按打开时间) 扫描整个 channel bank，
+并返回第一个就绪 (即未超时) 的 channel。
+
+当来自某个 L1 区块 (其时间戳大于或等于 canyon 时间) 的 frame 首次进入 channel 队列时，
+canyon 行为即被激活。
+
+满足以下条件时，channel 即处于就绪状态：
+
+* 该 channel 已关闭
+* 该 channel 具有一段直至关闭 frame 的连续 frame 序列
+
+如果没有就绪的 channel，则读取下一个 frame 并将其摄入 channel bank。
+
+#### 加载帧 {#loading-frames}
+
+当某个帧所引用的 channel ID 尚不在 Channel Bank 中时，
+会打开一个新的 channel，用当前 L1 区块对其进行标记，并将其追加到 channel 队列中。
+
+帧插入条件：
+
+* 如果新帧对应的 channel 已超时但尚未从 channel bank 中清除，则丢弃该帧。
+* 对于尚未从 channel bank 中清除的帧，重复的帧 (按帧编号判断) 将被丢弃。
+* 重复的关闭帧 (新帧 `is_last == 1`，但该 channel 已收到过关闭帧，且尚未
+  从 channel bank 中清除) 将被丢弃。
+
+如果某个帧是关闭帧 (`is_last == 1`) ，则会从该 channel 中移除所有编号更高的已有帧。
+
+请注意，虽然这一机制允许 channel ID 在从 channel bank 中清除后被重复使用，但仍建议
+batcher 实现使用唯一的 channel ID。
+
+### Channel Reader (批次解码) {#channel-reader-batch-decoding}
+
+在此阶段，我们先对从上一阶段拉取的 channel 进行解压，再从解压后的字节流中解析出
+[批次][g-sequencer-batch]。
+
+有关解压和解码的规范，请参阅 [Channel 格式][channel-format] 和 [批次格式][batch-format]。
+
+### Batch Queue {#batch-queue}
+
+[batch-queue]: #batch-queue
+
+在 *Batch Buffering* 阶段，我们按时间戳对批次重新排序。如果某些[时间
+槽][g-time-slot]缺少批次，且存在时间戳更高的有效批次，此阶段还会生成空批次来填补
+这些空缺。
+
+只要存在一个紧接在当前 [安全 L2 头部][g-safe-l2-head] (可从规范 L1 链派生出的最后一个区块) 时间戳之后的连续批次，
+该批次就会被推送到下一阶段。
+此外，该批次的父哈希必须与当前安全 L2 头部的哈希一致。
+
+请注意，只要从 L1 派生的批次中存在空缺，此阶段就需要缓冲一整个
+[排序窗口][g-sequencing-window]，然后才能生成空批次 (因为在最坏情况下，缺失的批次可能在该窗口的最后一个 L1 区块中
+含有数据) 。
+
+批次的有效性有 4 种不同形式：
+
+* `drop`：该批次无效，并且除非发生重组，否则将始终无效。可将其从缓冲区中移除。
+* `accept`：该批次有效，应当予以处理。
+* `undecided`：缺少 L1 信息，暂时无法继续进行批次过滤。
+* `future`：该批次可能有效，但目前尚无法处理，应稍后再次检查。
+
+批次按照其被包含到 L1 上的顺序进行处理：如果有多个批次可以被 `accept`，则应用第一个。
+实现可以将 `future` 批次推迟到后续的派生步骤中处理，以减少验证工作量。
+
+批次的有效性按如下方式确定：
+
+定义：
+
+* `batch`，定义见 [Batch format 部分][batch-format]。
+* `epoch = safe_l2_head.l1_origin`，与该批次关联的 [L1 origin][g-l1-origin]，具有以下属性：
+  `number` (L1 区块号) 、`hash` (L1 区块哈希) 和 `timestamp` (L1 区块时间戳) 。
+* `inclusion_block_number` 是 `batch` 首次被&#95;完整&#95;派生时的 L1 区块号，
+  即被上一阶段解码并输出时的区块号。
+* `next_timestamp = safe_l2_head.timestamp + block_time` 是下一个批次预期应具有的 L2 时间戳，
+  参见[出块时间信息][g-block-time]。
+* `next_epoch` 可能尚不可知，但如果可用，它将是 `epoch` 之后的那个 L1 区块。
+* `batch_origin` 为 `epoch` 或 `next_epoch`，具体取决于验证结果。
+
+请注意，批次的处理可以推迟到 `batch.timestamp <= next_timestamp` 时再进行，
+因为 `future` 批次无论如何都必须保留。
+
+规则 (按验证顺序) ：
+
+* `batch.timestamp > next_timestamp` -&gt; `future`：即批次必须已可供处理。
+* `batch.timestamp < next_timestamp` -&gt; `drop`：即批次不能过旧。
+* `batch.parent_hash != safe_l2_head.hash` -&gt; `drop`：即父哈希必须等于 L2 安全头区块的哈希。
+* `batch.epoch_num + sequence_window_size < inclusion_block_number` -&gt; `drop`：即批次必须被及时包含。
+* `batch.epoch_num < epoch.number` -&gt; `drop`：即批次的 origin 不得早于 L2 安全头的 origin。
+* `batch.epoch_num == epoch.number`：将 `batch_origin` 定义为 `epoch`。
+* `batch.epoch_num == epoch.number+1`：
+  * 如果 `next_epoch` 未知 -&gt; `undecided`：
+    即在获得 L1 origin 数据之前，无法处理会改变 L1 origin 的批次。
+  * 如果已知，则将 `batch_origin` 定义为 `next_epoch`
+* `batch.epoch_num > epoch.number+1` -&gt; `drop`：即每个 L2 区块的 L1 origin 最多只能前进一个 L1 区块。
+* `batch.epoch_hash != batch_origin.hash` -&gt; `drop`：即批次必须引用规范的 L1 origin，
+  以防止批次被重放到非预期的 L1 链上。
+* `batch.timestamp < batch_origin.time` -&gt; `drop`：强制执行最小 L2 时间戳规则。
+* `batch.timestamp > batch_origin.time + max_sequencer_drift`：强制执行 L2 时间戳漂移规则，
+  但为维持上述最小 L2 时间戳不变量，存在以下例外：
+  * `len(batch.transactions) == 0`：
+    * `epoch.number == batch.epoch_num`：
+      这意味着该批次尚未推进 L1 origin，因此必须对照 `next_epoch` 进行检查。
+      * 如果 `next_epoch` 未知 -&gt; `undecided`：
+        在获得下一个 L1 origin 之前，我们还无法判断时间不变量本来能否得到维持。
+      * 如果 `batch.timestamp >= next_epoch.time` -&gt; `drop`：
+        该批次本可以在不破坏 `L2 time >= L1 time` 不变量的前提下采用下一个 L1 origin。
+  * `len(batch.transactions) > 0`: -&gt; `drop`：
+    一旦超出 sequencer 时间漂移，绝不允许 sequencer 包含交易。
+* `batch.transactions`：如果 `batch.transactions` 列表包含无效交易
+  或只能通过其他方式派生的交易，则 `drop`：
+  * 任何空交易 (长度为零的字节串)
+  * 任何[存款交易][g-deposit-tx-type] (通过交易类型前缀字节识别)
+  * 任何类型 &gt; 2 的未来类型交易 (注意，
+    [Isthmus 增加了对](/zh/upgrades/isthmus/derivation#activation)
+    类型 4 的 `SetCode` 交易的支持)
+
+如果没有任何批次可以被 `accept`，且该阶段已缓冲完所有可从高度为 `epoch.number + sequence_window_size` 的 L1
+区块中完整读取的批次，并且 `next_epoch` 可用，
+则可以派生出一个具有以下属性的空批次：
+
+* `parent_hash = safe_l2_head.hash`
+* `timestamp = next_timestamp`
+* `transactions` 为空，即不含 sequencer 交易。存款交易可在下一阶段添加。
+* 如果 `next_timestamp < next_epoch.time`：沿用当前 L1 origin，以维持 L2 时间不变量。
+  * `epoch_num = epoch.number`
+  * `epoch_hash = epoch.hash`
+* 如果该批次是该 epoch 的第一个批次，则沿用该 epoch 而不推进，以确保
+  每个 epoch 至少有一个 L2 区块。
+  * `epoch_num = epoch.number`
+  * `epoch_hash = epoch.hash`
+* 否则：
+  * `epoch_num = next_epoch.number`
+  * `epoch_hash = next_epoch.hash`
+
+### 载荷属性派生 {#payload-attributes-derivation}
+
+在&#95;载荷属性派生&#95;阶段，我们将上一阶段得到的批次转换为 [`PayloadAttributes`][g-payload-attr] 结构的实例。该结构编码了需要纳入区块的交易以及其他区块输入 (时间戳、费用接收方等) 。有关载荷属性派生的详细说明，请参见下文的[派生载荷属性][deriving-payload-attr]一节。
+
+此阶段独立于 L1 检索阶段，维护自己的一份[系统配置][g-system-config]副本。每当批次输入所引用的 L1 纪元发生变化时，都会根据 L1 日志事件更新系统配置。
+
+### Engine Queue {#engine-queue}
+
+在 *Engine Queue* 阶段，先前推导出的 `PayloadAttributes` 结构会被缓冲，然后发送到
+[执行引擎][g-exec-engine]执行，并转换为正式的 L2 区块。
+
+该阶段维护对以下三个 L2 区块的引用：
+
+* [已最终确定的 L2 头部][g-finalized-l2-head]：该区块及其之前的所有内容，都可以完全从 L1 链中
+  [已最终确定][l1-finality] (即规范且永久不可逆) 的部分推导得出。
+* [安全 L2 头部][g-safe-l2-head]：该区块及其之前的所有内容，都可以完全从
+  当前规范的 L1 链推导得出。
+* [不安全 L2 头部][g-unsafe-l2-head]：安全头部与不安全头部之间的区块是尚未从 L1 推导得出的[不安全
+  区块][g-unsafe-l2-block]。这些区块要么来自排序 (sequencer
+  模式下) ，要么来自与 sequencer 之间的[不安全同步][g-unsafe-sync] (验证者模式下) 。
+  该头部也称为“latest”头部。
+
+此外，该阶段还会缓冲一小段历史记录，其中包含对最近处理过的安全 L2 区块的引用，以及各区块分别推导自哪个 L1 区块的引用。
+这段历史记录不必完整，但可用于将后续的 L1 最终性信号转换为 L2 最终性。
+
+#### Engine API 用法 {#engine-api-usage}
+
+与引擎交互时需使用[执行引擎 API][exec-engine]，涉及以下 JSON-RPC 方法：
+
+[exec-engine]: /specifications/base-protocol/execution/l2-execution-engine
+
+##### Bedrock、Canyon、Delta：API 用法 {#bedrock-canyon-delta-api-usage}
+
+* [`engine_forkchoiceUpdatedV2`] — 若 `headBlockHash` 与当前链头不同，则将 forkchoice (即链头) 更新为 `headBlockHash`；
+  若载荷属性参数不为 `null`，则同时指示引擎开始构建执行负载 (execution payload) 。
+* [`engine_getPayloadV2`] — 获取先前请求构建的执行负载。
+* [`engine_newPayloadV2`] — 执行某个执行负载以生成区块。
+
+##### Ecotone：API 用法 {#ecotone-api-usage}
+
+* [`engine_forkchoiceUpdatedV3`] — 若 `headBlockHash` 与当前 forkchoice (即链头) 不同，则将其更新为 `headBlockHash`；若
+  载荷属性参数不为 `null`，还会指示引擎开始构建执行负载。
+* [`engine_getPayloadV3`] — 获取先前请求构建的执行负载。
+* `engine_newPayload`
+  * [`engine_newPayloadV2`] — 执行 Bedrock/Canyon/Delta 执行负载以创建区块。
+  * [`engine_newPayloadV3`] — 执行 Ecotone 执行负载以创建区块。
+  * [`engine_newPayloadV4`] - 执行 Isthmus 执行负载以创建区块。
+
+`base-consensus` 使用 [`engine_forkchoiceUpdatedV3`] 和 [`engine_getPayloadV4`]，以及
+`engine_newPayloadV3` 和 `engine_newPayloadV2`，因为 `engine_newPayloadV4` 仅支持 Isthmus
+执行负载。`engine_forkchoiceUpdatedV3` 向后兼容 Ecotone、Bedrock、Canyon
+和 Delta 负载。
+
+早期版本使用 `v3`、`v2` 和 `v1` 方法。
+
+[`engine_forkchoiceUpdatedV2`]: /specifications/base-protocol/execution/l2-execution-engine#engine_forkchoiceupdatedv2
+
+[`engine_forkchoiceUpdatedV3`]: /specifications/base-protocol/execution/l2-execution-engine#engine_forkchoiceupdatedv3
+
+[`engine_getPayloadV2`]: /specifications/base-protocol/execution/l2-execution-engine#engine_getpayloadv2
+
+[`engine_getPayloadV3`]: /specifications/base-protocol/execution/l2-execution-engine#engine_getpayloadv3
+
+[`engine_getPayloadV4`]: /specifications/base-protocol/execution/l2-execution-engine#engine_getpayloadv4
+
+[`engine_newPayloadV2`]: /specifications/base-protocol/execution/l2-execution-engine#engine_newpayloadv2
+
+[`engine_newPayloadV3`]: /specifications/base-protocol/execution/l2-execution-engine#engine_newpayloadv3
+
+[`engine_newPayloadV4`]: /specifications/base-protocol/execution/l2-execution-engine#engine_newpayloadv4
+
+执行负载是 [`ExecutionPayloadV3`][eth-payload] 类型的对象。
+
+[eth-payload]: https://github.com/ethereum/execution-apis/blob/main/src/engine/cancun.md
+
+`ExecutionPayload` 须满足以下要求：
+
+* Bedrock
+  * withdrawals 字段 MUST 为 nil
+  * blob gas used 字段 MUST 为 nil
+  * blob gas limit 字段 MUST 为 nil
+* Canyon、Delta
+  * withdrawals 字段 MUST 不为 nil
+  * withdrawals 字段 MUST 为空列表
+  * blob gas used 字段 MUST 为 nil
+  * blob gas limit 字段 MUST 为 nil
+* Ecotone
+  * withdrawals 字段 MUST 不为 nil
+  * withdrawals 字段 MUST 为空列表
+  * blob gas used 字段 MUST 为 0
+  * blob gas limit 字段 MUST 为 0
+
+#### Forkchoice 同步 {#forkchoice-synchronization}
+
+如果存在待应用的 forkchoice 更新，则在推导或处理更多输入之前，
+须先将这些更新应用到引擎。
+
+以下情况可能会触发此同步：
+
+* L1 最终性信号使一个或多个 L2 区块最终确定：更新“finalized”L2 区块。
+* 成功整合 unsafe L2 区块：更新“safe”L2 区块。
+* 推导管道重置后首先执行此同步，以确保执行引擎的 forkchoice 状态一致。
+
+新的 forkchoice 状态通过调用引擎 API 的 [fork choice updated](#engine-api-usage) 来应用。
+如果出现 forkchoice 状态有效性错误，则必须重置推导管道，以恢复到一致状态。
+
+#### L1 整合：载荷属性匹配 {#l1-consolidation-payload-attributes-matching}
+
+如果 unsafe head 领先于 safe head，则会尝试进行[整合][g-consolidation]，以验证现有的 unsafe L2 链是否与根据规范 L1 数据推导出的 L2 输入一致。
+
+在整合过程中，我们会检查最旧的 unsafe L2 区块，即紧接在 safe head 之后的那个 unsafe L2 区块。如果载荷属性与该区块匹配，则该区块可被视为“safe”，并成为新的 safe head。
+
+推导出的 L2 载荷属性中的以下字段会逐一与 L2 区块进行相等性检查：
+
+* Bedrock、Canyon、Delta、Ecotone 区块
+  * `parent_hash`
+  * `timestamp`
+  * `randao`
+  * `fee_recipient`
+  * `transactions_list` (先检查长度，再逐一检查每笔编码交易 (包括存款交易) 是否相等)
+  * `gas_limit`
+* Canyon、Delta、Ecotone 区块
+  * `withdrawals` (先检查是否存在，再检查长度，最后逐一检查每笔编码提款是否相等)
+* Ecotone 区块
+  * `parent_beacon_block_root`
+
+如果整合成功，forkchoice 变更将按上文所述进行同步。
+
+如果整合失败，L2 载荷属性将按下文所述立即处理。此时将舍弃先前的 unsafe L2 区块，转而采用这些载荷属性，从而在当前 safe 区块之上引发 L2 链重组。之所以要立即处理新的替代属性，是为了让执行引擎能够落实这一变更，因为执行引擎可能不支持对链顶端进行线性回退。
+
+#### L1 同步：载荷属性处理 {#l1-sync-payload-attributes-processing}
+
+[exec-engine-comm]: /specifications/base-protocol/execution/l2-execution-engine#engine-api
+
+如果 safe L2 头与 unsafe L2 头相同 (无论是否由整合失败所致) ，我们会将 L2 载荷
+属性发送给执行引擎，由其构建出正式的 L2 区块。
+随后，该 L2 区块将同时成为新的 L2 safe 头和 unsafe 头。
+
+如果由某个批次创建的载荷属性因验证错误 (即区块中存在无效交易或无效状态转换) 而无法插入链中，
+则应丢弃该批次，且不应推进 safe 头。引擎队列将尝试从批次队列中取用该时间戳对应的下一个批次。如果找不到有效批次，
+rollup 节点将创建一个仅包含存款的批次。由于存款始终有效，该批次应始终能够通过
+验证。
+
+有关如何通过执行引擎 API 与执行引擎交互，请参阅[与执行
+引擎通信][exec-engine-comm]一节。
+
+随后，载荷属性将按以下顺序处理：
+
+* [Engine: Fork choice updated](#engine-api-usage)：传入该阶段当前的 forkchoice 状态以及 attributes，以
+  开始构建区块。
+  * 必须禁用交易池等非确定性来源，才能重建出预期的区块。
+* [Engine: Get Payload](#engine-api-usage)：使用上一步结果中的 payload-ID 获取
+  payload。
+* [Engine: New Payload](#engine-api-usage)：将新 payload 导入执行引擎。
+* [Engine: Fork Choice Updated](#engine-api-usage)：使新 payload 成为规范链的一部分，
+  此时将 `safe` 和 `unsafe` 字段均更新为指向该 payload，且不附带载荷属性。
+
+Engine API 错误处理：
+
+* 遇到 RPC 类错误时，应在后续步骤中重试载荷属性的处理。
+* 遇到 payload 处理错误时，必须丢弃这些 attributes，且必须保持 forkchoice 状态不变。
+  * 推导管道最终会生成替代的载荷属性，其中可能包含批次，也可能不包含。
+  * 如果载荷属性仅包含存款，而这些存款无效，则属于严重的推导错误。
+* 遇到 forkchoice 状态有效性错误时，必须重置推导管道，以恢复到一致状态。
+
+#### 处理不安全的载荷属性 {#processing-unsafe-payload-attributes}
+
+如果已没有待处理的 forkchoice 更新或 L1 数据，且下一个可能的 L2 区块已经可以从不安全来源获取 (例如 sequencer 通过 p2p 网络发布的区块) ，
+则该区块会被乐观地作为“不安全”区块处理。在理想情况下，这样后续的派生工作只需与 L1 进行整合即可，同时
+用户也能在 L1 确认 L2 批次之前更快地看到 L2 链的头部。
+
+要处理不安全负载，该负载必须满足以下条件：
+
+* 区块号高于当前的安全 L2 头部。
+  * 安全 L2 头部只可能因 L1 重组而被重组移除。
+* 父区块哈希与当前的不安全 L2 头部一致。
+  * 这可以防止执行引擎自行同步不安全 L2 链中较大的缺口。
+  * 这可以防止不安全 L2 区块将其他先前已验证的 L2 区块重组移除。
+  * 此检查在未来版本中可能会调整，例如改用 L1 快照同步 (snap-sync) 协议。
+
+随后，负载将按以下顺序处理：
+
+* Bedrock/Canyon/Delta 负载
+  * `engine_newPayloadV2`：处理该负载。此时它尚未成为规范区块。
+  * `engine_forkchoiceUpdatedV2`：将该负载设为规范的不安全 L2 头部，并保持安全/最终确定的 L2 头部不变。
+* Ecotone 负载
+  * `engine_newPayloadV3`：处理该负载。此时它尚未成为规范区块。
+  * `engine_forkchoiceUpdatedV3`：将该负载设为规范的不安全 L2 头部，并保持安全/最终确定的 L2 头部不变。
+* Isthmus 负载
+  * `engine_newPayloadV4`：处理该负载。此时它尚未成为规范区块。
+
+Engine API 错误处理：
+
+* 发生 RPC 类错误时，应在后续步骤中重试处理该负载。
+* 发生负载处理错误时，必须丢弃该负载，且不得将其标记为规范区块。
+* 发生 forkchoice 状态有效性错误时，必须重置推导管道，以恢复到一致状态。
+
+### 重置流水线 {#resetting-the-pipeline}
+
+流水线可以被重置，例如在检测到 L1 [reorg (重组) ][g-reorg] 时。
+**这使 rollup 节点能够处理 L1 链的重组事件。**
+
+重置会将流水线恢复到一种状态，使其产生的输出与完整的 L2 派生过程相同，
+但起点是一条已有的 L2 链，只需将其回溯到恰好能与当前 L1 链保持一致的位置即可。
+
+请注意，该算法涵盖了以下几个重要用例：
+
+* 无需从 0 开始即可初始化流水线，例如 rollup 节点使用现有引擎实例重启时。
+* 在流水线与执行引擎链不一致时恢复流水线，例如引擎同步或发生变更时。
+* 在 L1 链发生重组时恢复流水线，例如某个迟到的 L1 区块成为孤块，或出现更大规模的证明 (attestation) 失败。
+* 在证明程序中，基于先前的 L1 和 L2 历史初始化流水线，以派生存在争议的 L2 区块。
+
+能够处理这些情况，还意味着节点可以配置为以 0 确认数主动同步 L1 数据，
+因为即使 L1 之后并未将这些数据认定为规范数据，节点也能撤销相应更改，从而实现安全的低延迟使用。
+
+首先重置 Engine Queue，以确定继续派生所需的 L1 和 L2 起点。
+随后，其他各阶段彼此独立地进行重置。
+
+#### 查找同步起点 {#finding-the-sync-starting-point}
+
+查找起点需要从链头开始向回遍历，分为以下几个步骤：
+
+1. 查找当前的 L2 forkchoice 状态
+   * 如果找不到 `finalized` 区块，则从 Bedrock 创世区块开始。
+   * 如果找不到 `safe` 区块，则回退到 `finalized` 区块。
+   * `unsafe` 区块应始终可用，并与上述区块保持一致
+     (在极少数从引擎损坏中恢复的情况下可能并非如此，此问题正在评估中) 。
+2. 从先前的 `unsafe` 区块开始向回查找，最远回溯到 `finalized` 区块为止，
+   找到第一个具有合理 L1 引用的 L2 区块，作为新的 `unsafe` 起点。
+   * 当且仅当满足以下条件时视为合理：该 L2 区块的 L1 origin 已知且为规范区块，或者未知但其区块号领先于 L1。
+3. 从上述合理的 `unsafe` 头部开始向回查找，最远回溯到 `finalized` 区块为止，
+   找到第一个 L1 引用早于排序窗口 (sequencing window) 的 L2 区块，作为新的 `safe` 起点。
+   * 如果在任何时刻 L1 origin 已知但不是规范区块，则将 `unsafe` 头部修正为当前区块的父区块。
+   * 具有已知规范 L1 origin 的最高 L2 区块记为 `highest`。
+   * 如果在任何时刻区块中的 L1 origin 违反推导规则而处于损坏状态，则报错。损坏情况包括：
+     * L1 origin 的区块号或父哈希与父区块的 L1 origin 不一致
+     * L1 序列号不一致 (L1 origin 发生变化时序列号总是重置为 `0`，否则递增 `1`)
+   * 如果 L2 区块 `n` 的 L1 origin 比 `highest` 的 L1 origin 早超过一个排序窗口，
+     且 `n.sequence_number == 0`，则 `n` 的父 L2 区块将作为 `safe` 起点。
+4. `finalized` L2 区块保持不变，作为 `finalized` 起点。
+5. 找到第一个 L1 引用早于 channel 超时时间的 L2 区块
+   * 该区块所引用的 L1 origin (我们称之为 `l2base`) 将作为 L2 流水线推导的 `base`：
+     从这里开始，各阶段可以缓冲所需的数据，同时丢弃不完整的推导输出，直到
+     L1 遍历追上实际的 L2 safe 头部。
+
+在向回遍历 L2 链时，实现可以进行合理性检查，确保起点相对于现有 forkchoice 状态不会回溯得过远，
+以免因配置错误而引发代价高昂的 reorg。
+
+实现者注意：步骤 1-4 称为 `FindL2Heads`。步骤 5 目前属于 Engine Queue 重置的一部分。
+未来可能会调整这一设计，将起点搜索与单纯的重置逻辑分离开来。
+
+#### 重置推导阶段 {#resetting-derivation-stages}
+
+1. L1 Traversal：从 L1 `base` 开始，将其作为下一阶段拉取的第一个区块。
+2. L1 Retrieval：清空先前的数据，并获取 `base` 的 L1 数据，或将获取工作推迟到之后的流水线步骤执行。
+3. Frame Queue：清空队列。
+4. Channel Bank：清空 channel bank。
+5. Channel Reader：重置所有批次解码状态。
+6. Batch Queue：清空批次队列，并以 `base` 作为初始 L1 参考点。
+7. Payload Attributes Derivation：清空所有批次/属性状态。
+8. Engine Queue：
+   * 以同步起始点的状态初始化 L2 forkchoice 状态 (`finalized`/`safe`/`unsafe`) 。
+   * 将该阶段的 L1 参考点初始化为 `base`。
+   * 要求首个任务必须是 forkchoice 更新
+   * 重置所有最终性数据
+
+必要时，从 `base` 开始的阶段可以根据 `l2base` 区块中编码的数据来初始化其系统配置 (system-config) 。
+
+#### 关于合并后的 Reorg {#about-reorgs-post-merge}
+
+请注意，在[合并][merge]之后，reorg 的深度将受 [L1 最终性延迟][l1-finality]的限制
+(2 个 L1 信标纪元，约 13 分钟，除非超过 1/3 的网络持续存在分歧) 。
+每个 L1 信标纪元 (约 6.4 分钟) 都可能有新的 L1 区块被最终确认；根据这些
+最终性信号和批次的打包情况，派生出的 L2 链也会随之变得不可逆。
+
+请注意，这种形式的最终确认仅作用于输入；节点随后可以基于这些不可逆的输入以及既定的协议规则和参数重现该链，
+从而主观地认定该链不可逆。
+
+然而，这与发布到 L1 上的输出毫无关系，后者需要某种形式的证明 (例如故障证明或
+零知识证明) 才能最终确认。L1 上的乐观 Rollup 输出 (例如提款) 只有在经过一周
+无争议期 (故障证明挑战窗口) 后才会被标记为“finalized”，这一名称恰好与权益证明中的最终确认撞名。
+
+[merge]: https://ethereum.org/en/upgrades/merge/
+
+[l1-finality]: https://ethereum.org/en/developers/docs/consensus-mechanisms/pos/#finality
+
+***
+
+## 推导载荷属性 {#deriving-payload-attributes}
+
+[deriving-payload-attr]: #deriving-payload-attributes
+
+对于从 L1 数据推导出的每个 L2 区块，我们都需要构建 [载荷属性][g-payload-attr]。
+它以 [`PayloadAttributesV2`][eth-payload] 对象的[扩展版本][expanded-payload]来表示，
+额外包含 `transactions` 和 `noTxPool` 字段。
+
+该过程既发生在验证者节点运行的载荷属性队列中，也发生在 sequencer 节点执行区块生产期间
+(如果交易是以批次方式提交的，sequencer 可以启用交易池) 。
+
+[expanded-payload]: /specifications/base-protocol/execution/l2-execution-engine#extended-payloadattributesv1
+
+## 推导交易列表 {#deriving-the-transaction-list}
+
+对于 sequencer 要创建的每个 L2 区块，我们都从与目标 L2 区块号相匹配的 [sequencer 批次][g-sequencer-batch]入手。如果 L1 链中没有包含目标 L2 区块号对应的批次，该批次可能是一个自动生成的空批次。[请记住][batch-format]，批次包含一个[排序纪元][g-sequencing-epoch]编号、一个 L2 时间戳和一个交易列表。
+
+该区块属于某个[排序纪元][g-sequencing-epoch]，其编号与某个 L1 区块 (即其 *[L1 origin][g-l1-origin]*) 的编号一致。
+该 L1 区块用于推导 L1 属性，以及 (对于纪元中的第一个 L2 区块) 用户存款。
+
+因此，[`PayloadAttributesV2`][expanded-payload] 对象必须包含以下交易：
+
+* 一笔或多笔[存款交易][g-deposited]，分为两类：
+  * 一笔 *[L1 属性存款交易][g-l1-attr-deposit]*，由 L1 origin 推导得出。
+  * 对于纪元中的第一个 L2 区块，零笔或多笔 *[用户存款交易][g-user-deposited]*，由 L1 origin 的[收据][g-receipts]推导得出。
+* 零笔或多笔[网络升级自动化交易][network upgrade automation transactions]：用于执行网络升级的特殊交易。
+* 零笔或多笔 *[已排序交易][g-sequencing]*：由 L2 用户签名并包含在 sequencer 批次中的常规交易。
+
+在载荷属性中，交易**必须**按上述顺序排列。
+
+L1 属性从 L1 区块头中读取，存款则从 L1 区块的[收据][g-receipts]中读取。
+有关存款如何编码为日志条目的详细信息，请参阅[**存款合约规范**][deposit-contract-spec]。
+
+[deposit-contract-spec]: /specifications/base-protocol/bridging/deposits#deposit-contract
+
+日志按照[关于面向未来的交易日志推导](#on-future-proof-transaction-log-derivation)中所述的面向未来、尽力而为的流程，从交易中推导得出
+
+### 网络升级自动化交易 {#network-upgrade-automation-transactions}
+
+[network upgrade automation transactions]: #network-upgrade-automation-transactions
+
+某些网络升级需要在特定区块自动执行合约变更或部署。
+为了在不对执行层引入持久性变更的前提下实现这一自动化，
+可以在推导过程中插入特殊交易。
+
+## 构建单个载荷属性 {#building-individual-payload-attributes}
+
+推导出交易列表后，rollup 节点按如下方式构造 [`PayloadAttributesV2`][extended-attributes]：
+
+* `timestamp` 设置为该批次的时间戳。
+* `random` 设置为 L1 区块属性 `prev_randao`。
+* `suggestedFeeRecipient` 设置为 Sequencer Fee Vault 地址。参见 [Fee Vaults] 规范。
+* `transactions` 是推导出的交易数组，包括存款交易和已排序交易，均采用 [EIP-2718]
+  编码。
+* `noTxPool` 设置为 `true`，以确保构建区块时严格使用上述 `transactions` 列表。
+* `gasLimit` 设置为该载荷[系统配置][g-system-config]中当前的 `gasLimit` 值。
+* `withdrawals` 在 Canyon 之前设置为 nil，在 Canyon 之后设置为空数组
+
+[extended-attributes]: /specifications/base-protocol/execution/l2-execution-engine#extended-payloadattributesv1
+
+[Fee Vaults]: /specifications/base-protocol/execution/l2-execution-engine#fee-vaults
+
+## 关于面向未来的交易日志派生 {#on-future-proof-transaction-log-derivation}
+
+如 [L1 Retrieval](#l1-retrieval) 中所述，batcher 交易的类型必须属于一个固定的允许列表。
+
+不过，我们希望即使是未来交易类型的收据，也能从中派生出存款交易和 `SystemConfig` 更新事件，前提是这些收据能够通过以下尽力而为的流程完成解码：
+
+只要未来的交易类型遵循 [EIP-2718](https://eips.ethereum.org/EIPS/eip-2718) 规范，就可以从交易 (或其收据) 二进制编码的第一个字节解码出其类型。随后，我们可以按以下步骤获取此类未来交易的日志，或将该交易的收据视为无效并丢弃。
+
+* 如果是已知的交易类型，即 legacy (编码的第一个字节在 `[0xc0, 0xfe]` 范围内) ，或第一个字节在 `[0, 4]` 范围内或为 `0x7e` (*存入&#95;交易) ，则它不属于&#95;未来交易*，我们已知如何解码其收据，本流程不适用。
+* 如果交易的第一个字节在 `[0x05, 0x7d]` 范围内，则应将其视为&#95;未来的&#95; EIP-2718 交易，可以继续处理其收据。注意，这里排除了 `0x7e`，因为它是存款交易类型，属于已知类型。
+* &#95;未来&#95;收据编码的第一个字节必须与交易编码的第一个字节相同，否则该收据将被视为无效并丢弃，因为只有 EIP-2718 编码的收据才能继续处理。
+* 收据负载将按 `rlp([status, cumulative_transaction_gas_used, logs_bloom,
+  logs])` 格式进行解码，这是已知非 legacy 交易类型所使用的编码。
+  * 如果解码失败，则该交易的收据被视为无效并丢弃。
+  * 如果解码成功，即可获得 `logs`，并可像处理已知交易类型的日志一样进行处理。
+
+这一尽力而为的解码流程旨在让协议能够兼容未来新增的 L1 交易类型。

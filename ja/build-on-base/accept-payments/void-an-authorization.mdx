@@ -1,0 +1,77 @@
+---
+title: "オーソリゼーションを取り消す"
+keywords: ["Commerce Payments void", "cancel escrow payment", "PaymentVoided", "payer reclaim"]
+description: "エスクローに残っているオーソリゼーション額を支払者に返還するか、有効期限の経過後に支払者自身が回収できるようにします。"
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+キャプチャしないオーソリゼーションをクローズします。オペレーターはいつでも `void` を呼び出して、キャプチャ可能な残りの資金をすべて返還できます。オペレーターが応答しなくなった場合、支払者は `authorizationExpiry` 以降に `reclaim` を呼び出せます。
+
+<Info>
+  このガイドの支払いフローは、[Commerce Payments Protocol](https://github.com/base/commerce-payments) に基づいています。
+</Info>
+
+## デモ {#demo}
+
+<PaymentsDemo flow="void" />
+
+<Tip>
+  上記のデモはモックです。Vibenet上のオンチェーンデモを確認するには、[Base chain demos](https://chain.base.org/demos)をご覧ください。
+</Tip>
+
+| パス                     | 呼び出し元  | 実行可能なタイミング               |
+| ---------------------- | ------ | ------------------------ |
+| `void(paymentInfo)`    | オペレーター | キャプチャ可能な残高が残っていればいつでも    |
+| `reclaim(paymentInfo)` | 支払者    | `authorizationExpiry` 以降 |
+
+## 残りのオーソリゼーションを取り消す (void) {#void-the-remaining-authorization}
+
+`void` は `capturableAmount` の全額を返却します。部分的な void 操作はありません。まず最終的な履行済み金額をキャプチャしてから、残額を void してください。
+
+{/* sample: usdc-void-ts */}
+
+```typescript TypeScript lines wrap expandable highlight={5,8,13-14}
+export async function voidAuthorization(payment: StoredProtocolPayment) {
+  const [, capturableAmount] = await publicClient.readContract({
+    address: AUTH_CAPTURE_ESCROW,
+    abi: authCaptureEscrowAbi,
+    functionName: "paymentState",
+    args: [payment.paymentInfoHash],
+  });
+  if (capturableAmount === 0n) throw new Error("Authorization has no remaining funds");
+  const simulation = await publicClient.simulateContract({
+    account,
+    address: AUTH_CAPTURE_ESCROW,
+    abi: authCaptureEscrowAbi,
+    functionName: "void",
+    args: [payment.paymentInfo],
+  });
+  const hash = await walletClient.writeContract(simulation.request);
+  const receipt = await publicClient.waitForTransactionReceipt({ hash, confirmations: 2 });
+  if (receipt.status !== "success") throw new Error("Payment void reverted");
+  return receipt;
+}
+```
+
+`void` と `reclaim` はどちらも `capturableAmount` をゼロにし、それまでにキャプチャ済みの `refundableAmount` はそのまま維持します。
+
+<Check>
+  `PaymentVoided` または `PaymentReclaimed` イベントを確認し、その金額が返却直前のキャプチャ可能残高と一致することを確かめてください。
+</Check>
+
+<Warning>
+  オーソリゼーションの有効期限が切れると、オペレーターと支払者が `void` または `reclaim` によって同じ残額を返却しようとして競合する場合があります。この場合、一方が成功し、もう一方は `ZeroAuthorization` でリバートします。どちらのイベントも、オーソリゼーションの最終的な返却として冪等に処理してください。
+</Warning>
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="支払いをオーソライズする" icon="signature" href="/ja/build-on-base/accept-payments/authorize-a-payment">
+    オーソリゼーション期間とリカバリー期間を設定します。
+  </Card>
+
+  <Card title="支払いを返金する" icon="rotate-left" href="/ja/build-on-base/accept-payments/refund-a-payment">
+    キャプチャ済みの金額を返金します。
+  </Card>
+</CardGroup>

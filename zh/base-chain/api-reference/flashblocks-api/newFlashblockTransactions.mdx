@@ -1,0 +1,143 @@
+---
+title: 'newFlashblockTransactions'
+sidebarTitle: 'newFlashblockTransactions'
+description: '订阅后，每当有交易被预确认并纳入 Flashblock 时，即可实时收到该交易。仅适用于 Flashblocks WebSocket 端点。'
+---
+
+通过 `eth_subscribe` 订阅后，每当有交易被预确认并纳入 Flashblock 时，即可收到该交易。将第二个参数设为 `true` 可接收完整的交易数据和收据数据。
+
+<Info>
+  此订阅需要支持 WebSocket 的 RPC 端点。Base 公共端点 (`mainnet.base.org`、`sepolia.base.org`) 仅支持 HTTP。请从 [Builder Stack](/zh/get-started/builder-stack) 中选择支持 WebSocket 的服务商。
+</Info>
+
+<Note>
+  需要 [base/base](https://github.com/base/base) 客户端 v0.8.0 或更高版本。
+</Note>
+
+<Warning>
+  每个订阅**每条 WebSocket 消息仅推送一项**。事件大约每 200ms 推送一次。如果处理函数需要对每个事件执行繁重的处理，请对其进行节流 (throttle) 或防抖 (debounce) ，以免造成阻塞。
+</Warning>
+
+## 参数 {#parameters}
+
+<ParamField body="subscriptionType" type="string" required>
+  必须为 `"newFlashblockTransactions"`。
+</ParamField>
+
+<ParamField body="full" type="boolean">
+  若为 `true`，每条通知都会包含完整的交易对象，并内嵌收据字段。默认为 `false` (仅返回交易哈希) 。
+</ParamField>
+
+## 返回值 {#returns}
+
+<ResponseField name="result" type="string">
+  订阅成功时返回的十六进制编码订阅 ID。
+</ResponseField>
+
+## 通知 {#notifications}
+
+每条通知都是一条标准的 `eth_subscription` 消息。`params.result` 字段的内容取决于 `full` 参数：
+
+**`full: false`** — `result` 为交易哈希：
+
+```json Result (full: false)
+"0xe26de91f9037e903eefe70b28f613019253da603e67e0dbfe2f656dce5444311"
+```
+
+**`full: true`** — `result` 是一个直接内嵌收据字段的交易对象 (不含嵌套的收据子对象) 。已在 `base/v0.9.0` 上实测验证：
+
+<ResponseField name="type" type="string">交易类型：`0x0` Legacy、`0x2` EIP-1559、`0x7e` Deposit。</ResponseField>
+<ResponseField name="chainId" type="string">链 ID (十六进制) 。</ResponseField>
+<ResponseField name="nonce" type="string">发送方 nonce (十六进制) 。</ResponseField>
+<ResponseField name="gas" type="string">Gas 上限 (十六进制) 。</ResponseField>
+<ResponseField name="maxFeePerGas" type="string">EIP-1559 每单位 gas 的最高费用 (十六进制) 。</ResponseField>
+<ResponseField name="maxPriorityFeePerGas" type="string">EIP-1559 每单位 gas 的最高优先费用 (十六进制) 。</ResponseField>
+<ResponseField name="to" type="string">接收方地址。</ResponseField>
+<ResponseField name="value" type="string">转账的 ETH 数额 (十六进制) 。</ResponseField>
+<ResponseField name="accessList" type="array">EIP-2930 访问列表。</ResponseField>
+<ResponseField name="input" type="string">交易输入数据 (十六进制) 。</ResponseField>
+<ResponseField name="r" type="string">签名的 r 分量。</ResponseField>
+<ResponseField name="s" type="string">签名的 s 分量。</ResponseField>
+<ResponseField name="yParity" type="string">签名奇偶校验值 (十六进制) 。</ResponseField>
+<ResponseField name="v" type="string">签名的 v 值 (十六进制) 。</ResponseField>
+<ResponseField name="hash" type="string">交易哈希。</ResponseField>
+<ResponseField name="blockHash" type="null">始终为 `null`——交易处于预确认状态，尚未被打包进最终确定的区块。</ResponseField>
+<ResponseField name="blockNumber" type="string">正在构建中的 Flashblock 的区块号 (十六进制) 。</ResponseField>
+<ResponseField name="transactionIndex" type="string">交易在区块中的索引 (十六进制) 。</ResponseField>
+<ResponseField name="from" type="string">发送方地址。</ResponseField>
+<ResponseField name="gasPrice" type="string">实际 gas 价格 (十六进制) 。</ResponseField>
+<ResponseField name="gasUsed" type="string">此交易消耗的 gas (十六进制) 。**注意：** 自 v0.8.0 起由整数改为十六进制字符串。</ResponseField>
+<ResponseField name="status" type="string">`0x1` 表示成功，`0x0` 表示失败。</ResponseField>
+<ResponseField name="cumulativeGasUsed" type="string">区块内截至此交易 (含) 的累计 gas 消耗 (十六进制) 。</ResponseField>
+<ResponseField name="contractAddress" type="string | null">所创建合约的地址，若未创建合约则为 `null`。</ResponseField>
+<ResponseField name="logsBloom" type="string">日志的布隆过滤器 (十六进制) 。</ResponseField>
+<ResponseField name="logs" type="array">此交易触发的日志对象数组。</ResponseField>
+
+<Warning>
+  `gasUsed` 是十六进制字符串 (例如 `"0x26132"`) ，而非整数。该变更自 v0.8.0 起生效——请更新所有预期接收数值的解析器。
+</Warning>
+
+## 示例 {#example}
+
+<CodeGroup>
+  ```json 订阅
+  {"jsonrpc": "2.0", "id": 1, "method": "eth_subscribe", "params": ["newFlashblockTransactions"]}
+  ```
+
+  ```json 订阅（完整数据）
+  {"jsonrpc": "2.0", "id": 1, "method": "eth_subscribe", "params": ["newFlashblockTransactions", true]}
+  ```
+
+  ```json 订阅 ID 响应
+  {"jsonrpc": "2.0", "id": 1, "result": "0x1887ec8b9589ccad00000000000532da"}
+  ```
+
+  ```json 通知（full: false） lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_subscription",
+    "params": {
+      "subscription": "0x1887ec8b9589ccad00000000000532da",
+      "result": "0xe26de91f9037e903eefe70b28f613019253da603e67e0dbfe2f656dce5444311"
+    }
+  }
+  ```
+
+  ```json 通知（full: true） lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_subscription",
+    "params": {
+      "subscription": "0x1887ec8b9589ccad00000000000532da",
+      "result": {
+        "type": "0x2",
+        "chainId": "0x2105",
+        "nonce": "0x34ed",
+        "gas": "0x7a1200",
+        "maxFeePerGas": "0x257ab3c",
+        "maxPriorityFeePerGas": "0x419c7c",
+        "to": "0x6211a3742cf9d3b6677ecc7fd9dd102ab101d8e2",
+        "value": "0x0",
+        "accessList": [],
+        "input": "0x...",
+        "r": "0xa7cd30d21c30d4d60d27073c8bbc3ef5778527cf98eae0433e9d1f18c929dd5d",
+        "s": "0x08c75921e6bb75e19112300f80998f88a2b0f1adc52df2c3597b171d8c8de68d",
+        "yParity": "0x1",
+        "v": "0x1",
+        "hash": "0x6a010a5ce041ff0ee5a926db65d1ef512836cae822d5f2d58b63981bfa40aa7f",
+        "blockHash": null,
+        "blockNumber": "0x2c679a1",
+        "transactionIndex": "0x83",
+        "from": "0x2ad149d3d3099532d7c25c47cce37db6c4677b3a",
+        "gasPrice": "0x8de7bc",
+        "gasUsed": "0x26132",
+        "status": "0x1",
+        "cumulativeGasUsed": "0x16cb406",
+        "contractAddress": null,
+        "logsBloom": "0x00...00",
+        "logs": []
+      }
+    }
+  }
+  ```
+</CodeGroup>

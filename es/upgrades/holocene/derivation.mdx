@@ -1,0 +1,346 @@
+---
+title: "Cambios en la derivación de la cadena L2 en Holocene"
+description: "Cambios en la derivación introducidos por la actualización Holocene, que incorporan reglas más estrictas en el pipeline para simplificar la derivación y mejorar el comportamiento de las pruebas de fallo en el peor de los casos."
+---
+
+## Resumen {#summary}
+
+La bifurcación dura Holocene introduce varios cambios en las reglas de derivación de bloques que hacen que el
+pipeline de derivación sea, en general, más estricto y sencillo, y que mejoran los escenarios más desfavorables para las Fault Proofs y
+la interoperabilidad (Interop). Los cambios son los siguientes:
+
+* *Strict Batch Ordering* exige que los lotes estén estrictamente ordenados, tanto dentro de cada canal como entre canales.
+* *Partial Span Batch Validity* determina de forma individual la validez de cada lote singular de un span batch,
+  e invalida únicamente el resto del span batch a partir del primer lote singular inválido.
+* *Invalidación rápida de canales*, análoga a Partial Span Batch Validity pero aplicada a la capa de
+  canales, invalida el canal hacia adelante en cuanto se encuentra un lote inválido.
+* *Steady Block Derivation* deriva de inmediato los atributos de payload inválidos como bloques
+  que solo contienen depósitos.
+
+En conjunto, estos cambios hacen que el impacto de un lote inválido quede limitado al
+número de bloque en cuestión, en lugar de propagarse hacia adelante o hacia atrás en la cadena segura. Además,
+los payloads inválidos en la etapa del motor quedan contenidos en el propio motor, sin propagarse hacia atrás en el
+pipeline de derivación.
+
+Para lograrlo, la derivación de Holocene incorpora los siguientes cambios en el pipeline de derivación.
+
+## Cola de frames {#frame-queue}
+
+La cola de frames conserva su función y pone en cola todos los frames de la(s) última(s) transacción(es) del batcher que
+aún no se han ensamblado en un canal. Holocene sigue permitiendo varios frames por transacción del batcher,
+posiblemente de canales distintos. Como antes, esto permite, de forma opcional, aprovechar el espacio restante
+de una transacción del batcher con un frame inicial del siguiente canal.
+
+Sin embargo, el ordenamiento estricto de lotes (Strict Batch Ordering) añade las siguientes comprobaciones y reglas a la cola
+de frames:
+
+* Si un *frame no inicial* (es decir, un frame con índice &gt;0) decodificado de una transacción del batcher está *fuera de
+  orden*, se **descarta inmediatamente**. Se considera que un frame está *fuera de orden* si
+  * su número de frame no es el del frame anterior más uno, cuando tiene el mismo ID de canal, o
+  * el frame anterior ya cerró el canal con el mismo ID, o
+  * el frame no inicial tiene un ID de canal distinto al del frame anterior en la cola de frames.
+* Si se decodifica un *frame inicial* mientras el frame anterior no es un *frame final* (es decir, `is_last` es
+  `false`), se descartan todos los frames anteriores del mismo canal y este nuevo frame inicial permanece en
+  la cola.
+
+Estas reglas garantizan que, para cada canal, la cola de frames siempre contenga frames cuyos índices están ordenados,
+son contiguos e incluyen el frame inicial. Además, el frame inicial de un canal es o bien el
+primer frame de la cola, o bien va precedido de un frame de cierre de un canal anterior.
+
+Tenga en cuenta que estas reglas difieren de las anteriores a Holocene, en las que los frames fuera de orden se
+almacenaban en búfer. Antes de Holocene, las comprobaciones de validez de los frames solo se realizaban en la etapa del banco de canales. Realizar
+estas comprobaciones ya en la etapa de la Frame Queue permite descartar antes los frames no válidos, lo que reduce
+el consumo de memoria de cualquier implementación.
+
+## Banco de canales {#channel-bank}
+
+Como los frames de canal deben llegar en orden, el banco de canales se simplifica considerablemente y solo
+mantiene, como máximo, un único canal a la vez.
+
+### Poda {#pruning}
+
+La poda se simplifica enormemente, ya que hay como máximo un único canal abierto en el banco de canales. Así, la
+cola del banco de canales pasa a ser, en la práctica, una ranura de preparación para un solo canal: el *canal en preparación*.
+El parámetro `MAX_CHANNEL_BANK_SIZE` deja de utilizarse, y el tamaño comprimido del canal en
+preparación no debe superar `MAX_RLP_BYTES_PER_CHANNEL` (de lo contrario, el canal se descarta). Esta
+última regla difiere tanto en la condición como en el efecto de la regla existente,
+según la cual el tamaño *sin comprimir* de cualquier canal se *recorta* a `MAX_RLP_BYTES_PER_CHANNEL` [durante la descompresión](/es/specifications/base-protocol/consensus/derivation#channel-format).
+
+### Tiempo de espera {#timeout}
+
+El tiempo de espera se aplica igual que antes, pero únicamente al canal de preparación.
+
+### Lectura y carga de frames {#reading-frame-loading}
+
+Se garantiza que la cola de frames contiene frames ordenados y contiguos para cada canal. Por ello, la lectura y
+la carga de frames resultan más sencillas en el banco de canales:
+
+* El primer frame de un canal nuevo inicia un canal nuevo como canal de preparación (staging channel).
+  * Si ya existe un canal de preparación abierto y no completado, se descarta y se sustituye por este
+    canal nuevo. Esto es coherente con la forma en que la cola de frames descarta todos los frames de un canal no cerrado
+    cuando llega el primer frame de un canal nuevo.
+* Si el tiempo de espera del canal actual ha expirado (timed-out), pero el canal aún no se ha podado, y el frame entrante sería el siguiente
+  frame correcto para este canal, se descartan tanto el frame como el canal, incluidos todos los frames futuros del
+  canal que aún puedan estar en la cola de frames. Cabe destacar que una regla equivalente ya
+  existía antes de Holocene.
+* Después de añadir un frame al canal de preparación, el canal se descarta si su tamaño comprimido bruto, tal como
+  se define en la especificación de Bedrock, supera `MAX_RLP_BYTES_PER_CHANNEL`. Esta regla sustituye
+  el límite total que, antes de Holocene, imponía `MAX_CHANNEL_BANK_SIZE` a la suma de los tamaños de todos los canales.
+
+## Span Batches {#span-batches}
+
+La validez parcial de span batches (Partial Span Batch Validity) modifica el modelo de validez atómica de los [Span Batches](../delta/span-batches).
+En Holocene, un span batch se trata como una etapa opcional del pipeline de derivación situada
+antes de la cola de lotes, de modo que la cola de lotes extrae lotes singulares de esta etapa previa de Span Batch.
+Cuando se encuentra un lote singular inválido, se descarta, junto con el resto del span batch,
+por motivos de coherencia. A esto lo llamamos *invalidación hacia adelante*. Sin embargo, a diferencia de lo que ocurría antes de Holocene, no
+*invalidamos hacia atrás* los lotes válidos anteriores que provenían del mismo span batch.
+
+Cuando un lote derivado del canal de preparación actual es un lote singular, se reenvía directamente
+a la cola de lotes. De lo contrario, se establece como el span batch actual en la etapa de span batch. Antes de derivar lotes singulares a partir de él,
+se realizan las siguientes comprobaciones de validez del span batch.
+Las definiciones se toman de las [especificaciones originales de Span Batch](../delta/span-batches).
+
+* Si la *comprobación del origen en L1* del span batch no forma parte de la cadena canónica de L1, el span batch es
+  inválido.
+* Si falla la comprobación del padre, el span batch es inválido.
+* Si `span_start.timestamp > next_timestamp`, el span batch es inválido, ya que las nuevas reglas estrictas de ordenación de lotes
+  no permiten huecos.
+* Si `span_end.timestamp < next_timestamp`, se asigna al span batch la validez `past`, ya que
+  no contiene ningún lote nuevo (lo mismo ocurriría si se aplicaran las comprobaciones de marca de tiempo a cada lote singular
+  derivado de forma individual). Consulta más abajo la sección [Cola de lotes](#batch-queue) para obtener información sobre la nueva
+  validez `past`.
+* Ten en cuenta que seguimos permitiendo que los span batches se solapen con la cadena segura (`span_start.timestamp <
+  next_timestamp`).
+
+Si alguna de las comprobaciones anteriores invalida el span batch, este se descarta (`drop`) y el resto del canal del
+que se derivó también se descarta de inmediato (consulta también [Invalidación rápida de
+canales](#fast-channel-invalidation)). Sin embargo, un span batch `past` solo se descarta a sí mismo, sin
+descartar el resto del canal.
+
+> [!Note]
+> Una observación sobre los span batches solapados: las reglas existentes de la cola de lotes ya incluyen la regla
+> de descartar los lotes cuyo origen en L1 sea anterior al del safe head de L2. Las comprobaciones de span batch de Delta
+> también incluyen una regla equivalente que se aplica a todos los lotes singulares posteriores al safe head.
+> En Holocene ya no se realizan las comprobaciones completas de span batch, pero las reglas de la cola de lotes siguen
+> aplicándose a los lotes singulares que se extraen de los span batches, por lo que, en particular, esta regla también
+> sigue aplicándose al primer lote singular posterior al safe head actual que proviene de un span batch
+> solapado.
+>
+> Es una trampa conocida para las implementaciones que las infracciones de esta regla no puedan detectarse
+> hasta que se extrae del span batch el array completo de lotes singulares y se rellenan sus
+> hashes de origen en L1. Por lo tanto, es importante tratar como inválidos los lotes singulares con números de origen en L1 obsoletos
+> o inválidos por cualquier otro motivo y, en consecuencia, considerar inválido el span batch, en lugar de
+> generar un error crítico de derivación que la detenga.
+
+## Cola de lotes {#batch-queue}
+
+La cola de lotes también se simplifica, ya que se exige que los lotes lleguen en un orden estricto, y cualquier
+lote que infrinja los requisitos de orden se descarta de inmediato, en lugar de almacenarse en búfer.
+
+Por lo tanto, se realizan los siguientes cambios en la [Cola de lotes de Bedrock](/es/specifications/base-protocol/consensus/derivation#batch-queue):
+
+* Se elimina el paso de reordenamiento, de modo que las comprobaciones posteriores descartarán los lotes que no sean secuenciales.
+* Se elimina el estado de validez de lote `future`, y los lotes que se consideraban futuros
+  ahora se descartan directamente (`drop`). En la práctica, esto impide que haya huecos, en lugar de almacenar en búfer los lotes
+  futuros.
+* Se introduce un nuevo estado de validez de lote, `past`. Un lote tiene validez `past` si su marca de tiempo es anterior
+  o igual a la marca de tiempo del safe head. Esto también se aplica a los span batches.
+* Las demás reglas se mantienen, incluida la generación de lotes vacíos cuando transcurre la ventana
+  de secuenciación.
+
+Tenga en cuenta que estos cambios en las reglas de validez de lotes también se activan según la marca de tiempo del bloque de L1 en el que se incluye
+el lote, no según la marca de tiempo del propio lote. Esto es importante para garantizar reglas de validación coherentes
+para el primer canal tras la activación de Holocene.
+
+Los estados de validez de lote `drop` y `past` introducen el siguiente comportamiento:
+
+* Si se determina que un lote no es válido y se descarta, también se descarta el resto del span batch del que procede, si
+  lo hay.
+* Si se determina que un lote pertenece al pasado (`past`), se descarta de forma silenciosa y el resto del span batch
+  se sigue procesando. Esto se aplica tanto a los span batches como a los lotes individuales.
+
+Tenga en cuenta que, cuando el origen en L1 de la cola de lotes avanza, se garantiza que esta está vacía,
+porque los lotes futuros ya no se almacenan en búfer. Además, dado que los lotes futuros se descartan
+directamente, la cola de lotes se convierte, en la práctica, en una *etapa de lotes* más sencilla que contiene como máximo un span
+batch del que se leen los lotes individuales, y que ya no almacena por sí misma lotes individuales en una
+cola. Un lote válido se reenvía directamente a la siguiente etapa.
+
+### Invalidación rápida de canales {#fast-channel-invalidation}
+
+Además, al encontrar un lote no válido, también se descarta el resto del canal del que se derivó.
+
+## Cola del motor {#engine-queue}
+
+Si el motor devuelve un estado `INVALID` para un payload derivado de forma regular, el payload se sustituye
+por otro con los mismos campos, salvo `transaction_list`, que se recorta para incluir
+únicamente sus transacciones de depósito.
+
+Al igual que antes, si después no se pueden procesar los atributos que solo contienen depósitos, se trata de un error crítico.
+
+Si un payload inválido se sustituye por uno que solo contiene depósitos, por motivos de coherencia también se descartan
+el resto del span batch, si corresponde, y el canal del que procede.
+
+## Constructor de atributos {#attributes-builder}
+
+A partir del bloque de activación del fork, los `PayloadAttributes` generados por el constructor de atributos incluirán
+el campo `eip1559Params` descrito en las [especificaciones del motor de ejecución](./exec-engine#eip-1559-parameters-in-payloadattributesv3). Este
+valor se encuentra en el `SystemConfig`.
+
+En el bloque de activación del fork, el constructor de atributos incluirá un `eip1559Params` con todos sus valores a cero, para indicar
+al motor que utilice las [constantes de parámetros de la tarifa base de Canyon](/es/specifications/base-protocol/execution/l2-execution-engine#1559-parameters). El objetivo
+es inicializar la visión que tiene el pipeline del `SystemConfig` con los valores predeterminados de los parámetros de EIP-1559. Una vez procesado
+el primer payload de Holocene, los payloads posteriores deben usar el denominador y el parámetro de elasticidad de EIP-1559 del `SystemConfig`
+como valor del campo `eip1559Params`. Cuando el pipeline encuentre un evento `ConfigUpdate` de tipo `UpdateType.EIP_1559_PARAMS`,
+la configuración del sistema del pipeline se sincronizará con la del contrato `SystemConfig`.
+
+## Activación {#activation}
+
+Las nuevas reglas de lotes se activan cuando el *timestamp del bloque de inclusión en L1* es mayor o igual que el
+timestamp de activación de Holocene. Tenga en cuenta que, a diferencia de esto, los span batches se activaron en
+[Delta](../delta/overview) en función del timestamp del origen en L1 del span batch.
+
+Cuando la etapa de recorrido de L1 del pipeline de derivación mueve su origen al primer bloque de L1 cuyo
+timestamp es mayor o igual que el timestamp de activación de Holocene, el estado del pipeline
+de derivación se restablece en gran parte **descartando**
+
+* todos los frames de la cola de frames,
+* los canales del banco de canales y
+* todos los lotes de la cola de lotes.
+
+A continuación, estas tres etapas se sustituyen por la nueva cola de frames, el nuevo banco de canales y la nueva cola de lotes de Holocene
+(y, según la implementación, se añade la etapa opcional de span batches).
+
+Tenga en cuenta que las implementaciones del batcher deben tener en cuenta este comportamiento de activación, por lo que cualquier frame de un
+canal enviado parcialmente que se haya incluido antes de Holocene debe volver a enviarse. Se trata de un escenario muy
+improbable, ya que los batchers en producción suelen estar configurados para enviar cada canal en una sola
+transacción.
+
+## Justificación {#rationale}
+
+### Ordenamiento estricto de frames y lotes {#strict-frame-and-batch-ordering}
+
+El ordenamiento estricto de frames y lotes simplifica las implementaciones del pipeline de derivación y mejora
+el uso de datos en caché en el peor de los casos.
+
+* La cola de frames solo contiene frames de una única transacción del batcher.
+* El banco de canales solo contiene un único canal de preparación, que o bien se está construyendo a partir de
+  los frames entrantes, o bien está siendo procesado por las etapas posteriores.
+* La cola de lotes contiene, como máximo, un único span batch (el que se está procesando) y un único lote
+  singular (procedente del span batch o directamente del canal de preparación)
+* El inicio de la sincronización se simplifica enormemente en el caso habitual de producción.
+
+Esto aporta ventajas a las implementaciones del programa de Fault Proof.
+
+### Partial Span Batch Validity {#partial-span-batch-validity}
+
+La Partial Span Batch Validity garantiza que un lote singular válido derivado de un span batch pueda
+procesarse de inmediato como válido y hacer avanzar la cadena segura, en lugar de permanecer en un estado indeterminado
+hasta que todo el span batch se convierta en lotes singulares. Esto agiliza la derivación y
+ofrece sólidas garantías en el peor caso para las Fault Proofs, ya que la validez de un bloque ya no depende
+de la validez de ningún bloque futuro. Cabe señalar que, antes de Holocene, para verificar el primer bloque
+de un span batch era necesario validar el span batch completo.
+
+### Invalidación rápida de canales {#fast-channel-invalidation-2}
+
+La nueva regla de invalidación rápida de canales es una implicación de coherencia de las reglas de ordenamiento estricto.
+Dado que los lotes dentro de los canales deben estar ordenados y ser contiguos, y suponiendo que todos los lotes de un
+canal son coherentes entre sí (es decir, los hashes L2 padre apuntan al bloque resultante del lote
+anterior), un lote inválido también invalida, hacia adelante, todos los lotes restantes del mismo canal.
+
+### Steady Block Derivation {#steady-block-derivation}
+
+Steady Block Derivation modifica las reglas de derivación para los atributos de payload inválidos: un
+payload inválido se sustituye por un payload vacío o que solo contiene depósitos. Lo fundamental es que el efecto de un payload
+inválido ya no se propaga hacia atrás en el pipeline de derivación. Esto beneficia a Fault Proofs
+e Interop, ya que garantiza que la validez de los lotes no dependa de etapas posteriores y que el
+bloque derivado de un lote válido quede determinado por la etapa del motor antes de que esta obtenga nuevos atributos
+de payload de la etapa anterior. De este modo se evitan reinicios de mayor alcance en el pipeline de derivación.
+
+### Protocolo menos defensivo {#less-defensive-protocol}
+
+Las reglas de derivación más estrictas dan lugar a un protocolo menos defensivo. Las reglas del protocolo anterior daban
+segundas oportunidades a los payloads inválidos y permitían enviar frames y batches fuera de orden dentro de los canales.
+La experiencia de operar Base durante más de un año y medio ha demostrado que estas reglas de derivación
+más laxas (casi) nunca son necesarias, por lo que conviene adoptar reglas más estrictas que mejoren los peores escenarios para
+Fault Proofs e Interop.
+
+Además, las reglas más laxas generaban muchos más casos límite e interacciones complejas, lo que
+dificultaba razonar sobre el protocolo y probarlo, y aumentaba el riesgo de divisiones de la cadena entre
+distintas implementaciones.
+
+## Consideraciones de seguridad e implementación {#security-and-implementation-considerations}
+
+### Reorganizaciones {#reorgs}
+
+Antes de Steady Block Derivation, los payloads inválidos tenían una segunda oportunidad de ser reemplazados por payloads
+futuros válidos. Dado que ahora se reemplazarán de inmediato por payloads de solo depósitos, existe, en teoría, un
+mayor riesgo de reorganizaciones de la cadena no segura. Hasta donde sabemos, esto aún no
+ha ocurrido en Base.
+
+Los únicos escenarios concebibles en los que un lote *válido* da lugar a un payload *inválido* son:
+
+* un sequencer+batcher defectuoso o malicioso;
+* en el futuro, que una dependencia de Interop previamente válida referenciada en ese payload se
+  invalide posteriormente, cuando el bloque que contenía dicha dependencia de Interop ya se había incluido en un lote.
+
+Precisamente este último caso es el que inspiró la regla de Steady Block Derivation. Esta regla garantiza que los
+efectos secundarios de una dependencia de Interop inválida se limiten a un único bloque, lo que
+evita una cascada de reorganizaciones de Interop entre L2 que obliguen a revisar las cadenas L2 más de una vez.
+
+### Endurecimiento del batcher {#batcher-hardening}
+
+En cierto sentido, Holocene traslada parte de la complejidad de la derivación a la fase de agrupación en lotes. Unas reglas de
+derivación más simples y estrictas exigen una implementación del batcher más compleja.
+
+El batcher debe endurecerse para garantizar los requisitos de ordenamiento estricto. En la práctica, la implementación actual en Go ya
+los cumple en su mayoría, aunque más por casualidad que por diseño. Existen
+casos límite en los que el batcher podría infringir las reglas de ordenamiento estricto. Por ejemplo, si un canal
+no se logra enviar dentro de un plazo determinado, los bloques se vuelven a poner en cola y podrían producirse
+lotes fuera de orden. Una implementación del batcher también debe asegurarse especialmente de que el cambio dinámico entre blobs/calldata
+no provoque lotes fuera de orden ni huecos entre lotes en escenarios en los que los bloques se vuelven a poner en cola mientras canales
+futuros ya esperan en la mempool a ser incluidos.
+
+Se recomienda que las implementaciones del batcher sigan una asignación fija de nonce a rango de bloques en cuanto la
+primera transacción del batcher (que casi siempre es la única transacción del batcher para un canal con las
+configuraciones actuales del batcher en producción) empiece a enviarse. Esto debería evitar lotes fuera de orden o
+huecos entre lotes. Puede que sea necesario implementar algún tipo de persistencia en la gestión de
+transacciones, ya que no es posible recuperar de forma fiable todas las transacciones del batcher pendientes a nivel global en
+la red L1.
+
+Además, las implementaciones del batcher deben tener en cuenta las reglas de Steady Block Derivation,
+en concreto, que los payloads no válidos se derivarán como bloques de solo depósitos. Por lo tanto, ante un unsafe reorg,
+el batcher debe esperar a que el sequencer haya derivado todos los bloques desde L1, para así
+empezar a agrupar en lotes nuevos bloques únicamente sobre el segmento de cadena reorganizado, que posiblemente se haya derivado como bloques de solo depósitos. El
+estado de sincronización debe consultarse repetidamente y compararse con la cadena segura esperada. Ante cualquier
+discrepancia, el batcher debe detener la agrupación en lotes y esperar a que el sequencer complete la derivación hasta
+las transacciones del batcher más recientes en L1, y solo entonces reanudar la agrupación en lotes.
+
+### Inicio de la sincronización {#sync-start}
+
+Gracias a las nuevas reglas estrictas de ordenación de frames y lotes, el algoritmo de inicio de la sincronización puede simplificarse
+en el caso promedio. Las reglas garantizan que:
+
+* un primer frame entrante de un nuevo canal provoca que se descarten los frames incompletos anteriores de un
+  canal previo no cerrado en la cola de frames y en el banco de canales, y
+* cuando el origen L1 del pipeline de derivación avanza, la cola de lotes está vacía.
+
+Por lo tanto, el algoritmo de inicio de la sincronización puede seleccionar de forma optimista los últimos heads L2 unsafe, safe y finalized
+del motor y, si el origen L1 del safe head de L2 es *plausible* (consulta la
+[descripción original del inicio de la sincronización](/es/specifications/base-protocol/consensus/derivation#finding-the-sync-starting-point) para más detalles),
+empezar a derivar a partir de ese origen L1.
+
+* Si el primer frame que encontramos es un *primer frame* de un canal que incluye el safe head (TBD: o
+  incluso solo el siguiente bloque L2 cuyo padre es el safe head actual), podemos
+  continuar la derivación de forma segura a partir de ese canal, ya que ningún estado previo del pipeline de derivación podría
+  haber influido en el safe head de L2.
+* Si el primer frame que encontramos no es un primer frame, debemos retroceder una ventana completa de
+  timeout de canal para comprobar si encontramos el inicio de ese canal.
+  * Si encontramos el frame inicial, podemos continuar la derivación a partir de él.
+  * Si no encontramos el frame inicial, debemos retroceder una ventana completa de timeout de canal antes del
+    origen L1 del head L2 finalized.
+
+Sobre este último caso, conviene señalar que, si no encontramos un frame inicial dentro de una ventana de timeout de canal,
+el canal del que sí encontramos un frame tiene que haber expirado y se descartaría. El bloque safe que
+buscamos no puede estar en ningún canal que haya expirado antes de su origen L1, así que no haría falta
+buscar más atrás; por eso retrocedemos un timeout de canal antes del head L2 finalized.

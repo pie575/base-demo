@@ -1,0 +1,111 @@
+---
+title: 'eth_estimateGas'
+sidebarTitle: 'eth_estimateGas'
+description: '估算交易所需的 gas。使用 pending 可基于预确认状态进行估算。'
+---
+
+返回执行一笔交易所需 gas 的估算值。该估算值可能高于交易执行时实际消耗的 gas。
+
+<Tip>
+  **Flashblocks：** 使用 `"pending"` 查询 `https://mainnet.base.org`，即可基于当前预确认状态估算 gas。当某笔交易依赖于先前一笔已预确认的交易时，这种方式尤为实用。
+</Tip>
+
+## 参数 {#parameters}
+
+<ParamField body="transaction" type="object" required>
+  要估算 gas 的交易对象。
+
+  <Expandable title="交易字段">
+    <ParamField body="from" type="string">
+      交易的发送地址。可选。
+    </ParamField>
+
+    <ParamField body="to" type="string">
+      交易的接收地址。部署合约时可省略。
+    </ParamField>
+
+    <ParamField body="gas" type="string">
+      Gas 上限。可选；省略时将使用较高的默认值。
+    </ParamField>
+
+    <ParamField body="gasPrice" type="string">
+      legacy 交易的 gas 价格，以 wei 为单位。可选。
+    </ParamField>
+
+    <ParamField body="maxFeePerGas" type="string">
+      EIP-1559 每单位 gas 的最高总费用。可选。
+    </ParamField>
+
+    <ParamField body="maxPriorityFeePerGas" type="string">
+      EIP-1559 每单位 gas 的最高优先费。可选。
+    </ParamField>
+
+    <ParamField body="value" type="string">
+      要转账的金额，以 wei 为单位。可选。
+    </ParamField>
+
+    <ParamField body="data" type="string">
+      ABI 编码的调用数据。可选。
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="block" type="string">
+  估算所基于的区块。可选；默认为 `"latest"`。使用 `"pending"` 可基于预确认状态进行估算。
+</ParamField>
+
+## 返回值 {#returns}
+
+<ResponseField name="result" type="string">
+  预估的 gas 用量，以十六进制整数表示。
+</ResponseField>
+
+## 错误码 {#error-codes}
+
+| 代码       | 消息                 | 说明                                |
+| -------- | ------------------ | --------------------------------- |
+| `-32000` | execution reverted | 该交易会被回滚。错误对象的 `data` 字段中可能包含回滚原因。 |
+
+## 示例 {#example}
+
+<CodeGroup>
+  ```bash 标准 lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_estimateGas",
+      "params": [{
+        "from": "0xd3CdA913deB6f4967b2Ef66ae97DE114a83bcc01",
+        "to": "0x4200000000000000000000000000000000000006",
+        "value": "0x2c68af0bb14000"
+      }],
+      "id": 1
+    }'
+  ```
+
+  ```bash Flashblocks（pending 状态） lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_estimateGas",
+      "params": [{
+        "from": "0xd3CdA913deB6f4967b2Ef66ae97DE114a83bcc01",
+        "to": "0x4200000000000000000000000000000000000006",
+        "value": "0x2c68af0bb14000"
+      }, "pending"],
+      "id": 1
+    }'
+  ```
+
+  ```json 响应
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x5208"
+  }
+  ```
+</CodeGroup>

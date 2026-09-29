@@ -1,0 +1,98 @@
+---
+title: 'eth_getTransactionByHash'
+sidebarTitle: 'eth_getTransactionByHash'
+description: 'ハッシュを指定してトランザクションを取得します。'
+---
+
+指定したハッシュに対応するトランザクションの情報を返します。該当するトランザクションが存在しない場合は `null` を返します。
+
+## パラメーター {#parameters}
+
+<ParamField body="transactionHash" type="string" required>
+  32バイトのトランザクションハッシュ。
+</ParamField>
+
+## 戻り値 {#returns}
+
+<ResponseField name="result" type="object | null">
+  トランザクションオブジェクト。トランザクションが見つからない場合は `null`。
+
+  <Expandable title="トランザクションのフィールド">
+    <ResponseField name="hash" type="string">32 バイトのトランザクションハッシュ。</ResponseField>
+    <ResponseField name="nonce" type="string">このトランザクションより前に送信者が送信したトランザクションの数 (16 進数) 。</ResponseField>
+    <ResponseField name="blockHash" type="string">このトランザクションを含むブロックの 32 バイトのハッシュ。保留中の場合は `null`。</ResponseField>
+    <ResponseField name="blockNumber" type="string">ブロック番号 (16 進数) 。保留中の場合は `null`。</ResponseField>
+    <ResponseField name="transactionIndex" type="string">ブロック内でのインデックス位置 (16 進数) 。保留中の場合は `null`。</ResponseField>
+    <ResponseField name="from" type="string">20 バイトの送信者アドレス。</ResponseField>
+    <ResponseField name="to" type="string">20 バイトの受信者アドレス。コントラクトのデプロイの場合は `null`。</ResponseField>
+    <ResponseField name="value" type="string">送金された ETH の額 (wei 単位、16 進数) 。</ResponseField>
+    <ResponseField name="gas" type="string">送信者が指定したガス量 (16 進数) 。</ResponseField>
+    <ResponseField name="gasPrice" type="string">wei 単位のガス価格。EIP-1559 トランザクションの場合は、実際に支払われた実効ガス価格 (16 進数) 。</ResponseField>
+    <ResponseField name="maxFeePerGas" type="string">EIP-1559 におけるガスあたりの最大合計手数料 (16 進数) 。タイプ `0x2` のトランザクションにのみ存在します。タイプ `0x7e` には存在しません。</ResponseField>
+    <ResponseField name="maxPriorityFeePerGas" type="string">EIP-1559 におけるガスあたりの最大優先手数料 (16 進数) 。タイプ `0x2` のトランザクションにのみ存在します。タイプ `0x7e` には存在しません。</ResponseField>
+    <ResponseField name="input" type="string">ABI エンコードされたコールデータ。単純な ETH 送金の場合は `"0x"`。</ResponseField>
+    <ResponseField name="type" type="string">トランザクションタイプ：`"0x0"` Legacy、`"0x1"` Access List、`"0x2"` EIP-1559、`"0x7e"` Deposit (L1→L2) 。</ResponseField>
+    <ResponseField name="chainId" type="string">トランザクションが有効なチェーン ID。Base Mainnet では `"0x2105"`、Base Sepolia では `"0x14a34"`。タイプ `0x7e` には存在しません。</ResponseField>
+    <ResponseField name="accessList" type="array">トランザクションが事前に宣言したアドレスとストレージキーのリスト (EIP-2930) 。タイプ `0x1` および `0x2` のトランザクションに存在します。タイプ `0x7e` には存在しません。</ResponseField>
+    <ResponseField name="v" type="string">ECDSA リカバリー ID (16 進数) 。</ResponseField>
+    <ResponseField name="r" type="string">32 バイトの ECDSA 署名要素 r (16 進数) 。タイプ `0x7e` では常に `"0x0"`。</ResponseField>
+    <ResponseField name="s" type="string">32 バイトの ECDSA 署名要素 s (16 進数) 。タイプ `0x7e` では常に `"0x0"`。</ResponseField>
+    <ResponseField name="sourceHash" type="string">デポジットのソースを識別する値 (bytes32 の 16 進数) 。タイプ `0x7e` にのみ存在します。</ResponseField>
+    <ResponseField name="mint" type="string">このデポジットに伴って L2 上でミントされた ETH (16 進数) 。通常は `"0x0"`。タイプ `0x7e` にのみ存在します。</ResponseField>
+    <ResponseField name="depositReceiptVersion" type="string">デポジットレシート形式のバージョン (16 進数) 。タイプ `0x7e` にのみ存在します。</ResponseField>
+    <ResponseField name="yParity" type="string">署名のパリティ (16 進数) 。タイプ `0x7e` のデポジットでは常に `"0x0"`。</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<Note>
+  **Base におけるトランザクションタイプ：** Base は Ethereum 標準のタイプ (`0x0` legacy、`0x1` EIP-2930、`0x2` EIP-1559) に加えて、Base 独自のデポジットトランザクション (`0x7e`) をサポートしています。デポジットトランザクションは、シーケンサーによって各ブロックの先頭に挿入されます。`0x7e` トランザクションには `maxFeePerGas`、`accessList`、`chainId` などのフィールドが存在せず、代わりに `sourceHash`、`mint`、`depositReceiptVersion`、`yParity` が含まれます。
+</Note>
+
+## 例 {#example}
+
+<CodeGroup>
+  ```json Request
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_getTransactionByHash",
+    "params": ["0x03c8f106f18ad94190e763e21b584c5825b2f4c61f1274c0e8abe65b4476cd51"],
+    "id": 1
+  }
+  ```
+
+  ```json Response (type 0x7e deposit) lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "blockHash": "0x491bca01d4bc076d60833dbd973fe031a74e7ae31866bf70d077619e09edb6ff",
+      "blockNumber": "0x2c31b0b",
+      "depositReceiptVersion": "0x1",
+      "from": "0xdeaddeaddeaddeaddeaddeaddeaddeaddead0001",
+      "gas": "0xf4240",
+      "gasPrice": "0x0",
+      "hash": "0x03c8f106f18ad94190e763e21b584c5825b2f4c61f1274c0e8abe65b4476cd51",
+      "input": "0x3db6be2b...",
+      "mint": "0x0",
+      "nonce": "0x2c31b0e",
+      "r": "0x0",
+      "s": "0x0",
+      "sourceHash": "0xe40ffb1b9f98a24b21e90e3a3cfe49de1eed195618e943da4d029881d3b3e055",
+      "to": "0x4200000000000000000000000000000000000015",
+      "transactionIndex": "0x0",
+      "type": "0x7e",
+      "v": "0x0",
+      "value": "0x0",
+      "yParity": "0x0"
+    }
+  }
+  ```
+
+  ```json Not Found
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": null
+  }
+  ```
+</CodeGroup>

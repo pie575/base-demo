@@ -1,0 +1,39 @@
+---
+title: "SDK 与 API"
+description: "用于身份验证、本地开发以及直接访问 Base 链的 SDK、API 和命令行工具。"
+keywords: ["Base SDK", "Base API reference", "Base Verify API", "Base JSON-RPC", "Flashblocks API", "base-anvil"]
+---
+
+请根据应用的实际需求，选择合适的 SDK、API 或命令行工具。Base 提供身份验证 API、本地开发工具以及可直接访问链的 API。
+
+<CardGroup cols={2}>
+  <Card title="Base Chain API" icon="server" href="/zh/base-chain/api-reference/rpc-overview">
+    面向 Base 节点的 JSON-RPC、Flashblocks 流式传输和 Debug 追踪。
+  </Card>
+
+  <Card title="Base Verify API" icon="user-check" href="/zh/sdks/base-verify/overview">
+    证明已验证账户的所有权，并执行可抵御女巫攻击的资格策略。
+  </Card>
+
+  <Card title="base-anvil CLI" icon="terminal" href="/zh/sdks/base-anvil">
+    使用 Base 的 Foundry 工具链，在本地构建和测试 Base 原生合约。
+  </Card>
+</CardGroup>
+
+## 我该使用哪个接口？ {#which-surface-do-i-need}
+
+| 你想要…               | 使用                                                                                    |
+| ------------------ | ------------------------------------------------------------------------------------- |
+| 验证账户所有权或执行身份策略     | [Base Verify API](/zh/sdks/base-verify/overview)                                         |
+| 在本地构建和测试 Base 原生合约 | [base-anvil CLI](/zh/sdks/base-anvil)                                                    |
+| 读取余额、区块、日志或发送原始交易  | [Ethereum JSON-RPC](/zh/base-chain/api-reference/rpc-overview)                           |
+| 以流式方式获取亚秒级确认       | [Flashblocks API](/zh/base-chain/api-reference/flashblocks-api/flashblocks-api-overview) |
+| 追踪交易或区块            | [Debug API](/zh/base-chain/api-reference/debug-api/debug_traceTransaction)               |
+
+<Card title="在找 Base Account SDK 或 Base MCP？" icon="arrow-up-right-from-square" href="/zh/sdks/migrated-products">
+  这些产品及其文档已迁移至 Coinbase Developer Platform，并更名为 Coinbase Wallet SDK 和 Wallet MCP。
+</Card>
+
+<Card title="从用例入手构建" icon="rocket" href="/zh/build-on-base/overview">
+  如果你更想从目标出发 (例如集成 DeFi、资产代币化、发行稳定币或接受付款) ，请从 Build on Base 开始。
+</Card>

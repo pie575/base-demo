@@ -1,0 +1,21 @@
+---
+title: "Pruebas"
+sidebarTitle: "Descripción general"
+description: "Descripción general de los servicios offchain y los contratos onchain que permiten verificar desde Ethereum las propuestas de puntos de control de L2 en el sistema de pruebas Azul."
+---
+
+El sistema de pruebas es el conjunto de servicios offchain y contratos onchain que permiten verificar desde Ethereum las propuestas de puntos de control
+de L2. Una propuesta afirma un output root para un rango fijo de bloques de L2.
+Actores de prueba independientes recalculan esa afirmación, aportan material de prueba y disputan el juego si la
+afirmación no es válida.
+
+Esta sección describe los roles de los componentes que utiliza el sistema de pruebas Azul.
+
+* [Challenger](/es/specifications/base-protocol/proofs/challenger): contrasta los juegos en curso con el estado canónico de L2 y disputa
+  las afirmaciones no válidas.
+* [Proposer](/es/specifications/base-protocol/proofs/proposer): crea nuevas propuestas de puntos de control.
+* [Registrar](/es/specifications/base-protocol/proofs/registrar): mantiene el registro onchain de las identidades de firmantes TEE aceptadas.
+* [TEE Prover](/es/specifications/base-protocol/proofs/tee-prover): genera pruebas respaldadas por Nitro Enclave para la ruta habitual de propuestas.
+* [ZK Prover](/es/specifications/base-protocol/proofs/zk-prover): genera pruebas sin permisos para las rutas de propuesta y de disputa.
+* [Contratos](/es/specifications/base-protocol/proofs/proof-contracts): verifican el material de prueba, registran el estado del juego y liberan retiros y
+  fianzas según el resultado del juego.

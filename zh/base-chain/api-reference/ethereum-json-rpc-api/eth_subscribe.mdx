@@ -1,0 +1,146 @@
+---
+title: 'eth_subscribe'
+sidebarTitle: 'eth_subscribe'
+description: '创建实时 WebSocket 订阅，用于接收新区块、日志和待处理交易。'
+---
+
+通过 WebSocket 连接创建实时事件订阅。该方法返回一个订阅 ID，之后事件会以 `eth_subscription` 通知的形式主动推送，客户端无需轮询。
+
+<Note>
+  Base 公共端点 (`mainnet.base.org`、`sepolia.base.org`) **仅支持 HTTP**，不提供 WebSocket 连接。如需使用 WebSocket，请从 [Builder Stack](/zh/get-started/builder-stack) 中选择支持 WebSocket 的服务商。
+</Note>
+
+## 参数 {#parameters}
+
+<ParamField body="subscriptionType" type="string" required>
+  要订阅的事件类型。
+</ParamField>
+
+<ParamField body="filterOptions" type="object">
+  可选的过滤选项，仅适用于 `"logs"` 订阅类型。
+
+  <Expandable title="过滤选项（仅限 logs）">
+    <ParamField body="address" type="string | array">
+      用于过滤的单个合约地址或地址数组。可选。
+    </ParamField>
+
+    <ParamField body="topics" type="array">
+      topic 过滤器数组，格式与 `eth_getLogs` 相同。可选。
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## 订阅类型 {#subscription-types}
+
+| 类型                       | 描述              | 通知负载                                                                                                                                      |
+| ------------------------ | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `newHeads`               | 每有新区块追加到链上时触发   | 完整的区块头对象，结构与 `hydrated: false` 时 [`eth_getBlockByNumber`](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_getBlockByNumber) 返回的结果完全相同 |
+| `logs`                   | 每有符合过滤条件的新日志时触发 | 日志对象 (见下文)                                                                                                                                |
+| `newPendingTransactions` | 每有新交易哈希加入内存池时触发 | 交易哈希字符串                                                                                                                                   |
+
+## 返回值 {#returns}
+
+<ResponseField name="result" type="string">
+  十六进制编码的订阅 ID。该订阅的所有事件通知都会在 `params.subscription` 中携带此 ID。
+</ResponseField>
+
+事件通知以 JSON-RPC 消息的形式主动推送，无需客户端发起请求：
+
+```json Event Notification lines wrap expandable
+{
+  "jsonrpc": "2.0",
+  "method": "eth_subscription",
+  "params": {
+    "subscription": "0x1887ec8b9589ccad00000000000532da",
+    "result": { ... }
+  }
+}
+```
+
+## 示例 {#example}
+
+<CodeGroup>
+  ```json Subscribe to newHeads
+  {"jsonrpc": "2.0", "method": "eth_subscribe", "params": ["newHeads"], "id": 1}
+  ```
+
+  ```json Subscribe to logs (with filter) lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "eth_subscribe",
+    "params": [
+      "logs",
+      {
+        "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "topics": ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"]
+      }
+    ]
+  }
+  ```
+
+  ```json Subscription ID Response
+  {"jsonrpc": "2.0", "id": 1, "result": "0x1887ec8b9589ccad00000000000532da"}
+  ```
+
+  ```json newHeads Event lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_subscription",
+    "params": {
+      "subscription": "0x1887ec8b9589ccad00000000000532da",
+      "result": {
+        "baseFeePerGas": "0x4c4b40",
+        "blobGasUsed": "0x5384cc",
+        "difficulty": "0x0",
+        "excessBlobGas": "0x0",
+        "extraData": "0x01000000640000000500000000004c4b40",
+        "gasLimit": "0x17d78400",
+        "gasUsed": "0x2155bc7",
+        "hash": "0x491bca01d4bc076d60833dbd973fe031a74e7ae31866bf70d077619e09edb6ff",
+        "logsBloom": "0x00...00",
+        "miner": "0x4200000000000000000000000000000000000011",
+        "mixHash": "0x47aecef0e1afa26b8e1f428e9a8696cf53d85c62587d8c2cea079c715cd29626",
+        "nonce": "0x0000000000000000",
+        "number": "0x2c31b0b",
+        "parentBeaconBlockRoot": "0x15b9e7c8ac4cbe92dafc849ed30a23e91624bbe5cbe199c0ccea3f7de7fc6d49",
+        "parentHash": "0x89f4c9e23a2f706f0afa9ca8f770c4b7dcbcb73ba7e9b1c29c4a8c1b90c31d24",
+        "receiptsRoot": "0x5a428d77344334537d7adaf85a45eb6d7977bc807a68c669f36cb043600da6d2",
+        "requestsHash": "0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "sha3Uncles": "0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        "size": "0x1bb3b",
+        "stateRoot": "0x1b1525af0cdd504147b89f2a7ce1838ccb70c5439c45ce55522c2e2529801e87",
+        "timestamp": "0x6a1092f9",
+        "transactionsRoot": "0x6b9c9fcbdf98a8f4d38a3c16d099e9f0c7b7b474c2f5e044af7c91949c04a234",
+        "withdrawals": [],
+        "withdrawalsRoot": "0x57f4414a70a4af5e1a97b5fd8b8c6c870c00e8d9dbc0fde0059ce46e2cd28e5b"
+      }
+    }
+  }
+  ```
+
+  ```json logs Event lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_subscription",
+    "params": {
+      "subscription": "0x2a7bc8d4e3f5a6b1c2d3e4f5a6b7c8d9",
+      "result": {
+        "address": "0xef5997c2cf2f6c138196f8a6203afc335206b3c1",
+        "blockHash": "0xc104d3b3a4008d854c21f25ff41917e2bff0f0d28eacd348cc664b891d9db00c",
+        "blockNumber": "0x2c70f90",
+        "blockTimestamp": "0x6a187c03",
+        "data": "0x0000000000000000000000000000000000000000000000078e0cf33a1d658000",
+        "logIndex": "0x0",
+        "removed": false,
+        "topics": [
+          "0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925",
+          "..."
+        ],
+        "transactionHash": "0x9efe32df11e30a345c5908ff4db248895c8e4b0d83c4d368fe14042ebbd3a130",
+        "transactionIndex": "0x2"
+      }
+    }
+  }
+  ```
+</CodeGroup>

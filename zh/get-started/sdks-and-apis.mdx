@@ -1,0 +1,47 @@
+---
+title: "SDK 与 API"
+keywords: ["Base SDKs", "Base API reference", "Base JSON-RPC", "Flashblocks API", "wallet SDK migration", "Wallet MCP"]
+description: "根据您要构建的内容，选择合适的 Base SDK、API 或 CLI。"
+---
+
+如果您已经确定应用需要使用哪种接口，可以直接查阅这些参考文档。您可以先阅读 SDK 与 API 概览，对比 Base 维护的各类接口；也可以直接跳转到本地开发和链 RPC 方法部分。
+
+## 选择集成方式 {#choose-an-integration-surface}
+
+<CardGroup cols={2}>
+  <Card title="SDK 与 API 概览" icon="book" href="/zh/sdks/overview">
+    对比 Base Chain API、身份验证和命令行工具。
+  </Card>
+
+  <Card title="已迁移的文档" icon="arrow-up-right-from-square" href="/zh/sdks/migrated-products">
+    前往 Coinbase Developer Platform 查阅钱包 SDK 和 Wallet MCP 文档。
+  </Card>
+
+  <Card title="base-anvil CLI" icon="terminal" href="/zh/sdks/base-anvil">
+    使用 Base 的 Foundry 工具链在本地构建和测试 Base 原生合约。
+  </Card>
+</CardGroup>
+
+## 调用链上接口 {#call-the-chain}
+
+<CardGroup cols={2}>
+  <Card title="Base RPC 概览" icon="network-wired" href="/zh/base-chain/api-reference/rpc-overview">
+    按需选择标准区块数据或 200 ms 的 Flashblock 预确认。
+  </Card>
+
+  <Card title="Ethereum JSON-RPC" icon="code" href="/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_blockNumber">
+    读取链状态、估算 gas、发送交易、查询日志以及订阅事件。
+  </Card>
+
+  <Card title="Flashblocks API" icon="bolt" href="/zh/base-chain/api-reference/flashblocks-api/flashblocks-api-overview">
+    使用支持预确认的方法和数据流，为应用提供亚秒级反馈。
+  </Card>
+
+  <Card title="Debug API" icon="bug" href="/zh/base-chain/api-reference/debug-api/debug_traceTransaction">
+    追踪交易、重放区块，助你调试合约执行。
+  </Card>
+
+  <Card title="Builder Stack" icon="grid-2" href="/zh/get-started/builder-stack">
+    查找为 Base 构建者提供支持的 RPC、数据、安全及其他服务提供商。
+  </Card>
+</CardGroup>

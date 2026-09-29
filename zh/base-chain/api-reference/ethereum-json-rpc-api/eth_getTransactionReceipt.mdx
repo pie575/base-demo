@@ -1,0 +1,110 @@
+---
+title: 'eth_getTransactionReceipt'
+sidebarTitle: 'eth_getTransactionReceipt'
+description: '返回已打包交易的收据。交易被打包进区块后才能获取收据。'
+---
+
+根据交易哈希返回交易收据。若交易仍处于待处理状态或尚未被打包，则返回 `null`。
+
+<Note>
+  只有已打包的交易才有收据。如需在交易被封存之前对其进行监控，可使用 [`base_transactionStatus`](/zh/base-chain/api-reference/flashblocks-api/base_transactionStatus) 确认该交易是否已进入内存池，或订阅 [`newFlashblockTransactions`](/zh/base-chain/api-reference/flashblocks-api/newFlashblockTransactions)，以便在其于 Flashblock 中获得预确认时及时检测到。
+</Note>
+
+## 参数 {#parameters}
+
+<ParamField body="transactionHash" type="string" required>
+  32 字节的交易哈希。
+</ParamField>
+
+## 返回值 {#returns}
+
+<ResponseField name="result" type="object | null">
+  交易收据对象；如果交易尚未被打包，则为 `null`。
+
+  <Expandable title="收据字段">
+    <ResponseField name="transactionHash" type="string">32 字节的交易哈希。</ResponseField>
+    <ResponseField name="transactionIndex" type="string">交易在区块中的索引 (十六进制) 。</ResponseField>
+    <ResponseField name="blockHash" type="string">包含此交易的区块的 32 字节哈希。</ResponseField>
+    <ResponseField name="blockNumber" type="string">区块号 (十六进制) 。</ResponseField>
+    <ResponseField name="from" type="string">20 字节的发送方地址。</ResponseField>
+    <ResponseField name="to" type="string">20 字节的接收方地址。合约部署交易为 `null`。</ResponseField>
+    <ResponseField name="cumulativeGasUsed" type="string">区块中截至此交易 (含) 的累计 gas 用量 (十六进制) 。</ResponseField>
+    <ResponseField name="effectiveGasPrice" type="string">此交易每单位 gas 实际支付的价格 (十六进制) 。</ResponseField>
+    <ResponseField name="gasUsed" type="string">此交易自身消耗的 gas (十六进制) 。</ResponseField>
+    <ResponseField name="contractAddress" type="string | null">所创建合约的地址；如果不是部署交易，则为 `null`。</ResponseField>
+    <ResponseField name="logs" type="array">此交易触发的日志对象数组。</ResponseField>
+    <ResponseField name="logsBloom" type="string">此收据中日志的 256 字节布隆过滤器。</ResponseField>
+    <ResponseField name="type" type="string">交易类型：`"0x0"` Legacy、`"0x1"` Access List、`"0x2"` EIP-1559、`"0x7e"` Deposit (L1→L2) 。</ResponseField>
+    <ResponseField name="status" type="string">`"0x1"` 表示成功，`"0x0"` 表示失败 (revert) 。</ResponseField>
+    <ResponseField name="blobGasUsed" type="string">此交易消耗的 blob gas (EIP-4844) 。非 blob 交易为 `null`。</ResponseField>
+    <ResponseField name="l1Fee" type="string">此交易支付的 L1 数据费总额 (十六进制) 。Base L2 字段。</ResponseField>
+    <ResponseField name="l1GasUsed" type="string">此交易的 L1 数据部分所消耗的 L1 gas 数量 (十六进制) 。Base L2 字段。</ResponseField>
+    <ResponseField name="l1GasPrice" type="string">交易被打包时的 L1 gas 价格 (十六进制) 。Base L2 字段。</ResponseField>
+    <ResponseField name="l1BlobBaseFee" type="string">交易被打包时 L1 上的 blob 基础费 (十六进制) 。Base L2 字段。</ResponseField>
+    <ResponseField name="l1BlobBaseFeeScalar" type="string">计算 L1 费用时作用于 blob 基础费的标量 (十六进制) 。Base L2 字段。</ResponseField>
+    <ResponseField name="l1BaseFeeScalar" type="string">计算 L1 费用时作用于 L1 基础费的标量 (十六进制) 。Base L2 字段。</ResponseField>
+    <ResponseField name="daFootprintGasScalar" type="string">Base 特有的 DA 占用标量 (十六进制) 。</ResponseField>
+    <ResponseField name="depositNonce" type="string">存款交易使用的 nonce (十六进制) 。仅在类型为 `0x7e` 的交易中出现。</ResponseField>
+    <ResponseField name="depositReceiptVersion" type="string">存款收据版本 (十六进制) 。仅在类型为 `0x7e` 的交易中出现。</ResponseField>
+  </Expandable>
+</ResponseField>
+
+## 错误码 {#error-codes}
+
+| 代码       | 消息                                  | 说明                       |
+| -------- | ----------------------------------- | ------------------------ |
+| `-32000` | transaction indexing is in progress | 节点仍在为交易建立索引，请待节点完成同步后重试。 |
+
+## 示例 {#example}
+
+<CodeGroup>
+  ```json Request
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_getTransactionReceipt",
+    "params": ["0xb903239f8543d04b5dc1ba6579132b143087c68db1b2168786408fcbce568238"],
+    "id": 1
+  }
+  ```
+
+  ```json Response (type 0x7e deposit) lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "blobGasUsed": null,
+      "blockHash": "0x491bca01d4bc076d60833dbd973fe031a74e7ae31866bf70d077619e09edb6ff",
+      "blockNumber": "0x2c31b0b",
+      "contractAddress": null,
+      "cumulativeGasUsed": "0xb48a",
+      "daFootprintGasScalar": "0x94",
+      "depositNonce": "0x2c31b0e",
+      "depositReceiptVersion": "0x1",
+      "effectiveGasPrice": "0x0",
+      "from": "0xdeaddeaddeaddeaddeaddeaddeaddeaddead0001",
+      "gasUsed": "0xb48a",
+      "l1BaseFeeScalar": "0x8dd",
+      "l1BlobBaseFee": "0x582765",
+      "l1BlobBaseFeeScalar": "0x101c12",
+      "l1Fee": "0x0",
+      "l1GasPrice": "0x6bdbf6f",
+      "l1GasUsed": "0x71d",
+      "logs": [],
+      "logsBloom": "0x000...000",
+      "status": "0x1",
+      "to": "0x4200000000000000000000000000000000000015",
+      "transactionHash": "0x03c8f106f18ad94190e763e21b584c5825b2f4c61f1274c0e8abe65b4476cd51",
+      "transactionIndex": "0x0",
+      "type": "0x7e"
+    }
+  }
+  ```
+
+  ```json Not Found
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": null
+  }
+  ```
+</CodeGroup>

@@ -1,0 +1,135 @@
+---
+title: "実行エンジン"
+description: "Azul ハードフォークにおける実行エンジンの変更点について説明します。EIP-7825 によるトランザクションガスリミットの上限設定や、secp256r1 プリコンパイルのコスト更新などが含まれます。"
+---
+
+## EVM の変更点 {#evm-changes}
+
+### トランザクションのガスリミット上限 {#transaction-gas-limit-cap}
+
+[EIP-7825](https://eips.ethereum.org/EIPS/eip-7825) は、トランザクションごとのガスリミットに
+16,777,216 (2^24) というプロトコルレベルの上限を導入します。この上限を超えるトランザクションは、検証時に拒否されます。
+
+Base は、Ethereum との等価性を最大限に確保するため、L1 と同じ上限を採用します。
+
+<Note>
+  デポジットトランザクションは、トランザクションのガスリミット上限の適用対象外となります。デポジットトランザクションには、L1 ブロックに含められるガスの最大量である [20,000,000 ガス][gas-market] という制限がすでに課されているためです。
+</Note>
+
+[gas-market]: /specifications/base-protocol/bridging/deposits#default-values
+
+### MODEXP の上限設定 {#upper-bound-modexp}
+
+[EIP-7823](https://eips.ethereum.org/EIPS/eip-7823) により、MODEXP プリコンパイルの入力は各フィールド最大
+1024 バイトに制限されます。これを超える入力を含む呼び出しは拒否されます。
+
+### MODEXP のガスコスト引き上げ {#modexp-gas-cost-increase}
+
+[EIP-7883](https://eips.ethereum.org/EIPS/eip-7883) は、MODEXP プリコンパイルの最低ガスコストを
+200 から 500 に引き上げ、通常のコスト計算式による値を 3 倍にします。
+
+### CLZ オペコード {#clz-opcode}
+
+[EIP-7939](https://eips.ethereum.org/EIPS/eip-7939) では、256 ビットワードの先頭に連続するゼロビットの数を数える `CLZ` オペコードが新たに追加されます。
+入力がゼロの場合は 256 を返します。
+
+### secp256r1 プリコンパイルのガスコスト {#secp256r1-precompile-gas-cost}
+
+[EIP-7951](https://eips.ethereum.org/EIPS/eip-7951) では、アドレス `0x100` に secp256r1 プリコンパイルを配置し、
+そのガスコストを 3,450 と規定しています。
+
+Base には同じアドレスに `p256Verify` プリコンパイルがすでに存在しており (Fjord で
+[RIP-7212](https://github.com/ethereum/RIPs/blob/master/RIPS/rip-7212.md) により追加) 、そのガスコストは 3,450 です。
+Azul 以降は、EIP-7951 で規定された L1 のガスコストに合わせてこれを 6,900 に引き上げ、
+L1 のプリコンパイル価格設定との厳密な等価性を維持します。
+
+## ネットワーキングの変更点 {#networking-changes}
+
+### eth/69 {#eth69}
+
+[EIP-7642](https://eips.ethereum.org/EIPS/eip-7642) は、Ethereum のワイヤプロトコルをバージョン 69 に更新するものです。
+`Status` メッセージからレガシーフィールドを削除し、ハンドシェイクを簡素化します。
+
+### ディスカバリープロトコルのプロトコル ID が `basev0` に変更 {#discovery-protocol-now-uses-basev0-protocol-id}
+
+実行レイヤーのディスカバリープロトコルで、プロトコル ID として `basev0` が使用されるようになりました。これにより、Base ノード同士がより素早く互いを見つけられるようになります。特に Sepolia のようにノード数が少ないネットワークで効果を発揮します。
+
+### アカウント残高とレシートの削除 {#remove-account-balances-receipts}
+
+Flashblocks WebSocket で送信される `FlashblocksMetadata` ペイロードは、Azul で簡素化されます。
+`new_account_balances` フィールドと `receipts` フィールドは削除されます。`access_list` フィールドは引き続き存在しますが、
+Azul では値が設定されません。
+
+**変更前:**
+
+```json FlashblocksMetadata Before Azul lines wrap expandable
+{
+  "block_number": 43403718,
+  "new_account_balances": {
+    "0x4200000000000000000000000000000000000006": "0x35277a9715c6df1c99de"
+  },
+  "receipts": {
+    "0x1ef9be45b3f7d44de9d98767ddb7c0e330b21777b67a3c79d469be9ffab091dd": {
+      "cumulativeGasUsed": "0x177d7bd",
+      "logs": [],
+      "status": "0x1",
+      "type": "0x2"
+    }
+  },
+  "access_list": null
+}
+```
+
+**変更後:**
+
+```json FlashblocksMetadata After Azul
+{
+  "block_number": 43403718,
+  "access_list": null
+}
+```
+
+## RPC の変更点 {#rpc-changes}
+
+### Engine API の使用 {#engine-api-usage}
+
+Azul の有効化時点およびそれ以降、ブロックの生成とインポートには以下の Engine API メソッドを使用します。
+
+* `engine_forkchoiceUpdatedV3`：ブロック構築の開始とフォークチョイスの同期に使用します。
+* `engine_getPayloadV5`：構築済みペイロードの取得に使用します。
+* `engine_newPayloadV4`：実行エンジンへのペイロードのインポートに使用します。
+
+`engine_getPayloadV5` は V5 エンベロープを返しますが、そこに含まれる実行ペイロードは引き続き V4 形式です。
+そのため、ペイロードの挿入には引き続き `engine_newPayloadV4` を使用します (Base Azul クライアントが `engine_newPayloadV5`
+を使用する経路はありません) 。
+
+このフローにおける Azul の制約は次のとおりです。
+
+* blob 関連の Engine API 入力は空の値に制限されます。
+  * `expectedBlobVersionedHashes` は空の配列でなければなりません (MUST) 。
+  * `engine_getPayloadV5` のレスポンスに含まれる `blobsBundle` は空であることが想定されます。
+* `engine_newPayloadV4` の `executionRequests` は空の配列でなければなりません (MUST) 。
+
+### eth_config RPC メソッド {#eth_config-rpc-method}
+
+[EIP-7910](https://eips.ethereum.org/EIPS/eip-7910) では `eth_config` JSON-RPC メソッドが導入されます。
+このメソッドは、フォークの有効化タイムスタンプなどのチェーン設定パラメータを返します。
+
+Base Azul は、標準の EIP-7910 レスポンススキーマに従って `eth_config` を公開します。
+
+Base 固有の動作は次のとおりです。
+
+* `blobSchedule` は、`current`、`next`、`last` のいずれについても常にゼロ値で返されます。
+  Base はネイティブの blob トランザクションをサポートしていないため、Ethereum の blob
+  スケジュールの既定値を擬似的に通知してはなりません (MUST NOT) 。
+* `precompiles` には、そのフォークで有効な EVM プリコンパイルのセットが反映されます。これには標準の
+  Ethereum プリコンパイルに加え、
+  [プリコンパイル仕様](/ja/specifications/base-protocol/execution/precompiles)に記載されている、Base で有効な追加のプリコンパイルが含まれます。
+* `systemContracts` に含まれるのは、EIP-7910 で表現可能なコントラクトのみです。Base では次のとおりです。
+  * `BEACON_ROOTS_ADDRESS` は、Ecotone の有効化以降に含まれます。
+  * `HISTORY_STORAGE_ADDRESS` は、Isthmus の有効化以降に含まれます。
+  * `DEPOSIT_CONTRACT_ADDRESS`、`CONSOLIDATION_REQUEST_PREDEPLOY_ADDRESS`、
+    `WITHDRAWAL_REQUEST_PREDEPLOY_ADDRESS` は含まれません。
+
+[プリデプロイ仕様](/ja/specifications/base-protocol/execution/predeploys)に記載されている Base 固有のプリデプロイやその他の Base システムコントラクトは、
+EIP-7910 スキーマに含まれるものを除き、`eth_config` にはシリアライズされません。

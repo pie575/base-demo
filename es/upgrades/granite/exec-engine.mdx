@@ -1,0 +1,12 @@
+---
+title: "Motor de ejecución de L2"
+description: "Cambios en el motor de ejecución introducidos por la actualización Granite, que limitan el tamaño de entrada del precompilado bn256Pairing para evitar un consumo de gas ilimitado."
+---
+
+## Cambios en la EVM {#evm-changes}
+
+### Restricción de entrada del precompilado `bn256Pairing` {#bn256pairing-precompile-input-restriction}
+
+La ejecución del precompilado `bn256Pairing` aplica una validación adicional a su entrada.
+El precompilado revierte si su entrada supera los `112687` bytes.
+Este tamaño de entrada consume aproximadamente 20 M de gas con la tabla de costos de gas más reciente de `bn256Pairing` en L2.

@@ -1,0 +1,43 @@
+---
+title: "Flashblocksからの移行"
+description: "Flashblocksとのインテグレーションを200msブロックに移行します。"
+---
+
+<Warning>
+  200msのネイティブブロックは、開発者向けの実験的なテスト用として[Vibenet](/ja/build-on-base/test-on-vibenet)で稼働しています。このデプロイは今後変更される可能性があるため、本番環境に関する判断の根拠にはしないでください。
+
+  DenimはBase SepoliaおよびBase Mainnetではまだ有効になっていません。有効化の日時と必要なクライアントバージョンは未定です。
+</Warning>
+
+## 概要 {#summary}
+
+アプリケーションで Flashblocks を利用している場合は、このガイドを参照してください。Denim では Flashblocks が 200ms のカノニカルブロックに置き換えられるため、有効化後は Flashblocks のサブスクリプションと pending 状態を利用できなくなります。
+
+## 推奨される対応 {#recommended-action}
+
+Denim の前に、`"pending"` ブロックタグを使用しているすべての Flashblocks サブスクリプションと RPC リクエストを洗い出してください。そのうえで、以下の表に従って各インテグレーションを移行してください。
+
+## Denim に向けたインテグレーションの更新 {#update-integrations-for-denim}
+
+| 確認対象のインテグレーション                                    | Denim での対応                                                                  |
+| ------------------------------------------------- | --------------------------------------------------------------------------- |
+| `eth_subscribe("newFlashblocks")`                 | `eth_subscribe("newHeads")` を使用します。                                         |
+| `eth_subscribe("pendingLogs")`                    | `eth_subscribe("logs")` を使用します。                                             |
+| `eth_subscribe("newFlashblockTransactions")`      | `eth_subscribe("newHeads")` を使用し、カノニカルブロックごとにトランザクションを取得します。                |
+| `eth_getBlockByNumber("pending", ...)`            | 通常の RPC 呼び出しで最新のカノニカルブロックを読み取ります。                                           |
+| `eth_getBalance(..., "pending")`                  | 通常の RPC 呼び出しで最新のカノニカル状態を読み取ります。                                             |
+| `eth_getTransactionCount(..., "pending", ...)`    | 通常の RPC 呼び出しで最新のカノニカル状態を読み取ります。                                             |
+| `eth_call(..., "pending")`                        | 通常の RPC 呼び出しで最新のカノニカル状態を読み取ります。                                             |
+| `eth_estimateGas(..., "pending")`                 | 通常の RPC 呼び出しで最新のカノニカル状態を読み取ります。                                             |
+| `eth_simulateV1(..., "pending")`                  | 通常の RPC 呼び出しで最新のカノニカル状態を読み取ります。                                             |
+| 範囲の終端に `"pending"` を指定した `eth_getLogs`            | 通常の RPC 呼び出しでカノニカルブロックのログをクエリします。                                           |
+| `eth_getBlockTransactionCountByNumber("pending")` | 通常の RPC 呼び出しで最新のカノニカルブロックを読み取ります。                                           |
+| 過去のブロックハッシュやビーコンルートを読み取るブリッジまたは証明フロー              | 履歴に関する前提を見直してください。保持される値の数は変わりませんが、ブロック間隔が 200ms になるため、その履歴がカバーする期間は短くなります。 |
+
+<Warning>
+  `"pending"` ブロックタグと Flashblocks のプレコンファメーション状態には、Denim 以降、直接の代替手段はありません。上記の代替手段が返すのは 200ms ブロックのカノニカルデータであり、プレコンファーム済みのデータや pending 状態のデータではありません。
+</Warning>
+
+## Vibenetでテストする {#test-on-vibenet}
+
+移行後のインテグレーションを[Vibenet](/ja/build-on-base/test-on-vibenet)でテストしてください。プロトコルの設計とRPCの動作については、[200msネイティブブロック](/ja/upgrades/denim/200ms-blocks)を参照してください。

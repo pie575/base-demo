@@ -1,0 +1,59 @@
+---
+title: "シンプルな支払いを行う"
+keywords: ["Base で USDC を送金", "USDC 送金", "Base でのシンプルな支払い", "ERC-20 送金"]
+description: "Base 上で、ウォレット間で USDC を直接送金します。"
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+標準的な ERC-20 送金を使って、USDC をあるウォレットから別のウォレットへ直接送金します。送信者がトランザクションを送信してネットワーク手数料を支払い、トランザクションが確定すると、受信者がその USDC を管理できるようになります。
+
+## デモ {#demo}
+
+<PaymentsDemo flow="simple" />
+
+<Tip>
+  上記のデモはモックです。Vibenet 上のオンチェーンデモを確認したい場合は、[Base チェーンのデモ](https://chain.base.org/demos)をご覧ください。
+</Tip>
+
+## USDC を送金する {#send-usdc}
+
+受取人のアドレスと金額を指定し、呼び出しをシミュレートしてから、送金者のウォレットでトランザクションを送信します。この例では、Base Sepolia 上の USDC を使用します。
+
+{/* sample: simple-usdc-transfer-ts */}
+
+```typescript TypeScript lines wrap expandable highlight={6,10-11}
+export async function makeSimplePayment(recipient: Address, amount: string) {
+  const simulation = await publicClient.simulateContract({
+    account,
+    address: USDC,
+    abi: usdcAbi,
+    functionName: "transfer",
+    args: [recipient, parseUnits(amount, 6)],
+  });
+  const hash = await walletClient.writeContract(simulation.request);
+  const receipt = await publicClient.waitForTransactionReceipt({ hash, confirmations: 2 });
+  if (receipt.status !== "success") throw new Error("USDC transfer reverted");
+  return hash;
+}
+```
+
+<Check>
+  支払いを完了とみなす前に、トランザクションレシートのステータスが成功であること、および USDC の `Transfer` イベントの送信者、受信者、金額が想定どおりであることを確認してください。
+</Check>
+
+<Warning>
+  署名する前に、ネットワークと受信者アドレスを必ず確認してください。USDC の直接送金には、エスクロー、承認、プロトコルによる返金の仕組みはいずれもありません。
+</Warning>
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="支払いをリクエストする" icon="money-bill-transfer" href="/ja/build-on-base/accept-payments/request-a-payment">
+    支払い条件、決済の検証、返金の会計処理を追加します。
+  </Card>
+
+  <Card title="支払いを検証する" icon="shield-check" href="/ja/build-on-base/accept-payments/verify-a-payment">
+    注文を履行する前に、Commerce Payments Protocol による決済を検証します。
+  </Card>
+</CardGroup>

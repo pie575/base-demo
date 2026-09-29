@@ -1,0 +1,338 @@
+---
+title: "導出"
+description: "Ecotoneアップグレードにおける導出の変更点。取得ステージを拡張し、EIP-4844のblobを追加のデータ可用性ソースとしてサポートします。"
+---
+
+## Ecotone: blob の取得 {#ecotone-blob-retrieval}
+
+Ecotone アップグレードにより、取得ステージは追加の DA ソースとして
+[EIP-4844] blob をサポートするよう拡張されます。Ecotone アップグレード以降は、バッチャートランザクションの反復処理を変更し、
+トランザクションタイプが `0x03` (`BLOB_TX_TYPE`) のトランザクションを別扱いにします。バッチャー
+トランザクションが blob トランザクションである場合、calldata が存在していてもそれを無視しなければなりません (MUST) 。代わりに次の処理を行います。
+
+* `blob_versioned_hashes` 内の各 blob ハッシュについて、一致する blob を取得します。blob は
+  さまざまなソースのいずれからでも取得できます。推奨されるのは、ローカルのビーコンノードから
+  `/eth/v1/beacon/blob_sidecars/` エンドポイントを介し、`indices` フィルターで無関係な blob を除外して取得する方法です。
+  取得した各 blob について、次の処理を行います。
+  * blob は、そのバージョン付きハッシュと照合して暗号学的に検証されるべきです (SHOULD。ソースが信頼できない場合は MUST) 。
+  * blob が[有効なエンコーディング](#blob-encoding)である場合は、連続したバイト列にデコードし、
+    次のフェーズに渡します。そうでない場合、その blob は無視されます。
+
+なお、バッチは常にブロック内での出現順に処理されるという不変条件を維持するため、blob タイプのバッチャートランザクションは、
+他のバッチャートランザクションと同じループ内で処理しなければなりません。
+blob トランザクション内の calldata を無視するのは、将来バッチのメタデータやその他の用途に使用できるようにするためです。
+
+## Blob のエンコーディング {#blob-encoding}
+
+[EIP-4844] トランザクション内の各 blob は、実際には `FIELD_ELEMENTS_PER_BLOB = 4096` 個のフィールド要素で構成されています。
+
+各フィールド要素は、
+`BLS_MODULUS = 52435875175126190479447740508185965837690552500527637822603658699938581184513` を法とする素体上の数です。
+この数では `uint256` の全範囲を表現できません：`math.log2(BLS_MODULUS) = 254.8570894...`
+
+この多項式のエンコーディングについては、[L1 consensus-specs](https://github.com/ethereum/consensus-specs/blob/master/specs/deneb/polynomial-commitments.md)
+に記載されています。
+フィールド要素はビッグエンディアンの整数としてエンコードされます (`KZG_ENDIANNESS = big`) 。
+
+計算オーバーヘッドを抑えるため、ロールアップデータにはフィールド要素あたり `254` ビットのみを使用します。
+
+データを効率よくエンコードするため、`254` ビット (`31.75` バイト相当) を利用します。
+`4` 個の要素を組み合わせることで、実質的に `127` バイトを使用します。
+
+アプリケーション層のロールアップデータは、`127` バイトずつ blob 内の隣接する 4 つのフィールド要素にエンコードされます：
+
+```python Blob Encoding Pseudocode lines wrap expandable
+# read(N): アプリケーション層のロールアップデータから次の N バイトを読み取る。次回の読み取りは、前回の読み取りが終わった位置から始まる。
+# write(V): V（1 バイト以上）を生の blob の末尾に追加する。
+bytes tailA = read(31)
+byte x = read(1)
+byte A = x & 0b0011_1111
+write(A)
+write(tailA)
+
+bytes tailB = read(31)
+byte y = read(1)
+byte B = (y & 0b0000_1111) | (x & 0b1100_0000) >> 2)
+write(B)
+write(tailB)
+
+bytes tailC = read(31)
+byte z = read(1)
+byte C = z & 0b0011_1111
+write(C)
+write(tailC)
+
+bytes tailD = read(31)
+byte D = ((z & 0b1100_0000) >> 2) | ((y & 0b1111_0000) >> 4)
+write(D)
+write(tailD)
+```
+
+書き込まれる各フィールド要素は、次のように構成されます。
+
+* 先頭には、フィールド要素を有効な範囲内に収めるため、事前に用意した6ビット値を左パディングしたバイト値のいずれかが置かれます。
+* 続いて、フィールド要素の下位31バイトを埋める31バイトのアプリケーション層データが配置されます。
+
+書き込まれる出力は次のようになります。
+
+```text Blob Element Layout
+<----- element 0 -----><----- element 1 -----><----- element 2 -----><----- element 3 ----->
+| byte A |  tailA...  || byte B |  tailB...  || byte C |  tailC...  || byte D |  tailD...  |
+```
+
+上記を1024回繰り返して `4096` 個すべての要素を埋め、
+合計 `(4 * 31 + 3) * 1024 = 130048` バイトのデータとなります。
+
+blob をデコードする際は、エンコード/デコードを全単射にするため、
+各フィールド要素の最上位2ビットは0でなければなりません。
+
+ロールアップデータの先頭バイト (最初のフィールド要素の2バイト目) は、バージョンバイトとして使用されます。
+
+バージョン `0` では、続く3バイトでロールアップデータの長さをビッグエンディアンの `uint24` としてエンコードします。
+エンコード/デコードを全単射に保つため、長さで示された範囲より後ろのデータはすべて0でなければなりません。
+長さが `130048 - 4` より大きい場合、その blob は無効です。
+
+エンコードに一箇所でも無効な部分がある場合、その blob 全体を無視しなければなりません。
+
+[EIP-4844]: https://eips.ethereum.org/EIPS/eip-4844
+
+## ネットワークアップグレード自動化トランザクション {#network-upgrade-automation-transactions}
+
+Ecotone ハードフォークの有効化ブロックには、以下のトランザクションがこの順序で含まれます。
+
+* L1 Attributes トランザクション (Ecotone 以前の `setL1BlockValues` を使用) 
+* L1 からのユーザーデポジット
+* ネットワークアップグレードトランザクション
+  * L1Block のデプロイ
+  * GasPriceOracle のデプロイ
+  * L1Block Proxy の ERC-1967 実装スロットの更新
+  * GasPriceOracle Proxy の ERC-1967 実装スロットの更新
+  * GasPriceOracle Enable Ecotone
+  * ビーコンブロックルートコントラクトのデプロイ (EIP-4788) 
+
+ガス計算に関するシステムの動作を変更または中断しないよう、このブロックでは `noTxPool: true` を設定し、シーケンスされた
+トランザクションを一切含めません。
+
+### L1Block のデプロイ {#l1block-deployment}
+
+`L1Block` コントラクトは、Ecotone の新しい L1 データ手数料パラメータと L1 blob base-fee を処理できるようにアップグレードされます。
+
+以下の属性を持つデポジットトランザクションが導出されます:
+
+* `from`: `0x4210000000000000000000000000000000000000`
+* `to`: `null`
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `375,000`
+* `data`: `0x60806040523480156100105...`
+* `sourceHash`: `0x877a6077205782ea15a6dc8699fa5ebcec5e0f4389f09cb8eda09488231346f8` (
+  &quot;Upgrade-deposited&quot; タイプで、&#96;intent = &quot;Ecotone: L1 Block Deployment&quot; を指定して計算) 
+
+これにより、Ecotone の L1Block コントラクトが `0x07dbe8500fc591d1852B76feE44d5a05e13097Ff` にデプロイされます。これは次の方法で検証できます:
+
+```bash Terminal
+cast compute-address --nonce=0 0x4210000000000000000000000000000000000000
+Computed Address: 0x07dbe8500fc591d1852B76feE44d5a05e13097Ff
+```
+
+`sourceHash` を検証します：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Ecotone: L1 Block Deployment"))
+# 0x877a6077205782ea15a6dc8699fa5ebcec5e0f4389f09cb8eda09488231346f8
+```
+
+`data` を検証します：
+
+```bash Terminal
+git checkout 5996d0bc1a4721f2169ba4366a014532f31ea932
+pnpm clean && pnpm install && pnpm build
+jq -r ".bytecode.object" packages/contracts-bedrock/forge-artifacts/L1Block.sol/L1Block.json
+```
+
+このトランザクションは、次のコードハッシュを持つコントラクトをデプロイしなければなりません (MUST) 。
+`0xc88a313aa75dc4fbf0b6850d9f9ae41e04243b7008cf3eadb29256d4a71c1dfd`。
+
+### GasPriceOracle のデプロイ {#gaspriceoracle-deployment}
+
+`GasPriceOracle` コントラクトは、Ecotone の新しい L1 データ手数料パラメータに対応するようアップグレードされます。フォーク後、このコントラクトは
+blob のベース手数料を使用して、L1 データ手数料トランザクションのガス価格を計算します。
+
+次の属性を持つデポジットトランザクションが導出されます。
+
+* `from`: `0x4210000000000000000000000000000000000001`
+* `to`: `null`,
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `1,000,000`
+* `data`: `0x60806040523480156100...`
+* `sourceHash`: `0xa312b4510adf943510f05fcc8f15f86995a5066bd83ce11384688ae20e6ecf42`
+  &quot;Upgrade-deposited&quot; タイプを使用し、&#96;intent = &quot;Ecotone: Gas Price Oracle Deployment&quot; で計算されます
+
+これにより、Ecotone の GasPriceOracle コントラクトが `0xb528D11cC114E026F138fE568744c6D45ce6Da7A` にデプロイされます。
+次の方法で検証できます。
+
+```bash Terminal
+cast compute-address --nonce=0 0x4210000000000000000000000000000000000001
+Computed Address: 0xb528D11cC114E026F138fE568744c6D45ce6Da7A
+```
+
+`sourceHash` を検証します：
+
+```bash Terminal
+❯ cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Ecotone: Gas Price Oracle Deployment"))
+# 0xa312b4510adf943510f05fcc8f15f86995a5066bd83ce11384688ae20e6ecf42
+```
+
+`data` を検証します：
+
+```bash Terminal
+git checkout 5996d0bc1a4721f2169ba4366a014532f31ea932
+pnpm clean && pnpm install && pnpm build
+jq -r ".bytecode.object" packages/contracts-bedrock/forge-artifacts/GasPriceOracle.sol/GasPriceOracle.json
+```
+
+このトランザクションは、次のコードハッシュを持つコントラクトをデプロイしなければなりません (MUST) 。
+`0x8b71360ea773b4cfaf1ae6d2bd15464a4e1e2e360f786e475f63aeaed8da0ae5`
+
+### L1Block Proxy の更新 {#l1block-proxy-update}
+
+このトランザクションは、L1Block Proxy の ERC-1967 実装スロットを更新し、新しくデプロイされた L1Block を指すようにします。
+
+次の属性を持つデポジットトランザクションが導出されます:
+
+* `from`: `0x0000000000000000000000000000000000000000`
+* `to`: `0x4200000000000000000000000000000000000015` (L1Block Proxy)
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `50,000`
+* `data`: `0x3659cfe600000000000000000000000007dbe8500fc591d1852b76fee44d5a05e13097ff`
+* `sourceHash`: `0x18acb38c5ff1c238a7460ebc1b421fa49ec4874bdf1e0a530d234104e5e67dbc`
+  &quot;Upgrade-deposited&quot; タイプを使用し、&#96;intent = &quot;Ecotone: L1 Block Proxy Update&quot; で計算されます
+
+データの検証:
+
+```bash Terminal
+cast concat-hex $(cast sig "upgradeTo(address)") $(cast abi-encode "upgradeTo(address)" 0x07dbe8500fc591d1852B76feE44d5a05e13097Ff)
+0x3659cfe600000000000000000000000007dbe8500fc591d1852b76fee44d5a05e13097ff
+```
+
+`sourceHash` を検証します：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Ecotone: L1 Block Proxy Update"))
+# 0x18acb38c5ff1c238a7460ebc1b421fa49ec4874bdf1e0a530d234104e5e67dbc
+```
+
+### GasPriceOracle Proxy の更新 {#gaspriceoracle-proxy-update}
+
+このトランザクションは、GasPriceOracle Proxy の ERC-1967 実装スロットを更新し、新しくデプロイされた GasPriceOracle
+を指すようにします。
+
+次の属性を持つデポジットトランザクションが導出されます:
+
+* `from`: `0x0000000000000000000000000000000000000000`
+* `to`: `0x420000000000000000000000000000000000000F` (Gas Price Oracle Proxy)
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `50,000`
+* `data`: `0x3659cfe6000000000000000000000000b528d11cc114e026f138fe568744c6d45ce6da7a`
+* `sourceHash`: `0xee4f9385eceef498af0be7ec5862229f426dec41c8d42397c7257a5117d9230a`
+  &quot;Upgrade-deposited&quot; タイプと `intent = "Ecotone: Gas Price Oracle Proxy Update"` を用いて計算されます
+
+data の検証:
+
+```bash Terminal
+cast concat-hex $(cast sig "upgradeTo(address)") $(cast abi-encode "upgradeTo(address)" 0xb528D11cC114E026F138fE568744c6D45ce6Da7A)
+0x3659cfe6000000000000000000000000b528d11cc114e026f138fe568744c6d45ce6da7a
+```
+
+`sourceHash` を検証します：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Ecotone: Gas Price Oracle Proxy Update"))
+# 0xee4f9385eceef498af0be7ec5862229f426dec41c8d42397c7257a5117d9230a
+```
+
+### GasPriceOracle Enable Ecotone {#gaspriceoracle-enable-ecotone}
+
+このトランザクションは、Ecotoneのガス計算式の使用を開始するようGasPriceOracleに通知します。
+
+次の属性を持つデポジットトランザクションが導出されます。
+
+* `from`: `0xDeaDDEaDDeAdDeAdDEAdDEaddeAddEAdDEAd0001` (Depositerアカウント) 
+* `to`: `0x420000000000000000000000000000000000000F` (Gas Price Oracleプロキシ) 
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `80,000`
+* `data`: `0x22b90ab3`
+* `sourceHash`: `0x0c1cb38e99dbc9cbfab3bb80863380b0905290b37eb3d6ab18dc01c1f3e75f93`、
+  &quot;Upgrade-deposited&quot;タイプと&#96;intent = &quot;Ecotone: Gas Price Oracle Set Ecotone&quot;を用いて計算されます
+
+データの検証：
+
+```bash Terminal
+cast sig "setEcotone()"
+0x22b90ab3
+```
+
+`sourceHash` を検証します：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Ecotone: Gas Price Oracle Set Ecotone"))
+# 0x0c1cb38e99dbc9cbfab3bb80863380b0905290b37eb3d6ab18dc01c1f3e75f93
+```
+
+### ビーコンブロックルート コントラクトのデプロイ (EIP-4788) {#beacon-block-roots-contract-deployment-eip-4788}
+
+[EIP-4788] では、beacon-block-root の値を処理して公開する「ビーコンブロックルート」コントラクトが導入されます。
+このコントラクトのアドレスは `BEACON_ROOTS_ADDRESS = 0x000F3df6D732807Ef1319fB7B8bB8522d0Beac02` です。
+
+デプロイ方法として、[EIP-4788] は [EIP-155] 以前のレガシートランザクションを定義しています。このトランザクションの送信元の鍵は、
+トランザクション署名の有効性がメッセージハッシュに紐付き、さらにそのメッセージハッシュが init-code を含む入力データに紐付くように導出されています。
+
+しかし、この種のトランザクションでは手動でのデプロイとガスの支払いが必要になります。
+また、この処理はチェーン処理に不可欠な要素であり、Base でも同様に実行する必要があるため、
+ここでは別の方法でデプロイを行います。
+
+チェーンによっては、ユーザーが送信した [EIP-4788] トランザクションのインスタンスがすでに存在する場合があります。
+その正しさは暗号学的に保証されていますが、アップグレードトランザクションが次の nonce で
+2 つ目のコントラクトをデプロイすることになる可能性があります。このデプロイの結果は無視して構いません。
+
+デポジットトランザクションは、次の属性で導出されます。
+
+* `from`: `0x0B799C86a49DEeb90402691F1041aa3AF2d3C875` (EIP の指定どおり) 
+* `to`: null
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `0x3d090` (EIP の指定どおり) 
+* `isCreation`: `true`
+* `data`:
+  `0x60618060095f395ff33373fffffffffffffffffffffffffffffffffffffffe14604d57602036146024575f5ffd5b5f35801560495762001fff810690815414603c575f5ffd5b62001fff01545f5260205ff35b5f5ffd5b62001fff42064281555f359062001fff015500`
+* `isSystemTx`: `false`。システムが生成したトランザクションであってもガスを消費します。
+* `sourceHash`: `0x69b763c48478b9dc2f65ada09b3d92133ec592ea715ec65ad6e7f3dc519dc00c`。
+  「Upgrade-deposited」タイプを使用し、`intent = "Ecotone: beacon block roots contract deployment"` で計算されます。
+
+デプロイ時のコントラクトアドレスは `rlp([sender, nonce])` として計算され、次のいずれかになります。
+
+* デプロイされた場合は `BEACON_ROOTS_ADDRESS`
+* `nonce = 1` の場合は別のアドレス (`0xE3aE1Ae551eeEda337c0BfF6C4c7cbA98dce353B`)：
+  これは、アップグレード前にユーザーがすでに EIP トランザクションを送信していた場合に該当します。
+
+`BEACON_ROOTS_ADDRESS` を検証します。
+
+```bash Terminal
+cast compute-address --nonce=0 0x0B799C86a49DEeb90402691F1041aa3AF2d3C875
+# 算出されたアドレス: 0x000F3df6D732807Ef1319fB7B8bB8522d0Beac02
+```
+
+`sourceHash` を検証します：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Ecotone: beacon block roots contract deployment"))
+# 0x69b763c48478b9dc2f65ada09b3d92133ec592ea715ec65ad6e7f3dc519dc00c
+```
+
+[EIP-4788]: https://eips.ethereum.org/EIPS/eip-4788
+
+[EIP-155]: https://eips.ethereum.org/EIPS/eip-155

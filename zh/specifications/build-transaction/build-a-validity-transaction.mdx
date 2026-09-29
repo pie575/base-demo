@@ -1,0 +1,104 @@
+---
+title: "构建有效性交易"
+description: "使用 Viem 签名并提交有效性交易。"
+---
+
+本指南使用 Viem 构建 EIP-1559 交易，因为这是推荐的交易类型。该 API 也支持已签名的传统 (legacy) 交易和 EIP-2930 交易。
+
+<Warning>
+  有效性交易目前仍处于实验阶段。`base_sendRawTransactionValidity` 现已在 Vibenet 上提供。
+</Warning>
+
+## 1. 创建谓词 {#1-create-predicates}
+
+使用 `balance` 或 `storage` 等待账户或合约状态满足条件，使用 `block_number` 和 `flashblock_index` 限定候选位置。所有谓词都必须匹配。
+
+```ts Predicate setup lines wrap expandable
+import type { Address, Hex } from 'viem';
+
+const validity = [
+  {
+    type: 'balance',
+    params: {
+      address: '0x8ba1f109551bD432803012645Ac136ddd64DBA72' as Address,
+      op: '>=',
+      value: '0x1' as Hex,
+    },
+  },
+  {
+    type: 'storage',
+    params: {
+      address: '0x8ba1f109551bD432803012645Ac136ddd64DBA72' as Address,
+      slot: '0x8' as Hex,
+      op: '=',
+      value: '0x2a' as Hex,
+    },
+  },
+  {
+    type: 'block_number',
+    params: { op: '<=', value: '0x11a6a1' as Hex },
+  },
+  {
+    type: 'flashblock_index',
+    params: { op: '<=', value: '0x2' as Hex },
+  },
+] as const;
+```
+
+省略 `mask` 即可比较完整的存储字。使用 `flashblock_index` 可定位到 Flashblock 内的特定位置。
+
+## 2. 签署 EIP-1559 交易 {#2-sign-an-eip-1559-transaction}
+
+使用发送方的下一个 nonce。签名后的载荷将作为 RPC 调用的第一个参数。
+
+```ts Sign transaction lines wrap expandable
+import { createPublicClient, http, type Chain } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+
+const client = createPublicClient({ chain, transport: http(rpcUrl) });
+const account = privateKeyToAccount(privateKey);
+const fees = await client.estimateFeesPerGas();
+const nonce = await client.getTransactionCount({
+  address: account.address,
+  blockTag: 'latest',
+});
+
+const rawTransaction = await account.signTransaction({
+  chainId: (chain as Chain).id,
+  type: 'eip1559',
+  nonce,
+  to: '0x...' as Address,
+  data: '0x...' as Hex,
+  value: 0n,
+  gas: 100_000n,
+  maxFeePerGas: fees.maxFeePerGas,
+  maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
+});
+```
+
+## 3. 提交交易 {#3-submit-the-transaction}
+
+将已签名的交易和 `validity` 分别作为独立参数传入。
+
+```ts Submit transaction lines wrap expandable
+const response = await fetch(rpcUrl, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'base_sendRawTransactionValidity',
+    params: [rawTransaction, { validity }],
+  }),
+});
+
+const body = await response.json();
+if (body.error) throw new Error(body.error.message);
+const hash = body.result;
+```
+
+## 4. 检查交易是否已上链 {#4-check-inclusion}
+
+RPC 会返回一个交易哈希。可使用 [`eth_getTransactionReceipt`](/zh/base-chain/api-reference/ethereum-json-rpc-api/eth_getTransactionReceipt) 检查是否已生成链上收据。
+
+有关字段定义，请参阅 [有效性交易 RPC](/zh/specifications/build-transaction/base_sendRawTransactionValidity)。

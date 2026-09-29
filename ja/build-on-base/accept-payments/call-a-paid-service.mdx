@@ -1,0 +1,64 @@
+---
+title: "有料サービスを呼び出す"
+keywords: ["x402 buyer", "pay for API agent", "x402 client spend policy", "agent USDC payment"]
+description: "ネットワーク、トークン、リクエスト単位、セッション単位の支出上限を適用しつつ、エージェントから x402 サービスを呼び出します。"
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+エージェントの HTTP クライアントをラップし、402 レスポンスを解釈して、サポートされているスキームを選択し、署名してから再試行できるようにします。署名を作成する前に、必ずローカルポリシーを適用してください。
+
+## デモ {#demo}
+
+<PaymentsDemo flow="x402Buyer" />
+
+<Tip>
+  上記のデモはモックです。Vibenet 上のオンチェーンデモをご覧になりたい場合は、[Base chain demos](https://chain.base.org/demos) にアクセスしてください。
+</Tip>
+
+## 署名前に支出ポリシーを適用する {#enforce-spend-policy-before-signing}
+
+{/* sample: x402-buyer-ts */}
+
+```typescript TypeScript buyer lines wrap expandable highlight={9,13-17,20}
+const account = privateKeyToAccount(required("EVM_PRIVATE_KEY") as `0x${string}`);
+const publicClient = createPublicClient({ chain: baseSepolia, transport: http() });
+const client = new x402Client()
+  .register("eip155:*", new ExactEvmScheme(account))
+  .register("eip155:*", new UptoEvmScheme(account))
+  .register("eip155:*", new BatchSettlementEvmScheme(toClientEvmSigner(account, publicClient)));
+
+const baseSepoliaUsdc = "0x036CbD53842c5426634e7929541eC2318f3dCF7c";
+let authorizedThisSession = 0n;
+client.onBeforePaymentCreation(async ({ selectedRequirements }) => {
+  if (selectedRequirements.network !== "eip155:84532") return { abort: true, reason: "Wrong network" };
+  if (selectedRequirements.asset.toLowerCase() !== baseSepoliaUsdc.toLowerCase()) return { abort: true, reason: "Wrong asset" };
+  const amount = BigInt(selectedRequirements.amount);
+  if (amount > 100_000n || authorizedThisSession + amount > 1_000_000n) {
+    return { abort: true, reason: "Spend limit exceeded" };
+  }
+  authorizedThisSession += amount;
+});
+
+const fetchWithPayment = wrapFetchWithPayment(fetch, client);
+const response = await fetchWithPayment("http://localhost:4021/fixed");
+if (!response.ok) throw new Error(`Paid request failed: ${response.status}`);
+console.log(await response.json());
+```
+
+このラッパーが自動化するのは支払いのネゴシエーションであって、信頼性まで担保するものではありません。レスポンスのスキーマと内容は信頼できない入力として検証し、ウォレットのポリシーはサービスから返される指示に一切左右されないようにしてください。
+
+<Check>
+  クライアントが支払いを行うのは、リクエストで Base Sepolia の USDC が使用され、かつ金額がリクエストごとの上限とセッション全体の上限の両方を下回っている場合に限られます。
+</Check>
+
+<Warning>
+  公開されている x402.org のファシリテーターはテストネット専用です。Base Mainnet では、本番用のファシリテーターを選び、署名鍵を保護したうえで、プロセスをまたいで総支出額の上限を永続的に管理し、サポート対象外のスキームやアセットは拒否してください。
+</Warning>
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="APIの利用料金を請求する" icon="server" href="/ja/build-on-base/accept-payments/charge-for-an-api">exact 支払いの販売者側を実装します。</Card>
+  <Card title="高頻度の支払いをバッチ処理する" icon="layer-group" href="/ja/build-on-base/accept-payments/batch-high-frequency-payments">繰り返しの呼び出しに対する決済頻度を抑えます。</Card>
+</CardGroup>

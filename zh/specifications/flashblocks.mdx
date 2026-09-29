@@ -1,0 +1,210 @@
+---
+title: Flashblocks
+sidebarTitle: Flashblocks
+description: Base 上 Flashblocks 的参考文档——涵盖核心概念、架构，以及有关区块构建、WebSocket 数据、RPC 使用和节点设置的常见问题。
+---
+
+<Warning>
+  我们计划在即将到来的 Denim 硬分叉中弃用 Flashblocks。这项升级仍在规划中，尚未最终确定。你现在就可以在 [Vibenet](/zh/build-on-base/test-on-vibenet) 上抢先测试规范的 200ms 出块行为。有关应用最终需要做出的更改，请参阅[从 Flashblocks 迁移](/zh/upgrades/denim/migrate-from-flashblocks)。
+</Warning>
+
+<Info>
+  要了解 Flashblocks 如何影响区块构建和交易排序，请参阅[交易排序](/zh/specifications/transactions/transaction-ordering#flashblocks)。
+</Info>
+
+Flashblocks 为 Base 带来了 **200ms** 的增量区块更新，由 Base 与 [Flashbots](https://www.flashbots.net/) 合作打造。它在标准的 2 秒出块间隔内流式推送子区块，让应用能够获得近乎即时的排序器预确认。
+
+## 关键概念 {#key-concepts}
+
+| 术语                              | 定义                              |
+| ------------------------------- | ------------------------------- |
+| **Flashblock**                  | 时长 200ms 的子区块，包含完整区块中的一部分交易     |
+| **预确认 (Preconfirmation)&#x20;**&#x20;| 在完整区块封块之前发出的超快速信号，表明交易将被打包上链    |
+| **完整区块 (Full Block)&#x20;**&#x20;    | 由 10 个 Flashblock 组合而成的完整 2 秒区块 |
+
+## 架构 {#architecture}
+
+Base 运行着一套高可用的排序器系统：
+
+| 组件                 | 角色                             |
+| ------------------ | ------------------------------ |
+| **base-consensus** | 共识层 (CL) —— 自 Azul 起取代 op-node |
+| **base-reth-node** | 执行层 (EL) —— 自 Azul 起取代 op-geth |
+| **op-conductor**   | 高可用控制器，基于 Raft 共识进行领导者选举       |
+
+其中一个排序器实例担任**领导者 (leader)&#x20;**，负责构建区块并通过 P2P 广播；其余实例担任**跟随者 (follower)&#x20;**，负责同步链数据。如果当前领导者停止出块，领导权将转移给其他实例。
+
+Flashblocks 在该系统之上增加了若干基础设施组件：
+
+| 组件                                       | 用途                  | 带来的能力                                                         |
+| ---------------------------------------- | ------------------- | ------------------------------------------------------------- |
+| **rollup-boost**                         | CL↔EL Engine API 代理 | 无需修改 CL 即可将 Flashblocks 共享给 EL，为区块构建机制的后续演进 (如多构建器等) 提供稳定的衔接层 |
+| **base-builder**                         | 以 200ms 节奏出块的协议外构建器 | 生成亚秒级 Flashblocks，与 EL 解耦，支持可插拔的构建器机制                         |
+| **websocket-proxy**                      | Flashblocks 数据流扇出   | 作为广播层，让大量消费者读取数据流而不会压垮构建器                                     |
+| **[base](https://github.com/base/base)** | 对外提供预确认数据的 RPC 接口层  | 将流式传输的 Flashblocks 转换为常用的 RPC，便于应用和钱包获取预确认状态                  |
+
+[rollup-boost](https://github.com/flashbots/rollup-boost) 由 Flashbots 开发和维护，[base-builder](https://github.com/base/base/tree/main/crates/builder)、websocket-proxy 以及 [base](https://github.com/base/base) 组件则由 Base 负责维护。
+
+## 区块构建 {#block-building}
+
+<AccordionGroup>
+  <Accordion title="Flashblocks 是可选的吗？">
+    所有 Base 区块都由 Flashblocks 构建器构建，也就是说，**Flashblocks 始终处于运行状态**。不过，应用可以选择不依赖预确认，继续使用标准 RPC，无需进行任何 Flashblocks 集成。
+  </Accordion>
+
+  <Accordion title="Flashblocks 与 2 秒区块在交易打包上有区别吗？">
+    没有显著区别，两者都按费用对交易排序。主要区别在于出块时间：Flashblocks 每 200ms 产生一次，而非每 2 秒一次。
+
+    详情请参阅[交易排序](/zh/specifications/transactions/transaction-ordering#flashblocks)。
+  </Accordion>
+
+  <Accordion title="排序器会停止发布 Flashblocks 吗？">
+    除非出现极端情况、导致继续运行 Flashblocks 不再安全，否则排序器不会停止发布 Flashblocks。一旦发生这种情况，预确认将在全网禁用，确认将回退到标准的 2 秒区块，而排序器本身仍会正常运行。
+  </Accordion>
+
+  <Accordion title="为什么我的交易难以被打包？">
+    打包时间主要取决于优先费，而非交易大小。构建器以累积方式分配 gas：第 `j` 个 Flashblock 最多可使用区块总 gas 上限的 `j/10`，因此理论上，体积非常大的交易较难进入第一个 Flashblock。但实际上这几乎没有影响：Base 的[单笔交易 gas 上限](/zh/specifications/transactions/throughput-and-limits#per-transaction-gas-maximum) (16,777,216 gas，约 16.7M) 低于 Flashblock 1 约 40M 的容量，因此仅就大小而言，任何有效交易都能放入第一个 Flashblock。如果交易迟迟未被打包，通常是因为其优先费低于同一 200ms 窗口内的其他竞争交易。
+
+    有关 gas 上限及吞吐量相关的网络参数，请参阅[吞吐量与限制](/zh/specifications/transactions/throughput-and-limits)。
+  </Accordion>
+
+  <Accordion title="如何确保我的交易进入第一个 Flashblock？">
+    无法保证交易会进入哪个 Flashblock，就像无法保证交易进入某个特定区块一样。gas 大小并不是限制因素：[单笔交易 gas 上限](/zh/specifications/transactions/throughput-and-limits#per-transaction-gas-maximum) (约 16.7M) 低于 Flashblock 1 约 40M 的容量，因此任何有效交易都有机会进入第一个 Flashblock。如需提高快速打包的概率，请设置更高的优先费。
+  </Accordion>
+
+  <Accordion title="为什么交易有时不按费用顺序排列？">
+    Flashblock 构建器使用**动态 mempool**，在构建过程中持续接收新交易。该设计优先保证**低打包延迟**，而非严格的费用排序。
+
+    **这意味着：**
+
+    * 交易按*被选中打包时*的费用排序
+    * 如果一笔高费用交易到达时，某笔低费用交易已被提交到当前 Flashblock，则该高费用交易会排在其后 (或进入下一个 Flashblock)
+    * 这是预期行为，而非 bug：构建器不会对已提交的交易进行“重新排序”
+
+    **为什么要这样权衡？**
+
+    “快照式” mempool (在每个区块开始时冻结交易池) 可以保证严格的费用排序，但会增加打包延迟。动态方式能让交易更快被打包，代价是偶尔会“打破”预期的优先 gas 拍卖 (PGA) 顺序。
+
+    **交易者和机器人请注意：** 如果你的用例要求严格按费用排序，请留意：在 200ms 的 Flashblock 窗口内，到达时间与费用金额同样重要。
+  </Accordion>
+
+  <Accordion title="Flashblock Reorg 的发生频率如何？">
+    Base 的 Flashblock reorg 率目标为 &lt; 0.1%。尽管 reorg 很少发生，应用仍应为关键操作实现回退逻辑。
+
+    可在 [base.org/stats](https://base.org/stats) 查看当前指标。
+  </Accordion>
+
+  <Accordion title="Flashblock 被 Reorg 意味着什么？">
+    reorg 是指某个 Flashblock 已作为预确认推送出去，但最终未被纳入区块。由于 rollup-boost 的架构改进可防止尾部 Flashblock reorg，这种情况极为罕见。应用应妥善处理这种可能性，但实际发生次数微乎其微。
+  </Accordion>
+</AccordionGroup>
+
+***
+
+## WebSocket {#websocket}
+
+<AccordionGroup>
+  <Accordion title="可以直接连接 Flashblocks WebSocket 流吗？">
+    **不可以。** 原始 Flashblocks WebSocket (`wss://mainnet.flashblocks.base.org/ws`) 专用于基础设施与节点之间的数据同步，应用程序不应直接连接。
+
+    请改为通过你的 RPC 节点或节点服务商 (例如 QuickNode、Alchemy、Infura、dRPC) 查询 Flashblocks 数据，方式如下：
+
+    * **RPC API**：使用带 `pending` 标签的标准 JSON-RPC 方法
+    * **WebSocket 订阅**：通过节点服务商的 WebSocket 端点调用 `eth_subscribe`
+
+    实现细节请参阅 [RPC 概览](/zh/base-chain/api-reference/rpc-overview#flashblocks)。
+  </Accordion>
+
+  <Accordion title="为什么有 11 个 Flashblock 索引（0-10）？">
+    索引 0 仅包含系统交易，不占用任何 gas 上限。索引 1-10 才是真正从交易池 (txpool) 中拉取待处理交易的 Flashblocks。
+  </Accordion>
+
+  <Accordion title="为什么有时 Flashblocks 少于 10 个？">
+    这属于预期行为。如果上一个区块构建耗时较长，系统会相应缩短分配给下一个区块的时间作为补偿，因此 Flashblocks 数量会减少。
+  </Accordion>
+
+  <Accordion title="Flashblock 索引会超过 10 吗？这是 bug 吗？">
+    **不是 bug。** 出现 10、11 或更高的索引属于预期行为。
+
+    按标准计算——2 秒出块时间 ÷ 每个 Flashblock 200ms——恰好得到 10 个 Flashblocks (索引 0–9) 。但实际上，从一个完整 L2 区块过渡到下一个区块时，并不总能与 200ms 计时器完全同步。以下两种情况可能导致出现额外的索引：
+
+    1. **排序器延迟：** 如果排序器最终确定并封装完整区块的耗时略超过 2000ms，Flashblock 流会继续为当前区块发出增量更新，以保持流的活跃。
+    2. **时间漂移：** 如果内部 200ms 时钟发生漂移，或相对于 L2 区块的规范起始时间提前启动，2 秒窗口内就可能多出一次更新。
+
+    **对你的实现有何影响：**
+
+    * 不要将 `9` 或 `10` 硬编码为最终索引——仅凭索引无法判断某个区块的最后一个 Flashblock。
+    * 应改为监听 `payloadId`。判断区块已完成的最可靠信号是 `payloadId` 发生变化，或通过标准 RPC 确认了完整区块。只要 `payloadId` 相同，这些 Flashblocks 就属于同一区块，无论索引增长到多少。
+    * 一旦排序器推进到下一个区块，`payloadId` 就会重置，`index` 也会归 `0`。
+  </Accordion>
+
+  <Accordion title="交易数据采用什么编码格式？">
+    [`diff.transactions`](/zh/base-chain/api-reference/flashblocks-api/flashblocks-api-overview#diff-object) 数组中的交易数据采用递归长度前缀 (RLP) 编码。
+  </Accordion>
+
+  <Accordion title="为什么我在 WebSocket 上遇到了速率限制？">
+    Base 不提供免费的公共 WebSocket RPC 端点，因此 WebSocket 访问需通过节点或服务商获得，而它们各有自己的连接数和速率限制。在生产环境中，我们建议：
+
+    1. 运行你自己的[支持 Flashblocks 的 RPC 节点](/zh/specifications/node-operators/run-a-node#enable-flashblocks)
+    2. 使用支持 Flashblocks 的第三方节点服务商
+  </Accordion>
+</AccordionGroup>
+
+***
+
+## RPC {#rpc}
+
+<AccordionGroup>
+  <Accordion title="为什么使用 mainnet.base.org 时会被限流？">
+    公共端点设有明确的速率限制。在生产环境中，建议：
+
+    * 使用支持 Flashblocks 的第三方节点服务商 (Alchemy、Infura、QuickNode、dRPC)
+    * 自行运行[支持 Flashblocks 的 RPC 节点](/zh/specifications/node-operators/run-a-node#enable-flashblocks)
+  </Accordion>
+
+  <Accordion title="为什么 eth_call 'Pending' 返回的区块号比链头落后几个区块？">
+    这是预期行为。为防止竞态条件，支持 Flashblocks 的节点最多会保存 5 个历史区块的 Flashblocks 状态。调用 `eth_call "pending"` 时，它会在该历史基础区块之上执行，因此调用上下文中可见的区块号 (例如 `block.number`) 可能显示为 N-5。
+
+    `eth_call "pending"` 执行时，整个区块上下文 (`block.number`、`block.timestamp`、`block.basefee` 以及其他所有区块属性) 都对应该历史基础区块 (可能为 N-5) ，而非当前链头。**调用结果本身是正确的**，因为它已叠加了所有已接收的 Flashblocks 状态；但依赖区块上下文属性的合约需注意，这些值可能落后几个区块。
+
+    如果你的节点所在地区的 P2P 延迟并不明显高于 WebSocket 流延迟，可以调低 `MAX_PENDING_BLOCKS_DEPTH` 配置值来缩小这一差距。该值决定节点最多保存多少个历史区块的 Flashblocks，因此值越低，区块上下文越接近链头，但代价是对 P2P 延迟突增的容忍度会降低。
+  </Accordion>
+
+  <Accordion title="哪些 RPC 方法支持 Flashblocks？">
+    以下方法支持 Flashblocks：
+
+    | 方法                          | 用法                        |
+    | --------------------------- | ------------------------- |
+    | `eth_getBlockByNumber`      | 使用 `pending` 标签           |
+    | `eth_getBalance`            | 使用 `pending` 标签           |
+    | `eth_getTransactionReceipt` | 返回预确认的收据                  |
+    | `eth_getTransactionByHash`  | 使用 `pending` 标签           |
+    | `eth_getTransactionCount`   | 使用 `pending` 标签           |
+    | `eth_call`                  | 使用 `pending` 标签           |
+    | `eth_simulateV1`            | 使用 `pending` 标签           |
+    | `eth_estimateGas`           | 使用 `pending` 标签           |
+    | `eth_getLogs`               | 将 `toBlock` 设为 `pending`  |
+    | `eth_subscribe`             | 实时流式传输 Flashblock 数据      |
+    | `base_transactionStatus`    | 检查交易是否在 mempool 中 (Beta)  |
+
+    完整的方法详情和示例，请参阅 [Flashblocks API 参考](/zh/base-chain/api-reference/flashblocks-api/flashblocks-api-overview)。
+  </Accordion>
+</AccordionGroup>
+
+***
+
+## 节点设置 {#node-setup}
+
+<AccordionGroup>
+  <Accordion title="如何搭建支持 Flashblocks 的 RPC 节点？">
+    请使用 [Base Reth 仓库](https://github.com/base/reth)中的 Reth 二进制文件。完整的设置步骤请参阅[启用 Flashblocks 指南](/zh/specifications/node-operators/run-a-node#enable-flashblocks)。
+  </Accordion>
+</AccordionGroup>
+
+***
+
+## 延伸阅读 {#further-reading}
+
+* [启用 Flashblocks](/zh/specifications/node-operators/run-a-node#enable-flashblocks) — 自行运行支持 Flashblocks 的 RPC 节点
+* [Flashblocks API 参考](/zh/base-chain/api-reference/flashblocks-api/flashblocks-api-overview) — RPC 方法、WebSocket 订阅及基础设施数据流结构
+* [Flashblocks 深度解析](https://blog.base.dev/flashblocks-deep-dive) — 介绍实现细节的工程博客文章；该功能与 [Flashbots](https://www.flashbots.net/) 合作构建

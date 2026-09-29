@@ -1,0 +1,131 @@
+---
+title: "限制可发起转账的账户"
+description: "将允许列表绑定到 TRANSFER_EXECUTOR_POLICY，即可控制哪些账户能够发起 B20 转账，且这一限制独立于对发送方和接收方的限制。例如，可以要求所有转账都通过转账代理执行。"
+keywords: ["TRANSFER_EXECUTOR_POLICY", "转账代理", "B20 执行者策略", "限制转账发起者", "transferFrom 允许列表"]
+---
+
+import RwaDisclaimer from "/snippets/zh/RwaDisclaimer.mdx"
+
+某些发行方要求每一笔转账都必须由指定账户发起，即使发送方和接收方都是合格持有人也不例外。`TRANSFER_EXECUTOR_POLICY` 会在所有转账路径 (`transfer`、`transferFrom` 及其 memo 变体) 上对 `msg.sender` 进行管控，且独立于发送方和接收方作用域。转账代理模式就是一个例子：持有人向代理授权，由代理通过 `transferFrom` 转移份额，而持有人自己直接发起的 `transfer` 则会被拒绝。凡是必须由运营合约、结算系统或托管方来最终执行操作的场景，都可以使用这一控制。
+
+<RwaDisclaimer />
+
+<Note>
+  初次接触 B20？请参阅 [B20 代币标准](/zh/build-on-base/issue-rwa/create-an-asset-token)，了解相关概念和完整的发行流程演练。这些示例基于 `base-std@1505323`、`viem@2.55.11` 和 Base Foundry `v1.1.1`。B20 Asset 和 B20 Stablecoin 均提供此接口。
+</Note>
+
+## 开始之前 {#before-you-start}
+
+你需要满足以下全部条件：
+
+* 一个由你管理的 B20 代币，且你持有 `DEFAULT_ADMIN_ROLE`，以便调用 `updatePolicy`。
+* 一个能够在 Policy Registry 中创建和管理策略的策略管理员。代币管理员和策略管理员是两个独立的角色，但可以由同一账户同时担任。
+* 每个预期发起者的地址，例如转账代理合约的地址。
+* `TRANSFER` 未处于暂停状态。
+
+### 检查哪个账户 {#which-account-is-checked}
+
+Transfer 有三个相互独立的策略作用域，均在同一条共享路径上执行：
+
+| 作用域                        | 检查的账户        | 未设置时的默认行为 |
+| -------------------------- | ------------ | --------- |
+| `TRANSFER_SENDER_POLICY`   | `from`       | 始终允许      |
+| `TRANSFER_RECEIVER_POLICY` | `to`         | 始终允许      |
+| `TRANSFER_EXECUTOR_POLICY` | `msg.sender` | 始终允许      |
+
+执行者作用域检查的是发起者，而非持有者。调用 `transfer` 时，发起者同时也是 `from`；调用 `transferFrom` 时，发起者是调用方，可能是另一个账户。持有者为自己操作时也不享有任何豁免：一旦附加了限制性的执行者策略，持有者必须在该策略的允许范围内，才能调用 `transfer`，或以自己作为 `from` 调用 `transferFrom`。
+
+### 授权额度是一道独立的关卡 {#allowance-is-a-separate-gate}
+
+`transferFrom` 仍然需要 `from` 授予的 ERC-20 授权额度 (allowance) 。授权额度表示“该调用方最多可以花费这么多”；执行者策略则表示“该调用方是否有权发起转账”。转账代理必须两者兼备：它代为转移份额的每个持有者都要向它授予授权额度，同时它本身也必须在执行者允许列表中。获得其中一项，并不代表同时获得另一项。
+
+## 创建并绑定发起者允许列表 {#create-and-bind-the-initiator-allowlist}
+
+创建一个以发起者为初始成员的允许列表，然后将其绑定到 `TRANSFER_EXECUTOR_POLICY`：
+
+<CodeGroup>
+  {/* sample: stock-executor-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={8,10}
+  import { parseEventLogs, type Address } from "viem";
+  import { account } from "../../shared/clients.js";
+  import { POLICY_REGISTRY, b20Abi, policyRegistryAbi, scope } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function restrictTransferInitiators(token: Address, transferAgent: Address) {
+    const receipt = await sendContract({ address: POLICY_REGISTRY, abi: policyRegistryAbi, functionName: "createPolicyWithAccounts", args: [account.address, 1, [transferAgent]] });
+    const [created] = parseEventLogs({ abi: policyRegistryAbi, logs: receipt.logs, eventName: "PolicyCreated" });
+    await sendContract({ address: token, abi: b20Abi, functionName: "updatePolicy", args: [scope("TRANSFER_EXECUTOR_POLICY"), created.args.policyId] });
+    return created.args.policyId;
+  }
+  ```
+
+  {/* sample: stock-executor-solidity */}
+
+  ```solidity Solidity lines wrap expandable highlight={4,7}
+  function restrictTransferInitiators(address token, address admin, address transferAgent) public returns (uint64 id) {
+      address[] memory initiators = new address[](1);
+      initiators[0] = transferAgent;
+      id = StdPrecompiles.POLICY_REGISTRY.createPolicyWithAccounts(
+          admin, IPolicyRegistry.PolicyType.ALLOWLIST, initiators
+      );
+      IB20(token).updatePolicy(B20Constants.TRANSFER_EXECUTOR_POLICY, id);
+  }
+  ```
+
+  {/* sample: stock-executor-cli */}
+
+  ```bash CLI lines wrap expandable highlight={2,6}
+  CREATE_TX=$(base-cast send "$POLICY_REGISTRY" \
+    "createPolicyWithAccounts(address,uint8,address[])" "$ADMIN" 1 "[$TRANSFER_AGENT]" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" --json | jq -r .transactionHash)
+  POLICY_TOPIC=$(base-cast receipt "$CREATE_TX" --rpc-url "$RPC_URL" --json | jq -r '.logs[0].topics[1]')
+  EXECUTOR_ID=$(base-cast to-dec "$POLICY_TOPIC")
+  base-cast send "$TOKEN_ADDRESS" "updatePolicy(bytes32,uint64)" "$(base-cast keccak TRANSFER_EXECUTOR_POLICY)" "$EXECUTOR_ID" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  ```
+</CodeGroup>
+
+自 `updatePolicy` 调用起，该代币上的每一次 `transfer` 和 `transferFrom` 都会检查 `msg.sender` 是否在允许列表中。仅创建策略不会产生任何效果，只有绑定后才会生效。每批最多 64 个账户，且只有策略管理员可以通过 `updateAllowlist` 更改成员。
+
+随后，每个持有者需为发起者授权额度，额度即发起者将代其转移的金额：
+
+```solidity Holder approves the transfer agent
+token.approve(transferAgent, amount);
+```
+
+发起者通过 `transferFrom(holder, recipient, amount)` 转移代币单位。持有者自行调用 `transfer(recipient, amount)` 时，会在检查余额之前就以 `PolicyForbids(TRANSFER_EXECUTOR_POLICY, executorId)` 回滚。
+
+<Check>
+  发起者调用 `transferFrom` 时会触发 `Transfer(from, to, amount)` 事件。持有者直接调用 `transfer` 会以 `PolicyForbids(TRANSFER_EXECUTOR_POLICY, executorId)` 回滚；出现该回滚说明限制已生效，而不是配置出错。在 Policy Registry 上调用 `isAuthorized(executorId, account)` 时，对发起者返回 `true`，对持有者返回 `false`。
+</Check>
+
+<Warning>
+  绑定允许列表之前，请先将所有预期的发起者添加进去。列表一经绑定，任何不在其中的账户 (包括发行方) 在被添加之前都将无法发起转账。
+</Warning>
+
+## 常见错误 {#common-errors}
+
+以下错误按共享转账路径的检查顺序排列。
+
+| 错误                                                  | 原因                                                                          | 解决方法                                    |
+| --------------------------------------------------- | --------------------------------------------------------------------------- | --------------------------------------- |
+| `PolicyForbids(TRANSFER_EXECUTOR_POLICY, policyId)` | 调用者不在执行者允许列表中。`transfer`、`transferFrom` 以及持有者对自己发起的 `transferFrom` 均会触发此错误。 | 将调用者添加到允许列表，或改由已授权的发起者转发该调用。            |
+| `InsufficientAllowance(spender, allowance, needed)` | 执行 `transferFrom` 时，授权额度低于 `needed`。通过执行者检查并不意味着获得了支出权限。                    | 由 `from` 调用 `approve(spender, amount)`。 |
+| `PolicyForbids(TRANSFER_SENDER_POLICY, policyId)`   | `from` 未获得发送方策略的授权。此检查与执行者检查相互独立。                                           | 将 `from` 添加到发送方允许列表，或将该作用域清零 (设为 `0`) 。  |
+| `PolicyForbids(TRANSFER_RECEIVER_POLICY, policyId)` | `to` 未获得接收方策略的授权。此检查与执行者检查相互独立。                                             | 将 `to` 添加到接收方允许列表，或将该作用域清零 (设为 `0`) 。    |
+| `InsufficientBalance(sender, balance, needed)`      | `from` 的余额少于 `needed`。                                                      | 将转账金额控制在 `balanceOf(from)` 以内。          |
+| `PolicyNotFound(policyId)`                          | 传给 `updatePolicy` 的 ID 在注册表中不存在。                                            | 先创建策略，再关联返回的 ID。                        |
+| `Unauthorized()`                                    | 非管理员调用了 `updateAllowlist`。                                                  | 以该策略的管理员身份调用。                           |
+
+## 另请参阅 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="限制合格持有人" icon="user-check" href="/zh/build-on-base/issue-rwa/restrict-eligible-holders">
+    通过发送方和接收方作用域，控制哪些地址可以发送和接收代币。
+  </Card>
+
+  <Card title="策略" icon="shield-check" href="/zh/specifications/b20/concepts/policies">
+    了解策略作用域、允许列表和阻止列表的工作原理。
+  </Card>
+</CardGroup>

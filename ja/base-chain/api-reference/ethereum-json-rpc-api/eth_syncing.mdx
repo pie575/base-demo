@@ -1,0 +1,44 @@
+---
+title: 'eth_syncing'
+sidebarTitle: 'eth_syncing'
+description: 'ノードの同期ステータスを返します。'
+---
+
+ノードの同期ステータスを返します。ノードの同期が完了している場合は `false` を返します。
+
+## パラメーター {#parameters}
+
+パラメーターはありません。
+
+## 戻り値 {#returns}
+
+<ResponseField name="result" type="object | boolean">
+  ノードが完全に同期済みの場合は `false` を返します。それ以外の場合は同期ステータスオブジェクトを返します。
+
+  <Expandable title="同期ステータスのフィールド（同期中の場合）">
+    <ResponseField name="startingBlock" type="string">同期を開始したブロック (16進数) 。</ResponseField>
+    <ResponseField name="currentBlock" type="string">現在処理中のブロック (16進数) 。</ResponseField>
+    <ResponseField name="highestBlock" type="string">推定される最高ブロック (16進数) 。</ResponseField>
+  </Expandable>
+</ResponseField>
+
+## 例 {#example}
+
+<CodeGroup>
+  ```json Request
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_syncing",
+    "params": [],
+    "id": 1
+  }
+  ```
+
+  ```json Response (synced)
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": false
+  }
+  ```
+</CodeGroup>

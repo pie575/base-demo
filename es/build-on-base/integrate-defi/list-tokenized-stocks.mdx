@@ -1,0 +1,199 @@
+---
+title: "Listar acciones tokenizadas"
+description: "Permite que los usuarios operen con acciones tokenizadas emitidas por Coinbase en tu aplicación."
+---
+
+Las acciones tokenizadas en Base se basan en B20, el estándar de tokens nativo de Base ([B20](/es/build-on-base/issue-rwa/create-an-asset-token)). B20 es una extensión del estándar de tokens ERC-20 y está diseñado para ser independiente del tipo de activo; las acciones tokenizadas son solo uno de sus posibles casos de uso.
+
+Encontrarás los detalles específicos del producto sobre las acciones tokenizadas en Base en [coinbase.com/tokenize](https://coinbase.com/tokenize).
+
+<Tip>
+  La [API pública de acciones tokenizadas](/es/sdks/tokenized-stocks/overview) devuelve los registros de acciones tokenizadas que la API expone actualmente, incluidas las direcciones de los contratos, los suministros de tokens normalizados, los multiplicadores y los valores de NAV/referencia basados en Chainlink, en una única solicitud de solo lectura que no requiere clave de API.
+</Tip>
+
+## Información y listados de tokens {#token-information-and-listings}
+
+Las acciones tokenizadas se lanzan igual que cualquier token ERC-20: el nombre, el símbolo y el ícono se obtienen de las fuentes habituales, aunque con algunas particularidades propias de B20. Los métodos y eventos estándar de ERC-20 son compatibles de forma nativa.
+
+* **Onchain:** [`name`](/specifications/b20/reference/interfaces/ib20/name), [`symbol`](/specifications/b20/reference/interfaces/ib20/symbol), [`decimals`](/specifications/b20/reference/interfaces/ib20/decimals) y [`contractURI`](/specifications/b20/reference/interfaces/ib20/contract-uri) (metadatos de [ERC-7572](https://eips.ethereum.org/EIPS/eip-7572)).
+* **Offchain:** los logotipos también se pueden obtener de la lista canónica de tokens y de los agregadores de datos de mercado.
+* **API:** el endpoint [List Tokenized Stocks](/es/sdks/tokenized-stocks/api-reference/list-tokenized-stocks) devuelve la dirección del contrato, el símbolo, el nombre, los decimales, la URL del ícono y el ISIN de cada token.
+
+Particularidades de B20:
+
+* Los tokens deben identificarse por su dirección, no por su ticker o símbolo. Los metadatos pueden modificarse onchain, por lo que deben indexarse teniendo esto en cuenta.
+* Para descubrir nuevos tokens, supervisa el evento [`B20Created`](/specifications/b20/reference/interfaces/ib20-factory).
+
+## Características del token B20 {#b20-token-features}
+
+### Multiplicadores {#multipliers}
+
+Un activo subyacente del mundo real puede verse afectado por eventos que modifiquen la relación de canje de un token B20. En el caso de las acciones tokenizadas, estos eventos incluyen dividendos o desdoblamientos de acciones, que deben trasladarse onchain al titular de la acción tokenizada B20. La variable [multiplier](/specifications/b20/reference/interfaces/ib20-asset/multiplier) actualiza al instante la relación de canje de un token B20 en función de cualquier evento corporativo que se produzca.
+
+<Warning>
+  Un token B20 no equivale permanentemente a una acción. Aplica siempre el multiplicador vigente al convertir entre unidades del token y el número de acciones subyacentes.
+</Warning>
+
+Los eventos que afectan al activo se reflejan actualizando el multiplicador. Por ejemplo, tras el reparto de un dividendo sobre una acción tokenizada, el multiplicador aumenta a `1.02`, lo que indica que 1 token B20 puede canjearse por 1,02 acciones subyacentes.
+
+Por ahora, en el caso de las acciones tokenizadas, los dividendos en efectivo se convierten en acciones del valor subyacente y se reflejan mediante una actualización del multiplicador, en lugar de abonarse en efectivo al titular del B20. Así, los saldos de los titulares de B20 reflejan automáticamente los eventos corporativos sin que cambie su saldo de tokens B20.
+
+Las actualizaciones del multiplicador pueden ser de dos tipos:
+
+* **Programada (ERC-8056):** establece un cambio con fecha futura mediante [`updateUIMultiplier`](/specifications/b20/reference/interfaces/ib20-asset/update-ui-multiplier), lo que proporciona un aviso onchain anticipado. Úsala para eventos corporativos habituales.
+* **Instantánea (obsoleta):** [`updateMultiplier`](/specifications/b20/reference/interfaces/ib20-asset/update-multiplier) se aplica de inmediato y elimina cualquier cambio programado pendiente. Se mantiene como mecanismo de seguridad para emergencias; es preferible usar la vía programada.
+* **Cancelación:** elimina una actualización programada pendiente con [`cancelUIMultiplierUpdate`](/specifications/b20/reference/interfaces/ib20-asset/cancel-ui-multiplier-update).
+
+El contrato B20 ofrece varias funciones auxiliares para cálculos habituales, donde `raw` es el número de unidades de B20 y `scaled` es la cantidad de acciones canjeables:
+
+| Función                                                                                             | Descripción                              |
+| --------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| [`scaledBalanceOf(account)`](/specifications/b20/reference/interfaces/ib20-asset/scaled-balance-of) | Saldo bruto × multiplicador              |
+| [`toScaledBalance(raw)`](/specifications/b20/reference/interfaces/ib20-asset/to-scaled-balance)     | Convierte una cantidad bruta en escalada |
+| [`toRawBalance(scaled)`](/specifications/b20/reference/interfaces/ib20-asset/to-raw-balance)        | Convierte una cantidad escalada en bruta |
+
+### Políticas {#policies}
+
+Para cumplir los requisitos regulatorios aplicables a un activo concreto, se pueden implementar [políticas](/specifications/b20/reference/interfaces/i-policy-registry) que gestionen listas de permitidos y de bloqueados. Las políticas determinan si una transferencia se permite o se rechaza.
+
+El contrato B20 ofrece la función [`isAuthorized(policyID, account)`](/specifications/b20/reference/interfaces/i-policy-registry/is-authorized), con la que puedes determinar si una cuenta concreta está autorizada para transferir fondos.
+
+<Note>
+  La función estándar [`approve()`](/specifications/b20/reference/interfaces/ib20/approve) no está sujeta a políticas. Que una cantidad de fondos esté aprobada para transferirse no garantiza que esos fondos no estén bloqueados por una política.
+</Note>
+
+### Pausas {#pauses}
+
+Es poco probable que se produzcan [pausas](/specifications/b20/reference/interfaces/ib20/pause) onchain, pero tenga en cuenta que los tokens B20 permiten pausar funciones específicas de un contrato. Supervíselas para saber con exactitud si es posible transferir fondos en un momento dado.
+
+### Anuncios {#announcements}
+
+Las operaciones sensibles se encapsulan en [eventos de anuncio](/specifications/b20/reference/interfaces/ib20-asset/announce) onchain: [`announce`](/specifications/b20/reference/interfaces/ib20-asset/announce) emite [`Announcement (id, description, uri)`](/specifications/b20/reference/interfaces/ib20-asset) y, a continuación, [`EndAnnouncement`](/specifications/b20/reference/interfaces/ib20-asset). Los integradores indexan estos eventos para detectar los eventos corporativos en el momento en que se ejecutan.
+
+Dos decisiones de diseño:
+
+* Los anuncios pueden agruparse de forma atómica con el cambio en el token que describen (por ejemplo, la actualización del multiplicador en un desdoblamiento de acciones), lo que mantiene ordenados los registros onchain.
+* Las descripciones onchain son legibles por humanos de forma intencionada, para cumplir con los requisitos de divulgación pública.
+
+**Acciones de administración:** las operaciones de administración y `updateMultiplier` ([`OPERATOR_ROLE`](/specifications/b20/reference/interfaces/ib20-asset/operator-role)) se ejecutan de inmediato cuando las invoca el titular del rol; el estándar B20 no incluye ningún timelock integrado. Los eventos `Announcement` y `EndAnnouncement` sirven como aviso público, no imponen un retraso obligatorio. Cualquier timelock o multifirma lo aplica el emisor en la capa de gobernanza.
+
+### Metadatos adicionales {#extra-metadata}
+
+Los emisores pueden almacenar datos arbitrarios de tipo clave/valor onchain mediante [`extraMetadata(key)`](/specifications/b20/reference/interfaces/ib20-asset/extra-metadata) (por ejemplo, identificadores de valores como ISIN y CUSIP).
+
+### Nombre y símbolo {#name-and-symbol}
+
+El nombre y el símbolo se pueden actualizar onchain ([`updateName`](/specifications/b20/reference/interfaces/ib20/update-name), [`updateSymbol`](/specifications/b20/reference/interfaces/ib20/update-symbol)), de modo que el token puede reflejar los cambios offchain del activo subyacente sin tener que volver a desplegarlo.
+
+### Memos {#memos}
+
+[`transferWithMemo`](/specifications/b20/reference/interfaces/ib20/transfer-with-memo) y [`transferFromWithMemo`](/specifications/b20/reference/interfaces/ib20/transfer-from-with-memo) adjuntan una referencia `bytes32` a una transferencia concreta (que se emite como evento `Memo`), lo que permite anotar las transferencias con datos offchain para su conciliación y la generación de informes.
+
+### Límite de suministro {#supply-cap}
+
+Un límite de suministro opcional restringe el suministro total y mitiga el riesgo de emisión excesiva derivada de errores operativos o de una vulneración de seguridad.
+
+## Cumplimiento normativo {#compliance}
+
+La tenencia y la negociación en el mercado secundario no requieren permisos. El KYC solo se realiza en los flujos de acuñación y reembolso que ejecutan los participantes autorizados (Authorized Participants, AP).
+
+* Las políticas onchain pueden bloquear direcciones concretas, como las direcciones sancionadas; una transferencia bloqueada se revierte (consulta [Políticas](#policies) más arriba).
+* La acuñación y el reembolso de las acciones subyacentes constituyen un flujo del emisor independiente y restringido, ya que solo pueden realizarlos los AP.
+
+**Seguridad y auditorías:** las acciones tokenizadas son precompilados nativos de B20, no contratos desplegados por separado, por lo que no existe un contrato por activo ni un contrato verificado por dirección en Basescan (los precompilados no contienen bytecode). B20 se lanzó con la actualización Beryl de Base, sobre código auditado por Base y Spearbit, y cuenta con programas continuos de recompensas por errores (bug bounty) en Cantina (contratos inteligentes) y HackerOne (offchain e infraestructura). Todos los tokens comparten la misma implementación auditada.
+
+## Feeds de precios {#price-feeds}
+
+El precio de una acción tokenizada puede obtenerse tanto de fuentes onchain como offchain. En todos los casos, el precio se calcula a partir de la misma relación: el precio de mercado de la acción subyacente ajustado por el multiplicador del token.
+
+```text Token price formula
+Precio del token = Precio de mercado de la acción subyacente × Multiplicador
+```
+
+El multiplicador se obtiene para cada token y está escalado en WAD (un número de punto fijo con 18 decimales). Para obtener el factor real, divide el valor onchain entre esa escala; llama a [`WAD_PRECISION()`](/specifications/b20/reference/interfaces/ib20-asset/wad-precision) para consultar la escala (devuelve `1e18`).
+
+### Onchain {#onchain}
+
+Chainlink es la opción de precios onchain disponible en el lanzamiento. Cada acción tokenizada tiene un feed de Chainlink que funciona 24/5, mantiene el último cierre durante los fines de semana y festivos, y se congela durante los eventos corporativos. Los feeds implementan la interfaz estándar de agregador Chainlink V3 y se leen a través del proxy, exactamente igual que un feed de precios de criptomonedas; lee el valor más reciente con `latestRoundData()`.
+
+La [API de acciones tokenizadas](/es/sdks/tokenized-stocks/api-reference/list-tokenized-stocks) también devuelve `nav_price`, el valor NAV/de referencia basado en Chainlink publicado más recientemente para cada token, junto con `nav_price_updated_at` y el `multiplier` actual. `nav_price` no es un precio de compra/venta en tiempo real ni un precio de ejecución: lee `nav_price_updated_at` y aplica los mismos límites de antigüedad que aplicarías a `updatedAt` antes de confiar en él.
+
+A diferencia de los feeds estándar de precios de mercado, los feeds de Coinbase reportan **Total Return Values** (valores de rendimiento total) en lugar de precios brutos de acciones, por lo que el precio refleja el rendimiento total del activo subyacente, incluidos los ajustes por eventos corporativos. Chainlink aplica este mismo enfoque a otros emisores de acciones tokenizadas, como [Ondo y Robinhood](https://docs.chain.link/data-feeds/tokenized-equity-feeds/providers). El precio subyacente proviene de los feeds de precios de acciones de Chainlink (datos de mercados tradicionales), no de la negociación del token onchain o en DEX; el precio del token en DEX no alimenta el oráculo.
+
+El feed lee el multiplicador y un indicador de pausa del registro de oráculos onchain de Coinbase, un único contrato (independiente de los tokens) que devuelve ambos valores de un token en una sola llamada:
+
+* **Normal (`paused = false`):** el feed publica el precio subyacente × el multiplicador.
+* **En pausa (`paused = true`):** el feed deja de publicar y mantiene el último valor válido conocido.
+
+<Warning>
+  Durante el horario de mercado, el feed se actualiza cuando el precio se desvía un 0,5 % o, como mínimo, cada 24 horas (su heartbeat). Fuera de horario (noches, fines de semana, festivos y pausas por eventos corporativos) deja de actualizarse y mantiene el último valor, por lo que `updatedAt` deja de avanzar aunque el contrato sigue pudiendo invocarse. Lee siempre `updatedAt` y aplica límites de antigüedad antes de confiar en el precio; nunca liquides operaciones ni ejecutes liquidaciones forzosas basándote en un feed congelado.
+</Warning>
+
+Durante un evento corporativo:
+
+* La acuñación y el reembolso se pausan offchain, pero el token no se pausa onchain, por lo que las transferencias no se bloquean.
+* El feed se congela (se activa el indicador de pausa del registro) y su precio queda desactualizado.
+* Como el feed es de rendimiento total, no hay discontinuidad de precio: el multiplicador y el precio subyacente se mueven en direcciones opuestas y se compensan (un split 10:1 divide el precio entre ~10 y multiplica el multiplicador por ~10).
+* **Mecanismo de seguridad:** el feed solo se reanuda cuando Coinbase confirma que tanto el precio subyacente como el multiplicador reflejan los nuevos valores. Si uno se actualiza antes que el otro, el feed permanece congelado en el precio previo a la pausa en lugar de publicar un valor aplicado a medias.
+
+**Feeds de datos de Chainlink en Base.** Lee cada uno mediante `latestRoundData()` en la dirección del proxy que se indica a continuación. Todos los feeds devuelven 8 decimales, cubren acciones de EE. UU. (horario de mercado 24/5) y se actualizan ante una desviación de precio del 0,5 % o un heartbeat de 24 horas. Los valores son de rendimiento total; aplica la gestión de pausas y antigüedad descrita anteriormente.
+
+| Feed           | Dirección                                    |
+| -------------- | -------------------------------------------- |
+| Coinbase AAPL  | `0x787f13dEa48Db0897CbCDD985de77809D837F988` |
+| Coinbase AMZN  | `0x06A8E4b3aBB3B7543d8396FB2B763d22820cB295` |
+| Coinbase GOOGL | `0x5bF49E0ffA937CE2FfF033c739aD7C634c4D34F2` |
+| Coinbase META  | `0x6526aE6797A76123638b863AeE4dD27Ba4E4b27D` |
+| Coinbase MSFT  | `0xeB10A6c9aa7E537aEd766C08c35Dae35B321b18c` |
+| Coinbase MSTR  | `0xB3cE282CD188b35DA0E38D8Bc7d58e33173D202a` |
+| Coinbase NVDA  | `0x04689a41629776563E6822F76f2e57D148d28513` |
+| Coinbase SNDK  | `0x388b0dC46C0Fb05A74BeE0994fa5b02c6Fcca2eA` |
+| Coinbase SPCX  | `0x6A634B235903C4ad6376892180d6fF8612e3Fa68` |
+| Coinbase TSLA  | `0xFaf869185383a24F8cb00e27BdA6b63B9905DCb4` |
+
+### Offchain {#offchain}
+
+Los datos de precios offchain pueden obtenerse de proveedores como CoinGecko, CoinMarketCap o RWA. Estos agregadores siguen el precio de mercado del token en tiempo real en los DEX donde se negocia el B20, un mercado que funciona las 24 horas del día, los 7 días de la semana, siempre que el mercado secundario esté activo.
+
+Hay dos patrones habituales para determinar el valor:
+
+* Leer directamente el precio de mercado del token desde un proveedor que haga seguimiento del activo B20.
+* Leer el precio de referencia subyacente y aplicar manualmente el cálculo del multiplicador.
+
+### Datos históricos {#historical-data}
+
+Para obtener datos OHLC históricos y series temporales, utilice proveedores de datos de mercado o consulte el historial de rondas de Chainlink por `roundId`.
+
+Dado que los precios son de rendimiento total (ajustados por el multiplicador), si parte de precios brutos por acción, reconstruya la serie de forma coherente aplicando el historial del multiplicador (eventos [`MultiplierUpdated`](/specifications/b20/reference/interfaces/ib20-asset), que se emiten tanto en los cambios de multiplicador programados como en los instantáneos).
+
+## Direcciones de contratos {#contract-addresses}
+
+Para obtener estas direcciones mediante programación, usa el endpoint [List Tokenized Stocks](/es/sdks/tokenized-stocks/api-reference/list-tokenized-stocks) para los contratos de tokens y el endpoint [List Protocol Contract Addresses](/es/sdks/tokenized-stocks/api-reference/list-protocol-contract-addresses) para los contratos del protocolo.
+
+| Ticker           | Dirección del contrato                       |
+| ---------------- | -------------------------------------------- |
+| Registro onchain | `0x3f3E8cf41cdd3b1D118c16471aB0113DfDDd5CaD` |
+| AAPLc            | `0xb200000000000000000000C2e324d24d7eEcd1fb` |
+| AMZNc            | `0xb200000000000000000000d9192b6B456483C2E8` |
+| GOOGLc           | `0xb2000000000000000000002D0BA3164cc74f58B7` |
+| METAc            | `0xb2000000000000000000008bC8786B856E61707C` |
+| MSFTc            | `0xB200000000000000000000Ab99cFa739E253872B` |
+| MSTRc            | `0xb2000000000000000000004884b426556b92883d` |
+| NVDAc            | `0xb20000000000000000000078ee7ce2fE4908108C` |
+| SNDKc            | `0xb200000000000000000000397293Cb8cda9a10c5` |
+| SPCXc            | `0xb2000000000000000000007b9fcbd005511aCBd5` |
+| TSLAc            | `0xb2000000000000000000001e800a7f5189430cD0` |
+
+## Recursos adicionales {#additional-resources}
+
+* [API de acciones tokenizadas](/es/sdks/tokenized-stocks/overview)
+* [Estándar B20](/es/specifications/b20)
+* [Biblioteca estándar de Base](https://github.com/base/base-std/tree/main)
+
+## Aviso legal {#disclaimer}
+
+<p style={{ fontSize: "0.85rem", fontStyle: "italic" }}>Las acciones tokenizadas de Coinbase solo están disponibles para personas ubicadas en jurisdicciones elegibles fuera de EE. UU.</p>
+
+<p style={{ fontSize: "0.85rem", fontStyle: "italic" }}>La inclusión de cualquier protocolo o plataforma de terceros tiene fines exclusivamente de referencia para desarrolladores y no constituye un respaldo, una asociación ni una garantía. Verifica las direcciones, los feeds de datos y la lista de tokens con las fuentes oficiales antes de realizar la integración.</p>
+
+<p style={{ fontSize: "0.85rem", fontStyle: "italic" }}>Base es una infraestructura blockchain de código abierto y sin permisos. Cada token B20 lo despliega y configura su emisor, que establece y controla todos los parámetros del token y los permisos administrativos. Base no configura, administra ni controla los tokens desplegados en el protocolo.</p>

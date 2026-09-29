@@ -1,0 +1,40 @@
+---
+title: "Retirar fondos de un libro mayor"
+keywords: ["retiro de libro mayor en Base", "retiro con el contrato Portal", "retiro privado en Base", "retiro firmado por el operador"]
+description: "Transfiere fondos de un libro mayor de vuelta a Base a través del contrato Portal sin revelar la cuenta que realiza el retiro."
+---
+
+import { LedgersDemo } from "/snippets/LedgersDemo.jsx"
+
+Los fondos salen de un libro mayor a través del contrato `Portal` en Base. Tú eliges cómo valida el Portal un retiro (desde una verificación de firma hasta pruebas completas de transición de estado), y la cuenta que hay detrás se mantiene privada, de modo que no es posible vincular los depósitos con los retiros. Consulta [Transacciones privadas](/es/get-started/private-transactions).
+
+## Demostración {#demo}
+
+<LedgersDemo flow="withdraw" />
+
+<Tip>
+  La demostración anterior es solo una simulación. Si quieres ver demostraciones onchain en Vibenet, visita [demostraciones de la cadena Base](https://chain.base.org/demos).
+</Tip>
+
+## Qué datos se exponen onchain {#whats-exposed-onchain}
+
+| Dato         | ¿Público? | Motivo                                  |
+| ------------ | --------- | --------------------------------------- |
+| Activo       | Público   | Necesario para liquidar en Base.        |
+| Monto        | Público   | Necesario para liquidar en Base.        |
+| Remitente    | Oculto    | El Portal del libro mayor no lo revela. |
+| Destinatario | Público   | Necesario para liquidar en Base.        |
+
+`withdraw()` es una llamada normal a un contrato de Base, así que puedes agruparla con otras acciones de Base en una sola transacción atómica. O se liquidan todas juntas, o no se liquida ninguna.
+
+## Consulta también {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="Depositar en un libro mayor" icon="download" href="/es/build-on-base/ledgers/deposit">
+    Transfiere fondos desde Base a un libro mayor.
+  </Card>
+
+  <Card title="Transferir dentro de un libro mayor" icon="arrow-right-arrow-left" href="/es/build-on-base/ledgers/transfer">
+    Transfiere valor de forma privada entre cuentas.
+  </Card>
+</CardGroup>

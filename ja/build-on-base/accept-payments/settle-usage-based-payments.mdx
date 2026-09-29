@@ -1,0 +1,83 @@
+---
+title: "従量課金の支払いを決済する"
+keywords: ["x402 upto", "usage based API payments", "metered USDC API", "x402 settlement override"]
+description: "x402 の支払い上限額を承認し、ハンドラーの処理が成功した後に実際の API 使用量に応じて決済します。"
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+作業前に上限価格はわかっているものの、最終的な請求額は作業後に算出する場合は、x402 の `upto` を使用します。これは、上限付きの変動額チェックアウトをエージェント向けにしたものです。
+
+## デモ {#demo}
+
+<PaymentsDemo flow="x402Upto" />
+
+<Tip>
+  上記のデモはモックです。Vibenet 上のオンチェーンデモをご覧になりたい場合は、[Base chain demos](https://chain.base.org/demos) をご確認ください。
+</Tip>
+
+## 上限額を提示し、実際の請求額を設定する {#advertise-the-maximum-and-set-the-actual-charge}
+
+<CodeGroup>
+  {/* sample: x402-upto-ts */}
+
+  ```typescript TypeScript · Express lines wrap expandable highlight={1,3,9}
+  app.use(paymentMiddleware({
+    "GET /metered": {
+      accepts: [{ scheme: "upto", price: "$0.10", network, payTo }],
+      description: "Usage-priced inference",
+      mimeType: "application/json",
+    },
+  }, resourceServer));
+  app.get("/metered", (_request, response) => {
+    setSettlementOverrides(response, { amount: "$0.04" });
+    response.json({ tokens: 812, result: "Generated response" });
+  });
+  ```
+
+  {/* sample: x402-upto-go */}
+
+  ```go Go · net/http lines wrap expandable highlight={2,6}
+  routes["GET /metered"] = x402http.RouteConfig{
+  	Accepts: x402http.PaymentOptions{{Scheme: "upto", Price: "$0.10", Network: network, PayTo: payTo}},
+  	Description: "Usage-priced inference", MimeType: "application/json",
+  }
+  mux.HandleFunc("GET /metered", func(w http.ResponseWriter, _ *http.Request) {
+  	nethttpmw.SetSettlementOverrides(w, &x402.SettlementOverrides{Amount: "40000"})
+  	_ = json.NewEncoder(w).Encode(map[string]any{"tokens": 812, "result": "Generated response"})
+  })
+  ```
+
+  {/* sample: x402-upto-python */}
+
+  ```python Python · FastAPI lines wrap expandable highlight={2,10}
+  routes["GET /metered"] = RouteConfig(
+      accepts=[PaymentOption(scheme="upto", price="$0.10", network=network, pay_to=pay_to)],
+      description="Usage-priced inference",
+      mime_type="application/json",
+  )
+
+
+  @app.get("/metered")
+  async def metered(response: Response) -> dict[str, object]:
+      set_settlement_overrides(response, {"amount": "$0.04"})
+      return {"tokens": 812, "result": "Generated response"}
+  ```
+</CodeGroup>
+
+決済のオーバーライドは、正常に処理された分の使用量を算出してから設定してください。請求額は、402 の要件で提示した上限額以下に収める必要があります。
+
+<Check>
+  購入者は最大 $0.10 の支払いを承認し、成功したレスポンスで実際の使用量として $0.04 が記録され、決済時には $0.04 が請求されます。
+</Check>
+
+<Warning>
+  ミドルウェアによる承認の検証が完了する前に、課金対象の出力を返さないでください。エンドポイントを公開する前に、失敗、タイムアウト、処理の途中終了がそれぞれ請求額にどう反映されるかを定めておいてください。
+</Warning>
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="API の利用料金を請求する" icon="server" href="/ja/build-on-base/accept-payments/charge-for-an-api">処理を行う前に価格が確定している場合は、`exact` を使用します。</Card>
+  <Card title="オーソリゼーションをキャプチャする" icon="receipt" href="/ja/build-on-base/accept-payments/capture-an-authorization#capture-a-partial-amount">制約付きの permit を使って、ウォレットチェックアウト版を構築します。</Card>
+</CardGroup>

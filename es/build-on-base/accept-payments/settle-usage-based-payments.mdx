@@ -1,0 +1,83 @@
+---
+title: "Liquidar pagos por uso"
+keywords: ["x402 upto", "pagos de API por uso", "API medida con USDC", "anulación de liquidación x402"]
+description: "Autoriza un pago x402 máximo y liquida el uso real de la API después de que el controlador se ejecute correctamente."
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+Usa `upto` de x402 cuando conozcas el precio máximo antes de realizar el trabajo, pero el cargo final se calcule después. Es el equivalente agéntico de un pago variable con tope.
+
+## Demostración {#demo}
+
+<PaymentsDemo flow="x402Upto" />
+
+<Tip>
+  La demostración anterior es solo una simulación. Si quieres ver demostraciones onchain en Vibenet, visita [Demostraciones de la cadena Base](https://chain.base.org/demos).
+</Tip>
+
+## Anunciar el máximo y fijar el cargo real {#advertise-the-maximum-and-set-the-actual-charge}
+
+<CodeGroup>
+  {/* sample: x402-upto-ts */}
+
+  ```typescript TypeScript · Express lines wrap expandable highlight={1,3,9}
+  app.use(paymentMiddleware({
+    "GET /metered": {
+      accepts: [{ scheme: "upto", price: "$0.10", network, payTo }],
+      description: "Usage-priced inference",
+      mimeType: "application/json",
+    },
+  }, resourceServer));
+  app.get("/metered", (_request, response) => {
+    setSettlementOverrides(response, { amount: "$0.04" });
+    response.json({ tokens: 812, result: "Generated response" });
+  });
+  ```
+
+  {/* sample: x402-upto-go */}
+
+  ```go Go · net/http lines wrap expandable highlight={2,6}
+  routes["GET /metered"] = x402http.RouteConfig{
+  	Accepts: x402http.PaymentOptions{{Scheme: "upto", Price: "$0.10", Network: network, PayTo: payTo}},
+  	Description: "Usage-priced inference", MimeType: "application/json",
+  }
+  mux.HandleFunc("GET /metered", func(w http.ResponseWriter, _ *http.Request) {
+  	nethttpmw.SetSettlementOverrides(w, &x402.SettlementOverrides{Amount: "40000"})
+  	_ = json.NewEncoder(w).Encode(map[string]any{"tokens": 812, "result": "Generated response"})
+  })
+  ```
+
+  {/* sample: x402-upto-python */}
+
+  ```python Python · FastAPI lines wrap expandable highlight={2,10}
+  routes["GET /metered"] = RouteConfig(
+      accepts=[PaymentOption(scheme="upto", price="$0.10", network=network, pay_to=pay_to)],
+      description="Usage-priced inference",
+      mime_type="application/json",
+  )
+
+
+  @app.get("/metered")
+  async def metered(response: Response) -> dict[str, object]:
+      set_settlement_overrides(response, {"amount": "$0.04"})
+      return {"tokens": 812, "result": "Generated response"}
+  ```
+</CodeGroup>
+
+Establece la anulación de liquidación solo después de haber calculado el uso realizado correctamente. El importe cobrado debe ser igual o inferior al máximo anunciado en los requisitos del 402.
+
+<Check>
+  El comprador autoriza hasta 0,10 USD, la respuesta correcta registra 0,04 USD de uso real y la liquidación cobra 0,04 USD.
+</Check>
+
+<Warning>
+  No devuelvas resultados facturables antes de que el middleware haya verificado la autorización. Antes de exponer el endpoint, define cómo se traducen en cargos los fallos, los tiempos de espera agotados y el trabajo parcial.
+</Warning>
+
+## Ver también {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="Cobrar por una API" icon="server" href="/es/build-on-base/accept-payments/charge-for-an-api">Usa `exact` cuando conozcas el precio antes de realizar el trabajo.</Card>
+  <Card title="Capturar una autorización" icon="receipt" href="/es/build-on-base/accept-payments/capture-an-authorization#capture-a-partial-amount">Crea la versión con pago desde billetera usando un permit restringido.</Card>
+</CardGroup>

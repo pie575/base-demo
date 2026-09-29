@@ -1,0 +1,83 @@
+---
+title: "支付退款"
+keywords: ["Commerce Payments 退款", "OperatorRefundCollector", "USDC 部分退款", "PaymentRefunded"]
+description: "在退款期限内将已扣款的金额退还给原付款方。"
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+在 `refundExpiry` 之前，可对协议中的扣款 (charge) 或捕获 (capture) 进行全额或部分退款。可退款额度由链上记录，退款始终退回至 `paymentInfo.payer`。
+
+<Info>
+  本指南中的支付流程基于 [Commerce Payments Protocol](https://github.com/base/commerce-payments)。
+</Info>
+
+## 演示 {#demo}
+
+<PaymentsDemo flow="refund" />
+
+<Tip>
+  以上演示仅为模拟效果。如需查看 Vibenet 上的链上演示，请前往 [Base 链演示](https://chain.base.org/demos)。
+</Tip>
+
+## 为退款注资并提交 {#fund-and-submit-the-refund}
+
+已捕获 (captured) 的资金已经转出托管。已部署的 `OperatorRefundCollector` 会从 `paymentInfo.operator` 获取用于补充的流动性，因此在调用 `refund` 之前，请先授权它使用相应的退款金额。
+
+{/* sample: refund-payment-ts */}
+
+```typescript TypeScript lines wrap expandable highlight={8-11,16-17,26-27}
+export async function refundPayment(
+  payment: StoredProtocolPayment,
+  refundAmount: bigint,
+) {
+  const [, , refundableAmount] = await publicClient.readContract({
+    address: AUTH_CAPTURE_ESCROW,
+    abi: authCaptureEscrowAbi,
+    functionName: "paymentState",
+    args: [payment.paymentInfoHash],
+  });
+  if (refundAmount > refundableAmount) throw new Error("Refund exceeds captured amount");
+  const approval = await publicClient.simulateContract({
+    account,
+    address: payment.paymentInfo.token,
+    abi: refundApprovalAbi,
+    functionName: "approve",
+    args: [OPERATOR_REFUND_COLLECTOR, refundAmount],
+  });
+  const approvalHash = await walletClient.writeContract(approval.request);
+  await publicClient.waitForTransactionReceipt({ hash: approvalHash, confirmations: 2 });
+
+  const refund = await publicClient.simulateContract({
+    account,
+    address: AUTH_CAPTURE_ESCROW,
+    abi: authCaptureEscrowAbi,
+    functionName: "refund",
+    args: [payment.paymentInfo, refundAmount, OPERATOR_REFUND_COLLECTOR, "0x"],
+  });
+  const hash = await walletClient.writeContract(refund.request);
+  return publicClient.waitForTransactionReceipt({ hash, confirmations: 2 });
+}
+```
+
+每次扣款 (charge) 或捕获 (capture) 都会使 `refundableAmount` 增加相应的总额，手续费不会降低该上限。每次退款则会使其减少相应的退还金额。
+
+<Check>
+  在完成退款之前，请核实 `PaymentRefunded(paymentInfoHash, amount, tokenCollector)` 事件、向已存储付款方的转账，以及更新后的 `refundableAmount`。
+</Check>
+
+<Warning>
+  退款额度的记账不等于有可用于退款的资金。代币必须由运营方或其他经独立授权的来源提供。切勿复用付款方的剩余授权为退款提供资金。
+</Warning>
+
+## 另请参阅 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="验证付款" icon="shield-check" href="/zh/build-on-base/accept-payments/verify-a-payment">
+    确认原始的协议结算及付款哈希。
+  </Card>
+
+  <Card title="付款对账" icon="table" href="/zh/build-on-base/accept-payments/reconcile-payments">
+    将退款与对应的扣款及捕获进行匹配。
+  </Card>
+</CardGroup>

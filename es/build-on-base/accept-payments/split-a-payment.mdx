@@ -1,0 +1,101 @@
+---
+title: "Dividir un pago"
+keywords: ["dividir pago en USDC", "división de pagos en marketplace", "reparto en puntos básicos Base", "contrato inteligente de comisión de plataforma"]
+description: "Divide un importe de tokens entre los destinatarios de un marketplace con una contabilidad exacta en puntos básicos y sin dejar restos (dust) sin repartir."
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+Paga a un vendedor, a una plataforma y a un referente en una sola transacción. Expresa cada participación en puntos básicos, exige que las participaciones sumen 10 000 y asigna el resto de la división entera a un único destinatario designado.
+
+## Demostración {#demo}
+
+<PaymentsDemo flow="split" />
+
+<Tip>
+  La demostración anterior es solo una simulación. Si quieres ver demostraciones onchain en Vibenet, visita [demostraciones de la cadena de Base](https://chain.base.org/demos).
+</Tip>
+
+## Calcular y enviar la cantidad exacta de participaciones {#calculate-and-send-exact-shares}
+
+{/* sample: split-payment-solidity */}
+
+```solidity Payout.sol lines wrap expandable highlight={13-18,23}
+function splitPayment(
+    bytes32 splitId,
+    uint256 amount,
+    address[] calldata recipients,
+    uint16[] calldata sharesBps,
+    uint256 remainderRecipient
+) external {
+    if (processed[splitId]) revert BatchAlreadyProcessed(splitId);
+    if (recipients.length == 0 || recipients.length != sharesBps.length) revert InvalidArrayLengths();
+    if (recipients.length > MAX_RECIPIENTS || remainderRecipient >= recipients.length) revert TooManyRecipients();
+
+    uint256 totalBps;
+    uint256 distributed;
+    uint256[] memory amounts = new uint256[](recipients.length);
+    for (uint256 i; i < recipients.length; ++i) {
+        totalBps += sharesBps[i];
+        amounts[i] = amount * sharesBps[i] / 10_000;
+        distributed += amounts[i];
+    }
+    if (totalBps != 10_000) revert InvalidBasisPoints();
+    amounts[remainderRecipient] += amount - distributed;
+    processed[splitId] = true;
+
+    for (uint256 i; i < recipients.length; ++i) {
+        require(token.transferFrom(msg.sender, recipients[i], amounts[i]), "transfer failed");
+        emit PayoutSent(splitId, msg.sender, recipients[i], amounts[i]);
+    }
+}
+```
+
+{/* sample: split-payment-ts */}
+
+```typescript TypeScript backend lines wrap expandable highlight={7-9,12-16}
+export async function splitPayment(
+  payout: Address,
+  splitReference: string,
+  amount: string,
+  recipients: Address[],
+  sharesBps: number[],
+  remainderRecipient = 0,
+) {
+  if (sharesBps.reduce((sum, share) => sum + share, 0) !== 10_000) {
+    throw new Error("Shares must total 10,000 basis points");
+  }
+  const splitId = keccak256(toHex(splitReference));
+  const simulation = await publicClient.simulateContract({
+    account,
+    address: payout,
+    abi: payoutAbi,
+    functionName: "splitPayment",
+    args: [splitId, parseUnits(amount, 6), recipients, sharesBps, BigInt(remainderRecipient)],
+  });
+  const hash = await walletClient.writeContract(simulation.request);
+  return publicClient.waitForTransactionReceipt({ hash, confirmations: 2 });
+}
+```
+
+El contrato emite `PayoutSent` para cada tramo con el `splitId` compartido. Esa referencia cumple la función de memo de pago tanto para USDC como para B20, sin depender de métodos de memo propios de cada token.
+
+<Check>
+  La suma de todas las partes coincide exactamente con el importe de entrada, incluido el resto del redondeo, y la división envía cada tramo directamente del pagador a su destinatario.
+</Check>
+
+<Warning>
+  Define en tus condiciones comerciales quién recibe el resto del redondeo. Además, aprueba solo el importe necesario para la división y verifica las direcciones de los destinatarios antes de enviar la transacción.
+</Warning>
+
+## Consulta también {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="Enviar un pago" icon="money-bill-transfer" href="/es/build-on-base/accept-payments/send-a-payout">
+    Envía importes arbitrarios a un lote limitado de destinatarios.
+  </Card>
+
+  <Card title="Conciliar pagos" icon="table" href="/es/build-on-base/accept-payments/reconcile-payments">
+    Exporta los tramos de un pago dividido agrupados por su referencia común.
+  </Card>
+</CardGroup>

@@ -1,0 +1,50 @@
+---
+title: "ユーザー属性を割り当てる"
+description: "トランザクションのアトリビューションには Builder Codes を、検証済みのユーザー特性、ID の重複排除、参加資格ポリシーには Base Verify を使用します。"
+---
+
+オンチェーンアクティビティをどのビルダーが生み出したかを特定したい場合や、ユーザーが検証済みの参加資格要件を満たしているかを判定したい場合は、アトリビューションを使用します。Builder Codes と Base Verify は、この課題のそれぞれ異なる側面に対応します。
+
+## オンチェーンアクティビティのアトリビューション {#attribute-onchain-activity}
+
+Builder Codes は、トランザクションの calldata に ERC-8021 アトリビューションサフィックスを付加します。オフチェーンのインデクサーはこのサフィックスを利用して、アクティビティを、それを生成したアプリ、ウォレット、またはエージェントと紐付けます。
+
+<CardGroup cols={2}>
+  <Card title="Builder Codes の概要" icon="code" href="/ja/specifications/builder-codes/overview">
+    Builder Codes の仕組み、アトリビューションのメリット、対応アカウントタイプ、検証方法について説明します。
+  </Card>
+
+  <Card title="アプリ開発者向け" icon="window" href="/ja/specifications/builder-codes/for-app-developers">
+    Wagmi、Viem、CDP Wallets、または Privy を使って、トランザクションのアトリビューションを自動化します。
+  </Card>
+
+  <Card title="ウォレット開発者向け" icon="wallet" href="/ja/specifications/builder-codes/for-wallet-developers">
+    EOA および ERC-4337 ユーザーオペレーションに対応した `dataSuffix` ケイパビリティを実装します。
+  </Card>
+
+  <Card title="エージェント開発者向け" icon="robot" href="/ja/specifications/builder-codes/for-agent-developers">
+    エージェントを登録し、エージェントが自律的に実行するオンチェーントランザクションにアトリビューションを付与します。
+  </Card>
+</CardGroup>
+
+## ユーザー属性を検証する {#verify-user-attributes}
+
+Base Verify を使用すると、ユーザーはサポート対象のアカウントを管理していることを証明でき、アプリケーションは承認済みの特性を評価できます。アプリケーション側で制御するエクスペリエンスにはバックエンドフローを、スマートコントラクトでポリシーを強制する必要がある場合はオンチェーンフローを選択してください。
+
+<CardGroup cols={2}>
+  <Card title="Base Verify API" icon="user-check" href="/ja/sdks/base-verify/overview">
+    バックエンドとオンチェーンの検証フローを比較します。
+  </Card>
+
+  <Card title="ソーシャルアカウントを検証する" icon="address-card" href="/ja/sdks/base-verify/verify-social-accounts">
+    アプリケーションのバックエンドから、検証済みのアカウント所有権と特性を確認します。
+  </Card>
+
+  <Card title="オンチェーンでユーザーを検証する" icon="shield-check" href="/ja/sdks/base-verify/verify-users-onchain">
+    スマートコントラクト内で、ポリシーに基づくアクセス制限と「1人1回」の参加制限を強制します。
+  </Card>
+</CardGroup>
+
+<Note>
+  Builder Codes はトランザクションの発生元を特定するためのものであり、ユーザーの身元や資格を検証するものではありません。一方、Base Verify は検証済みのユーザー属性を評価するためのものであり、トランザクションを生成したビルダーを特定するものではありません。
+</Note>

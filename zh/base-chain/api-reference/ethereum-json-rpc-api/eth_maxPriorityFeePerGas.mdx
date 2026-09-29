@@ -1,0 +1,38 @@
+---
+title: 'eth_maxPriorityFeePerGas'
+sidebarTitle: 'eth_maxPriorityFeePerGas'
+description: '返回建议的 EIP-1559 每单位 gas 优先费（小费）。'
+---
+
+返回 EIP-1559 交易中 `maxPriorityFeePerGas` 的建议值。该值即在基础费用之外支付给排序器 (sequencer) 的小费。
+
+## 参数 {#parameters}
+
+无参数。
+
+## 返回值 {#returns}
+
+<ResponseField name="result" type="string">
+  建议的每单位 gas 优先费 (单位为 wei) ，以十六进制字符串表示。
+</ResponseField>
+
+## 示例 {#example}
+
+<CodeGroup>
+  ```json Request
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_maxPriorityFeePerGas",
+    "params": [],
+    "id": 1
+  }
+  ```
+
+  ```json Response
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0xf4240"
+  }
+  ```
+</CodeGroup>

@@ -1,0 +1,50 @@
+---
+title: "发起交易"
+keywords: ["在 Base 上发送交易", "Base viem 示例", "Base 上的第一笔交易", "Base 交易费用"]
+description: "使用 viem 在 Base 上发送你的第一笔交易：几秒内即可完成连接、签名和确认，费用不到一美分。"
+---
+
+Base 采用与以太坊相同的交易模型，因此任何 EVM 库都能直接使用。下面是一个使用 [viem](https://viem.sh) 发送交易的最简示例。
+
+## 发送交易 {#send-a-transaction}
+
+```ts send.ts lines wrap expandable
+import { createWalletClient, http, parseEther } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+import { base } from 'viem/chains';
+
+const account = privateKeyToAccount('0xYourPrivateKey');
+
+const client = createWalletClient({
+  account,
+  chain: base,
+  transport: http('https://mainnet.base.org'),
+});
+
+const hash = await client.sendTransaction({
+  to: '0xRecipientAddress',
+  value: parseEther('0.001'),
+});
+
+console.log(`Sent, view at https://basescan.org/tx/${hash}`);
+```
+
+<Warning>
+  切勿硬编码或泄露私钥。`'0xYourPrivateKey'` 仅为占位符。请从环境变量或密钥管理服务中加载私钥，确保其仅保存在服务器端，切勿将其提交到源代码管理系统。
+</Warning>
+
+<Tip>
+  得益于 [Flashblocks](/zh/specifications/transactions/transaction-ordering#flashblocks)，Base 上的交易可在一秒内完成确认，gas 费用通常不到一美分。
+</Tip>
+
+## 后续步骤 {#next-steps}
+
+<CardGroup cols={2}>
+  <Card title="发行稳定币" icon="coins" href="/zh/get-started/issue-stablecoins">
+    只需一次调用，即可发行由法币支持的代币。
+  </Card>
+
+  <Card title="便捷收款" icon="credit-card" href="/zh/get-started/accept-payments">
+    支持一键结账，轻松接收 USDC 付款。
+  </Card>
+</CardGroup>

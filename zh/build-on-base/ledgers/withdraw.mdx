@@ -1,0 +1,40 @@
+---
+title: "从账本提现"
+keywords: ["Base 账本提现", "Portal 合约提现", "Base 隐私提现", "运营方签名提现"]
+description: "通过 Portal 合约将资金从账本转回 Base，同时隐藏发起提现的账户。"
+---
+
+import { LedgersDemo } from "/snippets/LedgersDemo.jsx"
+
+资金通过 Base 上的 `Portal` 合约从账本中转出。你可以自行选择 Portal 验证提款的方式 (从简单的签名检查到完整的状态转换证明) ，同时提款背后的账户始终保持私密，因此存款与提款之间无法被关联。详见[私密交易](/zh/get-started/private-transactions)。
+
+## 演示 {#demo}
+
+<LedgersDemo flow="withdraw" />
+
+<Tip>
+  以上演示仅为模拟效果。如需查看 Vibenet 上的链上演示，请前往 [Base 链演示](https://chain.base.org/demos)。
+</Tip>
+
+## 链上公开哪些数据 {#whats-exposed-onchain}
+
+| 数据  | 是否公开？ | 原因              |
+| --- | ----- | --------------- |
+| 资产  | 公开    | 在 Base 上结算所必需。  |
+| 金额  | 公开    | 在 Base 上结算所必需。  |
+| 发送方 | 隐藏    | 账本 Portal 不会披露。 |
+| 接收方 | 公开    | 在 Base 上结算所必需。  |
+
+`withdraw()` 是普通的 Base 合约调用，因此你可以将它与其他 Base 操作打包进同一笔原子交易。这些操作要么全部结算，要么全部不结算。
+
+## 另请参阅 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="向账本存入资金" icon="download" href="/zh/build-on-base/ledgers/deposit">
+    将资金从 Base 转入账本。
+  </Card>
+
+  <Card title="在账本内转账" icon="arrow-right-arrow-left" href="/zh/build-on-base/ledgers/transfer">
+    在账户之间私密转移价值。
+  </Card>
+</CardGroup>

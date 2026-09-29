@@ -1,0 +1,113 @@
+---
+title: "クロスドメインメッセンジャー"
+description: "Base上のL1とL2の間でメッセージを送信するための高レベルAPIを提供する、クロスドメインメッセンジャーコントラクトの仕様。"
+---
+
+## 概要 {#overview}
+
+クロスドメインメッセンジャーは、クロスドメインメッセージを送信したい開発者向けに、より高レベルな API を提供します。クロスドメインメッセージのリプレイ (再実行) 機能を備えており、L1 および L2 でクロスドメインメッセージングを担う低レベルのシステムコントラクトの直上に位置しています。
+
+`CrossDomainMessenger` を拡張することで、`L1CrossDomainMessenger` と `L2CrossDomainMessenger` の両方が作成されます。さらに、これらのコントラクトはレガシー API によって拡張されており、Bedrock システムアップグレード以前に統合されたアプリケーションとの後方互換性を確保しています。
+
+`L2CrossDomainMessenger` は、`0x4200000000000000000000000000000000000007` に配置されたプリデプロイコントラクトです。
+
+基底となる `CrossDomainMessenger` のインターフェースは次のとおりです。
+
+```solidity CrossDomainMessenger.sol lines wrap expandable
+interface CrossDomainMessenger {
+    event FailedRelayedMessage(bytes32 indexed msgHash);
+    event RelayedMessage(bytes32 indexed msgHash);
+    event SentMessage(address indexed target, address sender, bytes message, uint256 messageNonce, uint256 gasLimit);
+    event SentMessageExtension1(address indexed sender, uint256 value);
+
+    function MESSAGE_VERSION() external view returns (uint16);
+    function MIN_GAS_CALLDATA_OVERHEAD() external view returns (uint64);
+    function MIN_GAS_CONSTANT_OVERHEAD() external view returns (uint64);
+    function MIN_GAS_DYNAMIC_OVERHEAD_DENOMINATOR() external view returns (uint64);
+    function MIN_GAS_DYNAMIC_OVERHEAD_NUMERATOR() external view returns (uint64);
+    function OTHER_MESSENGER() external view returns (address);
+    function baseGas(bytes memory _message, uint32 _minGasLimit) external pure returns (uint64);
+    function failedMessages(bytes32) external view returns (bool);
+    function messageNonce() external view returns (uint256);
+    function relayMessage(
+        uint256 _nonce,
+        address _sender,
+        address _target,
+        uint256 _value,
+        uint256 _minGasLimit,
+        bytes memory _message
+    ) external payable returns (bytes memory returnData_);
+    function sendMessage(address _target, bytes memory _message, uint32 _minGasLimit) external payable;
+    function successfulMessages(bytes32) external view returns (bool);
+    function xDomainMessageSender() external view returns (address);
+}
+```
+
+## メッセージパッシング {#message-passing}
+
+クロスドメインメッセージの送信には `sendMessage` 関数を使用します。相手側で
+実行をトリガーするには、`relayMessage` 関数を呼び出します。
+成功したメッセージのハッシュは `successfulMessages` マッピングに格納され、
+失敗したメッセージのハッシュは `failedMessages`
+マッピングに格納されます。
+
+L1 から L2 へ送信する場合のユーザー体験は、L2 から L1 へトランザクションを
+送信する場合とは少し異なります。L1 から L2 へ送信する場合、ユーザーが
+L2 上で `relayMessage` を自分で呼び出す必要はありません。ユーザーは L1 上で L2 のガス代を支払い、
+トランザクションは自動的に L2 に取り込まれて実行されます。
+L2 から L1 へ送信する場合、ユーザーは OptimismPortal 上で出金を証明し、
+ファイナライズ期間が経過するのを待ってから、OptimismPortal 上で出金をファイナライズします。
+このとき OptimismPortal が
+`L1CrossDomainMessenger` の `relayMessage` を呼び出すことで、出金がファイナライズされます。
+
+## アップグレード可能性 {#upgradability}
+
+L1 および L2 のクロスドメインメッセンジャーは、アップグレード可能な
+プロキシの背後にデプロイすべきです (SHOULD) 。これにより、メッセージバージョンを更新できるようになります。
+
+## メッセージのバージョニング {#message-versioning}
+
+メッセージは、nonce の先頭 2 バイトに基づいてバージョン管理されます。バージョンに
+よって、メッセージのシリアライズ方式やハッシュ方式が異なる場合があります。
+nonce の先頭 2 バイトをバージョンのメタデータ用に予約しているのは、
+当初はメッセージ自体にバージョンフィールドが含まれていなかったためです。
+`uint256` の nonce は非常に大きいため、そのフィールドに追加のデータを
+ごく簡単に詰め込むことができます。
+
+### メッセージバージョン 0 {#message-version-0}
+
+```solidity Message Version 0 Encoding
+abi.encodeWithSignature(
+    "relayMessage(address,address,bytes,uint256)",
+    _target,
+    _sender,
+    _message,
+    _messageNonce
+);
+```
+
+### メッセージバージョン 1 {#message-version-1}
+
+```solidity Message Version 1 Encoding lines wrap expandable
+abi.encodeWithSignature(
+    "relayMessage(uint256,address,address,uint256,uint256,bytes)",
+    _nonce,
+    _sender,
+    _target,
+    _value,
+    _gasLimit,
+    _data
+);
+```
+
+## 後方互換性に関する注意事項 {#backwards-compatibility-notes}
+
+以前のバージョンのメッセンジャーコントラクトには、`blockedMessages` マッピングで管理される
+ブロック済みメッセージという概念がありました。しかし、巧妙な攻撃者であればメッセージをブロックする
+あらゆる試みを回避できてしまうため、この機能はメッセンジャーから削除されました。
+また、これにより出金のファイナライズにかかるガスも節約できます。
+
+「リレー ID」の概念と `relayedMessages` マッピングも削除されました。
+これは、ユーザーに代わってメッセージをリレーしたサードパーティに報酬を支払えるようにするための仕組みでしたが、
+リレーされたメッセージが実際に成功したかどうかを確認する手段がなかったため、
+実装に不備がありました。

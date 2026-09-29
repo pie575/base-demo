@@ -1,0 +1,38 @@
+---
+title: 'net_version'
+sidebarTitle: 'net_version'
+description: '以字符串形式返回当前网络 ID。'
+---
+
+以十进制字符串形式返回当前网络 ID。
+
+## 参数 {#parameters}
+
+无参数。
+
+## 返回值 {#returns}
+
+<ResponseField name="result" type="string">
+  以十进制字符串表示的网络 ID。Base Mainnet 为 `"8453"`，Base Sepolia 为 `"84532"`。
+</ResponseField>
+
+## 示例 {#example}
+
+<CodeGroup>
+  ```json Request
+  {
+    "jsonrpc": "2.0",
+    "method": "net_version",
+    "params": [],
+    "id": 1
+  }
+  ```
+
+  ```json Response (Base Mainnet)
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "8453"
+  }
+  ```
+</CodeGroup>

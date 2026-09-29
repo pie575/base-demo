@@ -1,0 +1,65 @@
+---
+title: MCP サーバー
+sidebarTitle: MCP サーバー
+description: Model Context Protocol を使用して AI コーディングアシスタントを Base ドキュメントに接続し、リアルタイムでアクセスできるようにします。
+---
+
+[Model Context Protocol (MCP)](https://modelcontextprotocol.io/) は、AI アシスタントが外部のデータソースに安全にアクセスできるようにするオープン標準です。Base MCP サーバーを使うと、AI コーディングアシスタントを Base のドキュメントに直接接続できます。これにより、アシスタントは必要な情報をリアルタイムで検索し、的確に取得できるようになります。
+
+## Cursor でのセットアップ {#setup-with-cursor}
+
+[Cursor](https://cursor.com/) は、VS Code のフォークとして開発された AI 搭載のコードエディタです。AI によるコード補完や自然言語による編集などの機能を備えています。
+
+<Steps>
+  <Step title="MCP 設定を開く">
+    Cursor で **Settings** を開き、**Tools &amp; MCP** に移動して **Add MCP Server** をクリックします。
+  </Step>
+
+  <Step title="Base Docs サーバーを追加する">
+    `mcp.json` 設定ファイルに次の内容を追加します。
+
+    ```json mcp.json
+    {
+      "mcpServers": {
+        "base-docs": {
+          "url": "https://docs.base.org/mcp"
+        }
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="保存して再起動する">
+    ファイルを保存し、Cursor を再起動して変更を反映します。
+  </Step>
+
+  <Step title="開発を始める">
+    これで、AI アシスタントが Base のドキュメントにリアルタイムでアクセスできるようになりました。たとえば「Base にスマートコントラクトをデプロイするにはどうすればよいですか？」と質問してみましょう。
+  </Step>
+</Steps>
+
+## Claude Code でのセットアップ {#setup-with-claude-code}
+
+[Claude Code](https://docs.claude.com/en/docs/claude-code/overview) は、ターミナル上で動作し、コードベースを理解するエージェント型のコーディングツールです。
+
+<Steps>
+  <Step title="Base Docs MCP サーバーを追加する">
+    ターミナルで次のコマンドを実行します。
+
+    ```bash Terminal
+    claude mcp add --transport http base-docs https://docs.base.org/mcp
+    ```
+  </Step>
+
+  <Step title="インストールを確認する">
+    サーバーが正しく追加されたことを確認します。
+
+    ```bash Terminal
+    claude mcp list
+    ```
+  </Step>
+
+  <Step title="開発を始める">
+    Claude Code を起動して、質問してみましょう。例：「Base にスマートコントラクトをデプロイするにはどうすればよいですか？」
+  </Step>
+</Steps>

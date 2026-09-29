@@ -1,0 +1,147 @@
+---
+title: "B20：Beryl から Cobalt への移行"
+description: "Cobalt で B20 Asset の乗数が ERC-8056 準拠となり、コーポレートアクション向けにスケジュール指定可能な乗数セッターが追加されます。Beryl のセレクターはすべて引き続き呼び出せます。"
+---
+
+> **対象読者：** Beryl (現在稼働中) 上の B20 Asset 乗数インターフェースとすでに統合済みのチーム。本ノートでは、
+> Cobalt ハードフォークで導入される乗数および ERC-8056 関連の変更のみを取り上げます。
+
+## 概要 {#summary}
+
+Cobalt では、B20 Asset の乗数関連インターフェースが [ERC-8056 (&quot;Scaled UI Amount&quot;)](https://eips.ethereum.org/EIPS/eip-8056)
+に準拠し、コーポレートアクション向けに乗数を予約設定できるセッターが追加されます。現在呼び出している機能が
+動作しなくなることはありません。Beryl のすべてのセレクター、イベントトピック、エラーは 4 バイトのセレクターまたは topic0 を完全に維持し、
+Cobalt でも引き続き呼び出せます。以下の非推奨化はあくまで推奨であり、強制されるものではありません。
+
+移行する際は、ERC-8056 の正式な名前 (`uiMultiplier`、`toUIAmount`/`fromUIAmount`、
+`balanceOfUI`、`totalSupplyUI`) を使用し、通常の乗数変更は即時反映される
+`updateMultiplier(uint256)` から予約型の `updateUIMultiplier(uint256,uint256)` に切り替えてください。
+
+Cobalt はまだ稼働していません。有効化されるまでは、オンチェーンには Beryl のインターフェースのみが存在します。
+
+## マッピングテーブル {#mapping-table}
+
+以下のセレクターと topic0 は、凍結された ABI (Beryl は `abi/v1.rs`、
+Cobalt は `abi/v2.rs`) から取得した実際の値です。Beryl のすべてのシンボルは、Cobalt でも同じセレクターを維持します。
+
+### 関数 {#functions}
+
+| Beryl のシンボル (セレクター)                      | Cobalt の正規シンボル (セレクター)                             | ステータス                               | 理由                                                           |
+| ---------------------------------------- | -------------------------------------------------- | ----------------------------------- | ------------------------------------------------------------ |
+| `multiplier()` `0x1b3ed722`              | `uiMultiplier()` `0xa60bf13d`                      | deprecated-name-kept / new alias    | ERC-8056 のコア命名規則。どちらも同じ実効乗数を返します。`multiplier()` は引き続き利用できます。 |
+| `toScaledBalance(uint256)` `0x04f04c99`  | `toUIAmount(uint256)` `0x3248d4ff`                 | deprecated-dialable / new           | ERC-8056 の Conversion 拡張。動作はバイト単位で同一です。                      |
+| `toRawBalance(uint256)` `0x0ca06c44`     | `fromUIAmount(uint256)` `0x65cd9b3c`               | deprecated-dialable / new           | ERC-8056 の Conversion 拡張。動作はバイト単位で同一です。                      |
+| `scaledBalanceOf(address)` `0x1da24f3e`  | `balanceOfUI(address)` `0x437a9958`                | deprecated-name-kept / new alias    | ERC-8056 の Balances 拡張。エイリアスであり、同じ値を返します。                    |
+| `updateMultiplier(uint256)` `0x5ffe6146` | `updateUIMultiplier(uint256,uint256)` `0x628e600f` | deprecated-dialable / new (not 1:1) | 正規の経路はスケジュール型のセッターに変わりました。即時セッターは緊急時のフェイルセーフとして残されています。      |
+| —                                        | `newUIMultiplier()` `0xdc767007`                   | new                                 | ERC-8056 の保留中スケジュールを読み取ります。                                  |
+| —                                        | `effectiveAt()` `0x97a4064f`                       | new                                 | ERC-8056 の保留中スケジュールを読み取ります (切り替えのタイムスタンプ) 。                  |
+| —                                        | `totalSupplyUI()` `0x9bea6429`                     | new                                 | ERC-8056 の Balances 拡張。                                      |
+| —                                        | `cancelUIMultiplierUpdate()` `0x2c97a0f0`          | new                                 | 現在有効な唯一の保留中の更新をキャンセルします。                                     |
+| —                                        | `MAX_UI_MULTIPLIER()` `0x785c0cf0`                 | new                                 | リバートの危険を冒さずに乗数の上限 (`type(uint128).max`) を読み取ります。             |
+| —                                        | `supportsInterface(bytes4)` `0x01ffc9a7`           | new                                 | ERC-165 による機能検出。                                             |
+
+`OPERATOR_ROLE()` `0xf5b541a6`、`WAD_PRECISION()` `0x664808a8`、`announce(...)` `0x595135dd`、
+`isAnnouncementIdUsed(string)` `0xc0da474e`、`batchMint(...)` `0x68573107`、
+`extraMetadata(string)` `0x4ddf9da0`、`updateExtraMetadata(string,string)` `0xb2851ef5` は
+変更なくそのまま引き継がれます。
+
+### イベント {#events}
+
+| Beryl イベント (topic0)          | Cobalt 正規イベント (topic0)                         | ステータス             | 理由                                                                                   |
+| ---------------------------- | ---------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------ |
+| `MultiplierUpdated(uint256)` | `UIMultiplierUpdated(uint256,uint256,uint256)` | 非推奨 (引き続き発行) / 新規 | ERC-8056 の正規イベントです。即時セッターは両方のイベントを発行します。スケジュール型セッターは `UIMultiplierUpdated` のみを発行します。 |
+| —                            | `UIMultiplierUpdateCancelled(uint256,uint256)` | 新規                | 保留中の更新がクリアされたことを通知します。                                                               |
+
+### エラー {#errors}
+
+| Beryl のエラー (セレクター)                 | Cobalt (セレクター)                                   | ステータス     | 理由                                                      |
+| ---------------------------------- | ------------------------------------------------ | --------- | ------------------------------------------------------- |
+| `InvalidMultiplier()` `0x6f12f3dc` | `InvalidMultiplier()` `0x6f12f3dc`               | Beryl に既存 | ゼロまたは上限超過を防ぐガード。`updateUIMultiplier` からもスローされるようになりました。 |
+| —                                  | `EffectiveAtInPast(uint256)` `0x14119cf6`        | 新規        | `effectiveAt <= block.timestamp` の場合にスローされます。           |
+| —                                  | `EffectiveAtTooFar(uint256)` `0x1ce214fa`        | 新規        | `effectiveAt > type(uint64).max` の場合にスローされます。           |
+| —                                  | `UIMultiplierUpdateExists(uint256)` `0x4481a68e` | 新規        | 有効な保留中の更新がすでに存在する場合にスローされます。                            |
+| —                                  | `UIMultiplierUpdateDoesNotExist()` `0xa7d6a5ca`  | 新規        | 有効な保留中の更新がない状態でキャンセルしようとした場合にスローされます。                   |
+
+## Cobalt の新機能：導入すべき項目 {#new-at-cobalt-adopt-these}
+
+### スケジュール更新のライフサイクル {#scheduled-update-lifecycle}
+
+`updateUIMultiplier(newMultiplier, effectiveAt)` は、株式分割や配当の再投資といったコーポレートアクションに対応するための正規の手段です。
+同時に有効にできる保留中の更新は 1 件のみです。
+
+1. **スケジュールする**: `updateUIMultiplier(newMultiplier, effectiveAt)` を呼び出します。この呼び出しには
+   `OPERATOR_ROLE` が必要です。また、`effectiveAt` は現在より厳密に後の時刻でなければなりません。
+2. **保留中の更新を確認する**: 更新が有効な間、`newUIMultiplier()` はスケジュールされた変更後の値を、
+   `effectiveAt()` は切り替え時刻のタイムスタンプを返します。一方、`uiMultiplier()` / `multiplier()` は引き続き
+   現在の値を返します。
+3. **発効を待つ**: `block.timestamp >= effectiveAt` になると、`uiMultiplier()` / `multiplier()` は読み取り時に
+   新しい値に切り替わります。発効時にイベントは発行されません。
+4. **またはキャンセルする**: `cancelUIMultiplierUpdate()` は有効な保留中の更新を取り消し、
+   `UIMultiplierUpdateCancelled(cancelledMultiplier, cancelledEffectiveAt)` を発行します。
+
+重複するアクションの順序を入れ替えるには、1 回のアナウンス内でキャンセルと再スケジュールをアトミックに実行します：
+`announce([cancelUIMultiplierUpdate(), updateUIMultiplier(...)], ...)`。
+
+### ERC-8056 ビューエイリアス {#erc-8056-view-aliases}
+
+* `uiMultiplier()` は `multiplier()` と同じ値を返します。
+* `toUIAmount(raw)` は `toScaledBalance(raw)` と同じ値を返します。`fromUIAmount(ui)` は
+  `toRawBalance(ui)` と同じ値を返します。
+* `balanceOfUI(account)` は `scaledBalanceOf(account)` と同じ値を返します。
+* `totalSupplyUI()` は `totalSupply() * uiMultiplier() / WAD_PRECISION` に等しい値を返します。
+
+### 上限値のゲッター {#bound-getter}
+
+`MAX_UI_MULTIPLIER()` は、両方のセッターで適用される上限値 `type(uint128).max` を返します。これは
+`balance * multiplier` を `uint256` の範囲内に収めるためのオーバーフロー対策です。
+
+## `updateMultiplier(uint256)` は即時適用の管理者用フェイルセーフとして存続 {#updatemultiplieruint256-remains-as-an-instant-admin-failsafe}
+
+`updateMultiplier(uint256)` は乗数を即座に設定し、有効な保留中の更新があればすべて破棄します。これは
+非推奨の管理者用フェイルセーフであり、技術的負債への対応と緊急時のオーバーライドのために残されているもので、通常の運用で使うものではありません。スケジュール設定の誤りを
+即座に取り消す場合に使用し、ほとんどの場合は一時停止と併用してください。
+
+## 保証とエッジケース {#guarantees-and-edge-cases}
+
+**Q: スケジュール済みの更新はキャンセルできます。外部のコンシューマーはキャンセルをどのように検出すればよいですか？**
+`cancelUIMultiplierUpdate()` は `UIMultiplierUpdateCancelled(cancelledMultiplier,
+cancelledEffectiveAt)` (topic0 `0x8838…1cad`) を発行します。即時セッターも、有効な
+保留中の更新を上書きする場合に同じイベントを発行します。このトピックを監視し、
+`UIMultiplierUpdated` をもとに事前に準備しておいた保留中の切り替えを取り消してください。
+
+**Q: 管理者が即時フェイルセーフを使用した場合、オフチェーンのインデクサーはどのようにして線形で欠落のない
+UI 乗数のライフサイクルを維持できますか？**
+即時の `updateMultiplier(uint256)` は、非推奨の `MultiplierUpdated(uint256)` と
+ERC-8056 の `UIMultiplierUpdated(old, new, block.timestamp)` の両方を発行します (有効な保留中の
+更新をクリアする場合は、その前に `UIMultiplierUpdateCancelled` も発行します) 。スケジュールによる変更か緊急の変更かを問わず、すべての乗数変更は
+単一の `UIMultiplierUpdated` ストリームに現れるため、このイベントだけを追跡すれば変更を見逃すことは
+ありません。レガシーの `MultiplierUpdated` トピックも、未移行のインデクサー向けに引き続き利用できます。
+
+**Q: 有効な保留中の更新と、すでに満期を迎えた更新や更新が存在しない状態は、どのように区別できますか？**
+`effectiveAt() > block.timestamp` であれば、保留中の更新は有効です。有効な間、`newUIMultiplier()`
+はスケジュールされた目標値を返し、この値は `uiMultiplier()` とは異なります。満期後は、
+`uiMultiplier()` にすでに新しい値が反映されて `newUIMultiplier() == uiMultiplier()` となり、
+`effectiveAt()` は、次のスケジュール、即時更新、またはキャンセルによって上書きされるまで、過去の切り替えタイムスタンプのまま残ります。
+つまり、ゼロ以外の `effectiveAt()` が `<= block.timestamp` であれば、それは「保留中」ではなく「適用済み」を
+意味します。更新が一度もスケジュールされていない場合は `effectiveAt() == 0` です。
+
+**Q: すでに保留中の更新がある状態で更新をスケジュールするとどうなりますか？**
+`UIMultiplierUpdateExists(effectiveAt)` でリバートします。ただし、呼び出しがブロックされるのは有効な保留中の更新がある場合のみです。
+満期を迎えた (古い) 保留中の更新は、通知なしに現在の乗数に取り込まれ、上書きされます。
+有効なスケジュールを置き換えるには、`announce` を介して `cancelUIMultiplierUpdate()` と `updateUIMultiplier(...)` をアトミックに
+呼び出してください。
+
+**Q: `effectiveAt` にはどのような制約がありますか？**
+厳密に未来の時刻である必要があり、`effectiveAt <= block.timestamp` の場合は
+`EffectiveAtInPast(effectiveAt)` でリバートします。また、オンチェーンのフィールドに収まる必要があり、
+`effectiveAt > type(uint64).max` の場合は `EffectiveAtTooFar(effectiveAt)` でリバートします。
+
+**Q: 乗数にはどのような制約がありますか？**
+`0 < newMultiplier <= MAX_UI_MULTIPLIER()` (`type(uint128).max`) です。ゼロまたは上限を超える値を指定すると
+`InvalidMultiplier()` でリバートします。これは `updateUIMultiplier` と `updateMultiplier` の両方に適用されます。
+上限値は `MAX_UI_MULTIPLIER()` から読み取れるため、リバートのリスクなしに確認できます。
+
+**Q: 生の残高や `Transfer` のセマンティクスは変わりますか？**
+いいえ。乗数は純粋に表示上のものであり、UI／スケール済みのビューのみを再スケールします。`balanceOf`、
+`transfer`、`totalSupply`、`Transfer` は生の値のままであり、スケジュールによる変更か即時の変更かを問わず、乗数の変更が
+これらに影響することはありません。変化するのは `*UI`／スケール済みの読み取り値のみです。

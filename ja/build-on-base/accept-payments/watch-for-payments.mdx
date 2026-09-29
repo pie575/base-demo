@@ -1,0 +1,86 @@
+---
+title: "支払いを監視する"
+keywords: ["Commerce Payments の監視", "AuthCaptureEscrow イベント", "Base 支払いリスナー", "支払いイベントのバックフィル"]
+description: "エスクローイベントを監視し、取りこぼしたブロックをバックフィルしたうえで、確定したライフサイクルの変化を冪等に処理します。"
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+`AuthCaptureEscrow` のログを、永続的な支払いフィードに変換します。WebSocket サブスクリプションは低レイテンシで処理を起動するきっかけとなり、期間を重複させた確定済みブロックのバックフィルは、切断やリオルグが発生した後も正規の信頼できる情報源として機能します。
+
+<Info>
+  このガイドの支払いフローは [Commerce Payments Protocol](https://github.com/base/commerce-payments) に基づいています。
+</Info>
+
+## デモ {#demo}
+
+<PaymentsDemo flow="watch" />
+
+<Tip>
+  上記のデモはモックのみです。Vibenet 上のオンチェーンデモを確認するには、[Base chain demos](https://chain.base.org/demos) をご覧ください。
+</Tip>
+
+## サブスクライブとバックフィル {#subscribe-and-backfill}
+
+v1.1.0 のエスクローで `PaymentAuthorized`、`PaymentCharged`、`PaymentCaptured`、`PaymentVoided`、`PaymentReclaimed`、`PaymentRefunded` の各イベントを監視します。これらのイベントはいずれも、インデックス付きの `paymentInfoHash` を共通して持っています。
+
+{/* sample: watch-payments-ts */}
+
+```typescript TypeScript worker lines wrap expandable highlight={13-18,22,26-29}
+export async function watchPayments(
+  startBlock: bigint,
+  store: PaymentEventStore,
+) {
+  async function backfillConfirmed() {
+    const head = await client.getBlockNumber();
+    if (head <= confirmations) return;
+    const toBlock = head - confirmations;
+    const cursor = await store.lastScannedBlock();
+    const fromBlock = cursor && cursor > startBlock + confirmations
+      ? cursor - confirmations
+      : startBlock;
+    const logs = await client.getContractEvents({
+      address: AUTH_CAPTURE_ESCROW,
+      abi: authCaptureEscrowAbi,
+      fromBlock,
+      toBlock,
+      strict: true,
+    });
+
+    // 重複範囲の置き換えとカーソルの更新を、単一のデータベーストランザクションで行います。
+    await store.replaceRange(fromBlock, toBlock, logs);
+  }
+
+  await backfillConfirmed();
+  return client.watchContractEvent({
+    address: AUTH_CAPTURE_ESCROW,
+    abi: authCaptureEscrowAbi,
+    onLogs: backfillConfirmed,
+    onError: (error) => console.error("Payment watcher failed", error),
+  });
+}
+```
+
+`replaceRange` は単一のデータベーストランザクションとして実装してください。具体的には、重複範囲の行を削除して現在の正規ログを挿入し、影響を受ける支払い状態を再構築します。カーソルは、すべての書き込みが成功した後にのみ進めてください。
+
+<Check>
+  再接続や短いリオルグが発生しても、重複範囲をスキャンすることで、同じログを二重に適用することなく正規のプロトコルイベントに収束します。
+</Check>
+
+<Warning>
+  v1.0 と v1.1 のイベント ABI を混在させないでください。決済方式が `feeBps` から絶対値の `feeAmount` に切り替わった際に、`PaymentCharged` と `PaymentCaptured` のイベントトピックが変更されています。
+</Warning>
+
+リスク許容度に応じた承認 (コンファメーション) ポリシーを選択してください。詳しくは[トランザクションのファイナリティ](/ja/specifications/transactions/transaction-finality)を参照してください。
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="支払いを検証する" icon="shield-check" href="/ja/build-on-base/accept-payments/verify-a-payment">
+    候補となる各イベントを、対応する注文と照らし合わせて検証します。
+  </Card>
+
+  <Card title="支払いを照合する" icon="table" href="/ja/build-on-base/accept-payments/reconcile-payments">
+    請求 (charge) 、確定 (capture) 、手数料、返金の各行を作成します。
+  </Card>
+</CardGroup>

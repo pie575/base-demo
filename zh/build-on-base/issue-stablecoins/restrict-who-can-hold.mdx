@@ -1,0 +1,113 @@
+---
+title: "限制持有者范围"
+keywords: ["稳定币允许名单", "KYC 准入稳定币", "B20 转账策略", "在 Base 上限制转账"]
+description: "借助 B20 转账策略，仅允许已通过您 KYC 审核的账户进行稳定币转账。"
+---
+
+import { StablecoinDemo } from "/snippets/StablecoinDemo.jsx"
+
+通过**允许名单**，可将您的稳定币限定在一组已知持有者之间：只有经您的 KYC 流程批准的账户之间才能完成转账结算。您可以在 [Policy Registry](/zh/specifications/b20/concepts/policies#21-the-registry-and-the-token) 中管理该名单，并将其绑定到代币的转账作用域。
+
+## 演示 {#demo}
+
+<StablecoinDemo flow="restrict" />
+
+<Tip>
+  该演示使用浏览器本地生成的账户，在 **Base Vibenet** 上提交真实交易。如果 Vibenet 或其 B20 功能不可用，演示会自动切换为离线示意版本。
+</Tip>
+
+<Note>
+  初次接触 B20？请参阅 [B20 代币标准](/zh/specifications/b20)，了解相关概念及完整的发行流程指南。这些示例基于 `base-std@1505323`、`viem@2.55.11` 和 Base Foundry `v1.1.1`。
+</Note>
+
+## 策略的工作原理 {#how-policies-work}
+
+Policy Registry 是一个单例预编译合约，每个成员列表只需存储一份。代币在每个作用域下仅存储一个 `uint64` 策略 ID。受控函数执行时，代币会调用注册表上的 `isAuthorized(policyId, account)`。多个代币可以共用同一个策略；策略一经更新，所有引用该策略的代币都会立即看到变更。
+
+作用域用于管控特定函数。`TRANSFER_SENDER_POLICY` 和 `TRANSFER_RECEIVER_POLICY` 会在每次调用 `transfer` 和 `transferFrom` 时分别检查发送方和接收方。`MINT_RECEIVER_POLICY` 会在每次调用 `mint` 时检查接收方。在绑定策略之前，这三个作用域均默认为 `ALWAYS_ALLOW` (`0`) 。
+
+**允许名单**仅授权名单中的账户。空的允许名单不会授权任何账户，因此请在绑定策略之前先添加预期的持有者。
+
+## 创建并绑定持有者允许名单 {#create-and-bind-a-holder-allowlist}
+
+<CodeGroup>
+  {/* sample: stablecoin-restrict-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={7,10,16}
+  import { parseEventLogs, type Address } from "viem";
+  import { account, publicClient } from "../../shared/clients.js";
+  import { POLICY_REGISTRY, b20Abi, policyRegistryAbi, scope } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function createHolderAllowlist(token: Address, holders: Address[]) {
+    const receipt = await sendContract({
+      address: POLICY_REGISTRY,
+      abi: policyRegistryAbi,
+      functionName: "createPolicyWithAccounts",
+      args: [account.address, 1, holders],
+    });
+    const [created] = parseEventLogs({ abi: policyRegistryAbi, logs: receipt.logs, eventName: "PolicyCreated" });
+    const policyId = created.args.policyId;
+    for (const policyScope of [scope("TRANSFER_SENDER_POLICY"), scope("TRANSFER_RECEIVER_POLICY")]) {
+      await sendContract({ address: token, abi: b20Abi, functionName: "updatePolicy", args: [policyScope, policyId] });
+    }
+    const saved = await publicClient.readContract({ address: token, abi: b20Abi, functionName: "policyId", args: [scope("TRANSFER_RECEIVER_POLICY")] });
+    if (saved !== policyId) throw new Error("Policy was not bound");
+    return policyId;
+  }
+  ```
+
+  {/* sample: stablecoin-restrict-solidity */}
+
+  ```solidity Solidity lines wrap expandable highlight={2,5,6}
+      function restrictStablecoin(address token, address admin, address[] memory holders) public returns (uint64 id) {
+          id = StdPrecompiles.POLICY_REGISTRY.createPolicyWithAccounts(
+              admin, IPolicyRegistry.PolicyType.ALLOWLIST, holders
+          );
+          IB20(token).updatePolicy(B20Constants.TRANSFER_SENDER_POLICY, id);
+          IB20(token).updatePolicy(B20Constants.TRANSFER_RECEIVER_POLICY, id);
+          require(IB20(token).policyId(B20Constants.TRANSFER_RECEIVER_POLICY) == id, "policy not bound");
+      }
+  ```
+
+  {/* sample: stablecoin-restrict-cli */}
+
+  ```bash CLI lines wrap expandable highlight={2,8}
+  CREATE_TX=$(base-cast send "$POLICY_REGISTRY" \
+    "createPolicyWithAccounts(address,uint8,address[])" "$ADMIN" 1 "[$ALICE,$BOB]" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" --json | jq -r .transactionHash)
+  POLICY_TOPIC=$(base-cast receipt "$CREATE_TX" --rpc-url "$RPC_URL" --json | \
+    jq -r '.logs[] | select(.address | ascii_downcase == "0x8453000000000000000000000000000000000002") | .topics[1]' | head -1)
+  POLICY_ID=$(base-cast to-dec "$POLICY_TOPIC")
+  for SCOPE in TRANSFER_SENDER_POLICY TRANSFER_RECEIVER_POLICY; do
+    base-cast send "$TOKEN_ADDRESS" "updatePolicy(bytes32,uint64)" "$(base-cast keccak "$SCOPE")" "$POLICY_ID" \
+      --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  done
+  ```
+</CodeGroup>
+
+<Check>
+  代币在两个转账策略作用域下返回的均为新的策略 ID。
+</Check>
+
+<Warning>
+  允许名单会拒绝所有未列入该策略的账户。请在绑定前预先加入目标持有者，并记下 `PolicyCreated` 事件中的 ID。每次调用最多批量添加 64 个成员账户；创建后如需添加更多账户，请调用 `updateAllowlist`。
+</Warning>
+
+## 更新成员 {#update-membership}
+
+策略创建后，只有策略管理员可以添加或移除账户。调用 `updateAllowlist(policyId, true, accounts)` 添加账户，调用 `updateAllowlist(policyId, false, accounts)` 移除账户。变更会在下一次调用时对所有引用该策略的代币生效，无需在代币上再次调用 `updatePolicy`。
+
+如需将 KYC 允许名单与制裁阻止名单组合使用，请创建一个同时引用这两个简单策略的 `INTERSECT` 复合策略，然后将该复合策略的 ID 绑定到代币的各个作用域。完整的策略类型参考请参阅 [B20 代币标准](/zh/specifications/b20)。
+
+## 另请参阅 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="封禁账户" icon="user-lock" href="/zh/build-on-base/issue-stablecoins/block-an-account">
+    拒绝特定地址的访问。
+  </Card>
+
+  <Card title="策略集成（B20 标准）" icon="book" href="/zh/specifications/b20/concepts/policies#32-policy-scopes">
+    B20 标准中的策略钩子。
+  </Card>
+</CardGroup>

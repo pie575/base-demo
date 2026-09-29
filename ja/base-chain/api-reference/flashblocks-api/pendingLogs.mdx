@@ -1,0 +1,68 @@
+---
+title: 'pendingLogs'
+sidebarTitle: 'pendingLogs'
+description: '任意のフィルターに一致する事前確認済みトランザクションのログをサブスクライブします。Flashblocks の WebSocket エンドポイントでのみ利用できます。'
+---
+
+`eth_subscribe` でサブスクライブすると、任意のフィルターに一致する事前確認済みトランザクションのログを受信できます。ブロック生成間隔よりも短いレイテンシでコントラクトのイベントを監視したい場合に便利です。
+
+<Info>
+  このサブスクリプションには、WebSocket に対応した RPC エンドポイントが必要です。Base の公開エンドポイント (`mainnet.base.org`、`sepolia.base.org`) は HTTP にのみ対応しています。[Builder Stack](/ja/get-started/builder-stack) から Flashblocks 対応の WebSocket プロバイダーを選択してください。
+</Info>
+
+<Note>
+  [base/base](https://github.com/base/base) のクライアントバージョン v0.3.1 以上が必要です。
+</Note>
+
+<Warning>
+  各サブスクリプションは **WebSocket メッセージ 1 件につき 1 アイテム** を送信します。イベントは約 200ms ごとに届きます。ハンドラーでイベントごとに重い処理を行う場合は、ブロッキングを避けるためにスロットリングまたはデバウンスを適用してください。
+</Warning>
+
+## パラメーター {#parameters}
+
+<ParamField body="subscriptionType" type="string" required>
+  `"pendingLogs"` を指定する必要があります。
+</ParamField>
+
+<ParamField body="filterOptions" type="object">
+  ログフィルター (省略可) 。
+
+  <Expandable title="フィルターオプション">
+    <ParamField body="address" type="string | array">
+      フィルター対象とするコントラクトアドレス (単一のアドレスまたはアドレスの配列) 。
+    </ParamField>
+
+    <ParamField body="topics" type="array">
+      トピックフィルターの配列。形式は `eth_getLogs` と同じです。
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## 戻り値 {#returns}
+
+<ResponseField name="result" type="string">
+  16進数でエンコードされたサブスクリプションID。
+</ResponseField>
+
+## 例 {#example}
+
+<CodeGroup>
+  ```json Subscribe (with filter) lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "eth_subscribe",
+    "params": [
+      "pendingLogs",
+      {
+        "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "topics": ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"]
+      }
+    ]
+  }
+  ```
+
+  ```json Subscription ID Response
+  {"jsonrpc": "2.0", "id": 1, "result": "0x2a7bc8d4e3f5a6b1c2d3e4f5a6b7c8d9"}
+  ```
+</CodeGroup>

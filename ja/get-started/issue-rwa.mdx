@@ -1,0 +1,56 @@
+---
+title: "資産をトークン化する"
+description: "B20 Asset標準を使って、現実資産（RWA）をBase上で表現・運用できます。設定可能な精度、発行者ロール、保有者管理、分配機能を、ERC-20互換の単一インターフェースで提供します。"
+keywords: ["Base で RWA を発行", "現実資産のトークン化", "B20 Asset", "Base のトークン化資産", "トークン化株式"]
+---
+
+import { AssetDemo } from "/snippets/AssetDemo.jsx"
+import RwaDisclaimer from "/snippets/ja/RwaDisclaimer.mdx"
+
+[B20 Asset 標準](/ja/specifications/b20/concepts/token-types#4-asset)を使えば、現実資産 (RWA) をトークンとして表現できます。Base に組み込まれた単一の ERC-20 互換インターフェースを通じて、精度や発行者ロールの設定、ユニットの配布、保有資格者の制限、分配の実行をまとめて行えます。以下のガイドでは株式トークンを例に説明しますが、同じフローは他の種類の資産にもそのまま適用できます。
+
+<RwaDisclaimer />
+
+## デモ {#demo}
+
+<AssetDemo />
+
+<Tip>
+  このデモでは、ブラウザ上でローカルに生成したアカウントを使って、**Base Vibenet** 上で実際のトランザクションを送信します。Vibenet またはその B20 機能が利用できない場合は、説明用のオフライン版に自動で切り替わります。
+</Tip>
+
+## ガイド {#guides}
+
+<CardGroup cols={2}>
+  <Card title="アセットトークンを作成する" icon="building-columns" href="/ja/build-on-base/issue-rwa/create-an-asset-token">
+    単一クラスのユニットを表す B20 Asset トークンを設定します。
+  </Card>
+
+  <Card title="保有者にユニットを発行する" icon="chart-column" href="/ja/build-on-base/issue-rwa/issue-units">
+    承認済みの複数の保有者に、1回のバッチ処理でユニットを配布します。
+  </Card>
+
+  <Card title="保有資格を制限する" icon="user-check" href="/ja/build-on-base/issue-rwa/restrict-eligible-holders">
+    共有の許可リストで発行と転送を制限します。
+  </Card>
+
+  <Card title="転送を開始できるアカウントを制限する" icon="user-shield" href="/ja/build-on-base/issue-rwa/restrict-transfer-initiators">
+    すべての転送について、名義書換代理人などの指定された開始者による実行を必須にします。
+  </Card>
+
+  <Card title="ユニットを差し押さえて取り消す" icon="user-slash" href="/ja/build-on-base/issue-rwa/seize-and-cancel-units">
+    不適格な保有者のユニットを保管先に移し、その後取り消します。
+  </Card>
+
+  <Card title="保有者に変更を告知する" icon="bullhorn" href="/ja/build-on-base/issue-rwa/announce-a-distribution">
+    発行、乗数の更新、バーンの実行時に、その内容を説明するオンチェーン開示を公開します。
+  </Card>
+
+  <Card title="乗数を適用する" icon="code-branch" href="/ja/build-on-base/issue-rwa/apply-a-multiplier">
+    保有者を移行させずに、表示残高を更新します。
+  </Card>
+
+  <Card title="転送を一時停止する" icon="pause" href="/ja/build-on-base/issue-rwa/pause-transfers">
+    インシデント発生時に、発行は継続したまま転送を停止します。
+  </Card>
+</CardGroup>

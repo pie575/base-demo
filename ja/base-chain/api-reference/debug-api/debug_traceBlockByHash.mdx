@@ -1,0 +1,71 @@
+---
+title: 'debug_traceBlockByHash'
+sidebarTitle: 'debug_traceBlockByHash'
+description: 'ブロックハッシュで指定したブロック内のすべてのトランザクションについて、EVM の実行トレースを返します。'
+---
+
+ハッシュで指定したブロック内のすべてのトランザクションを再実行し、トランザクションごとの実行トレースを返します。
+
+<Warning>
+  デバッグメソッドはブロック内のすべてのトランザクションを再実行するため、計算負荷が高くなります。対応状況は [Builder Stack](/ja/get-started/builder-stack) に掲載されているプロバイダーによって異なります。
+</Warning>
+
+## パラメーター {#parameters}
+
+<ParamField body="blockHash" type="string" required>
+  32バイトのブロックハッシュ。
+</ParamField>
+
+<ParamField body="traceOptions" type="object">
+  トレース設定 (任意) 。[`debug_traceTransaction`](/ja/base-chain/api-reference/debug-api/debug_traceTransaction) と同じフィールドを指定できます。
+</ParamField>
+
+## 戻り値 {#returns}
+
+<ResponseField name="result" type="array">
+  トレース結果オブジェクトの配列です。ブロック内の各トランザクションにつき1つのオブジェクトが含まれます。
+
+  <Expandable title="トレース結果のフィールド">
+    <ResponseField name="txHash" type="string">トランザクションハッシュ。</ResponseField>
+    <ResponseField name="result" type="object">このトランザクションの実行トレース。形式は [`debug_traceTransaction`](/ja/base-chain/api-reference/debug-api/debug_traceTransaction) と同じです。</ResponseField>
+  </Expandable>
+</ResponseField>
+
+## 例 {#example}
+
+<CodeGroup>
+  ```json Request lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "method": "debug_traceBlockByHash",
+    "params": [
+      "0x3a4e8c5d7f2b1a6e9d0c4f8b3e7a2d5c8f1b4e7a0d3c6f9b2e5a8d1c4f7b0e3",
+      { "tracer": "callTracer" }
+    ],
+    "id": 1
+  }
+  ```
+
+  ```json Response lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": [
+      {
+        "txHash": "0xb903239f8543d04b5dc1ba6579132b143087c68db1b2168786408fcbce568238",
+        "result": {
+          "type": "CALL",
+          "from": "0xd3cda913deb6f4967b2ef66ae97de114a83bcc01",
+          "to": "0x4200000000000000000000000000000000000006",
+          "value": "0x2c68af0bb14000",
+          "gas": "0x5208",
+          "gasUsed": "0x5208",
+          "input": "0x",
+          "output": "0x",
+          "calls": []
+        }
+      }
+    ]
+  }
+  ```
+</CodeGroup>

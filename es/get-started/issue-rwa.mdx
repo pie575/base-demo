@@ -1,0 +1,56 @@
+---
+title: "Tokenizar activos"
+description: "Representa y gestiona activos del mundo real en Base con el estándar B20 Asset: precisión configurable, roles de emisor, controles sobre los titulares y distribuciones, todo a través de una única interfaz compatible con ERC-20."
+keywords: ["emitir RWA en Base", "tokenización de activos del mundo real", "B20 Asset", "activo tokenizado en Base", "acciones tokenizadas"]
+---
+
+import { AssetDemo } from "/snippets/AssetDemo.jsx"
+import RwaDisclaimer from "/snippets/es/RwaDisclaimer.mdx"
+
+Representa un activo del mundo real con el [estándar B20 Asset](/es/specifications/b20/concepts/token-types#4-asset). Configura la precisión y los roles de emisor, distribuye unidades, limita quiénes pueden ser titulares y realiza distribuciones a través de una única interfaz compatible con ERC-20 integrada en Base. Las siguientes guías usan un token de acciones como ejemplo práctico; los mismos flujos se aplican a otros tipos de activos.
+
+<RwaDisclaimer />
+
+## Demostración {#demo}
+
+<AssetDemo />
+
+<Tip>
+  La demostración usa una cuenta local generada en el navegador para enviar transacciones reales en **Base Vibenet**. Si Vibenet o sus funciones B20 no están disponibles, cambia automáticamente a una versión ilustrativa sin conexión.
+</Tip>
+
+## Guías {#guides}
+
+<CardGroup cols={2}>
+  <Card title="Crear un token de activo" icon="building-columns" href="/es/build-on-base/issue-rwa/create-an-asset-token">
+    Configura un token B20 Asset para una clase de unidades.
+  </Card>
+
+  <Card title="Emitir unidades para los titulares" icon="chart-column" href="/es/build-on-base/issue-rwa/issue-units">
+    Distribuye unidades entre varios titulares aprobados en un solo lote.
+  </Card>
+
+  <Card title="Restringir los titulares elegibles" icon="user-check" href="/es/build-on-base/issue-rwa/restrict-eligible-holders">
+    Limita la emisión y las transferencias mediante una lista de permitidos compartida.
+  </Card>
+
+  <Card title="Restringir quién puede iniciar transferencias" icon="user-shield" href="/es/build-on-base/issue-rwa/restrict-transfer-initiators">
+    Exige un iniciador designado, como un agente de transferencias, para cada transferencia.
+  </Card>
+
+  <Card title="Incautar y cancelar unidades" icon="user-slash" href="/es/build-on-base/issue-rwa/seize-and-cancel-units">
+    Traslada las unidades de un titular no elegible a custodia y, después, cancélalas.
+  </Card>
+
+  <Card title="Anunciar un cambio a los titulares" icon="bullhorn" href="/es/build-on-base/issue-rwa/announce-a-distribution">
+    Publica una divulgación onchain junto con la emisión, la actualización del multiplicador o la quema a la que se refiere.
+  </Card>
+
+  <Card title="Aplicar un multiplicador" icon="code-branch" href="/es/build-on-base/issue-rwa/apply-a-multiplier">
+    Actualiza los saldos mostrados sin tener que migrar a los titulares.
+  </Card>
+
+  <Card title="Pausar transferencias" icon="pause" href="/es/build-on-base/issue-rwa/pause-transfers">
+    Detén las transferencias durante un incidente sin dejar de permitir la emisión.
+  </Card>
+</CardGroup>

@@ -1,0 +1,368 @@
+---
+title: "Isthmus L2 链派生变更"
+description: "Isthmus 升级中的派生变更，定义了在硬分叉激活时执行的网络升级自动化交易。"
+---
+
+## 网络升级自动化交易 {#network-upgrade-automation-transactions}
+
+Isthmus 硬分叉激活区块依次包含以下交易：
+
+* L1 属性交易
+* 来自 L1 的用户存款
+* 网络升级交易
+  * 部署 L1Block
+  * 部署 GasPriceOracle
+  * 部署 Operator Fee vault
+  * 更新 L1Block 代理的 ERC-1967 实现
+  * 更新 GasPriceOracle 代理的 ERC-1967 实现
+  * 更新 Operator Fee vault 代理的 ERC-1967 实现
+  * 在 GasPriceOracle 中启用 Isthmus
+  * 部署 EIP-2935 合约
+
+为避免改变或干扰与 gas 计算相关的系统行为，该区块将设置 `noTxPool: true`，从而不包含任何经排序器排序的
+交易。
+
+## L1Block 部署 {#l1block-deployment}
+
+`L1Block` 合约将进行升级，以支持 Isthmus 的 operator fee 功能。
+
+派生出的存款交易具有以下属性：
+
+* `from`: `0x4210000000000000000000000000000000000003`
+* `to`: `null`
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `425,000`
+* `data`: `0x60806040523480156100105...`
+* `sourceHash`: `0x3b2d0821ca2411ad5cd3595804d1213d15737188ae4cbd58aa19c821a6c211bf`，
+  使用 &quot;Upgrade-deposited&quot; 类型计算，其中 &#96;intent = &quot;Isthmus: L1 Block Deployment&quot;
+
+这样，Isthmus L1Block 合约将被部署到 `0xFf256497D61dcd71a9e9Ff43967C13fdE1F72D12`。可按以下方式验证：
+
+```bash Terminal
+cast compute-address --nonce=0 0x4210000000000000000000000000000000000003
+Computed Address: 0xFf256497D61dcd71a9e9Ff43967C13fdE1F72D12
+```
+
+验证 `sourceHash`：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Isthmus: L1 Block Deployment"))
+# 0x3b2d0821ca2411ad5cd3595804d1213d15737188ae4cbd58aa19c821a6c211bf
+```
+
+验证 `data`：
+
+```bash Terminal
+git checkout 9436dba8c4c906e36675f5922e57d1b55582889e
+make build-contracts
+jq -r ".bytecode.object" packages/contracts-bedrock/forge-artifacts/L1Block.sol/L1Block.json
+```
+
+此交易 MUST 部署一个代码哈希为以下值的合约：
+`0x8e3fe7a416d3e5f3b7be74ddd4e7e58e516fa3f80b67c6d930e3cd7297da4a4b`。
+
+验证代码哈希的方法如下：
+
+```bash Terminal
+git checkout 9436dba8c4c906e36675f5922e57d1b55582889e
+make build-contracts
+cast k $(jq -r ".deployedBytecode.object" packages/contracts-bedrock/forge-artifacts/L1Block.sol/L1Block.json)
+```
+
+## GasPriceOracle 部署 {#gaspriceoracle-deployment}
+
+`GasPriceOracle` 合约也会同步升级，以支持 Isthmus 的 operator fee 功能。
+
+派生出的存款交易具有以下属性：
+
+* `from`: `0x4210000000000000000000000000000000000004`
+* `to`: `null`
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `1,625,000`
+* `data`: `0x60806040523480156100105...`
+* `sourceHash`: `0xfc70b48424763fa3fab9844253b4f8d508f91eb1f7cb11a247c9baec0afb8035`，
+  使用 &quot;Upgrade-deposited&quot; 类型计算，其中 &#96;intent = &quot;Isthmus: Gas Price Oracle Deployment&quot;
+
+最终，Isthmus GasPriceOracle 合约将部署到 `0x93e57A196454CB919193fa9946f14943cf733845`。验证方法如下：
+
+```bash Terminal
+cast compute-address --nonce=0 0x4210000000000000000000000000000000000003
+Computed Address: 0xFf256497D61dcd71a9e9Ff43967C13fdE1F72D12
+```
+
+验证 `sourceHash`：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Isthmus: Gas Price Oracle Deployment"))
+# 0xfc70b48424763fa3fab9844253b4f8d508f91eb1f7cb11a247c9baec0afb8035
+```
+
+验证 `data`：
+
+```bash Terminal
+git checkout 9436dba8c4c906e36675f5922e57d1b55582889e
+make build-contracts
+jq -r ".bytecode.object" packages/contracts-bedrock/forge-artifacts/GasPriceOracle.sol/GasPriceOracle.json
+```
+
+此交易 MUST 部署一个合约，其代码哈希为
+`0x4d195a9d7caf9fb6d4beaf80de252c626c853afd5868c4f4f8d19c9d301c2679`。
+
+验证代码哈希的方法如下：
+
+```bash Terminal
+git checkout 9436dba8c4c906e36675f5922e57d1b55582889e
+make build-contracts
+cast k $(jq -r ".deployedBytecode.object" packages/contracts-bedrock/forge-artifacts/GasPriceOracle.sol/GasPriceOracle.json)
+```
+
+## Operator Fee Vault 部署 {#operator-fee-vault-deployment}
+
+新创建了一个 `OperatorFeeVault` 合约，用于接收 operator fee。该合约创建时使用以下参数：
+
+* 接收地址：base fee vault
+* 最低提款金额：0
+* 提款网络：L2
+
+由此派生出一笔具有以下属性的存款交易：
+
+* `from`: `0x4210000000000000000000000000000000000005`
+* `to`: `null`
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `500,000`
+* `data`: `0x60806040523480156100105...`
+* `sourceHash`: `0x107a570d3db75e6110817eb024f09f3172657e920634111ce9875d08a16daa96`，
+  使用 &quot;Upgrade-deposited&quot; 类型计算，其中 &#96;intent = &quot;Isthmus: Operator Fee Vault Deployment&quot;
+
+最终，Isthmus OperatorFeeVault 合约将部署到
+`0x4fa2Be8cd41504037F1838BcE3bCC93bC68Ff537`，可通过以下方式验证：
+
+```bash Terminal
+cast compute-address --nonce=0 0x4210000000000000000000000000000000000003
+Computed Address: 0x4fa2Be8cd41504037F1838BcE3bCC93bC68Ff537
+```
+
+验证 `sourceHash`：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Isthmus: Operator Fee Vault Deployment"))
+# 0x107a570d3db75e6110817eb024f09f3172657e920634111ce9875d08a16daa96
+```
+
+验证 `data`：
+
+```bash Terminal
+git checkout 9436dba8c4c906e36675f5922e57d1b55582889e
+make build-contracts
+jq -r ".bytecode.object" packages/contracts-bedrock/forge-artifacts/OperatorFeeVault.sol/OperatorFeeVault.json
+```
+
+此交易 MUST 部署一个代码哈希为以下值的合约：
+`0x57dc55c9c09ca456fa728f253fe7b895d3e6aae0706104935fe87c7721001971`。
+
+验证代码哈希的方法如下：
+
+```bash Terminal
+git checkout 9436dba8c4c906e36675f5922e57d1b55582889e
+make build-contracts
+export ETH_RPC_URL=<YOUR_ETHEREUM_L1_RPC_URL> # 任意已启用 Cancun 或 Prague 升级的以太坊 L1 RPC
+cast k $(cast call --create $(jq -r ".bytecode.object" packages/contracts-bedrock/forge-artifacts/OperatorFeeVault.sol/OperatorFeeVault.json))
+```
+
+请注意，此验证方式与其他部署有所不同，因为 `OperatorFeeVault`
+继承了包含不可变量 (immutables) 的 `FeeVault` 合约。因此，必须在 EVM 上执行部署字节码，
+才能得到实际部署的合约字节码。不过，它会将所有不可变量都设为固定常量，
+因此最终生成的代码哈希是恒定不变的。
+
+## L1Block Proxy 更新 {#l1block-proxy-update}
+
+此交易将 L1Block Proxy 的 ERC-1967 实现槽更新为指向新的 L1Block 部署。
+
+派生出的存款交易具有以下属性：
+
+* `from`：`0x0000000000000000000000000000000000000000`
+* `to`：`0x4200000000000000000000000000000000000015` (L1Block Proxy) 
+* `mint`：`0`
+* `value`：`0`
+* `gasLimit`：`50,000`
+* `data`：`0x3659cfe6000000000000000000000000ff256497d61dcd71a9e9ff43967c13fde1f72d12`
+* `sourceHash`：`0xebe8b5cb10ca47e0d8bda8f5355f2d66711a54ddeb0ef1d30e29418c9bf17a0e`
+  使用 &quot;Upgrade-deposited&quot; 类型计算，其中 &#96;intent = &quot;Isthmus: L1 Block Proxy Update&quot;
+
+验证数据：
+
+```bash Terminal
+cast concat-hex $(cast sig "upgradeTo(address)") $(cast abi-encode "upgradeTo(address)" 0xff256497d61dcd71a9e9ff43967c13fde1f72d12)
+0x3659cfe6000000000000000000000000ff256497d61dcd71a9e9ff43967c13fde1f72d12
+```
+
+验证 `sourceHash`：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Isthmus: L1 Block Proxy Update"))
+# 0xebe8b5cb10ca47e0d8bda8f5355f2d66711a54ddeb0ef1d30e29418c9bf17a0e
+```
+
+## GasPriceOracle Proxy 更新 {#gaspriceoracle-proxy-update}
+
+此交易将 GasPriceOracle Proxy 的 ERC-1967 实现槽更新为指向新的 GasPriceOracle
+部署。
+
+派生出的存款交易具有以下属性：
+
+* `from`: `0x0000000000000000000000000000000000000000`
+* `to`: `0x420000000000000000000000000000000000000F` (Gas Price Oracle Proxy) 
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `50,000`
+* `data`: `0x3659cfe600000000000000000000000093e57a196454cb919193fa9946f14943cf733845`
+* `sourceHash`: `0xecf2d9161d26c54eda6b7bfdd9142719b1e1199a6e5641468d1bf705bc531ab0`
+  使用 &quot;Upgrade-deposited&quot; 类型计算得出，其中 `intent = "Isthmus: Gas Price Oracle Proxy Update"`
+
+验证数据：
+
+```bash Terminal
+cast concat-hex $(cast sig "upgradeTo(address)") $(cast abi-encode "upgradeTo(address)" 0x93e57a196454cb919193fa9946f14943cf733845)
+0x3659cfe600000000000000000000000093e57a196454cb919193fa9946f14943cf733845
+```
+
+验证 `sourceHash`：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Isthmus: Gas Price Oracle Proxy Update"))
+# 0xecf2d9161d26c54eda6b7bfdd9142719b1e1199a6e5641468d1bf705bc531ab0
+```
+
+## OperatorFeeVault Proxy 更新 {#operatorfeevault-proxy-update}
+
+此交易更新 GasPriceOracle Proxy 的 ERC-1967 实现槽，使其指向新部署的 GasPriceOracle
+合约。
+
+派生出的存款交易具有以下属性：
+
+* `from`: `0x0000000000000000000000000000000000000000`
+* `to`: `0x420000000000000000000000000000000000001B` (Operator Fee Vault Proxy) 
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `50,000`
+* `data`: `0x3659cfe60000000000000000000000004fa2be8cd41504037f1838bce3bcc93bc68ff537`
+* `sourceHash`: `0xad74e1adb877ccbe176b8fa1cc559388a16e090ddbe8b512f5b37d07d887a927`
+  使用 &quot;Upgrade-deposited&quot; 类型计算得出，其中 `intent = "Isthmus: Operator Fee Vault Proxy Update"`
+
+验证数据：
+
+```bash Terminal
+cast concat-hex $(cast sig "upgradeTo(address)") $(cast abi-encode "upgradeTo(address)" 0x4fa2be8cd41504037f1838bce3bcc93bc68ff537)
+0x3659cfe60000000000000000000000004fa2be8cd41504037f1838bce3bcc93bc68ff537
+```
+
+验证 `sourceHash`：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Isthmus: Operator Fee Vault Proxy Update"))
+# 0xad74e1adb877ccbe176b8fa1cc559388a16e090ddbe8b512f5b37d07d887a927
+```
+
+## GasPriceOracle 启用 Isthmus {#gaspriceoracle-enable-isthmus}
+
+此交易通知 GasPriceOracle 开始采用 Isthmus 的 gas 计算公式。
+
+系统将派生一笔具有以下属性的存款交易：
+
+* `from`: `0xDeaDDEaDDeAdDeAdDEAdDEaddeAddEAdDEAd0001` (Depositer 账户) 
+* `to`: `0x420000000000000000000000000000000000000F` (Gas Price Oracle 代理合约) 
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `90,000`
+* `data`: `0x291b0383`
+* `sourceHash`: `0x3ddf4b1302548dd92939826e970f260ba36167f4c25f18390a5e8b194b295319`，
+  使用 &quot;Upgrade-deposited&quot; 类型计算，其中 &#96;intent = &quot;Isthmus: Gas Price Oracle Set Isthmus&quot;
+
+验证数据：
+
+```bash Terminal
+cast sig "setIsthmus()"
+0x8e98b106
+```
+
+验证 `sourceHash`：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Isthmus: Gas Price Oracle Set Isthmus"))
+# 0x3ddf4b1302548dd92939826e970f260ba36167f4c25f18390a5e8b194b295319
+```
+
+## EIP-2935 合约部署 {#eip-2935-contract-deployment}
+
+[EIP-2935](https://eips.ethereum.org/EIPS/eip-2935) 要求部署一个合约。为部署该合约，
+需创建一笔属性符合该 EIP 规定的存款交易：
+
+* `from`: `0x3462413Af4609098e1E27A490f554f260213D685`
+* `to`: `null`
+* `mint`: `0`
+* `value`: `0`
+* `gasLimit`: `250,000`
+* `data`: `0x60538060095f395ff33373fffffffffffffffffffffffffffffffffffffffe14604657602036036042575f35600143038111604257611fff81430311604257611fff9006545f5260205ff35b5f5ffd5b5f35611fff60014303065500`
+* `sourceHash`: `0xbfb734dae514c5974ddf803e54c1bc43d5cdb4a48ae27e1d9b875a5a150b553a`
+  使用 &quot;Upgrade-deposited&quot; 类型计算，其中 &#96;intent = &quot;Isthmus: EIP-2935 Contract Deployment&quot;
+
+由此，EIP-2935 合约将被部署到 `0x0000F90827F1C53a10cb7A02335B175320002935`。验证方法如下：
+
+```bash Terminal
+cast compute-address --nonce=0 0x3462413Af4609098e1E27A490f554f260213D685
+Computed Address: 0x0000F90827F1C53a10cb7A02335B175320002935
+```
+
+验证 `sourceHash`：
+
+```bash Terminal
+cast keccak $(cast concat-hex 0x0000000000000000000000000000000000000000000000000000000000000002 $(cast keccak "Isthmus: EIP-2935 Contract Deployment"))
+# 0xbfb734dae514c5974ddf803e54c1bc43d5cdb4a48ae27e1d9b875a5a150b553a
+```
+
+该交易 MUST 部署一个合约，其代码哈希为
+`0x6e49e66782037c0555897870e29fa5e552daf4719552131a0abce779daec0a5d`。
+
+## Span Batch 更新 {#span-batch-updates}
+
+[跨度批次](../delta/span-batches)是指以批次形式统一提交的一段连续 L2 区块。
+
+跨度批次包含承载该段 L2 区块的已提交 L1 交易及其交易类型。
+由于 [EIP-7702] 引入了一种新的交易类型，因此必须更新 Span Batch 以支持 [EIP-7702]
+交易。
+
+相应地，`tx_datas` 列表采用新的 RLP 编码 (详见
+[Delta span batch 规范](../delta/span-batches)) ，并新增一种交易类型：
+
+交易类型 `4` ([EIP-7702] `SetCode`) ：
+`0x04 ++ rlp_encode(value, max_priority_fee_per_gas, max_fee_per_gas, data, access_list, authorization_list)`
+
+[EIP-7702] 交易在 [EIP-1559] 的基础上进行了扩展，新增了 `authorization_list` 字段。
+`authorization_list` 是一个经 RLP 编码的授权元组列表。
+[EIP-7702] 交易格式如下：
+
+* `value`：交易金额，类型为 `u256`。
+* `max_priority_fee_per_gas`：每单位 gas 允许的最高优先费，类型为 `u256`。
+* `max_fee_per_gas`：每单位 gas 的最高费用，类型为 `u256`。
+* `data`：交易数据字节。
+* `access_list`：[EIP-2930] 访问列表。
+* `authorization_list`：[EIP-7702] 已签名授权列表。
+
+## 激活 {#activation}
+
+只有当 Isthmus 在批次时间戳处已激活时，才可接受包含类型 `4` 交易的单一批次。如果某个单一批次在 Isthmus
+激活之前包含类型 `4` 的交易，则该批次必须被*丢弃*。请注意，如果 Holocene 已激活，这还会导致剩余的
+跨度批次以及包含它的 channel 一并被丢弃。
+
+另请注意，此检查必须针对从跨度批次派生出的各个单一批次进行，而不是针对整个跨度批次。
+具体而言，跨度批次可以跨越 Isthmus 激活时间戳，并在时间戳等于或晚于 Isthmus 激活时间的单一批次中包含
+SetCode 交易，即使该跨度批次本身的时间戳早于 Isthmus 激活时间。
+
+[EIP-1559]: https://eips.ethereum.org/EIPS/eip-1559
+
+[EIP-7702]: https://eips.ethereum.org/EIPS/eip-7702
+
+[EIP-2930]: https://eips.ethereum.org/EIPS/eip-2930

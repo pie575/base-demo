@@ -1,0 +1,64 @@
+---
+title: "L2 実行エンジン"
+description: "Fjord アップグレードにおける実行エンジンの変更点。L1 コスト手数料の推定方式を、FastLZ ベースの圧縮モデルに置き換えます。"
+---
+
+## 手数料 {#fees}
+
+### L1コスト手数料 (L1 Fee Vault) {#l1-cost-fees-l1-fee-vault}
+
+#### Fjord における L1 コスト手数料の変更 (FastLZ 推定器) {#fjord-l1-cost-fee-changes-fastlz-estimator} 
+
+Fjord では L1 コストの計算関数が更新され、FastLZ ベースの圧縮推定器が使用されるようになります。
+L1 コストは次のように計算されます。
+
+```pseudocode L1 Cost Formula
+l1FeeScaled = l1BaseFeeScalar*l1BaseFee*16 + l1BlobFeeScalar*l1BlobBaseFee
+estimatedSizeScaled = max(minTransactionSize * 1e6, intercept + fastlzCoef*fastlzSize)
+l1Fee = estimatedSizeScaled * l1FeeScaled / 1e12
+```
+
+最終的な `l1Fee` の計算は無制限精度の符号なし整数演算であり、結果は Wei 単位で
+`uint256` の範囲に収まります。この計算で使用される値は次のとおりです。
+
+| 入力引数                 | 型         | 説明                                        | 値                   |
+| -------------------- | --------- | ----------------------------------------- | ------------------- |
+| `l1BaseFee`          | `uint256` | L2 チェーンに登録された最新の L1 オリジンの L1 基本手数料        | 可変、L1 手数料           |
+| `l1BlobBaseFee`      | `uint256` | L2 チェーンに登録された最新の L1 オリジンの Blob ガス価格       | 可変、L1 手数料           |
+| `fastlzSize`         | `uint256` | RLP エンコードされた署名済みトランザクションを FastLZ で圧縮したサイズ | 可変、トランザクションごと       |
+| `l1BaseFeeScalar`    | `uint32`  | L1 基本手数料スカラー (`1e6` でスケーリング)              | 可変、L2 の設定           |
+| `l1BlobFeeScalar`    | `uint32`  | L1 Blob 手数料スカラー (`1e6` でスケーリング)           | 可変、L2 の設定           |
+| `intercept`          | `int32`   | 切片定数 (`1e6` でスケーリング、負の値も可)                | -42&#95;585&#95;600 |
+| `fastlzCoef`         | `uint32`  | FastLZ 係数 (`1e6` でスケーリング)                 | 836&#95;500         |
+| `minTransactionSize` | `uint32`  | トランザクションサイズの下限 (バイト単位)                    | 100                 |
+
+以前は L1 コスト関数が不正確だったため、`l1BaseFeeScalar` と `l1BlobFeeScalar` に圧縮率を織り込んでいました。
+しかし、新しいコスト関数では圧縮率が考慮されるため、これらのスカラーは、以前に織り込んでいた圧縮率の分を
+差し引くように調整する必要があります。
+
+##### FastLZ の実装 {#fastlz-implementation}
+
+すべての圧縮アルゴリズムは、次の[コミット](https://github.com/ariya/FastLZ/blob/344eb4025f9ae866ebf7a2ec48850f7113a97a42/fastlz.c#L482-L506)時点の `fastlz.c` に含まれる `fastlz_compress` 関数と同等に実装する必要があります。
+
+##### L1コストの線形回帰の詳細 {#l1-cost-linear-regression-details}
+
+定数 `intercept` と `fastlzCoef` は、過去のL2トランザクションのデータセットを用いた線形回帰によって算出されます。
+このデータセットは、指定した期間内のすべてのトランザクションを順に処理し、
+各トランザクションに対して以下の処理を行うことで生成されます。
+
+1. ペイロードをFastLZで圧縮し、圧縮後のペイロードのサイズを `fastlzSize` として記録します。
+2. Brotli 10で圧縮されたバッチにトランザクションを追加した場合のバッチサイズの変化をエミュレートし、バッチサイズの
+   変化量を `bestEstimateSize` として記録します。
+
+データセットを生成したら、`bestEstimateSize` を従属変数、`fastlzSize` を独立変数として
+線形回帰を計算できます。
+
+データセットは、Optimism MainnetにおけるEcotone以降の2週間分のトランザクションから生成しました。このデータが
+複数のチェーンや期間にわたるパフォーマンスを最もよく反映していることがわかったためです。線形回帰および
+使用したデータセットの詳細については、こちらの[リポジトリ](https://github.com/roberto-bayardo/compression-analysis/tree/main)を参照してください。
+
+### L1 ガス使用量の推定 {#l1-gas-usage-estimation}
+
+`L1GasUsed` プロパティは、トランザクションが使用した L1 の blob ガスを含まないため非推奨となっており、
+今後のネットワークアップグレードで削除される予定です。特定のトランザクションの L1 手数料は、
+引き続き `L1Fee` フィールドで取得できます。

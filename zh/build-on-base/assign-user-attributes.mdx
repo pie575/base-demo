@@ -1,0 +1,50 @@
+---
+title: "分配用户属性"
+description: "选择 Builder Codes 实现交易归因，或选择 Base Verify 实现已验证用户特征、身份去重和资格策略。"
+---
+
+如果你需要识别链上活动由哪个构建者产生，或判断用户是否满足经过验证的资格要求，请使用归因功能。Builder Codes 和 Base Verify 分别解决这一问题的不同方面。
+
+## 链上活动归因 {#attribute-onchain-activity}
+
+Builder Codes 会在交易 calldata 末尾附加 ERC-8021 归因后缀。链下索引器借助该后缀，将链上活动与其发起方 (应用、钱包或智能体) 关联起来。
+
+<CardGroup cols={2}>
+  <Card title="Builder Codes 概述" icon="code" href="/zh/specifications/builder-codes/overview">
+    了解 Builder Codes、归因的优势、支持的账户类型以及验证方式。
+  </Card>
+
+  <Card title="面向应用开发者" icon="window" href="/zh/specifications/builder-codes/for-app-developers">
+    借助 Wagmi、Viem、CDP Wallets 或 Privy 实现交易自动归因。
+  </Card>
+
+  <Card title="面向钱包开发者" icon="wallet" href="/zh/specifications/builder-codes/for-wallet-developers">
+    为 EOA 和 ERC-4337 用户操作实现 `dataSuffix` 能力。
+  </Card>
+
+  <Card title="面向智能体开发者" icon="robot" href="/zh/specifications/builder-codes/for-agent-developers">
+    注册智能体，并为其自主发起的链上交易进行归因。
+  </Card>
+</CardGroup>
+
+## 验证用户属性 {#verify-user-attributes}
+
+Base Verify 可让用户证明其对受支持账户的控制权，并让你的应用评估已获批准的特征。若体验由应用控制，请选择后端流程；若策略必须由智能合约强制执行，请选择链上流程。
+
+<CardGroup cols={2}>
+  <Card title="Base Verify API" icon="user-check" href="/zh/sdks/base-verify/overview">
+    比较后端验证流程与链上验证流程。
+  </Card>
+
+  <Card title="验证社交账户" icon="address-card" href="/zh/sdks/base-verify/verify-social-accounts">
+    在应用后端检查已验证账户的所有权及特征。
+  </Card>
+
+  <Card title="在链上验证用户" icon="shield-check" href="/zh/sdks/base-verify/verify-users-onchain">
+    在智能合约中强制执行策略门控和“每人仅限参与一次”的限制。
+  </Card>
+</CardGroup>
+
+<Note>
+  Builder Codes 用于标记交易来源的归属，并不验证用户的身份或资格。Base Verify 用于评估已验证的用户属性，并不会将交易归属到生成该交易的构建者。
+</Note>

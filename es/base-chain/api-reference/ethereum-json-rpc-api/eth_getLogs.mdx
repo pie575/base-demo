@@ -1,0 +1,125 @@
+---
+title: 'eth_getLogs'
+sidebarTitle: 'eth_getLogs'
+description: 'Devuelve los logs que coinciden con un filtro. Usa pending para consultar logs de transacciones preconfirmadas.'
+---
+
+Devuelve un array con todos los logs que coinciden con un objeto de filtro dado. Resulta especialmente útil para indexar eventos on-chain.
+
+<Warning>
+  Las consultas que abarcan rangos de bloques amplios o contratos con mucha actividad pueden superar el tiempo de espera o ser rechazadas. Para obtener resultados fiables, mantén el rango entre `fromBlock` y `toBlock` por debajo de 2000 bloques. Los proveedores de nodos pueden aplicar sus propios límites.
+</Warning>
+
+<Tip>
+  **Flashblocks:** Define `"fromBlock": "pending"` y `"toBlock": "pending"` para consultar logs de transacciones preconfirmadas, que se actualizan cada ~200 ms. Si necesitas un flujo en tiempo real, considera usar la suscripción WebSocket [`pendingLogs`](/es/base-chain/api-reference/flashblocks-api/pendingLogs).
+</Tip>
+
+## Parámetros {#parameters}
+
+<ParamField body="filter" type="object" required>
+  Las opciones de filtro. Se debe proporcionar al menos un criterio.
+
+  <Expandable title="Campos del filtro">
+    <ParamField body="fromBlock" type="string">
+      Inicio del rango de bloques. Número de bloque en hexadecimal o una etiqueta de bloque. Usa `"pending"` para incluir los logs preconfirmados. El valor predeterminado es `"latest"`.
+    </ParamField>
+
+    <ParamField body="toBlock" type="string">
+      Fin del rango de bloques. Número de bloque en hexadecimal o una etiqueta de bloque. El valor predeterminado es `"latest"`.
+    </ParamField>
+
+    <ParamField body="address" type="string | array">
+      Una dirección de contrato o un array de direcciones por las que filtrar. Opcional.
+    </ParamField>
+
+    <ParamField body="topics" type="array">
+      Array de filtros de topics de 32 bytes. Cada posición puede ser `null` (coincide con cualquiera), una sola cadena hexadecimal de topic o un array de cadenas hexadecimales (coincide con cualquiera de ellas). La posición 0 suele ser el hash `keccak256` de la firma del evento. Opcional.
+    </ParamField>
+
+    <ParamField body="blockHash" type="string">
+      Limita los logs al bloque que tiene este hash. Si se proporciona, se ignoran `fromBlock` y `toBlock`. Opcional.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Valores devueltos {#returns}
+
+<ResponseField name="result" type="array">
+  Array de objetos de log que coinciden con el filtro.
+
+  <Expandable title="Campos del objeto de log">
+    <ResponseField name="address" type="string">Dirección de 20 bytes del contrato que emitió el log.</ResponseField>
+    <ResponseField name="topics" type="array">Array de 0 a 4 topics indexados de 32 bytes. El topic 0 suele ser el hash de la firma del evento.</ResponseField>
+    <ResponseField name="data" type="string">Parámetros no indexados del evento, codificados en ABI.</ResponseField>
+    <ResponseField name="blockNumber" type="string">Número del bloque en el que se emitió este log (hex).</ResponseField>
+    <ResponseField name="blockTimestamp" type="string">Marca de tiempo Unix del bloque que contiene este log, como cadena hexadecimal. Es una extensión de Base L2 al esquema de log estándar de Ethereum.</ResponseField>
+    <ResponseField name="transactionHash" type="string">Hash de 32 bytes de la transacción que emitió este log.</ResponseField>
+    <ResponseField name="transactionIndex" type="string">Índice de la transacción dentro del bloque (hex).</ResponseField>
+    <ResponseField name="blockHash" type="string">Hash de 32 bytes del bloque.</ResponseField>
+    <ResponseField name="logIndex" type="string">Posición del log dentro del bloque (hex).</ResponseField>
+    <ResponseField name="removed" type="boolean">`true` si el log se eliminó debido a una reorganización de la cadena.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Ejemplo {#example}
+
+<CodeGroup>
+  ```bash Estándar (rango de bloques) lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_getLogs",
+      "params": [{
+        "fromBlock": "0x12ced00",
+        "toBlock": "0x12ced28",
+        "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "topics": ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"]
+      }],
+      "id": 1
+    }'
+  ```
+
+  ```bash Flashblocks (pending, ~200ms) lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_getLogs",
+      "params": [{
+        "fromBlock": "pending",
+        "toBlock": "pending",
+        "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "topics": ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"]
+      }],
+      "id": 1
+    }'
+  ```
+
+  ```json Respuesta lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": [
+      {
+        "address": "0x4200000000000000000000000000000000000006",
+        "blockHash": "0x89f4c9e23a2f706f0afa9ca8f770c4b7dcbcb73ba7e9b1c29c4a8c1b90c31d24",
+        "blockNumber": "0x2c31b0a",
+        "blockTimestamp": "0x6a1092f7",
+        "data": "0x00000000000000000000000000000000000000000000000080134424aad49d08",
+        "logIndex": "0x0",
+        "removed": false,
+        "topics": [
+          "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+          "0x000000000000000000000000b2cc224c1c9fee385f8ad6a55b4d94e92359dc59",
+          "0x00000000000000000000000051c72848c68a965f66fa7a88855f9f7784502a7f"
+        ],
+        "transactionHash": "0x2ca798df9d399b886fb3735414e8d35a20fec080e48eb5e2e75c0f6ec349a725",
+        "transactionIndex": "0x1"
+      }
+    ]
+  }
+  ```
+</CodeGroup>

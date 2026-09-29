@@ -1,0 +1,68 @@
+---
+title: 'pendingLogs'
+sidebarTitle: 'pendingLogs'
+description: '订阅符合可选过滤条件的预确认交易日志。仅在 Flashblocks WebSocket 端点上可用。'
+---
+
+通过 `eth_subscribe` 订阅，接收符合可选过滤条件的预确认交易日志。适用于以低于出块间隔的延迟监控合约事件。
+
+<Info>
+  此订阅需要支持 WebSocket 的 RPC 端点。Base 公共端点 (`mainnet.base.org`、`sepolia.base.org`) 仅支持 HTTP。请从 [Builder Stack](/zh/get-started/builder-stack) 中选择支持 Flashblocks 的 WebSocket 提供商。
+</Info>
+
+<Note>
+  需要 [base/base](https://github.com/base/base) 客户端版本不低于 v0.3.1。
+</Note>
+
+<Warning>
+  每个订阅**每条 WebSocket 消息仅推送一个条目**。事件大约每 200ms 到达一次。如果处理程序需要对每个事件进行繁重的处理，请对其进行节流 (throttle) 或防抖 (debounce) ，以免造成阻塞。
+</Warning>
+
+## 参数 {#parameters}
+
+<ParamField body="subscriptionType" type="string" required>
+  必须为 `"pendingLogs"`。
+</ParamField>
+
+<ParamField body="filterOptions" type="object">
+  可选的日志过滤条件。
+
+  <Expandable title="过滤选项">
+    <ParamField body="address" type="string | array">
+      用于过滤的单个合约地址或地址数组。
+    </ParamField>
+
+    <ParamField body="topics" type="array">
+      topic 过滤条件数组，格式与 `eth_getLogs` 相同。
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## 返回值 {#returns}
+
+<ResponseField name="result" type="string">
+  十六进制编码的订阅 ID。
+</ResponseField>
+
+## 示例 {#example}
+
+<CodeGroup>
+  ```json 订阅（带过滤条件） lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "eth_subscribe",
+    "params": [
+      "pendingLogs",
+      {
+        "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "topics": ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"]
+      }
+    ]
+  }
+  ```
+
+  ```json 订阅 ID 响应
+  {"jsonrpc": "2.0", "id": 1, "result": "0x2a7bc8d4e3f5a6b1c2d3e4f5a6b7c8d9"}
+  ```
+</CodeGroup>

@@ -1,0 +1,85 @@
+---
+title: "高频支付批量结算"
+keywords: ["x402 batch settlement", "payment channel API", "high frequency agent payments", "x402 vouchers"]
+description: "逐个请求验证累积的 x402 凭证，并批量结算高频 API 用量。"
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+如果智能体会发起大量小额请求，逐笔结算的开销会占去大部分成本，请使用 `batch-settlement`。每次请求都会推进一张累计凭证；之后由你的 channel 管理器根据最新状态执行领取、结算或退款。
+
+## 演示 {#demo}
+
+<PaymentsDemo flow="x402Batch" />
+
+<Tip>
+  上方演示仅为模拟效果。如需查看 Vibenet 上的链上演示，请前往 [Base 链演示](https://chain.base.org/demos)。
+</Tip>
+
+## 为高频路由定价 {#price-a-high-frequency-route}
+
+<CodeGroup>
+  {/* sample: x402-batch-ts */}
+
+  ```typescript TypeScript · Express lines wrap expandable highlight={1,3,9}
+  app.use(paymentMiddleware({
+    "GET /stream": {
+      accepts: [{ scheme: "batch-settlement", price: "$0.01", network, payTo }],
+      description: "High-frequency price tick",
+      mimeType: "application/json",
+    },
+  }, resourceServer));
+  app.get("/stream", (_request, response) => {
+    setSettlementOverrides(response, { amount: "50%" });
+    response.json({ asset: "ETH", price: "3200.00" });
+  });
+  ```
+
+  {/* sample: x402-batch-go */}
+
+  ```go Go · net/http lines wrap expandable highlight={2,6}
+  routes["GET /stream"] = x402http.RouteConfig{
+  	Accepts: x402http.PaymentOptions{{Scheme: batchsettlement.SchemeBatched, Price: "$0.01", Network: network, PayTo: payTo}},
+  	Description: "High-frequency price tick", MimeType: "application/json",
+  }
+  mux.HandleFunc("GET /stream", func(w http.ResponseWriter, _ *http.Request) {
+  	nethttpmw.SetSettlementOverrides(w, &x402.SettlementOverrides{Amount: "50%"})
+  	_ = json.NewEncoder(w).Encode(map[string]string{"asset": "ETH", "price": "3200.00"})
+  })
+  ```
+
+  {/* sample: x402-batch-python */}
+
+  ```python Python · FastAPI lines wrap expandable highlight={2,10}
+  routes["GET /stream"] = RouteConfig(
+      accepts=[PaymentOption(scheme=SCHEME_BATCH_SETTLEMENT, price="$0.01", network=network, pay_to=pay_to)],
+      description="High-frequency price tick",
+      mime_type="application/json",
+  )
+
+
+  @app.get("/stream")
+  async def stream(response: Response) -> dict[str, str]:
+      set_settlement_overrides(response, {"amount": "50%"})
+      return {"asset": "ETH", "price": "3200.00"}
+  ```
+</CodeGroup>
+
+<Check>
+  每个被接受的请求都会更新已存储的累计凭证，而只有在 channel 被领取、结算或退款时才会产生链上交易。
+</Check>
+
+<Note>
+  完整示例配置了专用的 `RECEIVER_AUTHORIZER_PRIVATE_KEY`，用于 channel 领取和退款的签名。请勿将其与收款钱包混用，并将其存放在服务端密钥管理器中。
+</Note>
+
+<Warning>
+  这些示例使用基于文件的存储，仅适用于单进程场景。如需无服务器或多实例部署，请使用支持原子更新的 Redis、Valkey 或事务型数据库。
+</Warning>
+
+## 另请参阅 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="为 API 收费" icon="server" href="/zh/build-on-base/accept-payments/charge-for-an-api">请求频率较低时，可按请求逐笔精确结算。</Card>
+  <Card title="调用付费服务" icon="robot" href="/zh/build-on-base/accept-payments/call-a-paid-service">配置买方以支持批量结算。</Card>
+</CardGroup>

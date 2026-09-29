@@ -1,0 +1,85 @@
+---
+title: "支払いを認可する"
+keywords: ["Commerce Payments authorize", "USDC escrow Base", "PaymentAuthorized", "authorize and capture"]
+description: "Base 上で支払者の資金をエスクローに移し、後からキャプチャできるようにします。"
+---
+
+import { PaymentsDemo } from "/snippets/PaymentsDemo.jsx"
+
+フルフィルメント (商品・サービスの提供) がチェックアウト後に行われる場合は、支払いを認可します。プロトコルでの認可が成功すると、トークンは即座にオペレーターのエスクローストアへ移動します。そのため、後で行うキャプチャは、支払者がウォレットに資金を残しているかどうかに左右されません。
+
+<Info>
+  このガイドの支払いフローは [Commerce Payments Protocol](https://github.com/base/commerce-payments) に基づいています。
+</Info>
+
+## デモ {#demo}
+
+<PaymentsDemo flow="authorize" />
+
+<Tip>
+  上記のデモはモックです。Vibenet 上のオンチェーンデモを確認するには、[Base chain demos](https://chain.base.org/demos) をご覧ください。
+</Tip>
+
+<Warning>
+  コレクターの署名は、回収の許可にすぎません。資金が確保されたとみなせるのは、`authorize` が成功し、`PaymentAuthorized` が発行された後に限られます。
+</Warning>
+
+## 支払いを認可して保存する {#authorize-and-store-the-payment}
+
+オペレーター、支払者、受取人、トークン、最大金額、順序付けられた3つの有効期限タイムスタンプ、手数料の上下限、手数料受取人、一意のソルトを含む、不変の `PaymentInfo` を1つ構築します。以降のすべての操作でこの構造体のハッシュが再計算されるため、構造体は一切変更せずにそのまま保存してください。
+
+フィクスチャでは ERC-3009 のコレクター署名を用意し、`paymentInfo.operator` から認可を送信します。
+
+{/* sample: usdc-authorize-ts */}
+
+```typescript TypeScript lines wrap expandable highlight={6,11,15-16}
+export async function authorizePayment(
+  merchant: Address,
+  orderId: string,
+  amount: string,
+) {
+  const payment = await prepareErc3009Payment(merchant, orderId, amount);
+  const simulation = await publicClient.simulateContract({
+    account,
+    address: AUTH_CAPTURE_ESCROW,
+    abi: authCaptureEscrowAbi,
+    functionName: "authorize",
+    args: [
+      payment.paymentInfo,
+      payment.paymentInfo.maxAmount,
+      ERC3009_PAYMENT_COLLECTOR,
+      payment.collectorData,
+    ],
+  });
+  const hash = await walletClient.writeContract(simulation.request);
+  const receipt = await publicClient.waitForTransactionReceipt({ hash, confirmations: 2 });
+  if (receipt.status !== "success") throw new Error("Payment authorization reverted");
+  return { ...payment, authorizationHash: hash };
+}
+```
+
+| 状態フィールド               | 認可後の値             |
+| --------------------- | ----------------- |
+| `hasCollectedPayment` | 恒久的に `true`       |
+| `capturableAmount`    | エスクローに保持された認可済み金額 |
+| `refundableAmount`    | キャプチャされるまで `0`    |
+
+<Check>
+  `paymentInfoHash`、すべての支払い条件、コレクター、認可トランザクション、および `PaymentAuthorized.amount` を注文に紐づけて永続化してください。
+</Check>
+
+<Warning>
+  支払いの回収は一度しか行えません。void や reclaim 後の再試行も含め、チェックアウトを試行するたびに、暗号学的に安全な新しいランダムソルトを使用してください。
+</Warning>
+
+## 関連項目 {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="認可をキャプチャする" icon="check" href="/ja/build-on-base/accept-payments/capture-an-authorization">
+    認可の有効期限が切れる前に、エスクロー中の金額を決済します。
+  </Card>
+
+  <Card title="認可を無効化する" icon="ban" href="/ja/build-on-base/accept-payments/void-an-authorization">
+    資金をすぐに返却するか、有効期限切れ後に支払者が取り戻せるようにします。
+  </Card>
+</CardGroup>

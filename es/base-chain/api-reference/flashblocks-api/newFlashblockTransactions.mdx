@@ -1,0 +1,143 @@
+---
+title: 'newFlashblockTransactions'
+sidebarTitle: 'newFlashblockTransactions'
+description: 'Suscríbete para recibir cada transacción en cuanto se preconfirma en un Flashblock. Solo disponible en endpoints WebSocket de Flashblocks.'
+---
+
+Suscríbete mediante `eth_subscribe` para recibir cada transacción en cuanto se preconfirma en un Flashblock. Pasa `true` como segundo parámetro para recibir los datos completos de la transacción y del recibo.
+
+<Info>
+  Esta suscripción requiere un endpoint RPC compatible con WebSocket. Los endpoints públicos de Base (`mainnet.base.org`, `sepolia.base.org`) solo admiten HTTP. Elige un proveedor compatible con WebSocket en el [Builder Stack](/es/get-started/builder-stack).
+</Info>
+
+<Note>
+  Requiere la versión v0.8.0 o posterior del cliente [base/base](https://github.com/base/base).
+</Note>
+
+<Warning>
+  Cada suscripción emite **un elemento por mensaje de WebSocket**. Los eventos llegan aproximadamente cada 200 ms. Si tu controlador realiza un procesamiento intensivo por evento, aplica throttling o debouncing para no bloquearlo.
+</Warning>
+
+## Parámetros {#parameters}
+
+<ParamField body="subscriptionType" type="string" required>
+  Debe ser `"newFlashblockTransactions"`.
+</ParamField>
+
+<ParamField body="full" type="boolean">
+  Si es `true`, cada notificación incluye el objeto de transacción completo con los campos del recibo integrados. El valor predeterminado es `false` (solo el hash de la transacción).
+</ParamField>
+
+## Valores devueltos {#returns}
+
+<ResponseField name="result" type="string">
+  ID de suscripción codificado en hexadecimal que se devuelve al suscribirse.
+</ResponseField>
+
+## Notificaciones {#notifications}
+
+Cada notificación es un mensaje `eth_subscription` estándar. El campo `params.result` depende del parámetro `full`:
+
+**`full: false`**: `result` es el hash de la transacción:
+
+```json Result (full: false)
+"0xe26de91f9037e903eefe70b28f613019253da603e67e0dbfe2f656dce5444311"
+```
+
+**`full: true`**: `result` es un objeto de transacción con los campos del recibo incrustados directamente (sin un subobjeto de recibo anidado). Verificado en vivo con `base/v0.9.0`:
+
+<ResponseField name="type" type="string">Tipo de transacción: `0x0` legacy, `0x2` EIP-1559, `0x7e` depósito.</ResponseField>
+<ResponseField name="chainId" type="string">ID de la cadena (hex).</ResponseField>
+<ResponseField name="nonce" type="string">Nonce del remitente (hex).</ResponseField>
+<ResponseField name="gas" type="string">Límite de gas (hex).</ResponseField>
+<ResponseField name="maxFeePerGas" type="string">Tarifa máxima por gas de EIP-1559 (hex).</ResponseField>
+<ResponseField name="maxPriorityFeePerGas" type="string">Tarifa de prioridad máxima por gas de EIP-1559 (hex).</ResponseField>
+<ResponseField name="to" type="string">Dirección del destinatario.</ResponseField>
+<ResponseField name="value" type="string">Valor en ETH transferido (hex).</ResponseField>
+<ResponseField name="accessList" type="array">Lista de acceso de EIP-2930.</ResponseField>
+<ResponseField name="input" type="string">Datos de entrada de la transacción (hex).</ResponseField>
+<ResponseField name="r" type="string">Componente r de la firma.</ResponseField>
+<ResponseField name="s" type="string">Componente s de la firma.</ResponseField>
+<ResponseField name="yParity" type="string">Paridad de la firma (hex).</ResponseField>
+<ResponseField name="v" type="string">Valor v de la firma (hex).</ResponseField>
+<ResponseField name="hash" type="string">Hash de la transacción.</ResponseField>
+<ResponseField name="blockHash" type="null">Siempre `null`: la transacción está preconfirmada y aún no forma parte de un bloque finalizado.</ResponseField>
+<ResponseField name="blockNumber" type="string">Número de bloque (hex) del Flashblock en curso.</ResponseField>
+<ResponseField name="transactionIndex" type="string">Índice dentro del bloque (hex).</ResponseField>
+<ResponseField name="from" type="string">Dirección del remitente.</ResponseField>
+<ResponseField name="gasPrice" type="string">Precio efectivo del gas (hex).</ResponseField>
+<ResponseField name="gasUsed" type="string">Gas consumido por esta transacción (hex). **Nota:** pasó de entero a cadena hexadecimal en la v0.8.0.</ResponseField>
+<ResponseField name="status" type="string">`0x1` si se ejecutó correctamente, `0x0` si falló.</ResponseField>
+<ResponseField name="cumulativeGasUsed" type="string">Gas total consumido en el bloque hasta esta transacción inclusive (hex).</ResponseField>
+<ResponseField name="contractAddress" type="string | null">Dirección del contrato creado, o `null`.</ResponseField>
+<ResponseField name="logsBloom" type="string">Filtro de Bloom de los logs (hex).</ResponseField>
+<ResponseField name="logs" type="array">Array de objetos de log emitidos por esta transacción.</ResponseField>
+
+<Warning>
+  `gasUsed` es una cadena hexadecimal (p. ej., `"0x26132"`), no un entero. Este cambio se introdujo en la v0.8.0: actualiza cualquier analizador que espere un valor numérico.
+</Warning>
+
+## Ejemplo {#example}
+
+<CodeGroup>
+  ```json Suscribirse
+  {"jsonrpc": "2.0", "id": 1, "method": "eth_subscribe", "params": ["newFlashblockTransactions"]}
+  ```
+
+  ```json Suscribirse (datos completos)
+  {"jsonrpc": "2.0", "id": 1, "method": "eth_subscribe", "params": ["newFlashblockTransactions", true]}
+  ```
+
+  ```json Respuesta con ID de suscripción
+  {"jsonrpc": "2.0", "id": 1, "result": "0x1887ec8b9589ccad00000000000532da"}
+  ```
+
+  ```json Notificación (full: false) lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_subscription",
+    "params": {
+      "subscription": "0x1887ec8b9589ccad00000000000532da",
+      "result": "0xe26de91f9037e903eefe70b28f613019253da603e67e0dbfe2f656dce5444311"
+    }
+  }
+  ```
+
+  ```json Notificación (full: true) lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "method": "eth_subscription",
+    "params": {
+      "subscription": "0x1887ec8b9589ccad00000000000532da",
+      "result": {
+        "type": "0x2",
+        "chainId": "0x2105",
+        "nonce": "0x34ed",
+        "gas": "0x7a1200",
+        "maxFeePerGas": "0x257ab3c",
+        "maxPriorityFeePerGas": "0x419c7c",
+        "to": "0x6211a3742cf9d3b6677ecc7fd9dd102ab101d8e2",
+        "value": "0x0",
+        "accessList": [],
+        "input": "0x...",
+        "r": "0xa7cd30d21c30d4d60d27073c8bbc3ef5778527cf98eae0433e9d1f18c929dd5d",
+        "s": "0x08c75921e6bb75e19112300f80998f88a2b0f1adc52df2c3597b171d8c8de68d",
+        "yParity": "0x1",
+        "v": "0x1",
+        "hash": "0x6a010a5ce041ff0ee5a926db65d1ef512836cae822d5f2d58b63981bfa40aa7f",
+        "blockHash": null,
+        "blockNumber": "0x2c679a1",
+        "transactionIndex": "0x83",
+        "from": "0x2ad149d3d3099532d7c25c47cce37db6c4677b3a",
+        "gasPrice": "0x8de7bc",
+        "gasUsed": "0x26132",
+        "status": "0x1",
+        "cumulativeGasUsed": "0x16cb406",
+        "contractAddress": null,
+        "logsBloom": "0x00...00",
+        "logs": []
+      }
+    }
+  }
+  ```
+</CodeGroup>

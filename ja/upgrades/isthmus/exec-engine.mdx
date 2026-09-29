@@ -1,0 +1,254 @@
+---
+title: "L2 実行エンジン"
+description: "Isthmus アップグレードにおける実行エンジンの変更点。ブロックヘッダーへの L2ToL1MessagePasser ストレージルートの追加や、オペレーター手数料の徴収などについて説明します。"
+---
+
+[l2-to-l1-mp]: /specifications/base-protocol/execution/predeploys#L2ToL1MessagePasser
+
+[output-root]: /specifications/reference/glossary#l2-output-root
+
+## 概要 {#overview}
+
+`L2ToL1MessagePasser` のストレージルートは、ブロックヘッダーの
+`withdrawalRoot` フィールドに含まれます。
+
+## タイムスタンプによる有効化 {#timestamp-activation}
+
+Isthmus は、他のネットワークアップグレードと同様に、特定のタイムスタンプで有効化されます。
+L2 ブロックの実行ルールの変更は、`L2 Timestamp >= activation time` を満たした時点で適用されます。
+
+## ヘッダー内の `L2ToL1MessagePasser` ストレージルート {#l2tol1messagepasser-storage-root-in-header}
+
+Isthmus ハードフォークの有効化後、L2 ブロックヘッダーの `withdrawalsRoot` フィールドには、ブロックヘッダーの stateRoot
+フィールドで識別されるワールドステートにおける、[`L2ToL1MessagePasser`][l2-to-l1-mp] アカウントの 32 バイトのストレージルートが格納されます。このストレージルートは、該当するブロック番号で `eth_getProof`
+が返すルートと同一であるべきです。
+
+### ヘッダーの有効性ルール {#header-validity-rules}
+
+Isthmus の有効化前:
+
+* L2 ブロックヘッダーの `withdrawalsRoot` フィールドは、次の値でなければなりません:
+  * Canyon が有効化されていない場合は `nil`。
+  * Canyon が有効化されている場合は `keccak256(rlp(empty_string_code))`。
+* L2 ブロックヘッダーの `requestsHash` フィールドは省略しなければなりません。
+
+Isthmus の有効化後、L2 ブロックヘッダーは次の条件をすべて満たす場合に限り有効です:
+
+1. `withdrawalsRoot` フィールドが次の条件を満たす。
+   1. 長さが 32 バイトである。
+   2. ブロックヘッダー内の `storageRoot` でコミットされている
+      [`L2ToL1MessagePasser`][l2-to-l1-mp] アカウントのストレージルートと一致する。
+2. `requestsHash` フィールドが `sha256('') = 0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` と等しく、
+   ブロック内にリクエストが存在しないことを示している。
+
+### ヘッダーのwithdrawalsルート {#header-withdrawals-root}
+
+| バイトオフセット  | 説明                                                  |
+| --------- | --------------------------------------------------- |
+| `[0, 32)` | [`L2ToL1MessagePasser`][l2-to-l1-mp] アカウントのストレージルート |
+
+#### 設計根拠 {#rationale}
+
+現在、過去のブロックの[L2出力ルート][output-root]を生成するにはアーカイブノードが必要です。これは、フォールトプルーフ導入後の環境において、
+システムの利用者に直接的な負担を強いることになります。具体的には次のとおりです。
+
+1. プロポーザーは、セーフヘッドにおける出力ルートを提案するためにアーカイブノードを用意しなければなりません。
+2. 出金を証明するユーザーは、出金の証明に用いる出力ルートが実際に有効であり、セーフチェーンに含まれていることを
+   検証するためにアーカイブノードを用意しなければなりません。
+
+[`L2ToL1MessagePasser`][l2-to-l1-mp]アカウントのストレージルートを`withdrawalsRoot`フィールドに格納することで、ユーザーとプロトコル参加者のいずれにとってもこの負担が軽減され、
+より低い運用コストで提案を行ったり、他者の提案を検証したりできるようになります。
+
+#### ジェネシスブロック {#genesis-block}
+
+ジェネシスブロックの時点で Isthmus が有効な場合、ジェネシスブロックのヘッダーの `withdrawalsRoot` には、
+[`L2ToL1MessagePasser`][l2-to-l1-mp] アカウントのストレージルートが設定されます。
+
+#### 状態処理 {#state-processing}
+
+状態処理の時点では、トランザクションの検証対象となっているヘッダーの `withdrawalsRoot`
+を、EVM/アプリケーション層から参照可能にすべきではありません。
+
+#### P2P {#p2p}
+
+同期中、ブロック本体の出金リストは空であることが想定されます (OP Stackは出金リストを
+使用しません) 。そのため、出金リストのハッシュは空リストのMPTルートになることが想定されます。
+同期された最終ヘッダーを使用してヘッダーチェーンを検証する際は、ヘッダーのタイムスタンプに基づいて、
+当該ブロックでIsthmusが有効かどうかを判定します。有効な場合、ヘッダーの`withdrawalsRoot`
+MPTハッシュはnull以外の任意の値を取り得るものとします (`L2ToL1MessagePasser`のストレージルートが格納されることが想定されるためです) 。
+
+#### 後方互換性に関する考慮事項 {#backwards-compatibility-considerations}
+
+Canyon (Shanghai ハードフォークのサポートを含む) 以降、Isthmus の有効化より前は、
+`withdrawalsRoot` フィールドには空の出金リストの MPT ルートが設定されます。これは
+空のストレージルートと同じ値です。出金は L2 の状態には記録されますが、
+`withdrawalsRoot` には反映されません。したがって、Isthmus の有効化より前は、
+ヘッダーに `withdrawalsRoot` が存在し MPT ルートが含まれていても、それを使用すべきではありません (should not) 。
+出力ルートを計算する実装では、ヘッダーの `withdrawalsRoot` を使用しないよう注意する必要があります。
+
+なお、[`L2ToL1MessagePasser`][l2-to-l1-mp] のストレージは常に空ではありません。
+これは[プロキシ化されたプリデプロイ](/ja/specifications/base-protocol/execution/predeploys)であり、ジェネシスの時点から
+実装アドレスとオーナーアドレスを保持しているためです。したがって Isthmus 以降、
+`withdrawalsRoot` は常に非 nil となり、空リストの MPT ルートになることはありません。
+
+#### 前方互換性に関する考慮事項 {#forwards-compatibility-considerations}
+
+現状、`withdrawalsRoot` フィールドは Base のヘッダーのコンセンサス形式では使用されておらず、現在計画されているいずれの用途でも
+使用される予定はありません。この値を出金用アカウントのストレージルートに設定する方式は
+Base にそのまま適合し、L1 ヘッダーのコンセンサス形式にある既存のフィールドを活用できます。
+
+#### クライアント実装上の考慮事項 {#client-implementation-considerations}
+
+EL クライアントによって、アカウントの過去の状態の保存方法は異なります。極端な例として、Base で長期間にわたって
+アウトバウンドの出金が一度も発生しなかった場合、ノードが
+[`L2ToL1MessagePasser`][l2-to-l1-mp] のアカウントストレージルートにアクセスできない可能性があります。この場合、クライアントはコンセンサスを維持できなくなります。ただし、最近のクライアントの多くは、
+この情報を直接保存していなくても、少なくとも特定のブロック時点のアカウントストレージルートをオンザフライで再構築できます。
+
+##### トランザクションのシミュレーション {#transaction-simulation}
+
+`eth_simulateV1` のように、1つ以上のブロック内で任意のトランザクションをシミュレートできる RPC メソッドに応答する場合、
+こうしたシミュレートされたトランザクションで構成されるブロックの header には、空の withdrawals root を含めるべきです (SHOULD) 。
+実際の withdrawals root の値をすぐに取得できない場合も同様です。
+
+## デポジットリクエスト {#deposit-requests}
+
+[EIP-6110] はデポジット処理を実行レイヤーに移し、タイプが
+`DEPOSIT_REQUEST_TYPE` である新しい [EIP-7685] デポジットリクエストを導入します。これにより、デポジットリクエストは [EIP-7685] のリクエストリストに含まれるようになります。Base はこれらの
+リクエストを無視する必要があります。リクエストの生成処理は、[EIP-6110] デポジットリクエストを除外するよう変更しなければなりません。なお、[EIP-6110]
+のリクエストタイプは L1 の Pectra および L2 の Isthmus ハードフォークより前には *存在しなかった* ため、このタイプのデポジットリクエストは常に除外して構いません。したがって、有効化時刻を設ける必要はありません。
+
+[EIP-6110]: https://eips.ethereum.org/EIPS/eip-6110
+
+[EIP-7685]: https://eips.ethereum.org/EIPS/eip-7685
+
+## ブロック本体の出金リスト {#block-body-withdrawals-list}
+
+ブロック本体の出金リストは、空の RLP リストとしてエンコードされます。
+
+## EVM の変更点 {#evm-changes}
+
+### BLS プリコンパイル {#bls-precompiles}
+
+[Granite ハードフォーク](../granite/exec-engine)の `bn256Pairing` プリコンパイルと同様に、
+[EIP-2537](https://eips.ethereum.org/EIPS/eip-2537) では、EVM 上で入力サイズに応じて
+短絡処理を行う BLS プリコンパイルが導入されます。
+
+BLS プリコンパイルコントラクトの入力サイズ制限は以下のとおりです。
+
+* G1 マルチスカラー乗算: `input_size <= 513760 bytes`
+* G2 マルチスカラー乗算: `input_size <= 488448 bytes`
+* ペアリングチェック: `input_size <= 235008 bytes`
+
+その他の BLS プリコンパイルは固定サイズの演算であり、ガスコストも固定です。
+
+## ブロックのシーリング {#block-sealing}
+
+Base では `EIP-7685` は no-op 化されており、`requestsHash` は常に `sha256('')` に設定されます ([ヘッダーの有効性ルール](#header-validity-rules)を参照) 。そのため、[EIP-6110](https://eips.ethereum.org/EIPS/eip-6110)、[EIP-7002](https://eips.ethereum.org/EIPS/eip-7002)、[EIP-7251](https://eips.ethereum.org/EIPS/eip-7251) も有効化されていません。Base の実行レイヤーは、Isthmus の有効化以降のブロックのシーリング処理において、デポジットコントラクト内のイベントに対するブロック後フィルタリング (EIP-6110) および `EIP-7002` + `EIP-7251` のシステムコールが *呼び出されない* ことを保証しなければなりません (MUST) 。
+
+Base のユーザーは引き続きこれらのスマートコントラクトをパーミッションレスにデプロイできますが、Base の実行レイヤーはそれらを特別なものとして扱わず、L1 の Pectra ハードフォークで導入されたシステムコールも考慮しません。
+
+## Engine API の更新 {#engine-api-updates}
+
+### `ExecutionPayload` の更新 {#update-to-executionpayload}
+
+Isthmus ハードフォーク以降、`ExecutionPayload` には `withdrawalsRoot` フィールドが追加されます。
+
+### `engine_newPayloadV4` API {#engine_newpayloadv4-api}
+
+Isthmus 以降では、`engine_newPayloadV4` を使用します。
+
+`executionRequests` パラメーターは空の配列でなければなりません (MUST) 。
+
+## 手数料 {#fees}
+
+新しい OP Stack のバリアントはそれぞれリソース消費のパターンが異なるため、より柔軟な
+料金モデルが必要です。手数料体系をより柔軟にカスタマイズできるよう、Isthmus では手数料
+計算に新たな要素として `operatorFee` が追加されます。これは `operatorFeeScalar`
+と `operatorFeeConstant` という 2 つのスカラー値によってパラメータ化されます。
+
+### オペレーター手数料 {#operator-fee}
+
+オペレーター手数料は、標準のガス手数料や Base 固有の L1 データ
+手数料とともに、EVM に直接組み込まれています。この手数料は EVM で課される既存の手数料[^1]と同じセマンティクスに従いますが、手数料の受取先アカウントが新たに設けられている点が異なります。
+
+#### 手数料の計算式 {#fee-formula}
+
+$$
+\text{operatorFee} = (\text{gas} \times \text{operatorFeeScalar} \div 10^6) + \text{operatorFeeConstant}
+$$
+
+各項目の意味は次のとおりです。
+
+* `gas` はトランザクションが使用したガスの量です。トランザクションの開始時に購入するガスの量を計算する場合は、
+  この値を `gas_limit` とします。トランザクションが `gas_limit` のうちどれだけ使用したかに基づいて
+  払い戻すガスの量を決定する場合は、この値を `gas_used` とします。
+* `operatorFeeScalar` はチェーンオペレーターが設定する `uint32` のスカラー値で、`1e6` 倍にスケーリングされています。
+* `operatorFeeConstant` はチェーンオペレーターが設定する `uint64` のスカラー値です。
+
+なお、オペレーター手数料の最大値は 77 ビットとなります。これは各入力パラメーターの最大値から次のように計算できます。
+
+```text Maximum Operator Fee
+operatorFee_max = (uint64_max * uint32_max / 10^6) + uint64_max ≈ 7.924660923989131 * 10^22
+```
+
+したがって、`uint256` 型で計算を行う実装では、オーバーフローをチェックする必要はありません。
+
+#### デポジットのオペレーター手数料 {#deposit-operator-fees}
+
+デポジットトランザクションにはオペレーター手数料が課されません。オペレーター手数料パラメーターの設定にかかわらず、すべてのデポジットトランザクションで
+オペレーター手数料は**ゼロ**であるべきです (SHOULD) 。また、デポジットトランザクションはそもそもオペレーター手数料分のガスを購入しないため、オペレーター手数料分のガスの
+払い戻しも受けません。
+
+#### EVM における手数料のセマンティクス {#evm-fee-semantics}
+
+EVM における他の手数料と同様に、オペレーター手数料は以下のパターンに従って徴収する必要があります。
+
+1. 実行前の検証では、アカウントは既存の最悪ケースのガス + L1 データ手数料に&#95;加えて&#95;、
+   最悪ケースのオペレーター手数料 (デポジットの場合、最悪ケースの手数料は `0`) を賄えるだけの ETH を保有していなければなりません。この値を計算するには、
+   `gas` をトランザクションの `gas_limit` に設定して[手数料計算式](#fee-formula)を適用し、その結果を既存の
+   最悪ケースのトランザクション手数料に加算します。
+2. 実行前にガスを購入する際は、最悪ケースのオペレーター手数料をアカウントに請求します。この値を計算するには、
+   `gas` をトランザクションの `gas_limit` に設定して[手数料計算式](#fee-formula)を適用します。
+3. 実行後に払い戻しを行う際は、オペレーター手数料のガスを購入したトランザクションに対し、未使用のオペレーター手数料
+   ガスを払い戻す必要があります (つまり、呼び出し元には&#95;実効&#95;オペレーター手数料のみを請求すべきです) 。払い戻し額は
+   $\text{opFeeRefund} = \text{opFeeWorstCase} - \text{opFeeActual}$ として計算します。ここで、
+   * $\text{opFeeWorstCase}$ は #1 + #2 で説明した値です。
+   * $\text{opFeeActual}$ は実際に使用されたオペレーター手数料の額です。この値は、
+     `gas` を `gas_limit - gas_used + refunded_gas` に設定して[手数料計算式](#fee-formula)を適用することで計算します。`refunded_gas` は
+     [EIP-3529](https://eips.ethereum.org/EIPS/eip-3529) で定義されているとおりです。
+4. 実行後に手数料の受取人へ報酬を支払う際は、*消費されたオペレーター手数料*を
+   [オペレーター手数料ボールト](#fee-vaults) に送金します。この値は、上記の $\text{opFeeActual}$ とまったく同じです。
+
+実装は、オペレーター手数料によって ETH が新たに発行されたり消滅したりしないことを保証しなければなりません。
+
+#### トランザクションプールの変更 {#transaction-pool-changes}
+
+前述のとおり、トランザクションの有効性判定では追加の手数料が考慮されるため、トランザクションプールは、トランザクション手数料の最悪ケースのコストを賄えるだけの残高がない
+トランザクションを拒否しなければなりません (MUST) 。このトランザクションの最悪ケースのコストには、
+最悪ケースのオペレーター手数料 (operator fee) も含まれるようになりました。
+
+#### オペレーター手数料パラメーターの設定 {#configuring-operator-fee-parameters}
+
+`operatorFeeScalar` と `operatorFeeConstant` は、[`L1Fee`](/ja/specifications/base-protocol/execution/l2-execution-engine#ecotone-l1-cost-fee-changes-eip-4844-da) の計算で使用される `baseFeeScalar` および
+`blobBaseFeeScalar` と同様の方法で読み込まれます。
+具体的には、これらのパラメーターには次の 2 つの方法でアクセスでき、どちらを使用しても同じ結果が得られます。
+
+* 現在の L2 ブロックのデポジット済み L1 属性 (`operatorFeeScalar` と `operatorFeeConstant`) から読み取る
+* L1 Block Info コントラクト (`0x4200000000000000000000000000000000000015`) から読み取る
+  * 対応する Solidity のゲッター関数 (`operatorFeeScalar`、`operatorFeeConstant`) を使用する
+  * ストレージを直接読み取る：
+    * オペレーター手数料スカラーは、スロット `8` のオフセット `0` にビッグエンディアンの `uint32` として格納されています。
+    * オペレーター手数料定数は、スロット `8` のオフセット `4` にビッグエンディアンの `uint64` として格納されています。
+
+### Fee Vaults {#fee-vaults}
+
+徴収されたこれらの手数料は、`operatorFee` 用に新設されたボールト [`OperatorFeeVault`](./predeploys#operatorfeevault) に送られます。
+
+既存のボールトと同様に、これはハードコードされたアドレスで、事前デプロイ済みのプロキシコントラクトを指しています。
+このプロキシの実体は `FeeVault` をベースにデプロイされたボールトコントラクトであり、ボールトの資金を L1 へ安全に送金します。
+
+### レシート {#receipts}
+
+Isthmus の有効化後は、`operatorFeeScalar` と `operatorFeeConstant` の少なくとも一方が 0 以外である場合に限り、この 2 つの新しいフィールドがトランザクションレシートに追加されます。
+
+[^1]: Wood, G., &amp; Ethereum Contributors. (n.d.-a). Ethereum Yellow Paper. [https://ethereum.github.io/yellowpaper/paper.pdf](https://ethereum.github.io/yellowpaper/paper.pdf) 8 ページ、セクション 5「Gas and Payment」

@@ -1,0 +1,134 @@
+---
+title: 'eth_getBlockByNumber'
+sidebarTitle: 'eth_getBlockByNumber'
+description: '按区块号返回区块信息。在 Flashblocks 端点上，pending 标签会返回约每 200ms 更新一次的实时预确认区块。'
+---
+
+按区块号返回区块信息。
+
+<Tip>
+  **Flashblocks：** 以 `"pending"` 查询 `https://mainnet.base.org`，即可获取正在构建中的实时 Flashblock。这是一个真实的区块对象，约每 200ms 更新一次，并不断纳入新的预确认交易。响应结构完全相同，只是该区块尚未封存。
+</Tip>
+
+## 参数 {#parameters}
+
+<ParamField body="block" type="string" required>
+  十六进制格式的区块号，或 `"latest"`、`"pending"`、`"safe"`、`"finalized"`、`"earliest"` 之一。使用 `"pending"` 可获取正在构建中的区块。
+</ParamField>
+
+<ParamField body="fullTransactions" type="boolean" required>
+  为 `true` 时返回完整的交易对象；为 `false` 时仅返回交易哈希。
+</ParamField>
+
+## 返回值 {#returns}
+
+<ResponseField name="result" type="object">
+  区块对象；如果未找到区块，则返回 `null`。
+
+  <Expandable title="区块字段">
+    <ResponseField name="number" type="string">十六进制区块号。处于 pending 状态时为 `null`。</ResponseField>
+    <ResponseField name="hash" type="string">区块哈希。处于 pending 状态时为 `null`。</ResponseField>
+    <ResponseField name="parentHash" type="string">父区块的哈希。</ResponseField>
+    <ResponseField name="nonce" type="string">PoW nonce。在 Base (PoS) 上始终为 `"0x0000000000000000"`。</ResponseField>
+    <ResponseField name="sha3Uncles" type="string">叔块列表的哈希。在 Base 上始终为空。</ResponseField>
+    <ResponseField name="logsBloom" type="string">区块日志的布隆过滤器。</ResponseField>
+    <ResponseField name="transactionsRoot" type="string">交易 trie 的根。</ResponseField>
+    <ResponseField name="stateRoot" type="string">最终状态 trie 的根。</ResponseField>
+    <ResponseField name="receiptsRoot" type="string">收据 trie 的根。</ResponseField>
+    <ResponseField name="miner" type="string">手续费接收方 (coinbase) 的地址。</ResponseField>
+    <ResponseField name="difficulty" type="string">在 Base (PoS) 上始终为 `"0x0"`。</ResponseField>
+    <ResponseField name="mixHash" type="string">所有区块中均包含此字段；在 PoS 共识下已被赋予新用途 (bytes32 十六进制) 。</ResponseField>
+    <ResponseField name="extraData" type="string">由 sequencer 设置的任意数据字段。</ResponseField>
+    <ResponseField name="size" type="string">区块大小，以字节为单位 (十六进制) 。</ResponseField>
+    <ResponseField name="gasLimit" type="string">该区块允许使用的 gas 上限 (十六进制) 。</ResponseField>
+    <ResponseField name="gasUsed" type="string">该区块消耗的 gas 总量 (十六进制) 。</ResponseField>
+    <ResponseField name="timestamp" type="string">Unix 时间戳 (十六进制) 。</ResponseField>
+    <ResponseField name="transactions" type="array">交易哈希数组或完整交易对象数组。</ResponseField>
+    <ResponseField name="uncles" type="array">在 Base 上始终为 `[]`。</ResponseField>
+    <ResponseField name="withdrawals" type="array">在 Base 上始终为 `[]`。</ResponseField>
+    <ResponseField name="withdrawalsRoot" type="string">提款列表的 Merkle 根 (EIP-4895，bytes32 十六进制) 。</ResponseField>
+    <ResponseField name="baseFeePerGas" type="string">EIP-1559 每单位 gas 的基础费用 (十六进制) 。</ResponseField>
+    <ResponseField name="blobGasUsed" type="string">消耗的 blob gas 总量 (EIP-4844，十六进制) 。</ResponseField>
+    <ResponseField name="excessBlobGas" type="string">用于计算 blob 费用的超额 blob gas (EIP-4844，十六进制) 。</ResponseField>
+    <ResponseField name="parentBeaconBlockRoot" type="string">父信标区块根 (EIP-4788) 。</ResponseField>
+    <ResponseField name="requestsHash" type="string">请求的哈希 (EIP-7685) 。</ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Flashblock 特有的响应字段 {#flashblock-specific-response-fields}
+
+查询 `"pending"` 时，返回的是正在构建的区块的实时快照。其中有几个字段的行为有所不同：
+
+| 字段             | 标准 `latest`    | Flashblocks `pending`     |
+| -------------- | -------------- | ------------------------- |
+| `number`       | 已封存的区块号        | 当前 (正在构建的) 区块号            |
+| `hash`         | 最终区块哈希         | 该 Flashblock 索引处部分区块的哈希   |
+| `gasUsed`      | 最终 gas 用量      | 截至该 Flashblock 的累计 gas 用量 |
+| `transactions` | 所有已封存的交易       | 截至目前已预确认的交易               |
+| `blobGasUsed`  | 最终 blob gas 用量 | 沿用累计的 Flashblock 状态       |
+
+## 示例 {#example}
+
+<CodeGroup>
+  ```bash 标准（最新已封存区块） lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_getBlockByNumber",
+      "params": ["latest", false],
+      "id": 1
+    }'
+  ```
+
+  ```bash Flashblocks（pending，约 200ms 实时更新） lines wrap expandable
+  curl https://mainnet.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_getBlockByNumber",
+      "params": ["pending", false],
+      "id": 1
+    }'
+  ```
+
+  ```json 响应 lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "baseFeePerGas": "0x4c4b40",
+      "blobGasUsed": "0x5384cc",
+      "difficulty": "0x0",
+      "excessBlobGas": "0x0",
+      "extraData": "0x01000000640000000500000000004c4b40",
+      "gasLimit": "0x17d78400",
+      "gasUsed": "0x2155bc7",
+      "hash": "0x491bca01d4bc076d60833dbd973fe031a74e7ae31866bf70d077619e09edb6ff",
+      "logsBloom": "0xb765d5b0...",
+      "miner": "0x4200000000000000000000000000000000000011",
+      "mixHash": "0x47aecef0e1afa26b8e1f428e9a8696cf53d85c62587d8c2cea079c715cd29626",
+      "nonce": "0x0000000000000000",
+      "number": "0x2c31b0b",
+      "parentBeaconBlockRoot": "0x15b9e7c8ac4cbe92dafc849ed30a23e91624bbe5cbe199c0ccea3f7de7fc6d49",
+      "parentHash": "0x89f4c9e23a2f706f0afa9ca8f770c4b7dcbcb73ba7e9b1c29c4a8c1b90c31d24",
+      "receiptsRoot": "0x5a428d77344334537d7adaf85a45eb6d7977bc807a68c669f36cb043600da6d2",
+      "requestsHash": "0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sha3Uncles": "0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+      "size": "0x1bb3b",
+      "stateRoot": "0x1b1525af0cdd504147b89f2a7ce1838ccb70c5439c45ce55522c2e2529801e87",
+      "timestamp": "0x6a1092f9",
+      "transactions": [
+        "0x03c8f106f18ad94190e763e21b584c5825b2f4c61f1274c0e8abe65b4476cd51",
+        "..."
+      ],
+      "transactionsRoot": "0x6b9c9fcbdf98a8f4d38a3c16d099e9f0c7b7b474c2f5e044af7c91949c04a234",
+      "uncles": [],
+      "withdrawals": [],
+      "withdrawalsRoot": "0x57f4414a70a4af5e1a97b5fd8b8c6c870c00e8d9dbc0fde0059ce46e2cd28e5b"
+    }
+  }
+  ```
+</CodeGroup>

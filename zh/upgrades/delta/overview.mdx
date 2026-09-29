@@ -1,0 +1,20 @@
+---
+title: "Delta"
+sidebarTitle: "概述"
+description: "Delta 硬分叉概述。该硬分叉引入了跨度批次（span batch），可将多个 L2 区块压缩到单笔批次提交交易中，从而降低 L1 数据成本。"
+---
+
+## 激活时间戳 {#activation-timestamps}
+
+| 网络        | 激活时间戳                                   |
+| --------- | --------------------------------------- |
+| `mainnet` | `1708560000` (2024-02-22 00:00:00 UTC)  |
+| `sepolia` | `1703203200` (2023-12-22 00:00:00 UTC)  |
+
+Delta 升级采用 *L2 区块时间戳* 激活规则，且仅在 rollup 节点中配置 (`delta_time`) 。
+
+## 共识层 {#consensus-layer}
+
+[span-batches]: span-batches
+
+Delta 升级只包含一项共识层特性：[跨度批次][span-batches]。

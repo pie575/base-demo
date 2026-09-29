@@ -1,0 +1,20 @@
+---
+title: "Actualizaciones dinámicas"
+description: "Un contrato inteligente de Ethereum almacena las marcas de tiempo de las actualizaciones para los nodos de Base, lo que permite que los forks se activen en el momento programado sin tener que reiniciar el cliente."
+---
+
+<Note>
+  En Cobalt, este cambio se implementará en modo de solo métricas mientras se recopilan datos para validar que las actualizaciones funcionen sin problemas.
+</Note>
+
+## Motivación {#motivation}
+
+Actualmente, cada activación de un hardfork requiere una nueva versión del nodo con marcas de tiempo codificadas de forma fija. Los operadores deben actualizar sus binarios antes de cada fork, y omitir cualquier versión conlleva el riesgo de quedar fuera del consenso. Desvincular las marcas de tiempo de las actualizaciones de las versiones del cliente reduce la cantidad de versiones que los operadores deben ejecutar y acorta el período de coordinación necesario para activar nuevos forks.
+
+## Qué cambió {#what-changed}
+
+Tanto el EL como el CL ejecutan un sondeador de señales de actualización que lee el contrato onchain mediante el RPC de L1, guarda el calendario en las anulaciones de activación del cliente y las aplica en todos los puntos donde se usa el calendario. Los forks se activan en el momento programado sin necesidad de reiniciar.
+
+## Migración {#migration}
+
+Este cambio vendrá incluido en la versión del nodo para Cobalt, por lo que los operadores de nodos no tendrán que hacer nada.

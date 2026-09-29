@@ -1,0 +1,48 @@
+---
+title: 'eth_unsubscribe'
+sidebarTitle: 'eth_unsubscribe'
+description: 'アクティブな WebSocket サブスクリプションをキャンセルします。'
+---
+
+[`eth_subscribe`](/ja/base-chain/api-reference/ethereum-json-rpc-api/eth_subscribe) で作成したサブスクリプションをキャンセルします。この呼び出し以降、そのサブスクリプション ID は無効になります。
+
+## パラメーター {#parameters}
+
+<ParamField body="subscriptionId" type="string" required>
+  `eth_subscribe` が返したサブスクリプション ID。
+</ParamField>
+
+## 戻り値 {#returns}
+
+<ResponseField name="result" type="boolean">
+  サブスクリプションが正常にキャンセルされた場合は `true`、サブスクリプション ID が見つからなかった場合は `false` を返します。
+</ResponseField>
+
+## 例 {#example}
+
+<CodeGroup>
+  ```json Request
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "eth_unsubscribe",
+    "params": ["0x1887ec8b9589ccad00000000000532da"]
+  }
+  ```
+
+  ```json Response (success)
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": true
+  }
+  ```
+
+  ```json Response (not found)
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": false
+  }
+  ```
+</CodeGroup>

@@ -1,0 +1,153 @@
+---
+title: 'eth_simulateV1'
+sidebarTitle: 'eth_simulateV1'
+description: '現在の事前確認済み Flashblock の状態に対して、1 つ以上のトランザクションバンドルをシミュレートします。Flashblocks エンドポイントでのみ利用できます。'
+---
+
+現在の事前確認済み Flashblock の状態に対して、1 つ以上のトランザクションバンドルをシミュレートします。状態オーバーライド、複数ブロックのシミュレーション、および転送トレース (オプション) に対応しています。
+
+<Info>
+  Flashblocks エンドポイント (`https://mainnet.base.org` / `https://sepolia.base.org`) でのみ利用できます。
+</Info>
+
+## パラメーター {#parameters}
+
+<ParamField body="simulationPayload" type="object" required>
+  シミュレーションの設定です。
+
+  <Expandable title="Simulation Payload のフィールド">
+    <ParamField body="blockStateCalls" type="array" required>
+      ブロック状態呼び出しオブジェクトの配列です。各オブジェクトが、シミュレートする 1 つのブロックに対応します。
+
+      <Expandable title="Block State Call のフィールド">
+        <ParamField body="calls" type="array">
+          このブロック内でシミュレートするトランザクション呼び出しオブジェクトの配列です。
+        </ParamField>
+
+        <ParamField body="stateOverrides" type="object">
+          シミュレーション前に適用する、アドレスごとの状態オーバーライドです (例：残高、nonce、コード、ストレージ) 。省略可能です。
+        </ParamField>
+
+        <ParamField body="blockOverrides" type="object">
+          ブロックレベルのオーバーライドです (例：`number`、`timestamp`) 。省略可能です。
+        </ParamField>
+      </Expandable>
+    </ParamField>
+
+    <ParamField body="traceTransfers" type="boolean">
+      `true` の場合、ETH の送金イベントがログとして結果に含まれます。デフォルトは `false` です。
+    </ParamField>
+
+    <ParamField body="validation" type="boolean">
+      `true` の場合、トランザクションの検証 (nonce、残高) が行われます。デフォルトは `false` です。
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="blockParameter" type="string" required>
+  現在の Flashblock の状態に対してシミュレートするには、`"pending"` を指定します。
+</ParamField>
+
+## 戻り値 {#returns}
+
+<ResponseField name="result" type="array">
+  シミュレートされたブロック結果の配列です。`blockStateCalls` のエントリごとに 1 つずつ返されます。各エントリは完全なブロックオブジェクトで、標準のブロックフィールドに加えて `calls` フィールドが埋め込まれています。
+
+  <Expandable title="ブロック結果のフィールド">
+    <ResponseField name="number" type="string">シミュレートされたブロック番号 (16 進数) 。</ResponseField>
+    <ResponseField name="hash" type="string">シミュレートされたブロックハッシュ。</ResponseField>
+    <ResponseField name="parentHash" type="string">親ブロックのハッシュ。</ResponseField>
+    <ResponseField name="timestamp" type="string">ブロックのタイムスタンプ (16 進数) 。</ResponseField>
+    <ResponseField name="gasLimit" type="string">ガスリミット (16 進数) 。</ResponseField>
+    <ResponseField name="gasUsed" type="string">シミュレートされた呼び出しで使用されたガスの合計 (16 進数) 。</ResponseField>
+    <ResponseField name="baseFeePerGas" type="string">ガスあたりの基本手数料 (16 進数) 。</ResponseField>
+    <ResponseField name="stateRoot" type="string">常に `"0x000...000"` です。シミュレーションでは状態がトライにコミットされないためです。</ResponseField>
+
+    <ResponseField name="calls" type="array">
+      個々の呼び出し結果の配列。
+
+      <Expandable title="呼び出し結果のフィールド">
+        <ResponseField name="status" type="string">成功時は `"0x1"`、失敗時は `"0x0"`。</ResponseField>
+        <ResponseField name="gasUsed" type="string">使用されたガス (16 進整数) 。</ResponseField>
+        <ResponseField name="returnData" type="string">16 進エンコードされた戻りデータ。</ResponseField>
+        <ResponseField name="logs" type="array">発行されたログ (`traceTransfers` が `true` の場合は ETH 送金ログも含む) 。</ResponseField>
+        <ResponseField name="error" type="string">呼び出しが失敗した場合のリバート理由。省略可能。</ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## 例 {#example}
+
+<CodeGroup>
+  ```bash cURL lines wrap expandable
+  curl https://sepolia.base.org \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "eth_simulateV1",
+      "params": [
+        {
+          "blockStateCalls": [
+            {
+              "calls": [{"to": "0x...", "data": "0x..."}],
+              "stateOverrides": {}
+            }
+          ],
+          "traceTransfers": true,
+          "validation": true
+        },
+        "pending"
+      ],
+      "id": 1
+    }'
+  ```
+
+  ```json Response lines wrap expandable
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": [
+      {
+        "baseFeePerGas": "0x0",
+        "blobGasUsed": "0x39d0",
+        "calls": [
+          {
+            "gasUsed": "0x5208",
+            "logs": [],
+            "returnData": "0x",
+            "status": "0x1"
+          }
+        ],
+        "difficulty": "0x0",
+        "excessBlobGas": "0x0",
+        "extraData": "0x01000000640000000500000000004c4b40",
+        "gasLimit": "0x17d78400",
+        "gasUsed": "0x5208",
+        "hash": "0x2f2f692821995e39653f63164b2d5d0e0bba66c86c2a199fd3009c0b9906c7b0",
+        "logsBloom": "0x000...000",
+        "miner": "0x4200000000000000000000000000000000000011",
+        "mixHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "nonce": "0x0000000000000000",
+        "number": "0x2c31c49",
+        "parentBeaconBlockRoot": "0x64e625f8bc74f78539f962aa09d522c63576ff6ad57170c668882d99e669ef52",
+        "parentHash": "0x9653660afa4fca3976a21d42ebf849c337e9840993f050fee3affc673a573bf8",
+        "receiptsRoot": "0xf78dfb743fbd92ade140711c8bbc542b5e307f0ab7984eff35d751969fe57efa",
+        "requestsHash": "0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "sha3Uncles": "0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        "size": "0x2a6",
+        "stateRoot": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "timestamp": "0x6a10957f",
+        "transactions": [
+          "0xa401668a06b038c488c1abc013676dfe63fc645d182ece34d8b3f40f45689279"
+        ],
+        "transactionsRoot": "0x0b1328c457d7a8108ea9f2559142890491b680fdb691720b3d0c857c3d11002c",
+        "uncles": [],
+        "withdrawals": [],
+        "withdrawalsRoot": "0x0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    ]
+  }
+  ```
+</CodeGroup>

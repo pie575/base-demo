@@ -1,0 +1,113 @@
+---
+title: "Restringe quién puede tenerla"
+keywords: ["lista de permitidos de stablecoin", "stablecoin con verificación KYC", "política de transferencia B20", "restringir transferencias en Base"]
+description: "Limita las transferencias de tu stablecoin a las cuentas aprobadas por tu programa KYC mediante las políticas de transferencia de B20."
+---
+
+import { StablecoinDemo } from "/snippets/StablecoinDemo.jsx"
+
+Mantén tu stablecoin dentro de un conjunto conocido de titulares mediante una **lista de permitidos**: las transferencias solo se liquidan entre cuentas aprobadas por tu programa de KYC. La lista se gestiona en el [Policy Registry](/es/specifications/b20/concepts/policies#21-the-registry-and-the-token) y se vincula a los ámbitos de transferencia del token.
+
+## Demostración {#demo}
+
+<StablecoinDemo flow="restrict" />
+
+<Tip>
+  La demostración usa una cuenta local generada en el navegador para enviar transacciones reales en **Base Vibenet**. Si Vibenet o sus funciones de B20 no están disponibles, cambia automáticamente a una versión ilustrativa sin conexión.
+</Tip>
+
+<Note>
+  ¿Es la primera vez que usas B20? Consulta el [Estándar de tokens B20](/es/specifications/b20) para conocer los conceptos y seguir una guía completa de lanzamiento. Estos ejemplos están pensados para `base-std@1505323`, `viem@2.55.11` y Base Foundry `v1.1.1`.
+</Note>
+
+## Cómo funcionan las políticas {#how-policies-work}
+
+El Policy Registry es un precompilado singleton que almacena cada lista de miembros una sola vez. Cada token almacena únicamente un ID de política `uint64` por ámbito. Cuando se ejecuta una función restringida, el token llama a `isAuthorized(policyId, account)` en el registro. Varios tokens pueden compartir una misma política, y cualquier cambio en ella se refleja de inmediato en todos los tokens que la referencian.
+
+Los ámbitos restringen funciones concretas. `TRANSFER_SENDER_POLICY` y `TRANSFER_RECEIVER_POLICY` verifican al remitente y al destinatario en cada `transfer` y `transferFrom`. `MINT_RECEIVER_POLICY` verifica al destinatario en cada `mint`. Los tres tienen como valor predeterminado `ALWAYS_ALLOW` (`0`) hasta que vincules una política.
+
+Una **lista de permitidos** solo autoriza a las cuentas incluidas en el conjunto. Una lista de permitidos vacía no autoriza a nadie, así que añade primero a los titulares previstos antes de vincular la política.
+
+## Crear y vincular una lista de titulares permitidos {#create-and-bind-a-holder-allowlist}
+
+<CodeGroup>
+  {/* sample: stablecoin-restrict-ts */}
+
+  ```typescript TypeScript lines wrap expandable highlight={7,10,16}
+  import { parseEventLogs, type Address } from "viem";
+  import { account, publicClient } from "../../shared/clients.js";
+  import { POLICY_REGISTRY, b20Abi, policyRegistryAbi, scope } from "../abi.js";
+  import { sendContract } from "../write.js";
+
+  export async function createHolderAllowlist(token: Address, holders: Address[]) {
+    const receipt = await sendContract({
+      address: POLICY_REGISTRY,
+      abi: policyRegistryAbi,
+      functionName: "createPolicyWithAccounts",
+      args: [account.address, 1, holders],
+    });
+    const [created] = parseEventLogs({ abi: policyRegistryAbi, logs: receipt.logs, eventName: "PolicyCreated" });
+    const policyId = created.args.policyId;
+    for (const policyScope of [scope("TRANSFER_SENDER_POLICY"), scope("TRANSFER_RECEIVER_POLICY")]) {
+      await sendContract({ address: token, abi: b20Abi, functionName: "updatePolicy", args: [policyScope, policyId] });
+    }
+    const saved = await publicClient.readContract({ address: token, abi: b20Abi, functionName: "policyId", args: [scope("TRANSFER_RECEIVER_POLICY")] });
+    if (saved !== policyId) throw new Error("Policy was not bound");
+    return policyId;
+  }
+  ```
+
+  {/* sample: stablecoin-restrict-solidity */}
+
+  ```solidity Solidity lines wrap expandable highlight={2,5,6}
+      function restrictStablecoin(address token, address admin, address[] memory holders) public returns (uint64 id) {
+          id = StdPrecompiles.POLICY_REGISTRY.createPolicyWithAccounts(
+              admin, IPolicyRegistry.PolicyType.ALLOWLIST, holders
+          );
+          IB20(token).updatePolicy(B20Constants.TRANSFER_SENDER_POLICY, id);
+          IB20(token).updatePolicy(B20Constants.TRANSFER_RECEIVER_POLICY, id);
+          require(IB20(token).policyId(B20Constants.TRANSFER_RECEIVER_POLICY) == id, "policy not bound");
+      }
+  ```
+
+  {/* sample: stablecoin-restrict-cli */}
+
+  ```bash CLI lines wrap expandable highlight={2,8}
+  CREATE_TX=$(base-cast send "$POLICY_REGISTRY" \
+    "createPolicyWithAccounts(address,uint8,address[])" "$ADMIN" 1 "[$ALICE,$BOB]" \
+    --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" --json | jq -r .transactionHash)
+  POLICY_TOPIC=$(base-cast receipt "$CREATE_TX" --rpc-url "$RPC_URL" --json | \
+    jq -r '.logs[] | select(.address | ascii_downcase == "0x8453000000000000000000000000000000000002") | .topics[1]' | head -1)
+  POLICY_ID=$(base-cast to-dec "$POLICY_TOPIC")
+  for SCOPE in TRANSFER_SENDER_POLICY TRANSFER_RECEIVER_POLICY; do
+    base-cast send "$TOKEN_ADDRESS" "updatePolicy(bytes32,uint64)" "$(base-cast keccak "$SCOPE")" "$POLICY_ID" \
+      --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY"
+  done
+  ```
+</CodeGroup>
+
+<Check>
+  El token devuelve el nuevo ID de política en ambos ámbitos de la política de transferencia.
+</Check>
+
+<Warning>
+  Una lista de permitidos bloquea a todas las cuentas que no figuren en la política. Añade a los titulares previstos antes de vincularla y guarda el ID del evento `PolicyCreated`. Cada llamada admite lotes de 64 cuentas como máximo; para añadir más después de crearla, llama a `updateAllowlist`.
+</Warning>
+
+## Actualizar la membresía {#update-membership}
+
+Una vez creada la política, solo su administrador puede agregar o eliminar cuentas. Llama a `updateAllowlist(policyId, true, accounts)` para agregar cuentas y a `updateAllowlist(policyId, false, accounts)` para eliminarlas. Todos los tokens que hacen referencia a la política verán el cambio en la siguiente llamada. No es necesario volver a llamar a `updatePolicy` en el token.
+
+Para combinar una lista de permitidos de KYC con una lista de bloqueo por sanciones, crea una política compuesta `INTERSECT` que haga referencia a ambas políticas simples y, luego, vincula el ID de la política compuesta a los ámbitos del token. Consulta el [estándar de tokens B20](/es/specifications/b20) para ver la referencia completa de los tipos de políticas.
+
+## Consulta también {#see-also}
+
+<CardGroup cols={2}>
+  <Card title="Bloquear una cuenta" icon="user-lock" href="/es/build-on-base/issue-stablecoins/block-an-account">
+    Deniega el acceso a una dirección concreta.
+  </Card>
+
+  <Card title="Integración de políticas (estándar B20)" icon="book" href="/es/specifications/b20/concepts/policies#32-policy-scopes">
+    Hooks de políticas del estándar B20.
+  </Card>
+</CardGroup>
