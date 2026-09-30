@@ -65,6 +65,9 @@ body {
 /* Paragraphs */
 p { margin-bottom: 1.25rem; }
 
+/* Language switcher labels are <p>s; keep the global paragraph margin out of the dropdown rows. */
+[data-component-part="localization-select-item"] p { margin-bottom: 0; }
+
 /* Accordion title — restore Mintlify defaults overridden by global reset */
 [data-component-part="accordion-title"] {
   font-weight: 500 !important;
